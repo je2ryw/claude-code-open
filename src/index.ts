@@ -57,6 +57,9 @@ export * from './chrome/index.js';
 // 自动更新
 export * from './updater/index.js';
 
+// SVG/图像渲染
+export * from './renderer/index.js';
+
 // 版本信息
 export const VERSION = '2.0.76-restored';
 export const NAME = 'claude-code-restored';
