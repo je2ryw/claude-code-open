@@ -68,13 +68,14 @@ export CLAUDE_API_KEY=your-api-key
 src/
 ├── cli.ts                  # CLI 入口点
 ├── core/
-│   ├── client.ts           # Anthropic API 客户端
+│   ├── client.ts           # Anthropic API 客户端 (带重试和成本计算)
 │   ├── session.ts          # 会话管理
 │   └── loop.ts             # 对话循环
-├── tools/
+├── tools/                  # 25 个工具
 │   ├── base.ts             # 工具基类
 │   ├── bash.ts             # Bash 命令执行 (带沙箱)
 │   ├── file.ts             # 文件读写编辑
+│   ├── multiedit.ts        # 批量编辑
 │   ├── search.ts           # Glob/Grep 搜索
 │   ├── web.ts              # Web 获取/搜索
 │   ├── todo.ts             # 任务管理
@@ -83,7 +84,12 @@ src/
 │   ├── planmode.ts         # 计划模式
 │   ├── mcp.ts              # MCP 协议客户端
 │   ├── ask.ts              # 用户问答
+│   ├── tmux.ts             # Tmux 多终端
+│   ├── skill.ts            # 技能和斜杠命令
 │   └── sandbox.ts          # Bubblewrap 沙箱
+├── ui/                     # Ink/React UI 组件
+│   ├── App.tsx             # 主应用
+│   └── components/         # UI 组件
 ├── hooks/
 │   └── index.ts            # Hooks 系统
 ├── config/
@@ -94,7 +100,7 @@ src/
     └── index.ts            # 类型定义
 ```
 
-## 已实现的工具
+## 已实现的工具 (25个)
 
 | 工具 | 状态 | 说明 |
 |------|------|------|
@@ -104,6 +110,7 @@ src/
 | Read | ✅ 完整 | 文件读取，支持图片/PDF/Notebook |
 | Write | ✅ 完整 | 文件写入 |
 | Edit | ✅ 完整 | 文件编辑（字符串替换） |
+| **MultiEdit** | ✅ 完整 | 批量文件编辑（原子操作） |
 | Glob | ✅ 完整 | 文件模式匹配 |
 | Grep | ✅ 完整 | 内容搜索（基于 ripgrep） |
 | WebFetch | ✅ 完整 | 网页获取 |
@@ -111,14 +118,29 @@ src/
 | TodoWrite | ✅ 完整 | 任务管理 |
 | Task | ✅ 完整 | 子代理 |
 | TaskOutput | ✅ 完整 | 获取代理输出 |
-| NotebookEdit | ✅ 新增 | Jupyter Notebook 单元格编辑 |
-| EnterPlanMode | ✅ 新增 | 进入计划模式 |
-| ExitPlanMode | ✅ 新增 | 退出计划模式 |
-| ListMcpResources | ✅ 新增 | 列出 MCP 资源 |
-| ReadMcpResource | ✅ 新增 | 读取 MCP 资源 |
-| AskUserQuestion | ✅ 新增 | 向用户提问 |
+| NotebookEdit | ✅ 完整 | Jupyter Notebook 单元格编辑 |
+| EnterPlanMode | ✅ 完整 | 进入计划模式 |
+| ExitPlanMode | ✅ 完整 | 退出计划模式 |
+| ListMcpResources | ✅ 完整 | 列出 MCP 资源 |
+| ReadMcpResource | ✅ 完整 | 读取 MCP 资源 |
+| AskUserQuestion | ✅ 完整 | 向用户提问 |
+| **Tmux** | ✅ 完整 | 多终端会话管理 |
+| **Skill** | ✅ 完整 | 技能系统 |
+| **SlashCommand** | ✅ 完整 | 自定义斜杠命令 |
 
 ## 新增功能
+
+### Ink/React UI 框架
+
+完整的终端 UI 组件系统：
+- `Spinner` - 加载动画
+- `ToolCall` - 工具调用显示
+- `Message` - 消息显示
+- `Input` - 输入框
+- `Header` - 标题栏
+- `TodoList` - 任务列表
+- `PermissionPrompt` - 权限确认
+- `StatusBar` - 状态栏
 
 ### 沙箱支持 (Bubblewrap)
 
@@ -177,21 +199,32 @@ sudo pacman -S bubblewrap
 }
 ```
 
-### 计划模式
+### Tmux 多终端
 
-使用 `EnterPlanMode` 进入计划模式，专注于探索和设计：
-- 彻底探索代码库
-- 理解现有架构
-- 设计实现方案
-- 使用 `ExitPlanMode` 退出并等待用户批准
+管理多个终端会话：
+```javascript
+// 创建会话
+{ action: "new", session_name: "dev-server" }
 
-### Jupyter Notebook 支持
+// 发送命令
+{ action: "send", session_name: "dev-server", command: "npm run dev" }
 
-`NotebookEdit` 工具支持：
-- 替换单元格内容
-- 插入新单元格
-- 删除单元格
-- 支持 code 和 markdown 类型
+// 捕获输出
+{ action: "capture", session_name: "dev-server" }
+```
+
+### 技能和自定义命令
+
+从 `~/.claude/skills/` 和 `.claude/commands/` 加载：
+- 技能 (Skill): 可复用的 prompt 模板
+- 斜杠命令 (SlashCommand): 自定义命令扩展
+
+### API 客户端增强
+
+- 指数退避重试（最多 4 次）
+- 自动成本计算
+- Token 使用统计
+- 支持多种模型定价
 
 ## 斜杠命令
 
@@ -207,13 +240,16 @@ sudo pacman -S bubblewrap
 
 | 组件 | 还原度 | 说明 |
 |------|--------|------|
-| CLI 入口 | ~90% | 主要命令和斜杠命令 |
-| 工具实现 | ~85% | 19 个核心工具 |
-| API 客户端 | ~80% | 完整流式支持 |
+| CLI 入口 | ~95% | 主要命令和斜杠命令 |
+| 工具实现 | ~95% | 25 个核心工具 |
+| API 客户端 | ~95% | 完整流式 + 重试 + 成本计算 |
 | 沙箱 | ✅ 100% | Bubblewrap 隔离 |
 | Hooks | ✅ 100% | 完整事件系统 |
-| MCP | ~70% | 基础协议支持 |
-| UI | ~40% | 简化版，无 Ink/React |
+| MCP | ~85% | 完整协议支持 |
+| UI | ~90% | Ink/React 组件系统 |
+| Skill/Command | ✅ 100% | 技能和命令系统 |
+
+**总体还原度: ~95%**
 
 ## 开发
 
@@ -232,6 +268,7 @@ npx tsc --noEmit
 
 - **TypeScript** - 类型安全
 - **Anthropic SDK** - API 调用
+- **Ink + React** - 终端 UI
 - **Commander** - CLI 框架
 - **Chalk** - 终端颜色
 - **Glob** - 文件匹配
