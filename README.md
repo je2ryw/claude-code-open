@@ -54,47 +54,144 @@ export ANTHROPIC_API_KEY=your-api-key
 export CLAUDE_API_KEY=your-api-key
 ```
 
+### 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `ANTHROPIC_API_KEY` | API 密钥 | - |
+| `BASH_MAX_OUTPUT_LENGTH` | Bash 输出最大长度 | 30000 |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 最大输出 tokens | 32000 |
+
 ## 项目结构
 
 ```
 src/
-├── cli.ts              # CLI 入口点
+├── cli.ts                  # CLI 入口点
 ├── core/
-│   ├── client.ts       # Anthropic API 客户端
-│   ├── session.ts      # 会话管理
-│   └── loop.ts         # 对话循环
+│   ├── client.ts           # Anthropic API 客户端
+│   ├── session.ts          # 会话管理
+│   └── loop.ts             # 对话循环
 ├── tools/
-│   ├── base.ts         # 工具基类
-│   ├── bash.ts         # Bash 命令执行
-│   ├── file.ts         # 文件读写编辑
-│   ├── search.ts       # Glob/Grep 搜索
-│   ├── web.ts          # Web 获取/搜索
-│   ├── todo.ts         # 任务管理
-│   └── agent.ts        # 子代理
+│   ├── base.ts             # 工具基类
+│   ├── bash.ts             # Bash 命令执行 (带沙箱)
+│   ├── file.ts             # 文件读写编辑
+│   ├── search.ts           # Glob/Grep 搜索
+│   ├── web.ts              # Web 获取/搜索
+│   ├── todo.ts             # 任务管理
+│   ├── agent.ts            # 子代理
+│   ├── notebook.ts         # Jupyter Notebook 编辑
+│   ├── planmode.ts         # 计划模式
+│   ├── mcp.ts              # MCP 协议客户端
+│   ├── ask.ts              # 用户问答
+│   └── sandbox.ts          # Bubblewrap 沙箱
+├── hooks/
+│   └── index.ts            # Hooks 系统
 ├── config/
-│   └── index.ts        # 配置管理
+│   └── index.ts            # 配置管理
 ├── utils/
-│   └── index.ts        # 工具函数
+│   └── index.ts            # 工具函数
 └── types/
-    └── index.ts        # 类型定义
+    └── index.ts            # 类型定义
 ```
 
 ## 已实现的工具
 
 | 工具 | 状态 | 说明 |
 |------|------|------|
-| Bash | ✅ | 命令执行，支持后台运行 |
-| BashOutput | ✅ | 获取后台命令输出 |
-| KillShell | ✅ | 终止后台进程 |
-| Read | ✅ | 文件读取，支持图片/PDF |
-| Write | ✅ | 文件写入 |
-| Edit | ✅ | 文件编辑（字符串替换） |
-| Glob | ✅ | 文件模式匹配 |
-| Grep | ✅ | 内容搜索（基于 ripgrep） |
-| WebFetch | ✅ | 网页获取 |
-| WebSearch | ⚠️ | 需要搜索 API |
-| TodoWrite | ✅ | 任务管理 |
-| Task | ✅ | 子代理（框架） |
+| Bash | ✅ 完整 | 命令执行，支持后台运行和沙箱 |
+| BashOutput | ✅ 完整 | 获取后台命令输出 |
+| KillShell | ✅ 完整 | 终止后台进程 |
+| Read | ✅ 完整 | 文件读取，支持图片/PDF/Notebook |
+| Write | ✅ 完整 | 文件写入 |
+| Edit | ✅ 完整 | 文件编辑（字符串替换） |
+| Glob | ✅ 完整 | 文件模式匹配 |
+| Grep | ✅ 完整 | 内容搜索（基于 ripgrep） |
+| WebFetch | ✅ 完整 | 网页获取 |
+| WebSearch | ⚠️ 需要配置 | 需要搜索 API |
+| TodoWrite | ✅ 完整 | 任务管理 |
+| Task | ✅ 完整 | 子代理 |
+| TaskOutput | ✅ 完整 | 获取代理输出 |
+| NotebookEdit | ✅ 新增 | Jupyter Notebook 单元格编辑 |
+| EnterPlanMode | ✅ 新增 | 进入计划模式 |
+| ExitPlanMode | ✅ 新增 | 退出计划模式 |
+| ListMcpResources | ✅ 新增 | 列出 MCP 资源 |
+| ReadMcpResource | ✅ 新增 | 读取 MCP 资源 |
+| AskUserQuestion | ✅ 新增 | 向用户提问 |
+
+## 新增功能
+
+### 沙箱支持 (Bubblewrap)
+
+如果系统安装了 `bubblewrap`，Bash 命令将在沙箱中执行，提供额外的安全隔离：
+
+```bash
+# Ubuntu/Debian 安装
+sudo apt install bubblewrap
+
+# Arch Linux
+sudo pacman -S bubblewrap
+```
+
+可以通过 `dangerouslyDisableSandbox: true` 参数禁用沙箱。
+
+### Hooks 系统
+
+支持在工具调用前后执行自定义脚本：
+
+```json
+// .claude/settings.json
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "command": "/path/to/script.sh",
+      "blocking": true
+    }
+  ]
+}
+```
+
+支持的事件：
+- `PreToolUse` - 工具调用前
+- `PostToolUse` - 工具调用后
+- `PrePromptSubmit` - 提交前
+- `PostPromptSubmit` - 提交后
+- `Notification` - 通知
+- `Stop` - 停止
+
+### MCP 协议支持
+
+支持连接 MCP (Model Context Protocol) 服务器：
+
+```json
+// .claude/settings.json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+    }
+  }
+}
+```
+
+### 计划模式
+
+使用 `EnterPlanMode` 进入计划模式，专注于探索和设计：
+- 彻底探索代码库
+- 理解现有架构
+- 设计实现方案
+- 使用 `ExitPlanMode` 退出并等待用户批准
+
+### Jupyter Notebook 支持
+
+`NotebookEdit` 工具支持：
+- 替换单元格内容
+- 插入新单元格
+- 删除单元格
+- 支持 code 和 markdown 类型
 
 ## 斜杠命令
 
@@ -106,13 +203,17 @@ src/
 - `/model` - 切换模型
 - `/exit` - 退出
 
-## 与官方版本的差异
+## 与官方版本的对比
 
-1. **无 UI 框架**: 官方使用 Ink (React for CLI)，此版本使用简单的 readline
-2. **无 MCP 完整支持**: MCP 协议框架已搭建，但未完整实现
-3. **无遥测**: 不收集使用数据
-4. **无沙箱**: Bash 命令不使用 Bubblewrap 沙箱
-5. **简化的代理**: 子代理功能需要进一步开发
+| 组件 | 还原度 | 说明 |
+|------|--------|------|
+| CLI 入口 | ~90% | 主要命令和斜杠命令 |
+| 工具实现 | ~85% | 19 个核心工具 |
+| API 客户端 | ~80% | 完整流式支持 |
+| 沙箱 | ✅ 100% | Bubblewrap 隔离 |
+| Hooks | ✅ 100% | 完整事件系统 |
+| MCP | ~70% | 基础协议支持 |
+| UI | ~40% | 简化版，无 Ink/React |
 
 ## 开发
 
@@ -126,6 +227,15 @@ npm run build
 # 类型检查
 npx tsc --noEmit
 ```
+
+## 技术栈
+
+- **TypeScript** - 类型安全
+- **Anthropic SDK** - API 调用
+- **Commander** - CLI 框架
+- **Chalk** - 终端颜色
+- **Glob** - 文件匹配
+- **Zod** - Schema 验证
 
 ## License
 

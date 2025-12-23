@@ -1,11 +1,13 @@
 /**
  * Bash 工具
- * 执行 shell 命令
+ * 执行 shell 命令，支持沙箱隔离
  */
 
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { BaseTool } from './base.js';
+import { executeInSandbox, isBubblewrapAvailable } from './sandbox.js';
+import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -15,21 +17,39 @@ interface ShellState {
   process: ReturnType<typeof spawn>;
   output: string[];
   status: 'running' | 'completed' | 'failed';
+  startTime: number;
 }
 
 const backgroundShells: Map<string, ShellState> = new Map();
 
+// 配置
+const MAX_OUTPUT_LENGTH = parseInt(process.env.BASH_MAX_OUTPUT_LENGTH || '30000', 10);
+const DEFAULT_TIMEOUT = 120000;
+const MAX_TIMEOUT = 600000;
+
 export class BashTool extends BaseTool<BashInput, BashResult> {
   name = 'Bash';
-  description = `Executes a given bash command in a persistent shell session with optional timeout.
+  description = `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
 
-IMPORTANT: This tool is for terminal operations like git, npm, docker, etc.
+IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+
+Before executing the command, please follow these steps:
+
+1. Directory Verification:
+   - If the command will create new directories or files, first use 'ls' to verify the parent directory exists
+
+2. Command Execution:
+   - Always quote file paths that contain spaces with double quotes
+   - After ensuring proper quoting, execute the command
 
 Usage notes:
   - The command argument is required.
-  - Optional timeout in milliseconds (max 600000ms / 10 minutes).
+  - Optional timeout in milliseconds (up to 600000ms / 10 minutes). Default: 120000ms (2 minutes).
   - Use run_in_background to run commands in the background.
-  - Output exceeding 30000 characters will be truncated.`;
+  - Output exceeding ${MAX_OUTPUT_LENGTH} characters will be truncated.
+  - Set dangerouslyDisableSandbox to true to run without sandboxing (use with caution).
+
+Sandbox: ${isBubblewrapAvailable() ? 'Available (bubblewrap)' : 'Not available'}`;
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -45,7 +65,7 @@ Usage notes:
         },
         description: {
           type: 'string',
-          description: 'Clear, concise description of what this command does',
+          description: 'Clear, concise description of what this command does in 5-10 words',
         },
         run_in_background: {
           type: 'boolean',
@@ -61,39 +81,87 @@ Usage notes:
   }
 
   async execute(input: BashInput): Promise<BashResult> {
-    const { command, timeout = 120000, run_in_background = false } = input;
-    const maxTimeout = Math.min(timeout, 600000);
-    const maxOutputLength = 30000;
+    const {
+      command,
+      timeout = DEFAULT_TIMEOUT,
+      run_in_background = false,
+      dangerouslyDisableSandbox = false,
+    } = input;
 
+    const maxTimeout = Math.min(timeout, MAX_TIMEOUT);
+
+    // 运行 pre-tool hooks
+    const hookResult = await runPreToolUseHooks('Bash', input);
+    if (!hookResult.allowed) {
+      return {
+        success: false,
+        error: `Blocked by hook: ${hookResult.message || 'Operation not allowed'}`,
+      };
+    }
+
+    // 后台执行
     if (run_in_background) {
       return this.executeBackground(command);
     }
 
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        timeout: maxTimeout,
-        maxBuffer: 50 * 1024 * 1024, // 50MB
-        cwd: process.cwd(),
-        env: { ...process.env },
-      });
+    // 使用沙箱执行
+    const useSandbox = !dangerouslyDisableSandbox && isBubblewrapAvailable();
 
-      let output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
-      if (output.length > maxOutputLength) {
-        output = output.substring(0, maxOutputLength) + '\n... [output truncated]';
+    try {
+      let result: BashResult;
+
+      if (useSandbox) {
+        const sandboxResult = await executeInSandbox(command, {
+          cwd: process.cwd(),
+          timeout: maxTimeout,
+          disableSandbox: false,
+        });
+
+        let output = sandboxResult.stdout + (sandboxResult.stderr ? `\nSTDERR:\n${sandboxResult.stderr}` : '');
+        if (output.length > MAX_OUTPUT_LENGTH) {
+          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
+        }
+
+        result = {
+          success: sandboxResult.exitCode === 0,
+          output,
+          stdout: sandboxResult.stdout,
+          stderr: sandboxResult.stderr,
+          exitCode: sandboxResult.exitCode ?? 1,
+          error: sandboxResult.error,
+        };
+      } else {
+        // 直接执行
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: maxTimeout,
+          maxBuffer: 50 * 1024 * 1024, // 50MB
+          cwd: process.cwd(),
+          env: { ...process.env },
+        });
+
+        let output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+        if (output.length > MAX_OUTPUT_LENGTH) {
+          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
+        }
+
+        result = {
+          success: true,
+          output,
+          stdout,
+          stderr,
+          exitCode: 0,
+        };
       }
 
-      return {
-        success: true,
-        output,
-        stdout,
-        stderr,
-        exitCode: 0,
-      };
+      // 运行 post-tool hooks
+      await runPostToolUseHooks('Bash', input, result.output || '');
+
+      return result;
     } catch (err: any) {
       const exitCode = err.code || 1;
       const output = (err.stdout || '') + (err.stderr ? `\nSTDERR:\n${err.stderr}` : '');
 
-      return {
+      const result: BashResult = {
         success: false,
         error: err.message,
         output,
@@ -101,6 +169,11 @@ Usage notes:
         stderr: err.stderr,
         exitCode,
       };
+
+      // 运行 post-tool hooks
+      await runPostToolUseHooks('Bash', input, result.output || result.error || '');
+
+      return result;
     }
   }
 
@@ -117,6 +190,7 @@ Usage notes:
       process: proc,
       output: [],
       status: 'running',
+      startTime: Date.now(),
     };
 
     proc.stdout?.on('data', (data) => {
@@ -143,7 +217,13 @@ Usage notes:
 
 export class BashOutputTool extends BaseTool<{ bash_id: string; filter?: string }, BashResult> {
   name = 'BashOutput';
-  description = 'Retrieves output from a running or completed background bash shell';
+  description = `Retrieves output from a running or completed background bash shell.
+
+Usage:
+  - Takes a bash_id parameter identifying the shell
+  - Always returns only new output since the last check
+  - Returns stdout and stderr output along with shell status
+  - Supports optional regex filtering to show only lines matching a pattern`;
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -169,23 +249,37 @@ export class BashOutputTool extends BaseTool<{ bash_id: string; filter?: string 
     }
 
     let output = shell.output.join('');
+    // 清空已读取的输出
+    shell.output.length = 0;
 
     if (input.filter) {
-      const regex = new RegExp(input.filter);
-      output = output.split('\n').filter(line => regex.test(line)).join('\n');
+      try {
+        const regex = new RegExp(input.filter);
+        output = output.split('\n').filter((line) => regex.test(line)).join('\n');
+      } catch {
+        return { success: false, error: `Invalid regex: ${input.filter}` };
+      }
     }
+
+    const duration = Date.now() - shell.startTime;
 
     return {
       success: true,
-      output,
+      output: output || '(no new output)',
       exitCode: shell.status === 'completed' ? 0 : shell.status === 'failed' ? 1 : undefined,
+      stdout: `Status: ${shell.status}, Duration: ${duration}ms`,
     };
   }
 }
 
 export class KillShellTool extends BaseTool<{ shell_id: string }, BashResult> {
   name = 'KillShell';
-  description = 'Kills a running background bash shell by its ID';
+  description = `Kills a running background bash shell by its ID.
+
+Usage:
+  - Takes a shell_id parameter identifying the shell to kill
+  - Returns a success or failure status
+  - Use this tool when you need to terminate a long-running shell`;
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -208,10 +302,58 @@ export class KillShellTool extends BaseTool<{ shell_id: string }, BashResult> {
 
     try {
       shell.process.kill('SIGTERM');
+
+      // 等待一秒，如果还在运行则强制杀死
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (shell.status === 'running') {
+        shell.process.kill('SIGKILL');
+      }
+
       backgroundShells.delete(input.shell_id);
-      return { success: true, output: `Shell ${input.shell_id} killed` };
+
+      return {
+        success: true,
+        output: `Shell ${input.shell_id} killed`,
+      };
     } catch (err) {
       return { success: false, error: `Failed to kill shell: ${err}` };
     }
   }
+}
+
+/**
+ * 获取所有后台 shell 的状态
+ */
+export function getBackgroundShells(): Array<{
+  id: string;
+  status: string;
+  duration: number;
+}> {
+  const result: Array<{ id: string; status: string; duration: number }> = [];
+
+  for (const [id, shell] of backgroundShells) {
+    result.push({
+      id,
+      status: shell.status,
+      duration: Date.now() - shell.startTime,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * 清理已完成的后台 shell
+ */
+export function cleanupCompletedShells(): number {
+  let cleaned = 0;
+
+  for (const [id, shell] of backgroundShells) {
+    if (shell.status !== 'running') {
+      backgroundShells.delete(id);
+      cleaned++;
+    }
+  }
+
+  return cleaned;
 }

@@ -10,6 +10,11 @@ export * from './search.js';
 export * from './web.js';
 export * from './todo.js';
 export * from './agent.js';
+export * from './notebook.js';
+export * from './planmode.js';
+export * from './mcp.js';
+export * from './ask.js';
+export * from './sandbox.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, BashOutputTool, KillShellTool } from './bash.js';
@@ -18,22 +23,51 @@ import { GlobTool, GrepTool } from './search.js';
 import { WebFetchTool, WebSearchTool } from './web.js';
 import { TodoWriteTool } from './todo.js';
 import { AgentTool, TaskOutputTool } from './agent.js';
+import { NotebookEditTool } from './notebook.js';
+import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
+import { ListMcpResourcesTool, ReadMcpResourceTool } from './mcp.js';
+import { AskUserQuestionTool } from './ask.js';
 
 // 注册所有工具
 export function registerAllTools(): void {
+  // Bash 工具
   toolRegistry.register(new BashTool());
   toolRegistry.register(new BashOutputTool());
   toolRegistry.register(new KillShellTool());
+
+  // 文件工具
   toolRegistry.register(new FileReadTool());
   toolRegistry.register(new FileWriteTool());
   toolRegistry.register(new FileEditTool());
+
+  // 搜索工具
   toolRegistry.register(new GlobTool());
   toolRegistry.register(new GrepTool());
+
+  // Web 工具
   toolRegistry.register(new WebFetchTool());
   toolRegistry.register(new WebSearchTool());
+
+  // 任务管理
   toolRegistry.register(new TodoWriteTool());
+
+  // 代理工具
   toolRegistry.register(new AgentTool());
   toolRegistry.register(new TaskOutputTool());
+
+  // Notebook 编辑
+  toolRegistry.register(new NotebookEditTool());
+
+  // 计划模式
+  toolRegistry.register(new EnterPlanModeTool());
+  toolRegistry.register(new ExitPlanModeTool());
+
+  // MCP 工具
+  toolRegistry.register(new ListMcpResourcesTool());
+  toolRegistry.register(new ReadMcpResourceTool());
+
+  // 用户交互
+  toolRegistry.register(new AskUserQuestionTool());
 }
 
 // 自动注册
