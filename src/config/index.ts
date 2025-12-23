@@ -4,6 +4,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { McpServerConfig } from '../types/index.js';
+
+// Re-export McpServerConfig for backwards compatibility
+export type { McpServerConfig };
 
 export interface UserConfig {
   apiKey?: string;
@@ -12,15 +16,6 @@ export interface UserConfig {
   theme?: 'dark' | 'light';
   verbose?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
-}
-
-export interface McpServerConfig {
-  type: 'stdio' | 'sse' | 'http';
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
 }
 
 export class ConfigManager {

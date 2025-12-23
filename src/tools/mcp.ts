@@ -107,14 +107,15 @@ async function connectMcpServer(name: string): Promise<boolean> {
 
       if (initResult) {
         server.connected = true;
-        server.capabilities = initResult.capabilities || {};
+        const initResponse = initResult as { capabilities?: { tools?: boolean; resources?: boolean; prompts?: boolean } };
+        server.capabilities = initResponse.capabilities || {};
 
         // 发送 initialized 通知
         await sendMcpNotification(name, 'notifications/initialized', {});
 
         // 获取工具列表
         if (server.capabilities.tools) {
-          const toolsResult = await sendMcpMessage(name, 'tools/list', {});
+          const toolsResult = await sendMcpMessage(name, 'tools/list', {}) as { tools?: McpToolDefinition[] } | null;
           if (toolsResult?.tools) {
             server.tools = toolsResult.tools;
           }
@@ -122,7 +123,7 @@ async function connectMcpServer(name: string): Promise<boolean> {
 
         // 获取资源列表
         if (server.capabilities.resources) {
-          const resourcesResult = await sendMcpMessage(name, 'resources/list', {});
+          const resourcesResult = await sendMcpMessage(name, 'resources/list', {}) as { resources?: McpResource[] } | null;
           if (resourcesResult?.resources) {
             server.resources = resourcesResult.resources;
           }

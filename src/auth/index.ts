@@ -298,17 +298,162 @@ async function exchangeToken(
     throw new Error(`Token exchange failed: ${error}`);
   }
 
-  return response.json();
+  return response.json() as Promise<{
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+    token_type: string;
+  }>;
 }
 
 /**
  * 刷新 token
  */
+async function refreshTokenAsync(auth: AuthConfig): Promise<AuthConfig | null> {
+  if (!auth.refreshToken) {
+    console.log('No refresh token available, please login again.');
+    return null;
+  }
+
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: DEFAULT_OAUTH_CONFIG.clientId,
+      refresh_token: auth.refreshToken,
+    });
+
+    const response = await fetch(DEFAULT_OAUTH_CONFIG.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      console.log('Token refresh failed, please login again.');
+      return null;
+    }
+
+    const tokenResponse = await response.json() as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in: number;
+    };
+
+    const newAuth: AuthConfig = {
+      type: 'oauth',
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token || auth.refreshToken,
+      expiresAt: Date.now() + tokenResponse.expires_in * 1000,
+      scope: auth.scope,
+    };
+
+    saveAuth(newAuth);
+    return newAuth;
+  } catch (err) {
+    console.log('Token refresh failed:', err);
+    return null;
+  }
+}
+
+/**
+ * 刷新 token（同步包装）
+ */
 function refreshToken(auth: AuthConfig): AuthConfig | null {
-  // TODO: 实现 token 刷新
-  // 目前只是返回 null 表示需要重新登录
-  console.log('Token expired, please login again.');
+  // 对于需要同步返回的场景，返回 null 并建议重新登录
+  console.log('Token expired, please login again using: claude setup-token');
   return null;
+}
+
+/**
+ * 验证 API Key
+ */
+export async function validateApiKey(apiKey: string): Promise<boolean> {
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    });
+
+    // 即使返回错误，只要不是 401/403 就说明 key 格式正确
+    return response.status !== 401 && response.status !== 403;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 交互式设置 Token
+ */
+export async function setupToken(readline: {
+  question: (prompt: string, callback: (answer: string) => void) => void;
+  close: () => void;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    console.log('\n╭─────────────────────────────────────────╮');
+    console.log('│       Claude Code Token Setup           │');
+    console.log('╰─────────────────────────────────────────╯\n');
+    console.log('You can get your API key from:');
+    console.log('  https://console.anthropic.com/settings/keys\n');
+
+    readline.question('Enter your Anthropic API key: ', async (apiKey) => {
+      apiKey = apiKey.trim();
+
+      if (!apiKey) {
+        console.log('\n❌ No API key provided.');
+        readline.close();
+        resolve(false);
+        return;
+      }
+
+      // 验证 key 格式
+      if (!apiKey.startsWith('sk-ant-')) {
+        console.log('\n⚠️  Warning: API key should start with "sk-ant-"');
+      }
+
+      console.log('\nValidating API key...');
+
+      const isValid = await validateApiKey(apiKey);
+
+      if (isValid) {
+        setApiKey(apiKey, true);
+        console.log('\n✅ API key saved successfully!');
+        console.log('   Stored in: ~/.claude/credentials.json');
+        readline.close();
+        resolve(true);
+      } else {
+        console.log('\n❌ API key validation failed.');
+        console.log('   Please check your key and try again.');
+        readline.close();
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * 清除所有凭证
+ */
+export function clearCredentials(): void {
+  logout();
+
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      fs.unlinkSync(CREDENTIALS_FILE);
+    }
+  } catch {
+    // 忽略错误
+  }
 }
 
 /**

@@ -52,9 +52,9 @@ export function estimateMessageTokens(message: Message): number {
 
   for (const block of message.content) {
     if (block.type === 'text') {
-      total += estimateTokens(block.text);
+      total += estimateTokens(block.text || '');
     } else if (block.type === 'tool_use') {
-      total += estimateTokens(block.name) + estimateTokens(JSON.stringify(block.input));
+      total += estimateTokens(block.name || '') + estimateTokens(JSON.stringify(block.input));
     } else if (block.type === 'tool_result') {
       const content = typeof block.content === 'string'
         ? block.content
@@ -88,9 +88,9 @@ function extractMessageCore(message: Message): string {
 
   for (const block of message.content) {
     if (block.type === 'text') {
-      parts.push(block.text);
+      parts.push(block.text || '');
     } else if (block.type === 'tool_use') {
-      parts.push(`[Used tool: ${block.name}]`);
+      parts.push(`[Used tool: ${block.name || 'unknown'}]`);
     } else if (block.type === 'tool_result') {
       const content = typeof block.content === 'string'
         ? block.content
@@ -379,13 +379,14 @@ export function truncateMessageContent(
 
     if (block.type === 'text') {
       const maxChars = remainingTokens * CHARS_PER_TOKEN;
-      if (block.text.length <= maxChars) {
+      const blockText = block.text || '';
+      if (blockText.length <= maxChars) {
         truncatedBlocks.push(block);
-        remainingTokens -= estimateTokens(block.text);
+        remainingTokens -= estimateTokens(blockText);
       } else {
         truncatedBlocks.push({
           type: 'text',
-          text: block.text.slice(0, maxChars) + '\n[Content truncated...]',
+          text: blockText.slice(0, maxChars) + '\n[Content truncated...]',
         });
         remainingTokens = 0;
       }

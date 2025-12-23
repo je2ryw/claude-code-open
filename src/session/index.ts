@@ -368,7 +368,7 @@ export function exportSessionToMarkdown(session: SessionData): string {
     } else if (Array.isArray(message.content)) {
       for (const block of message.content) {
         if (block.type === 'text') {
-          lines.push(block.text);
+          lines.push(block.text || '');
         } else if (block.type === 'tool_use') {
           lines.push(`\`\`\`json`);
           lines.push(`// Tool: ${block.name}`);

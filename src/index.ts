@@ -39,6 +39,27 @@ export * from './telemetry/index.js';
 // 工具函数
 export * from './utils/index.js';
 
+// 插件系统
+export * from './plugins/index.js';
+
+// 流式 JSON I/O
+export * from './streaming/index.js';
+
+// 权限系统
+export * from './permissions/index.js';
+
+// IDE 集成
+export * from './ide/index.js';
+
+// Chrome 集成
+export * from './chrome/index.js';
+
+// 自动更新
+export * from './updater/index.js';
+
+// SVG/图像渲染
+export * from './renderer/index.js';
+
 // 版本信息
-export const VERSION = '1.0.0';
-export const NAME = 'claude-code';
+export const VERSION = '2.0.76-restored';
+export const NAME = 'claude-code-restored';

@@ -1,533 +1,573 @@
 /**
- * 代码解析器
- * 使用 tree-sitter 进行语法分析
+ * 代码解析模块
+ * 使用 Tree-sitter WASM 进行代码分析
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-// 语言到文件扩展名的映射
-const LANGUAGE_EXTENSIONS: Record<string, string[]> = {
-  javascript: ['.js', '.jsx', '.mjs', '.cjs'],
-  typescript: ['.ts', '.tsx', '.mts', '.cts'],
-  python: ['.py', '.pyw', '.pyi'],
-  rust: ['.rs'],
-  go: ['.go'],
-  java: ['.java'],
-  c: ['.c', '.h'],
-  cpp: ['.cpp', '.cc', '.cxx', '.hpp', '.hh', '.hxx'],
-  csharp: ['.cs'],
-  ruby: ['.rb'],
-  php: ['.php'],
-  swift: ['.swift'],
-  kotlin: ['.kt', '.kts'],
-  scala: ['.scala'],
-  html: ['.html', '.htm'],
-  css: ['.css'],
-  json: ['.json'],
-  yaml: ['.yml', '.yaml'],
-  markdown: ['.md', '.markdown'],
-  bash: ['.sh', '.bash'],
-  sql: ['.sql'],
+// 语法节点类型
+export interface SyntaxNode {
+  type: string;
+  text: string;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  children: SyntaxNode[];
+  parent?: SyntaxNode;
+  isNamed: boolean;
+}
+
+// 代码符号类型
+export type SymbolKind =
+  | 'function'
+  | 'class'
+  | 'method'
+  | 'property'
+  | 'variable'
+  | 'constant'
+  | 'interface'
+  | 'type'
+  | 'enum'
+  | 'module'
+  | 'import'
+  | 'export';
+
+// 代码符号
+export interface CodeSymbol {
+  name: string;
+  kind: SymbolKind;
+  location: {
+    file: string;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  children?: CodeSymbol[];
+  signature?: string;
+  documentation?: string;
+}
+
+// 语言配置
+export interface LanguageConfig {
+  extensions: string[];
+  wasmName: string;
+  symbolPatterns: {
+    [key in SymbolKind]?: string[];
+  };
+}
+
+// 支持的语言配置
+const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
+  javascript: {
+    extensions: ['.js', '.mjs', '.cjs', '.jsx'],
+    wasmName: 'tree-sitter-javascript',
+    symbolPatterns: {
+      function: ['function_declaration', 'arrow_function', 'function_expression', 'generator_function_declaration'],
+      class: ['class_declaration', 'class_expression'],
+      method: ['method_definition'],
+      variable: ['variable_declarator', 'lexical_declaration'],
+      import: ['import_statement'],
+      export: ['export_statement', 'export_default_declaration'],
+    },
+  },
+  typescript: {
+    extensions: ['.ts', '.tsx', '.mts', '.cts'],
+    wasmName: 'tree-sitter-typescript',
+    symbolPatterns: {
+      function: ['function_declaration', 'arrow_function', 'function_expression', 'generator_function_declaration'],
+      class: ['class_declaration', 'class_expression', 'abstract_class_declaration'],
+      method: ['method_definition', 'method_signature'],
+      interface: ['interface_declaration'],
+      type: ['type_alias_declaration'],
+      enum: ['enum_declaration'],
+      import: ['import_statement'],
+      export: ['export_statement', 'export_default_declaration'],
+      property: ['property_signature', 'public_field_definition'],
+    },
+  },
+  python: {
+    extensions: ['.py', '.pyw', '.pyi'],
+    wasmName: 'tree-sitter-python',
+    symbolPatterns: {
+      function: ['function_definition'],
+      class: ['class_definition'],
+      method: ['function_definition'],
+      import: ['import_statement', 'import_from_statement'],
+      variable: ['assignment', 'augmented_assignment'],
+    },
+  },
+  go: {
+    extensions: ['.go'],
+    wasmName: 'tree-sitter-go',
+    symbolPatterns: {
+      function: ['function_declaration', 'method_declaration'],
+      type: ['type_declaration', 'type_spec'],
+      interface: ['interface_type'],
+      variable: ['var_declaration', 'const_declaration', 'short_var_declaration'],
+      import: ['import_declaration'],
+    },
+  },
+  rust: {
+    extensions: ['.rs'],
+    wasmName: 'tree-sitter-rust',
+    symbolPatterns: {
+      function: ['function_item'],
+      class: ['struct_item', 'impl_item'],
+      interface: ['trait_item'],
+      type: ['type_item'],
+      enum: ['enum_item'],
+      variable: ['let_declaration', 'const_item', 'static_item'],
+      import: ['use_declaration'],
+      module: ['mod_item'],
+    },
+  },
+  java: {
+    extensions: ['.java'],
+    wasmName: 'tree-sitter-java',
+    symbolPatterns: {
+      function: ['method_declaration', 'constructor_declaration'],
+      class: ['class_declaration', 'interface_declaration', 'enum_declaration'],
+      interface: ['interface_declaration'],
+      enum: ['enum_declaration'],
+      variable: ['field_declaration', 'local_variable_declaration'],
+      import: ['import_declaration'],
+    },
+  },
+  c: {
+    extensions: ['.c', '.h'],
+    wasmName: 'tree-sitter-c',
+    symbolPatterns: {
+      function: ['function_definition', 'function_declarator'],
+      type: ['struct_specifier', 'union_specifier', 'enum_specifier', 'type_definition'],
+      variable: ['declaration', 'init_declarator'],
+    },
+  },
+  cpp: {
+    extensions: ['.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.h'],
+    wasmName: 'tree-sitter-cpp',
+    symbolPatterns: {
+      function: ['function_definition', 'function_declarator'],
+      class: ['class_specifier', 'struct_specifier'],
+      type: ['type_definition', 'alias_declaration'],
+      variable: ['declaration', 'init_declarator'],
+      import: ['preproc_include'],
+    },
+  },
 };
 
-// 扩展名到语言的反向映射
-const EXTENSION_TO_LANGUAGE: Record<string, string> = {};
-for (const [lang, exts] of Object.entries(LANGUAGE_EXTENSIONS)) {
-  for (const ext of exts) {
-    EXTENSION_TO_LANGUAGE[ext] = lang;
-  }
-}
+// Tree-sitter 解析器（优先使用原生，回退到 WASM）
+export class TreeSitterWasmParser {
+  private ParserClass: any = null;
+  private languages: Map<string, any> = new Map();
+  private initialized: boolean = false;
+  private initPromise: Promise<boolean> | null = null;
+  private useNative: boolean = false;
 
-export interface ParsedNode {
-  type: string;
-  name?: string;
-  startLine: number;
-  endLine: number;
-  startColumn: number;
-  endColumn: number;
-  children?: ParsedNode[];
-  text?: string;
-}
+  async initialize(): Promise<boolean> {
+    if (this.initialized) return true;
+    if (this.initPromise) return this.initPromise;
 
-export interface ParsedFile {
-  language: string;
-  path: string;
-  symbols: Symbol[];
-  imports: Import[];
-  exports: Export[];
-  classes: ClassDefinition[];
-  functions: FunctionDefinition[];
-  errors: ParseError[];
-}
-
-export interface Symbol {
-  name: string;
-  type: 'class' | 'function' | 'variable' | 'constant' | 'interface' | 'type' | 'enum';
-  line: number;
-  column: number;
-  exported: boolean;
-}
-
-export interface Import {
-  source: string;
-  names: string[];
-  default?: string;
-  line: number;
-}
-
-export interface Export {
-  name: string;
-  type: 'named' | 'default' | 'all';
-  line: number;
-}
-
-export interface ClassDefinition {
-  name: string;
-  extends?: string;
-  implements?: string[];
-  methods: FunctionDefinition[];
-  properties: PropertyDefinition[];
-  startLine: number;
-  endLine: number;
-}
-
-export interface FunctionDefinition {
-  name: string;
-  params: ParameterDefinition[];
-  returnType?: string;
-  async: boolean;
-  generator: boolean;
-  startLine: number;
-  endLine: number;
-}
-
-export interface PropertyDefinition {
-  name: string;
-  type?: string;
-  visibility: 'public' | 'private' | 'protected';
-  static: boolean;
-  line: number;
-}
-
-export interface ParameterDefinition {
-  name: string;
-  type?: string;
-  optional: boolean;
-  defaultValue?: string;
-}
-
-export interface ParseError {
-  message: string;
-  line: number;
-  column: number;
-}
-
-/**
- * 检测文件语言
- */
-export function detectLanguage(filePath: string): string | null {
-  const ext = path.extname(filePath).toLowerCase();
-  return EXTENSION_TO_LANGUAGE[ext] || null;
-}
-
-/**
- * 获取支持的语言列表
- */
-export function getSupportedLanguages(): string[] {
-  return Object.keys(LANGUAGE_EXTENSIONS);
-}
-
-/**
- * 简单的代码解析器（不依赖 tree-sitter wasm）
- * 使用正则表达式进行基本解析
- */
-export function parseCode(content: string, language: string): ParsedFile {
-  const result: ParsedFile = {
-    language,
-    path: '',
-    symbols: [],
-    imports: [],
-    exports: [],
-    classes: [],
-    functions: [],
-    errors: [],
-  };
-
-  const lines = content.split('\n');
-
-  switch (language) {
-    case 'javascript':
-    case 'typescript':
-      parseJavaScriptLike(content, lines, result);
-      break;
-    case 'python':
-      parsePython(content, lines, result);
-      break;
-    case 'go':
-      parseGo(content, lines, result);
-      break;
-    case 'rust':
-      parseRust(content, lines, result);
-      break;
-    default:
-      // 通用解析
-      parseGeneric(content, lines, result);
+    this.initPromise = this.doInitialize();
+    return this.initPromise;
   }
 
-  return result;
-}
+  private async doInitialize(): Promise<boolean> {
+    // 首先尝试原生 tree-sitter
+    try {
+      const nativeTreeSitter = await import('tree-sitter');
+      const Parser = (nativeTreeSitter as any).default || nativeTreeSitter;
+      this.ParserClass = Parser;
+      this.useNative = true;
+      this.initialized = true;
+      console.log('Tree-sitter: 使用原生模块');
+      return true;
+    } catch {
+      // 原生模块不可用，尝试 WASM
+    }
 
-/**
- * 解析 JavaScript/TypeScript
- */
-function parseJavaScriptLike(
-  content: string,
-  lines: string[],
-  result: ParsedFile
-): void {
-  // 导入
-  const importRegex = /import\s+(?:(\w+)|{([^}]+)}|(\*\s+as\s+\w+))\s+from\s+['"]([^'"]+)['"]/g;
-  let match;
-
-  while ((match = importRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.imports.push({
-      source: match[4],
-      default: match[1],
-      names: match[2] ? match[2].split(',').map((s) => s.trim()) : [],
-      line: lineNum,
-    });
+    try {
+      // 动态导入 web-tree-sitter
+      const TreeSitter = await import('web-tree-sitter');
+      // Parser 可能是命名导出或默认导出
+      const Parser = (TreeSitter as any).Parser || (TreeSitter as any).default || TreeSitter;
+      if (typeof Parser.init === 'function') {
+        await Parser.init();
+      }
+      this.ParserClass = Parser;
+      this.useNative = false;
+      this.initialized = true;
+      console.log('Tree-sitter: 使用 WASM 模块');
+      return true;
+    } catch (err) {
+      console.warn('Tree-sitter 初始化失败，使用 Regex 回退:', err);
+      return false;
+    }
   }
 
-  // 导出
-  const exportRegex = /export\s+(default\s+)?(class|function|const|let|var|interface|type|enum)\s+(\w+)/g;
-  while ((match = exportRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.exports.push({
-      name: match[3],
-      type: match[1] ? 'default' : 'named',
-      line: lineNum,
-    });
-    result.symbols.push({
-      name: match[3],
-      type: match[2] as any,
-      line: lineNum,
-      column: 0,
-      exported: true,
-    });
+  isNative(): boolean {
+    return this.useNative;
   }
 
-  // 函数
-  const funcRegex = /(async\s+)?function\s*(\*?)\s*(\w+)\s*\(([^)]*)\)/g;
-  while ((match = funcRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.functions.push({
-      name: match[3],
-      params: parseParams(match[4]),
-      async: !!match[1],
-      generator: !!match[2],
-      startLine: lineNum,
-      endLine: lineNum,
-    });
+  async loadLanguage(languageName: string): Promise<any | null> {
+    if (!this.initialized || !this.ParserClass) {
+      return null;
+    }
+
+    if (this.languages.has(languageName)) {
+      return this.languages.get(languageName)!;
+    }
+
+    try {
+      const wasmPath = this.getWasmPath(languageName);
+      if (wasmPath && fs.existsSync(wasmPath)) {
+        const language = await this.ParserClass.Language.load(wasmPath);
+        this.languages.set(languageName, language);
+        return language;
+      }
+    } catch (err) {
+      console.warn(`加载语言 ${languageName} 失败:`, err);
+    }
+
+    return null;
   }
 
-  // 箭头函数（const xxx = async () => {}）
-  const arrowRegex = /(?:const|let|var)\s+(\w+)\s*=\s*(async\s+)?\([^)]*\)\s*=>/g;
-  while ((match = arrowRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.functions.push({
-      name: match[1],
-      params: [],
-      async: !!match[2],
-      generator: false,
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
+  private getWasmPath(languageName: string): string | null {
+    const config = LANGUAGE_CONFIGS[languageName];
+    if (!config) return null;
 
-  // 类
-  const classRegex = /class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([^{]+))?/g;
-  while ((match = classRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.classes.push({
-      name: match[1],
-      extends: match[2],
-      implements: match[3]?.split(',').map((s) => s.trim()),
-      methods: [],
-      properties: [],
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-}
+    const possiblePaths = [
+      path.join(__dirname, '../../node_modules/tree-sitter-wasms/out', `${config.wasmName}.wasm`),
+      path.join(process.cwd(), 'node_modules/tree-sitter-wasms/out', `${config.wasmName}.wasm`),
+    ];
 
-/**
- * 解析 Python
- */
-function parsePython(
-  content: string,
-  lines: string[],
-  result: ParsedFile
-): void {
-  // 导入
-  const importRegex = /(?:from\s+(\S+)\s+)?import\s+(.+)/g;
-  let match;
-
-  while ((match = importRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.imports.push({
-      source: match[1] || match[2].split(',')[0].trim(),
-      names: match[2].split(',').map((s) => s.trim()),
-      line: lineNum,
-    });
-  }
-
-  // 函数
-  const funcRegex = /(async\s+)?def\s+(\w+)\s*\(([^)]*)\)/g;
-  while ((match = funcRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.functions.push({
-      name: match[2],
-      params: parseParams(match[3]),
-      async: !!match[1],
-      generator: false,
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-
-  // 类
-  const classRegex = /class\s+(\w+)(?:\(([^)]*)\))?:/g;
-  while ((match = classRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.classes.push({
-      name: match[1],
-      extends: match[2]?.split(',')[0]?.trim(),
-      methods: [],
-      properties: [],
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-}
-
-/**
- * 解析 Go
- */
-function parseGo(content: string, lines: string[], result: ParsedFile): void {
-  // 导入
-  const importRegex = /import\s+(?:"([^"]+)"|(?:\(\s*([\s\S]*?)\s*\)))/g;
-  let match;
-
-  while ((match = importRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    if (match[1]) {
-      result.imports.push({
-        source: match[1],
-        names: [],
-        line: lineNum,
-      });
-    } else if (match[2]) {
-      const imports = match[2].split('\n').filter((l) => l.trim());
-      for (const imp of imports) {
-        const source = imp.trim().replace(/"/g, '');
-        result.imports.push({
-          source,
-          names: [],
-          line: lineNum,
-        });
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        return p;
       }
     }
-  }
 
-  // 函数
-  const funcRegex = /func\s+(?:\(([^)]+)\)\s+)?(\w+)\s*\(([^)]*)\)/g;
-  while ((match = funcRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.functions.push({
-      name: match[2],
-      params: parseParams(match[3]),
-      async: false,
-      generator: false,
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-
-  // 结构体
-  const structRegex = /type\s+(\w+)\s+struct\s*\{/g;
-  while ((match = structRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.classes.push({
-      name: match[1],
-      methods: [],
-      properties: [],
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-}
-
-/**
- * 解析 Rust
- */
-function parseRust(content: string, lines: string[], result: ParsedFile): void {
-  // 导入
-  const useRegex = /use\s+([^;]+);/g;
-  let match;
-
-  while ((match = useRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.imports.push({
-      source: match[1].trim(),
-      names: [],
-      line: lineNum,
-    });
-  }
-
-  // 函数
-  const funcRegex = /(pub\s+)?(async\s+)?fn\s+(\w+)\s*(?:<[^>]+>)?\s*\(([^)]*)\)/g;
-  while ((match = funcRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.functions.push({
-      name: match[3],
-      params: parseParams(match[4]),
-      async: !!match[2],
-      generator: false,
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-    if (match[1]) {
-      result.exports.push({
-        name: match[3],
-        type: 'named',
-        line: lineNum,
-      });
-    }
-  }
-
-  // 结构体
-  const structRegex = /(pub\s+)?struct\s+(\w+)/g;
-  while ((match = structRegex.exec(content)) !== null) {
-    const lineNum = content.substring(0, match.index).split('\n').length;
-    result.classes.push({
-      name: match[2],
-      methods: [],
-      properties: [],
-      startLine: lineNum,
-      endLine: lineNum,
-    });
-  }
-}
-
-/**
- * 通用解析
- */
-function parseGeneric(
-  content: string,
-  lines: string[],
-  result: ParsedFile
-): void {
-  // 尝试找到函数定义模式
-  const funcPatterns = [
-    /(?:function|func|def|fn)\s+(\w+)/g,
-    /(\w+)\s*:\s*(?:function|func)/g,
-  ];
-
-  for (const regex of funcPatterns) {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const lineNum = content.substring(0, match.index).split('\n').length;
-      result.functions.push({
-        name: match[1],
-        params: [],
-        async: false,
-        generator: false,
-        startLine: lineNum,
-        endLine: lineNum,
-      });
-    }
-  }
-
-  // 尝试找到类定义模式
-  const classPatterns = [
-    /(?:class|struct|interface|type)\s+(\w+)/g,
-  ];
-
-  for (const regex of classPatterns) {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const lineNum = content.substring(0, match.index).split('\n').length;
-      result.classes.push({
-        name: match[1],
-        methods: [],
-        properties: [],
-        startLine: lineNum,
-        endLine: lineNum,
-      });
-    }
-  }
-}
-
-/**
- * 解析参数列表
- */
-function parseParams(paramString: string): ParameterDefinition[] {
-  if (!paramString.trim()) return [];
-
-  return paramString.split(',').map((p) => {
-    const parts = p.trim().split(/[:\s]+/);
-    const name = parts[0].replace(/[?=].*/, '');
-    return {
-      name,
-      type: parts[1],
-      optional: p.includes('?') || p.includes('='),
-      defaultValue: p.includes('=') ? p.split('=')[1]?.trim() : undefined,
-    };
-  });
-}
-
-/**
- * 从文件解析
- */
-export function parseFile(filePath: string): ParsedFile | null {
-  const language = detectLanguage(filePath);
-  if (!language) {
     return null;
   }
 
-  try {
+  async parse(content: string, languageName: string): Promise<any | null> {
+    if (!this.initialized) {
+      const success = await this.initialize();
+      if (!success) return null;
+    }
+
+    const language = await this.loadLanguage(languageName);
+    if (!language) return null;
+
+    try {
+      const parser = new this.ParserClass();
+      parser.setLanguage(language);
+      return parser.parse(content);
+    } catch (err) {
+      console.warn('解析失败:', err);
+      return null;
+    }
+  }
+
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+}
+
+// 代码解析器（支持 Tree-sitter WASM 和 Regex 回退）
+export class CodeParser {
+  private treeSitter: TreeSitterWasmParser;
+  private useTreeSitter: boolean = true;
+
+  constructor() {
+    this.treeSitter = new TreeSitterWasmParser();
+  }
+
+  async initialize(): Promise<boolean> {
+    const success = await this.treeSitter.initialize();
+    this.useTreeSitter = success;
+    return success;
+  }
+
+  async parseFile(filePath: string): Promise<CodeSymbol[]> {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const result = parseCode(content, language);
-    result.path = filePath;
-    return result;
-  } catch (err) {
+    const ext = path.extname(filePath);
+    const language = this.detectLanguage(ext);
+    if (!language) return [];
+
+    // 尝试使用 Tree-sitter
+    if (this.useTreeSitter) {
+      const tree = await this.treeSitter.parse(content, language);
+      if (tree) {
+        const symbols = this.extractSymbolsFromTree(tree.rootNode, filePath, language);
+        tree.delete();
+        return symbols;
+      }
+    }
+
+    // 回退到 Regex
+    return this.parseWithRegex(content, filePath, language);
+  }
+
+  parseFileSync(filePath: string): CodeSymbol[] {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const ext = path.extname(filePath);
+    const language = this.detectLanguage(ext);
+    if (!language) return [];
+    return this.parseWithRegex(content, filePath, language);
+  }
+
+  private detectLanguage(ext: string): string | null {
+    for (const [lang, config] of Object.entries(LANGUAGE_CONFIGS)) {
+      if (config.extensions.includes(ext)) return lang;
+    }
     return null;
   }
+
+  private extractSymbolsFromTree(node: any, filePath: string, language: string): CodeSymbol[] {
+    const symbols: CodeSymbol[] = [];
+    const config = LANGUAGE_CONFIGS[language];
+    if (!config) return symbols;
+
+    const visit = (n: any) => {
+      for (const [kind, patterns] of Object.entries(config.symbolPatterns)) {
+        if (patterns && patterns.includes(n.type)) {
+          const name = this.extractName(n, kind as SymbolKind, language);
+          if (name) {
+            symbols.push({
+              name,
+              kind: kind as SymbolKind,
+              location: {
+                file: filePath,
+                startLine: n.startPosition.row + 1,
+                startColumn: n.startPosition.column,
+                endLine: n.endPosition.row + 1,
+                endColumn: n.endPosition.column,
+              },
+              signature: n.text.split('\n')[0].slice(0, 100),
+            });
+          }
+          break;
+        }
+      }
+
+      // 递归访问子节点
+      if (n.namedChildren) {
+        for (const child of n.namedChildren) {
+          visit(child);
+        }
+      }
+    };
+
+    visit(node);
+    return symbols;
+  }
+
+  private extractName(node: any, _kind: SymbolKind, _language: string): string | null {
+    // 尝试从常见的字段名提取名称
+    const nameNode = node.childForFieldName?.('name') ||
+                     node.childForFieldName?.('declarator') ||
+                     node.namedChildren?.find((c: any) => c.type === 'identifier' || c.type === 'property_identifier');
+
+    if (nameNode) {
+      return nameNode.text;
+    }
+
+    // 对于某些节点类型，尝试从第一个标识符子节点获取名称
+    if (node.namedChildren) {
+      for (const child of node.namedChildren) {
+        if (child.type === 'identifier' || child.type === 'type_identifier') {
+          return child.text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  parseWithRegex(content: string, filePath: string, language: string): CodeSymbol[] {
+    const symbols: CodeSymbol[] = [];
+    const lines = content.split('\n');
+    const patterns = this.getRegexPatterns(language);
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      for (const [kind, pattern] of Object.entries(patterns)) {
+        const match = trimmed.match(pattern);
+        if (match && match[1]) {
+          symbols.push({
+            name: match[1],
+            kind: kind as SymbolKind,
+            location: {
+              file: filePath,
+              startLine: idx + 1,
+              startColumn: line.indexOf(match[1]),
+              endLine: idx + 1,
+              endColumn: line.indexOf(match[1]) + match[1].length,
+            },
+            signature: trimmed.slice(0, 100),
+          });
+          break;
+        }
+      }
+    });
+
+    return symbols;
+  }
+
+  private getRegexPatterns(language: string): Record<string, RegExp> {
+    const commonPatterns: Record<string, RegExp> = {
+      function: /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/,
+      class: /^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/,
+      interface: /^(?:export\s+)?interface\s+(\w+)/,
+      type: /^(?:export\s+)?type\s+(\w+)/,
+      enum: /^(?:export\s+)?enum\s+(\w+)/,
+      variable: /^(?:export\s+)?(?:const|let|var)\s+(\w+)/,
+    };
+
+    const languagePatterns: Record<string, Record<string, RegExp>> = {
+      python: {
+        function: /^(?:async\s+)?def\s+(\w+)/,
+        class: /^class\s+(\w+)/,
+        variable: /^(\w+)\s*=/,
+      },
+      go: {
+        function: /^func\s+(?:\([^)]+\)\s+)?(\w+)/,
+        type: /^type\s+(\w+)/,
+        variable: /^(?:var|const)\s+(\w+)/,
+      },
+      rust: {
+        function: /^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/,
+        class: /^(?:pub\s+)?struct\s+(\w+)/,
+        interface: /^(?:pub\s+)?trait\s+(\w+)/,
+        enum: /^(?:pub\s+)?enum\s+(\w+)/,
+        type: /^(?:pub\s+)?type\s+(\w+)/,
+        module: /^(?:pub\s+)?mod\s+(\w+)/,
+      },
+      java: {
+        function: /^(?:public|private|protected)?\s*(?:static\s+)?(?:\w+\s+)+(\w+)\s*\(/,
+        class: /^(?:public\s+)?(?:abstract\s+)?class\s+(\w+)/,
+        interface: /^(?:public\s+)?interface\s+(\w+)/,
+        enum: /^(?:public\s+)?enum\s+(\w+)/,
+      },
+      c: {
+        function: /^(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*\{?$/,
+        type: /^(?:typedef\s+)?struct\s+(\w+)/,
+      },
+      cpp: {
+        function: /^(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*(?:const\s*)?\{?$/,
+        class: /^(?:template\s*<[^>]*>\s*)?class\s+(\w+)/,
+        type: /^(?:typedef\s+)?struct\s+(\w+)/,
+      },
+    };
+
+    return languagePatterns[language] || commonPatterns;
+  }
 }
 
-/**
- * 获取文件摘要
- */
-export function getFileSummary(parsed: ParsedFile): string {
-  const parts: string[] = [];
+// 代码分析器
+export class CodeAnalyzer {
+  private parser: CodeParser;
+  private initialized: boolean = false;
 
-  if (parsed.classes.length > 0) {
-    parts.push(`Classes: ${parsed.classes.map((c) => c.name).join(', ')}`);
+  constructor() {
+    this.parser = new CodeParser();
   }
 
-  if (parsed.functions.length > 0) {
-    parts.push(`Functions: ${parsed.functions.map((f) => f.name).join(', ')}`);
+  async initialize(): Promise<boolean> {
+    this.initialized = await this.parser.initialize();
+    return this.initialized;
   }
 
-  if (parsed.imports.length > 0) {
-    parts.push(`Imports: ${parsed.imports.length} modules`);
+  async analyzeFile(filePath: string): Promise<CodeSymbol[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    return this.parser.parseFile(filePath);
   }
 
-  if (parsed.exports.length > 0) {
-    parts.push(`Exports: ${parsed.exports.map((e) => e.name).join(', ')}`);
+  analyzeFileSync(filePath: string): CodeSymbol[] {
+    return this.parser.parseFileSync(filePath);
   }
 
-  return parts.join('\n');
+  async analyzeDirectory(dirPath: string, extensions?: string[]): Promise<CodeSymbol[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const symbols: CodeSymbol[] = [];
+    const allExtensions = extensions || ['.ts', '.js', '.py', '.go', '.rs', '.java', '.c', '.cpp'];
+
+    const walkDir = async (dir: string) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!['node_modules', '.git', 'dist', 'build', '__pycache__', 'target'].includes(entry.name)) {
+            await walkDir(fullPath);
+          }
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+          if (allExtensions.includes(ext)) {
+            const fileSymbols = await this.parser.parseFile(fullPath);
+            symbols.push(...fileSymbols);
+          }
+        }
+      }
+    };
+
+    await walkDir(dirPath);
+    return symbols;
+  }
+
+  findSymbol(name: string, symbols: CodeSymbol[]): CodeSymbol[] {
+    const lowerName = name.toLowerCase();
+    return symbols.filter(s => s.name.toLowerCase().includes(lowerName));
+  }
+
+  findByKind(kind: SymbolKind, symbols: CodeSymbol[]): CodeSymbol[] {
+    return symbols.filter(s => s.kind === kind);
+  }
+
+  async getOutline(filePath: string): Promise<CodeSymbol[]> {
+    return this.analyzeFile(filePath);
+  }
+
+  getOutlineSync(filePath: string): CodeSymbol[] {
+    return this.analyzeFileSync(filePath);
+  }
 }
+
+// 简化解析器（向后兼容）
+export class SimpleCodeParser {
+  private parser: CodeParser;
+
+  constructor() {
+    this.parser = new CodeParser();
+  }
+
+  parseFile(filePath: string): CodeSymbol[] {
+    return this.parser.parseFileSync(filePath);
+  }
+
+  parseContent(content: string, filePath: string, language: string): CodeSymbol[] {
+    return this.parser.parseWithRegex(content, filePath, language);
+  }
+}
+
+// 获取支持的语言列表
+export function getSupportedLanguages(): string[] {
+  return Object.keys(LANGUAGE_CONFIGS);
+}
+
+// 获取语言配置
+export function getLanguageConfig(language: string): LanguageConfig | null {
+  return LANGUAGE_CONFIGS[language] || null;
+}
+
+// 默认实例
+export const codeParser = new CodeParser();
+export const codeAnalyzer = new CodeAnalyzer();
+
+// 导出 Tree-sitter 解析器
+export const treeSitterParser = new TreeSitterWasmParser();
