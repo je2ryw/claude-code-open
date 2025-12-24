@@ -75,6 +75,15 @@ export * from './diagnostics/index.js';
 // 文件检查点系统
 export * from './checkpoint/index.js';
 
+// 组织和团队管理
+export * from './organization/index.js';
+
+// 速率限制和重试系统
+export * from './ratelimit/index.js';
+
+// 通知系统
+export * from './notifications/index.js';
+
 // 版本信息
 export const VERSION = '2.0.76-restored';
 export const NAME = 'claude-code-restored';
