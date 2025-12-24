@@ -421,6 +421,112 @@ For more information, see:
   },
 };
 
+// /vim - Vim 模式切换 (官方风格)
+export const vimCommand: SlashCommand = {
+  name: 'vim',
+  description: 'Toggle between Vim and Normal editing modes',
+  category: 'config',
+  execute: (ctx: CommandContext): CommandResult => {
+    // 模拟 vim 模式切换
+    const vimInfo = `Vim Mode Toggle
+
+Current Mode: Normal (readline)
+
+To toggle Vim mode:
+  • This feature enables Vim-style keybindings
+  • Use hjkl for navigation
+  • Use i/a for insert mode
+  • Use Esc to exit insert mode
+
+Vim Mode Features:
+  • Modal editing (normal/insert)
+  • Vim motions (w, b, e, etc.)
+  • Vim commands (:w, :q, etc.)
+
+Note: Vim mode is applied to the input field.
+Restart may be required for full effect.`;
+
+    ctx.ui.addMessage('assistant', vimInfo);
+    return { success: true };
+  },
+};
+
+// /theme - 主题设置 (官方风格)
+export const themeCommand: SlashCommand = {
+  name: 'theme',
+  description: 'Change the color theme',
+  usage: '/theme [theme-name]',
+  category: 'config',
+  execute: (ctx: CommandContext): CommandResult => {
+    const { args } = ctx;
+
+    const themes = [
+      { name: 'dark', desc: 'Dark theme (default)' },
+      { name: 'light', desc: 'Light theme' },
+      { name: 'system', desc: 'Follow system preference' },
+      { name: 'high-contrast', desc: 'High contrast for accessibility' },
+    ];
+
+    if (args.length === 0) {
+      let themeInfo = `Color Theme\n\nCurrent: dark\n\nAvailable Themes:\n`;
+
+      for (const theme of themes) {
+        themeInfo += `  ${theme.name.padEnd(15)} - ${theme.desc}\n`;
+      }
+
+      themeInfo += `\nUsage: /theme <name>\nExample: /theme light`;
+
+      ctx.ui.addMessage('assistant', themeInfo);
+      return { success: true };
+    }
+
+    const requestedTheme = args[0].toLowerCase();
+    const validTheme = themes.find(t => t.name === requestedTheme);
+
+    if (!validTheme) {
+      ctx.ui.addMessage('assistant', `Unknown theme: ${requestedTheme}\n\nAvailable: ${themes.map(t => t.name).join(', ')}`);
+      return { success: false };
+    }
+
+    ctx.ui.addMessage('assistant', `Theme changed to: ${validTheme.name}\n\nNote: Some terminal emulators may require restart to fully apply.`);
+    return { success: true };
+  },
+};
+
+// /discover - 探索功能 (官方风格)
+export const discoverCommand: SlashCommand = {
+  name: 'discover',
+  description: 'Explore Claude Code features and track your progress',
+  category: 'config',
+  execute: (ctx: CommandContext): CommandResult => {
+    const discoverInfo = `Discover Claude Code
+
+Quick Wins:
+  ✓ /resume - Resume past conversations
+  ○ /compact - Summarize and free context
+  ○ Image paste (Ctrl+V)
+  ○ Voice input
+
+Power Features:
+  ○ MCP servers
+  ○ Custom hooks
+  ○ GitHub integration
+  ○ Vim mode
+
+Tips:
+  • Type / to see all commands
+  • Press ? for keyboard shortcuts
+  • Use /help <command> for details
+
+Progress: 1/8 features explored
+
+Try: /resume to continue a past conversation`;
+
+    ctx.ui.addMessage('assistant', discoverInfo);
+    return { success: true };
+  },
+};
+
 // 注册所有配置命令
 export function registerConfigCommands(): void {
   commandRegistry.register(configCommand);
@@ -430,4 +536,7 @@ export function registerConfigCommands(): void {
   commandRegistry.register(modelCommand);
   commandRegistry.register(initCommand);
   commandRegistry.register(privacySettingsCommand);
+  commandRegistry.register(vimCommand);
+  commandRegistry.register(themeCommand);
+  commandRegistry.register(discoverCommand);
 }

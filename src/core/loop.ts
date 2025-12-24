@@ -150,7 +150,22 @@ export class ConversationLoop {
       );
     }
 
+    // 自动保存会话
+    this.autoSave();
+
     return finalResponse;
+  }
+
+  // 自动保存会话
+  private autoSave(): void {
+    try {
+      this.session.save();
+    } catch (err) {
+      // 静默失败，不影响对话
+      if (this.options.verbose) {
+        console.error('Failed to auto-save session:', err);
+      }
+    }
   }
 
   async *processMessageStream(userInput: string): AsyncGenerator<{
@@ -243,6 +258,9 @@ export class ConversationLoop {
         break;
       }
     }
+
+    // 自动保存会话
+    this.autoSave();
 
     yield { type: 'done' };
   }

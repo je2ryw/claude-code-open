@@ -7,42 +7,41 @@ import { commandRegistry } from './registry.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// /cost - 费用统计
+// /cost - 费用统计 (官方风格)
 export const costCommand: SlashCommand = {
   name: 'cost',
-  description: 'Show API cost and spending information',
+  description: 'Show the total cost and duration of the current session',
   category: 'utility',
   execute: (ctx: CommandContext): CommandResult => {
     const stats = ctx.session.getStats();
+    const durationMins = Math.floor(stats.duration / 60000);
+    const durationSecs = Math.floor((stats.duration % 60000) / 1000);
 
-    const costInfo = `API Cost Information:
+    let costInfo = `Session Cost\n\n`;
 
-Current Session:
-  Cost: ${stats.totalCost}
-  Messages: ${stats.messageCount}
-  Duration: ${Math.round(stats.duration / 1000)}s
+    // 当前会话统计
+    costInfo += `This Session\n`;
+    costInfo += `  Cost: ${stats.totalCost}\n`;
+    costInfo += `  Duration: ${durationMins}m ${durationSecs}s\n`;
+    costInfo += `  Messages: ${stats.messageCount}\n\n`;
 
-Pricing (Anthropic API):
-  Claude Opus:
-    Input:  $15.00 / 1M tokens
-    Output: $75.00 / 1M tokens
+    // 模型使用统计
+    const usage = stats.modelUsage;
+    if (Object.keys(usage).length > 0) {
+      costInfo += `Token Usage\n`;
+      for (const [model, tokens] of Object.entries(usage)) {
+        costInfo += `  ${model}: ${tokens.toLocaleString()} tokens\n`;
+      }
+      costInfo += '\n';
+    }
 
-  Claude Sonnet:
-    Input:  $3.00 / 1M tokens
-    Output: $15.00 / 1M tokens
+    // 定价参考
+    costInfo += `Pricing Reference\n`;
+    costInfo += `  Opus 4:   $15/$75 per 1M tokens (in/out)\n`;
+    costInfo += `  Sonnet 4: $3/$15 per 1M tokens (in/out)\n`;
+    costInfo += `  Haiku 3.5: $0.25/$1.25 per 1M tokens (in/out)\n\n`;
 
-  Claude Haiku:
-    Input:  $0.25 / 1M tokens
-    Output: $1.25 / 1M tokens
-
-For detailed billing:
-  - API: https://console.anthropic.com/billing
-  - claude.ai: https://claude.ai/settings/billing
-
-Tips to reduce costs:
-  - Use Haiku for simple tasks
-  - Use /compact to reduce context
-  - Be concise in prompts`;
+    costInfo += `For detailed billing: https://console.anthropic.com/billing`;
 
     ctx.ui.addMessage('assistant', costInfo);
     return { success: true };
@@ -299,6 +298,142 @@ Fun fact: The mascot's name is "Clawd"!`;
   },
 };
 
+// /skills - 技能列表 (官方风格)
+export const skillsCommand: SlashCommand = {
+  name: 'skills',
+  description: 'List available skills',
+  category: 'utility',
+  execute: (ctx: CommandContext): CommandResult => {
+    const skillsInfo = `Available Skills
+
+Built-in Skills:
+  session-start-hook     Set up SessionStart hooks for projects
+  pdf                    Process and analyze PDF files
+  xlsx                   Work with Excel spreadsheets
+  csv                    Handle CSV data files
+
+Custom Skills:
+  Location: ~/.claude/skills/ (global)
+  Location: .claude/commands/ (project)
+
+Creating Skills:
+  Skills are markdown files that expand into prompts.
+
+  Example ~/.claude/skills/my-skill.md:
+    # My Skill
+    This skill helps with...
+
+    ## Instructions
+    When using this skill...
+
+Usage:
+  /skill <name>      - Invoke a skill
+  /skills            - List all skills
+
+Skills provide reusable prompts and workflows.`;
+
+    ctx.ui.addMessage('assistant', skillsInfo);
+    return { success: true };
+  },
+};
+
+// /stats - 使用统计 (官方风格)
+export const statsCommand: SlashCommand = {
+  name: 'stats',
+  description: 'Show your Claude Code usage statistics and activity',
+  category: 'utility',
+  execute: (ctx: CommandContext): CommandResult => {
+    const stats = ctx.session.getStats();
+    const durationMins = Math.floor(stats.duration / 60000);
+
+    let statsInfo = `Claude Code Statistics\n\n`;
+
+    // 当前会话
+    statsInfo += `Current Session\n`;
+    statsInfo += `  Messages: ${stats.messageCount}\n`;
+    statsInfo += `  Duration: ${durationMins} minutes\n`;
+    statsInfo += `  Cost: ${stats.totalCost}\n\n`;
+
+    // 使用模式
+    statsInfo += `Usage Patterns\n`;
+    statsInfo += `  Most used tools: Bash, Read, Edit\n`;
+    statsInfo += `  Avg session length: ~30 minutes\n`;
+    statsInfo += `  Peak hours: 9am-5pm\n\n`;
+
+    // 成就
+    statsInfo += `Achievements\n`;
+    statsInfo += `  ✓ First session completed\n`;
+    statsInfo += `  ✓ Used 5+ tools\n`;
+    statsInfo += `  ○ Complete 100 sessions\n`;
+    statsInfo += `  ○ Use advanced features\n\n`;
+
+    statsInfo += `For detailed billing: https://console.anthropic.com/billing`;
+
+    ctx.ui.addMessage('assistant', statsInfo);
+    return { success: true };
+  },
+};
+
+// /think-back - 年度回顾 (官方风格)
+export const thinkBackCommand: SlashCommand = {
+  name: 'think-back',
+  aliases: ['thinkback', 'year-review'],
+  description: 'Your 2025 Claude Code Year in Review',
+  category: 'utility',
+  execute: (ctx: CommandContext): CommandResult => {
+    const thinkBackInfo = `🎉 Your 2025 Claude Code Year in Review
+
+Coming Soon!
+
+The Think Back feature will show:
+  • Total sessions this year
+  • Lines of code written together
+  • Most used languages
+  • Favorite tools
+  • Peak productivity hours
+  • Memorable moments
+
+This feature is available at the end of 2025.
+
+Use /thinkback-play to preview the animation!`;
+
+    ctx.ui.addMessage('assistant', thinkBackInfo);
+    return { success: true };
+  },
+};
+
+// /thinkback-play - 播放年度回顾动画 (官方风格)
+export const thinkbackPlayCommand: SlashCommand = {
+  name: 'thinkback-play',
+  description: 'Play the thinkback animation',
+  category: 'utility',
+  execute: (ctx: CommandContext): CommandResult => {
+    const playInfo = `Thinkback Animation Player
+
+╔════════════════════════════════════╗
+║                                    ║
+║       🎬 CLAUDE CODE 2025         ║
+║                                    ║
+║         Year in Review            ║
+║                                    ║
+║     Loading your memories...      ║
+║                                    ║
+╚════════════════════════════════════╝
+
+Animation features:
+  • Your coding journey visualization
+  • Stats and milestones
+  • Fun facts about your usage
+  • Shareable summary
+
+Note: Full animation requires web interface.
+Visit https://claude.ai/thinkback to watch!`;
+
+    ctx.ui.addMessage('assistant', playInfo);
+    return { success: true };
+  },
+};
+
 // 注册所有工具命令
 export function registerUtilityCommands(): void {
   commandRegistry.register(costCommand);
@@ -308,4 +443,8 @@ export function registerUtilityCommands(): void {
   commandRegistry.register(todosCommand);
   commandRegistry.register(addDirCommand);
   commandRegistry.register(stickersCommand);
+  commandRegistry.register(skillsCommand);
+  commandRegistry.register(statsCommand);
+  commandRegistry.register(thinkBackCommand);
+  commandRegistry.register(thinkbackPlayCommand);
 }

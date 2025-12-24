@@ -14,6 +14,7 @@ export interface CommandContext {
       messageCount: number;
       duration: number;
       totalCost: string;
+      modelUsage: Record<string, number>;
     };
   };
 
