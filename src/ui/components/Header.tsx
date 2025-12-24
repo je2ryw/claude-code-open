@@ -6,6 +6,9 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
+// 官方 claude 颜色 (clawd_body)
+const CLAUDE_COLOR = '#D77757'; // rgb(215,119,87)
+
 interface HeaderProps {
   version: string;
   model: string;
@@ -29,16 +32,16 @@ export const Header: React.FC<HeaderProps> = ({
   if (isCompact) {
     return (
       <Box marginBottom={1} paddingX={1}>
-        <Text color="red" bold>
+        <Text color={CLAUDE_COLOR} bold>
           Claude Code
         </Text>
-        <Text color="gray"> v{version}</Text>
-        <Text color="gray"> · </Text>
+        <Text dimColor> v{version}</Text>
+        <Text dimColor> · </Text>
         <Text color="cyan">{model}</Text>
         {cwd && (
           <>
-            <Text color="gray"> · </Text>
-            <Text color="gray" dimColor>{cwd}</Text>
+            <Text dimColor> · </Text>
+            <Text dimColor>{cwd}</Text>
           </>
         )}
       </Box>
@@ -50,17 +53,17 @@ export const Header: React.FC<HeaderProps> = ({
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="red"
+      borderColor={CLAUDE_COLOR}
       paddingX={2}
       paddingY={1}
     >
       {/* 标题行 */}
       <Box justifyContent="space-between">
         <Box>
-          <Text color="red" bold>
+          <Text color={CLAUDE_COLOR} bold>
             Claude Code
           </Text>
-          <Text color="gray"> v{version}</Text>
+          <Text dimColor> v{version}</Text>
         </Box>
         {username && (
           <Text bold>
@@ -72,12 +75,12 @@ export const Header: React.FC<HeaderProps> = ({
       {/* 模型和 API 信息 */}
       <Box marginTop={1}>
         <Text color="cyan">{model}</Text>
-        <Text color="gray"> · </Text>
-        <Text color="gray">{apiType}</Text>
+        <Text dimColor> · </Text>
+        <Text dimColor>{apiType}</Text>
         {organization && (
           <>
-            <Text color="gray"> · </Text>
-            <Text color="gray">{organization}</Text>
+            <Text dimColor> · </Text>
+            <Text dimColor>{organization}</Text>
           </>
         )}
       </Box>
@@ -85,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* 工作目录 */}
       {cwd && (
         <Box marginTop={1}>
-          <Text color="gray" dimColor>{cwd}</Text>
+          <Text dimColor>{cwd}</Text>
         </Box>
       )}
     </Box>

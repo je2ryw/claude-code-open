@@ -16,74 +16,103 @@ interface WelcomeScreenProps {
   recentActivity?: Array<{
     id: string;
     description: string;
-    timestamp: Date;
+    timestamp: string;
   }>;
-  tips?: string[];
+  whatsNew?: string[];
 }
 
 // 官方 Claude 可爱机器人 ASCII 艺术 (clawd mascot)
+// 使用官方的 clawd_body 颜色: rgb(215,119,87) 橙色/三文鱼色
 const ClawdMascot: React.FC<{ animate?: boolean }> = ({ animate = true }) => {
   const [sparkleFrame, setSparkleFrame] = useState(0);
+
+  // 官方配色
+  const clawdBody = '#D77757'; // rgb(215,119,87)
+  const clawdBackground = '#000000'; // rgb(0,0,0)
 
   useEffect(() => {
     if (!animate) return;
     const timer = setInterval(() => {
       setSparkleFrame(f => (f + 1) % 4);
-    }, 500);
+    }, 400);
     return () => clearInterval(timer);
   }, [animate]);
 
   // 四种闪烁状态的星星位置
   const sparklePatterns = [
-    { left: '*', right: '*', leftOuter: ' ', rightOuter: ' ' },
-    { left: ' ', right: '*', leftOuter: '*', rightOuter: ' ' },
-    { left: '*', right: ' ', leftOuter: ' ', rightOuter: '*' },
-    { left: ' ', right: ' ', leftOuter: '*', rightOuter: '*' },
+    { s1: '*', s2: ' ', s3: '*', s4: ' ' },
+    { s1: ' ', s2: '*', s3: ' ', s4: '*' },
+    { s1: '*', s2: ' ', s3: ' ', s4: '*' },
+    { s1: ' ', s2: '*', s3: '*', s4: ' ' },
   ];
   const sp = sparklePatterns[sparkleFrame];
 
+  // 官方 clawd 设计:
+  // Line 1:  ▐ + ▛███▜ (with black bg) + ▌
+  // Line 2: ▝▜ + █████ (with black bg) + ▛▘
+  // Line 3:   ▘▘ ▝▝
   return (
     <Box flexDirection="column" alignItems="center">
-      {/* 星星行 */}
+      {/* 星星动画行 */}
       <Text>
-        <Text color="cyan">{sp.leftOuter}</Text>
-        <Text>   </Text>
-        <Text color="cyan">{sp.left}</Text>
-        <Text>     </Text>
-        <Text color="cyan">{sp.right}</Text>
-        <Text>   </Text>
-        <Text color="cyan">{sp.rightOuter}</Text>
+        <Text color={clawdBody}>{sp.s1}</Text>
+        <Text>    </Text>
+        <Text color={clawdBody}>{sp.s2}</Text>
       </Text>
-      {/* 机器人头部 */}
       <Text>
-        <Text color="cyan"> </Text>
-        <Text color="cyan" backgroundColor="cyanBright">▐</Text>
-        <Text color="cyan" backgroundColor="blue">▛███▜</Text>
-        <Text color="cyan" backgroundColor="cyanBright">▌</Text>
+        <Text color={clawdBody}>{sp.s3}</Text>
+        <Text> </Text>
+        <Text color={clawdBody}> ▐</Text>
+        <Text color={clawdBody} backgroundColor={clawdBackground}>▛███▜</Text>
+        <Text color={clawdBody}>▌ </Text>
+        <Text> </Text>
+        <Text color={clawdBody}>{sp.s4}</Text>
       </Text>
-      {/* 机器人身体 */}
+      {/* 身体行 */}
       <Text>
-        <Text color="cyan">▝▜</Text>
-        <Text color="cyan" backgroundColor="blue">█████</Text>
-        <Text color="cyan">▛▘</Text>
+        <Text color={clawdBody}>  ▝▜</Text>
+        <Text color={clawdBody} backgroundColor={clawdBackground}>█████</Text>
+        <Text color={clawdBody}>▛▘</Text>
       </Text>
-      {/* 机器人脚 */}
-      <Text color="cyan">  ▘▘ ▝▝  </Text>
+      {/* 脚行 */}
+      <Text color={clawdBody}>    ▘▘ ▝▝</Text>
     </Box>
   );
 };
 
-// 分隔线组件
-const Divider: React.FC<{ width?: number }> = ({ width = 40 }) => (
-  <Box marginY={0}>
-    <Text color="red">{'─'.repeat(width)}</Text>
-  </Box>
-);
+// 垂直分隔线组件
+const VerticalDivider: React.FC<{ height: number; color?: string }> = ({
+  height,
+  color = '#D77757'
+}) => {
+  return (
+    <Box flexDirection="column" marginX={1}>
+      {Array.from({ length: height }).map((_, i) => (
+        <Text key={i} color={color}>│</Text>
+      ))}
+    </Box>
+  );
+};
 
 // 计算终端宽度
 const useTerminalWidth = () => {
   const { stdout } = useStdout();
   return stdout?.columns || 80;
+};
+
+// 格式化时间戳
+const formatTimeAgo = (timestamp: string): string => {
+  const now = new Date();
+  const date = new Date(timestamp);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
 };
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
@@ -94,21 +123,26 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   organization,
   cwd,
   recentActivity = [],
-  tips = [],
+  whatsNew = [],
 }) => {
   const terminalWidth = useTerminalWidth();
 
-  const defaultTips = [
-    'Run /init to create a CLAUDE.md file with instructions for Cla...',
+  // 官方颜色
+  const claudeColor = '#D77757'; // claude/clawd_body color
+
+  // 默认的 What's new 内容
+  const defaultWhatsNew = [
+    'Added LSP (Language Server Protocol) too...',
+    'Added `/terminal-setup` support for Kitt...',
+    'Added ctrl+t shortcut in `/theme` to tog...',
   ];
 
-  const displayTips = tips.length > 0 ? tips : defaultTips;
+  const displayWhatsNew = whatsNew.length > 0 ? whatsNew : defaultWhatsNew;
 
   // 计算布局宽度
   const totalWidth = Math.min(terminalWidth - 2, 100);
-  const leftPanelWidth = Math.floor(totalWidth * 0.45);
+  const leftPanelWidth = Math.floor(totalWidth * 0.42);
   const rightPanelWidth = Math.floor(totalWidth * 0.55);
-  const innerRightWidth = rightPanelWidth - 4; // 减去边框和padding
 
   // 欢迎消息
   const welcomeMessage = username
@@ -116,108 +150,106 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     : 'Welcome to Claude Code!';
 
   // 格式化工作目录 (截断过长路径)
-  const formatCwd = (path: string) => {
-    if (path.length <= leftPanelWidth - 6) return path;
-    const parts = path.split('/').filter(Boolean);
-    if (parts.length <= 2) return path;
-    return `.../${parts.slice(-2).join('/')}`;
+  const formatCwd = (path: string, maxLen: number) => {
+    if (path.length <= maxLen) return path;
+    const parts = path.split(/[/\\]/).filter(Boolean);
+    if (parts.length <= 2) return path.slice(0, maxLen - 3) + '...';
+    return '.../' + parts.slice(-2).join('/');
   };
 
+  // 截断文本
+  const truncateText = (text: string, maxLen: number) => {
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 3) + '...';
+  };
+
+  // 构建标题
+  const borderTitle = ` Claude Code v${version} `;
+
   return (
-    <Box flexDirection="row" width={totalWidth}>
-      {/* 左侧面板 - 欢迎信息和机器人 */}
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="red"
-        paddingX={2}
-        paddingY={1}
-        width={leftPanelWidth}
-      >
-        {/* 标题 */}
-        <Box marginBottom={1}>
-          <Text color="red" bold>
-            Claude Code
-          </Text>
-          <Text color="gray"> v{version}</Text>
-        </Box>
-
-        {/* 欢迎语 */}
-        <Box justifyContent="center" marginBottom={1}>
-          <Text bold>{welcomeMessage}</Text>
-        </Box>
-
-        {/* 机器人 ASCII 艺术 */}
-        <Box justifyContent="center" marginY={1}>
-          <ClawdMascot animate={true} />
-        </Box>
-
-        {/* 模型和 API 信息 */}
-        <Box justifyContent="center" marginTop={1}>
-          <Text color="cyan">{model}</Text>
-          <Text color="gray"> · </Text>
-          <Text color="gray">{apiType}</Text>
-          {organization && (
-            <>
-              <Text color="gray"> · </Text>
-              <Text color="gray">{organization}</Text>
-            </>
-          )}
-        </Box>
-
-        {/* 工作目录 */}
-        <Box justifyContent="center" marginTop={1}>
-          <Text color="gray">{formatCwd(cwd)}</Text>
-        </Box>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={claudeColor}
+      width={totalWidth}
+    >
+      {/* 顶部标题 */}
+      <Box paddingLeft={1}>
+        <Text color={claudeColor}> Claude Code</Text>
+        <Text dimColor> v{version}</Text>
       </Box>
 
-      {/* 右侧面板 - Tips 和 Recent Activity */}
-      <Box flexDirection="column" width={rightPanelWidth} paddingLeft={1}>
-        {/* Tips 面板 */}
+      {/* 主内容区域 */}
+      <Box flexDirection="row" paddingX={1} paddingY={1}>
+        {/* 左侧面板 - 欢迎信息和机器人 */}
         <Box
           flexDirection="column"
-          borderStyle="round"
-          borderColor="red"
-          paddingX={2}
-          paddingY={1}
-          marginBottom={1}
+          width={leftPanelWidth}
+          alignItems="center"
+          justifyContent="space-between"
         >
-          <Text color="red" bold>
-            Tips for getting started
-          </Text>
-          <Divider width={innerRightWidth} />
-          {displayTips.slice(0, 3).map((tip, i) => (
-            <Text key={i} color="gray" wrap="truncate">
-              {tip.length > innerRightWidth ? tip.slice(0, innerRightWidth - 3) + '...' : tip}
+          {/* 欢迎语 */}
+          <Box marginBottom={1}>
+            <Text bold>{welcomeMessage}</Text>
+          </Box>
+
+          {/* 机器人 ASCII 艺术 */}
+          <Box marginY={1}>
+            <ClawdMascot animate={true} />
+          </Box>
+
+          {/* 模型和 API 信息 */}
+          <Box flexDirection="column" alignItems="center" marginTop={1}>
+            <Text>
+              <Text color="cyan">{model}</Text>
+              <Text dimColor> · </Text>
+              <Text dimColor>{apiType}</Text>
+              {organization && (
+                <>
+                  <Text dimColor> · </Text>
+                  <Text dimColor>{organization}</Text>
+                </>
+              )}
             </Text>
-          ))}
+            {/* 工作目录 */}
+            <Text dimColor>{formatCwd(cwd, leftPanelWidth - 4)}</Text>
+          </Box>
         </Box>
 
-        {/* Recent Activity 面板 */}
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="red"
-          paddingX={2}
-          paddingY={1}
-        >
-          <Text color="red" bold>
-            Recent activity
-          </Text>
-          <Divider width={innerRightWidth} />
-          {recentActivity.length > 0 ? (
-            recentActivity.slice(0, 3).map((activity, i) => (
-              <Text key={activity.id} color="gray" wrap="truncate">
-                {activity.description.length > innerRightWidth
-                  ? activity.description.slice(0, innerRightWidth - 3) + '...'
-                  : activity.description}
+        {/* 垂直分隔线 */}
+        <VerticalDivider height={9} color={claudeColor} />
+
+        {/* 右侧面板 - Recent Activity 和 What's new */}
+        <Box flexDirection="column" width={rightPanelWidth}>
+          {/* Recent Activity */}
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color={claudeColor} bold>Recent activity</Text>
+            {recentActivity.length > 0 ? (
+              <>
+                {recentActivity.slice(0, 2).map((activity, i) => (
+                  <Text key={activity.id} dimColor>
+                    <Text>{formatTimeAgo(activity.timestamp)}</Text>
+                    <Text>  </Text>
+                    <Text>{truncateText(activity.description, rightPanelWidth - 12)}</Text>
+                  </Text>
+                ))}
+                <Text dimColor italic>/resume for more</Text>
+              </>
+            ) : (
+              <Text dimColor>No recent activity</Text>
+            )}
+          </Box>
+
+          {/* What's new */}
+          <Box flexDirection="column">
+            <Text color={claudeColor} bold>What's new</Text>
+            {displayWhatsNew.slice(0, 3).map((item, i) => (
+              <Text key={i} dimColor>
+                {truncateText(item, rightPanelWidth - 2)}
               </Text>
-            ))
-          ) : (
-            <Text color="gray" dimColor>
-              No recent activity
-            </Text>
-          )}
+            ))}
+            <Text dimColor italic>/release-notes for more</Text>
+          </Box>
         </Box>
       </Box>
     </Box>

@@ -208,16 +208,19 @@ async function runTextInterface(
   modelMap: Record<string, string>,
   systemPrompt?: string
 ): Promise<void> {
-  // ASCII Art Logo for text mode
+  // 官方 claude 颜色 (clawd_body): rgb(215,119,87)
+  const claudeColor = chalk.rgb(215, 119, 87);
+
+  // ASCII Art Logo for text mode - 使用官方 clawd 设计
   const LOGO = `
 ╭─────────────────────────────────────────────────────╮
 │                                                     │
-│   ${chalk.red('Claude Code')} ${chalk.gray('v' + VERSION)}                           │
+│   ${claudeColor('Claude Code')} ${chalk.gray('v' + VERSION)}                           │
 │                                                     │
-│        ${chalk.cyan('*')}       ${chalk.cyan('*')}                                 │
-│      ${chalk.cyan('*')}   ${chalk.cyanBright('▐▛███▜▌')}   ${chalk.cyan('*')}                            │
-│        ${chalk.cyan('*')} ${chalk.cyanBright('▝▜█████▛▘')} ${chalk.cyan('*')}                            │
-│          ${chalk.cyan('▘▘ ▝▝')}                                │
+│        ${claudeColor('*')}       ${claudeColor('*')}                                 │
+│      ${claudeColor('*')}  ${claudeColor(' ▐')}${claudeColor.bgBlack('▛███▜')}${claudeColor('▌')}  ${claudeColor('*')}                            │
+│        ${claudeColor('*')} ${claudeColor('▝▜')}${claudeColor.bgBlack('█████')}${claudeColor('▛▘')} ${claudeColor('*')}                            │
+│           ${claudeColor('▘▘ ▝▝')}                                │
 │                                                     │
 │   ${chalk.cyan('Sonnet 4')} · ${chalk.gray('Claude API')}                         │
 │   ${chalk.gray(process.cwd())}

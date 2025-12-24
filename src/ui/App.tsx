@@ -47,7 +47,7 @@ interface ToolCallItem {
 interface RecentActivity {
   id: string;
   description: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
 // 默认建议提示
@@ -136,7 +136,7 @@ export const App: React.FC<AppProps> = ({
       {
         id: Date.now().toString(),
         description,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
       },
       ...prev.slice(0, 9), // 保留最近10条
     ]);
