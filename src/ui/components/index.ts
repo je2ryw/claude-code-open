@@ -10,3 +10,7 @@ export { Header } from './Header.js';
 export { TodoList } from './TodoList.js';
 export { PermissionPrompt } from './PermissionPrompt.js';
 export { StatusBar } from './StatusBar.js';
+export { WelcomeScreen } from './WelcomeScreen.js';
+export { ShortcutHelp } from './ShortcutHelp.js';
+export { SelectInput } from './SelectInput.js';
+export { UpdateNotification } from './UpdateNotification.js';

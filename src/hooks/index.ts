@@ -10,10 +10,17 @@ import * as fs from 'fs';
 export type HookEvent =
   | 'PreToolUse'
   | 'PostToolUse'
+  | 'PostToolUseFailure'
   | 'PrePromptSubmit'
   | 'PostPromptSubmit'
   | 'Notification'
-  | 'Stop';
+  | 'Stop'
+  | 'SessionStart'
+  | 'SessionEnd'
+  | 'SubagentStart'
+  | 'SubagentStop'
+  | 'PreCompact'
+  | 'PermissionRequest';
 
 export interface HookConfig {
   /** 事件类型 */
@@ -298,4 +305,122 @@ export function clearHooks(): void {
  */
 export function getHookCount(): number {
   return registeredHooks.length;
+}
+
+/**
+ * SessionStart hook - 会话开始时触发
+ */
+export async function runSessionStartHooks(sessionId: string): Promise<void> {
+  await runHooks({
+    event: 'SessionStart',
+    sessionId,
+  });
+}
+
+/**
+ * SessionEnd hook - 会话结束时触发
+ */
+export async function runSessionEndHooks(sessionId: string): Promise<void> {
+  await runHooks({
+    event: 'SessionEnd',
+    sessionId,
+  });
+}
+
+/**
+ * SubagentStart hook - 子代理启动时触发
+ */
+export async function runSubagentStartHooks(
+  agentType: string,
+  sessionId?: string
+): Promise<void> {
+  await runHooks({
+    event: 'SubagentStart',
+    toolName: agentType,
+    sessionId,
+  });
+}
+
+/**
+ * SubagentStop hook - 子代理停止时触发
+ */
+export async function runSubagentStopHooks(
+  agentType: string,
+  sessionId?: string
+): Promise<void> {
+  await runHooks({
+    event: 'SubagentStop',
+    toolName: agentType,
+    sessionId,
+  });
+}
+
+/**
+ * PermissionRequest hook - 权限请求时触发
+ */
+export async function runPermissionRequestHooks(
+  toolName: string,
+  toolInput: unknown,
+  sessionId?: string
+): Promise<{ decision?: 'allow' | 'deny'; message?: string }> {
+  const results = await runHooks({
+    event: 'PermissionRequest',
+    toolName,
+    toolInput,
+    sessionId,
+  });
+
+  // 检查是否有 hook 返回决策
+  for (const result of results) {
+    if (result.output) {
+      try {
+        const output = JSON.parse(result.output);
+        if (output.decision === 'allow' || output.decision === 'deny') {
+          return {
+            decision: output.decision,
+            message: output.message,
+          };
+        }
+      } catch {
+        // 非 JSON 输出
+      }
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Notification hook - 发送通知时触发
+ */
+export async function runNotificationHooks(
+  message: string,
+  sessionId?: string
+): Promise<void> {
+  await runHooks({
+    event: 'Notification',
+    message,
+    sessionId,
+  });
+}
+
+/**
+ * 获取所有已注册的 hooks
+ */
+export function getRegisteredHooks(): HookConfig[] {
+  return [...registeredHooks];
+}
+
+/**
+ * 取消注册 hook
+ */
+export function unregisterHook(config: HookConfig): boolean {
+  const index = registeredHooks.findIndex(
+    (h) => h.event === config.event && h.command === config.command
+  );
+  if (index !== -1) {
+    registeredHooks.splice(index, 1);
+    return true;
+  }
+  return false;
 }
