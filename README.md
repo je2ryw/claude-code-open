@@ -51,10 +51,26 @@ node dist/cli.js --resume
 ## Configuration
 
 Set up your API key:
+
+**Linux/macOS:**
 ```bash
 export ANTHROPIC_API_KEY=your-api-key
 # or
 export CLAUDE_API_KEY=your-api-key
+```
+
+**Windows Command Prompt:**
+```cmd
+set ANTHROPIC_API_KEY=your-api-key
+# or
+set CLAUDE_API_KEY=your-api-key
+```
+
+**Windows PowerShell:**
+```powershell
+$env:ANTHROPIC_API_KEY="your-api-key"
+# or
+$env:CLAUDE_API_KEY="your-api-key"
 ```
 
 ### Environment Variables
@@ -283,7 +299,7 @@ Complete terminal UI component system:
 
 ### Sandbox Support (Bubblewrap)
 
-If `bubblewrap` is installed, Bash commands will execute in a sandbox for enhanced security:
+**Linux only:** If `bubblewrap` is installed, Bash commands will execute in a sandbox for enhanced security:
 
 ```bash
 # Ubuntu/Debian
@@ -292,6 +308,11 @@ sudo apt install bubblewrap
 # Arch Linux
 sudo pacman -S bubblewrap
 ```
+
+**Note for Windows/macOS users:**
+- Bubblewrap sandbox is only available on Linux
+- Windows and macOS users can use WSL (Windows Subsystem for Linux) to enable sandbox support
+- Alternatively, commands will run without sandboxing (use with caution)
 
 Sandbox can be disabled with `dangerouslyDisableSandbox: true` parameter.
 
@@ -306,7 +327,7 @@ Execute custom scripts before/after tool calls:
     {
       "event": "PreToolUse",
       "matcher": "Bash",
-      "command": "/path/to/script.sh",
+      "command": "/path/to/script.sh",  // Linux/macOS: .sh, Windows: .bat or .ps1
       "blocking": true
     }
   ]
@@ -332,15 +353,19 @@ Connect to MCP (Model Context Protocol) servers:
     "filesystem": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]  // Use absolute path
     }
   }
 }
 ```
 
+**Path examples:**
+- Linux/macOS: `"/home/user/projects"` or `"/Users/user/projects"`
+- Windows: `"C:\\Users\\user\\projects"` (use double backslashes in JSON)
+
 ### Tmux Multi-terminal
 
-Manage multiple terminal sessions:
+**Linux/macOS only:** Manage multiple terminal sessions:
 ```javascript
 // Create session
 { action: "new", session_name: "dev-server" }
@@ -352,9 +377,18 @@ Manage multiple terminal sessions:
 { action: "capture", session_name: "dev-server" }
 ```
 
+**Note for Windows users:**
+- Tmux is not available natively on Windows
+- Use WSL (Windows Subsystem for Linux) to access Tmux
+- Alternative: Use Windows Terminal with multiple tabs/panes
+
 ### Skills & Custom Commands
 
-Load from `~/.claude/skills/` and `.claude/commands/`:
+Load from the following directories:
+- **Linux/macOS:** `~/.claude/skills/` and `.claude/commands/`
+- **Windows:** `%USERPROFILE%\.claude\skills\` and `.claude\commands\`
+
+Features:
 - Skills: Reusable prompt templates
 - Slash Commands: Custom command extensions
 

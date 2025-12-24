@@ -51,10 +51,26 @@ node dist/cli.js --resume
 ## 配置
 
 设置 API 密钥:
+
+**Linux/macOS:**
 ```bash
 export ANTHROPIC_API_KEY=your-api-key
 # 或
 export CLAUDE_API_KEY=your-api-key
+```
+
+**Windows 命令提示符:**
+```cmd
+set ANTHROPIC_API_KEY=your-api-key
+# 或
+set CLAUDE_API_KEY=your-api-key
+```
+
+**Windows PowerShell:**
+```powershell
+$env:ANTHROPIC_API_KEY="your-api-key"
+# 或
+$env:CLAUDE_API_KEY="your-api-key"
 ```
 
 ### 环境变量
@@ -283,7 +299,7 @@ console.log(stats.totalTokens);
 
 ### 沙箱支持 (Bubblewrap)
 
-如果系统安装了 `bubblewrap`,Bash 命令将在沙箱中执行,提供额外的安全隔离:
+**仅限 Linux:** 如果系统安装了 `bubblewrap`,Bash 命令将在沙箱中执行,提供额外的安全隔离:
 
 ```bash
 # Ubuntu/Debian 安装
@@ -292,6 +308,11 @@ sudo apt install bubblewrap
 # Arch Linux
 sudo pacman -S bubblewrap
 ```
+
+**Windows/macOS 用户注意:**
+- Bubblewrap 沙箱仅在 Linux 上可用
+- Windows 和 macOS 用户可以使用 WSL (Windows Subsystem for Linux) 来启用沙箱支持
+- 或者命令将在没有沙箱的情况下运行(请谨慎使用)
 
 可以通过 `dangerouslyDisableSandbox: true` 参数禁用沙箱。
 
@@ -306,7 +327,7 @@ sudo pacman -S bubblewrap
     {
       "event": "PreToolUse",
       "matcher": "Bash",
-      "command": "/path/to/script.sh",
+      "command": "/path/to/script.sh",  // Linux/macOS: .sh, Windows: .bat 或 .ps1
       "blocking": true
     }
   ]
@@ -332,15 +353,19 @@ sudo pacman -S bubblewrap
     "filesystem": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"]  // 使用绝对路径
     }
   }
 }
 ```
 
+**路径示例:**
+- Linux/macOS: `"/home/user/projects"` 或 `"/Users/user/projects"`
+- Windows: `"C:\\Users\\user\\projects"` (JSON 中使用双反斜杠)
+
 ### Tmux 多终端
 
-管理多个终端会话:
+**仅限 Linux/macOS:** 管理多个终端会话:
 ```javascript
 // 创建会话
 { action: "new", session_name: "dev-server" }
@@ -352,9 +377,18 @@ sudo pacman -S bubblewrap
 { action: "capture", session_name: "dev-server" }
 ```
 
+**Windows 用户注意:**
+- Tmux 在 Windows 上原生不可用
+- 使用 WSL (Windows Subsystem for Linux) 来访问 Tmux
+- 替代方案: 使用 Windows Terminal 的多标签/多窗格功能
+
 ### 技能和自定义命令
 
-从 `~/.claude/skills/` 和 `.claude/commands/` 加载:
+从以下目录加载:
+- **Linux/macOS:** `~/.claude/skills/` 和 `.claude/commands/`
+- **Windows:** `%USERPROFILE%\.claude\skills\` 和 `.claude\commands\`
+
+功能:
 - 技能 (Skill): 可复用的 prompt 模板
 - 斜杠命令 (SlashCommand): 自定义命令扩展
 
