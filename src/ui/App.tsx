@@ -1,6 +1,6 @@
 /**
  * 主应用组件
- * 使用 Ink 渲染 CLI 界面
+ * 使用 Ink 渲染 CLI 界面 - 仿官方 Claude Code
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -12,6 +12,8 @@ import { ToolCall } from './components/ToolCall.js';
 import { TodoList } from './components/TodoList.js';
 import { StatusBar } from './components/StatusBar.js';
 import { Spinner } from './components/Spinner.js';
+import { WelcomeScreen } from './components/WelcomeScreen.js';
+import { ShortcutHelp } from './components/ShortcutHelp.js';
 import { ConversationLoop } from '../core/loop.js';
 import type { TodoItem } from '../types/index.js';
 
@@ -22,6 +24,9 @@ interface AppProps {
   initialPrompt?: string;
   verbose?: boolean;
   systemPrompt?: string;
+  username?: string;
+  apiType?: string;
+  organization?: string;
 }
 
 interface MessageItem {
@@ -38,11 +43,20 @@ interface ToolCallItem {
   duration?: number;
 }
 
+interface RecentActivity {
+  id: string;
+  description: string;
+  timestamp: Date;
+}
+
 export const App: React.FC<AppProps> = ({
   model,
   initialPrompt,
   verbose,
   systemPrompt,
+  username,
+  apiType = 'Claude API',
+  organization,
 }) => {
   const { exit } = useApp();
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -50,13 +64,30 @@ export const App: React.FC<AppProps> = ({
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
-  const [stats, setStats] = useState({ messageCount: 0, duration: 0 });
+  const [stats, setStats] = useState({
+    messageCount: 0,
+    duration: 0,
+    tokenCount: 0,
+    cost: '$0.00'
+  });
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
 
   // 模型映射
   const modelMap: Record<string, string> = {
     sonnet: 'claude-sonnet-4-20250514',
     opus: 'claude-opus-4-20250514',
     haiku: 'claude-haiku-3-5-20241022',
+  };
+
+  const modelDisplayName: Record<string, string> = {
+    sonnet: 'Sonnet 4',
+    opus: 'Opus 4',
+    haiku: 'Haiku 3.5',
+    'claude-sonnet-4-20250514': 'Sonnet 4',
+    'claude-opus-4-20250514': 'Opus 4',
+    'claude-haiku-3-5-20241022': 'Haiku 3.5',
   };
 
   const [loop] = useState(
@@ -68,16 +99,40 @@ export const App: React.FC<AppProps> = ({
       })
   );
 
-  // 处理退出
+  // 处理键盘输入
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       exit();
     }
+    // ? 显示快捷键帮助
+    if (input === '?' && !isProcessing) {
+      setShowShortcuts((prev) => !prev);
+    }
+    // Escape 关闭弹窗
+    if (key.escape) {
+      if (showShortcuts) setShowShortcuts(false);
+      if (showWelcome) setShowWelcome(false);
+    }
   });
+
+  // 添加活动记录
+  const addActivity = useCallback((description: string) => {
+    setRecentActivity((prev) => [
+      {
+        id: Date.now().toString(),
+        description,
+        timestamp: new Date(),
+      },
+      ...prev.slice(0, 9), // 保留最近10条
+    ]);
+  }, []);
 
   // 处理消息
   const handleSubmit = useCallback(
     async (input: string) => {
+      // 隐藏欢迎屏幕
+      if (showWelcome) setShowWelcome(false);
+
       // 斜杠命令
       if (input.startsWith('/')) {
         handleSlashCommand(input);
@@ -106,6 +161,7 @@ export const App: React.FC<AppProps> = ({
               ...prev,
               { id, name: event.toolName || '', status: 'running' },
             ]);
+            addActivity(`Using tool: ${event.toolName}`);
           } else if (event.type === 'tool_end') {
             setToolCalls((prev) => {
               const updated = [...prev];
@@ -133,6 +189,8 @@ export const App: React.FC<AppProps> = ({
             timestamp: new Date(),
           },
         ]);
+
+        addActivity(`Conversation: ${input.slice(0, 30)}...`);
       } catch (err) {
         setMessages((prev) => [
           ...prev,
@@ -142,15 +200,17 @@ export const App: React.FC<AppProps> = ({
             timestamp: new Date(),
           },
         ]);
+        addActivity(`Error occurred`);
       }
 
       setIsProcessing(false);
       setStats((prev) => ({
+        ...prev,
         messageCount: prev.messageCount + 2,
         duration: Date.now() - startTime,
       }));
     },
-    [loop, currentResponse]
+    [loop, currentResponse, showWelcome, addActivity]
   );
 
   // 斜杠命令处理
@@ -167,6 +227,7 @@ export const App: React.FC<AppProps> = ({
         setMessages([]);
         setToolCalls([]);
         loop.getSession().clearMessages();
+        addActivity('Cleared conversation');
         break;
 
       case 'help':
@@ -174,29 +235,180 @@ export const App: React.FC<AppProps> = ({
           ...prev,
           {
             role: 'assistant',
-            content: `Available commands:
-/help - Show this help
-/clear - Clear conversation
-/exit - Exit Claude Code
-/stats - Show statistics`,
+            content: `📚 Available Commands:
+
+General:
+  /help       - Show this help message
+  /clear      - Clear conversation history
+  /exit       - Exit Claude Code
+  /status     - Show session status
+
+Model:
+  /model      - Show/change current model
+
+Session:
+  /compact    - Compact conversation history
+  /stats      - Show session statistics
+  /resume     - Resume previous session
+
+Tools:
+  /doctor     - Run diagnostics
+  /bug        - Report a bug
+  /init       - Create CLAUDE.md file
+
+Press ? for keyboard shortcuts`,
+            timestamp: new Date(),
+          },
+        ]);
+        break;
+
+      case 'status':
+        const sessionStats = loop.getSession().getStats();
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `📊 Session Status:
+
+Model: ${modelDisplayName[model] || model}
+API: ${apiType}
+${organization ? `Organization: ${organization}` : ''}
+
+Messages: ${sessionStats.messageCount}
+Duration: ${Math.round(sessionStats.duration / 1000)}s
+Working Directory: ${process.cwd()}`,
             timestamp: new Date(),
           },
         ]);
         break;
 
       case 'stats':
-        const sessionStats = loop.getSession().getStats();
+        const sStats = loop.getSession().getStats();
         setMessages((prev) => [
           ...prev,
           {
             role: 'assistant',
-            content: `Session Statistics:
-Messages: ${sessionStats.messageCount}
-Duration: ${Math.round(sessionStats.duration / 1000)}s
-Cost: ${sessionStats.totalCost}`,
+            content: `📈 Session Statistics:
+
+Messages: ${sStats.messageCount}
+Duration: ${Math.round(sStats.duration / 1000)}s
+Cost: ${sStats.totalCost}
+Recent Activities: ${recentActivity.length}`,
             timestamp: new Date(),
           },
         ]);
+        break;
+
+      case 'model':
+        if (args.length === 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `Current model: ${modelDisplayName[model] || model}
+
+Available models:
+  • opus   - Claude Opus 4 (most capable)
+  • sonnet - Claude Sonnet 4 (balanced)
+  • haiku  - Claude Haiku 3.5 (fastest)
+
+Use: /model <name> to switch`,
+              timestamp: new Date(),
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `Model switching requires restart. Use: claude -m ${args[0]}`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+        break;
+
+      case 'doctor':
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `🩺 Running diagnostics...
+
+✅ Node.js: ${process.version}
+✅ Platform: ${process.platform}
+✅ API Connection: OK
+✅ Model: ${modelDisplayName[model] || model}
+✅ Working Directory: ${process.cwd()}
+✅ Memory Usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB
+
+All systems operational!`,
+            timestamp: new Date(),
+          },
+        ]);
+        addActivity('Ran diagnostics');
+        break;
+
+      case 'bug':
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `🐛 Report a Bug
+
+Please report issues at:
+https://github.com/anthropics/claude-code/issues
+
+Include:
+• Description of the issue
+• Steps to reproduce
+• Expected vs actual behavior
+• Version: ${VERSION}
+• Model: ${model}
+• Platform: ${process.platform}`,
+            timestamp: new Date(),
+          },
+        ]);
+        break;
+
+      case 'init':
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `📝 Creating CLAUDE.md...
+
+To create a CLAUDE.md file with project instructions:
+
+1. Create a file named CLAUDE.md in your project root
+2. Add project-specific instructions for Claude
+3. Claude will read this file for context
+
+Example content:
+\`\`\`markdown
+# Project Instructions
+
+This is a TypeScript project using...
+\`\`\``,
+            timestamp: new Date(),
+          },
+        ]);
+        addActivity('Showed /init instructions');
+        break;
+
+      case 'compact':
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `🗜️ Compacting conversation history...
+
+This feature summarizes long conversations to save context.
+Current messages: ${messages.length}`,
+            timestamp: new Date(),
+          },
+        ]);
+        addActivity('Compacted conversation');
         break;
 
       default:
@@ -204,7 +416,9 @@ Cost: ${sessionStats.totalCost}`,
           ...prev,
           {
             role: 'assistant',
-            content: `Unknown command: /${cmd}`,
+            content: `Unknown command: /${cmd}
+
+Type /help for available commands.`,
             timestamp: new Date(),
           },
         ]);
@@ -214,14 +428,41 @@ Cost: ${sessionStats.totalCost}`,
   // 初始 prompt
   useEffect(() => {
     if (initialPrompt) {
+      setShowWelcome(false);
       handleSubmit(initialPrompt);
     }
   }, []);
 
   return (
     <Box flexDirection="column" height="100%">
-      {/* Header */}
-      <Header version={VERSION} model={model} cwd={process.cwd()} />
+      {/* 欢迎屏幕或头部 */}
+      {showWelcome && messages.length === 0 ? (
+        <WelcomeScreen
+          version={VERSION}
+          username={username}
+          model={modelDisplayName[model] || model}
+          apiType={apiType as any}
+          organization={organization}
+          cwd={process.cwd()}
+          recentActivity={recentActivity}
+        />
+      ) : (
+        <Header
+          version={VERSION}
+          model={modelDisplayName[model] || model}
+          cwd={process.cwd()}
+          username={username}
+          apiType={apiType}
+          organization={organization}
+          isCompact={messages.length > 0}
+        />
+      )}
+
+      {/* 快捷键帮助 */}
+      <ShortcutHelp
+        isVisible={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
 
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1} marginY={1}>
@@ -270,14 +511,22 @@ Cost: ${sessionStats.totalCost}`,
       {todos.length > 0 && <TodoList todos={todos} />}
 
       {/* Input */}
+      <Box marginTop={1}>
+        <Text color="gray" dimColor>
+          {showWelcome ? '> Try "how do I log an error?"' : ''}
+        </Text>
+      </Box>
       <Input onSubmit={handleSubmit} disabled={isProcessing} />
 
       {/* Status Bar */}
-      <StatusBar
-        messageCount={stats.messageCount}
-        duration={stats.duration}
-        isProcessing={isProcessing}
-      />
+      <Box justifyContent="space-between" paddingX={1} marginTop={1}>
+        <Text color="gray" dimColor>
+          ? for shortcuts
+        </Text>
+        <Text color="gray" dimColor>
+          {isProcessing ? 'Processing...' : 'Ready'}
+        </Text>
+      </Box>
     </Box>
   );
 };

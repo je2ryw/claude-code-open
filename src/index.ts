@@ -60,6 +60,36 @@ export * from './updater/index.js';
 // SVG/图像渲染
 export * from './renderer/index.js';
 
+// Memory 系统
+export * from './memory/index.js';
+
+// GitHub 集成
+export * from './github/index.js';
+
+// 云服务提供商 (Bedrock, Vertex, Foundry)
+export * from './providers/index.js';
+
+// 诊断系统
+export * from './diagnostics/index.js';
+
+// 文件检查点系统
+export * from './checkpoint/index.js';
+
+// 组织和团队管理
+export * from './organization/index.js';
+
+// 速率限制和重试系统
+export * from './ratelimit/index.js';
+
+// 通知系统
+export * from './notifications/index.js';
+
+// 代码签名系统
+export * from './codesign/index.js';
+
+// CLAUDE.md 和规则系统
+export * from './rules/index.js';
+
 // 版本信息
 export const VERSION = '2.0.76-restored';
 export const NAME = 'claude-code-restored';
