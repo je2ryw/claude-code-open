@@ -84,6 +84,12 @@ export * from './ratelimit/index.js';
 // 通知系统
 export * from './notifications/index.js';
 
+// 代码签名系统
+export * from './codesign/index.js';
+
+// CLAUDE.md 和规则系统
+export * from './rules/index.js';
+
 // 版本信息
 export const VERSION = '2.0.76-restored';
 export const NAME = 'claude-code-restored';
