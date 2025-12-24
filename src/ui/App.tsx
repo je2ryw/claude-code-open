@@ -49,6 +49,15 @@ interface RecentActivity {
   timestamp: Date;
 }
 
+// 默认建议提示
+const DEFAULT_SUGGESTIONS = [
+  'how do I log an error?',
+  'explain this codebase',
+  'find all TODO comments',
+  'what does this function do?',
+  'help me fix this bug',
+];
+
 export const App: React.FC<AppProps> = ({
   model,
   initialPrompt,
@@ -73,6 +82,9 @@ export const App: React.FC<AppProps> = ({
   const [showWelcome, setShowWelcome] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [currentSuggestion] = useState(
+    () => DEFAULT_SUGGESTIONS[Math.floor(Math.random() * DEFAULT_SUGGESTIONS.length)]
+  );
 
   // 模型映射
   const modelMap: Record<string, string> = {
@@ -235,7 +247,7 @@ export const App: React.FC<AppProps> = ({
           ...prev,
           {
             role: 'assistant',
-            content: `📚 Available Commands:
+            content: `Available Commands:
 
 General:
   /help       - Show this help message
@@ -268,7 +280,7 @@ Press ? for keyboard shortcuts`,
           ...prev,
           {
             role: 'assistant',
-            content: `📊 Session Status:
+            content: `Session Status:
 
 Model: ${modelDisplayName[model] || model}
 API: ${apiType}
@@ -288,7 +300,7 @@ Working Directory: ${process.cwd()}`,
           ...prev,
           {
             role: 'assistant',
-            content: `📈 Session Statistics:
+            content: `Session Statistics:
 
 Messages: ${sStats.messageCount}
 Duration: ${Math.round(sStats.duration / 1000)}s
@@ -308,9 +320,9 @@ Recent Activities: ${recentActivity.length}`,
               content: `Current model: ${modelDisplayName[model] || model}
 
 Available models:
-  • opus   - Claude Opus 4 (most capable)
-  • sonnet - Claude Sonnet 4 (balanced)
-  • haiku  - Claude Haiku 3.5 (fastest)
+  opus   - Claude Opus 4 (most capable)
+  sonnet - Claude Sonnet 4 (balanced)
+  haiku  - Claude Haiku 3.5 (fastest)
 
 Use: /model <name> to switch`,
               timestamp: new Date(),
@@ -333,14 +345,14 @@ Use: /model <name> to switch`,
           ...prev,
           {
             role: 'assistant',
-            content: `🩺 Running diagnostics...
+            content: `Running diagnostics...
 
-✅ Node.js: ${process.version}
-✅ Platform: ${process.platform}
-✅ API Connection: OK
-✅ Model: ${modelDisplayName[model] || model}
-✅ Working Directory: ${process.cwd()}
-✅ Memory Usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB
+Node.js: ${process.version}
+Platform: ${process.platform}
+API Connection: OK
+Model: ${modelDisplayName[model] || model}
+Working Directory: ${process.cwd()}
+Memory Usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB
 
 All systems operational!`,
             timestamp: new Date(),
@@ -354,18 +366,18 @@ All systems operational!`,
           ...prev,
           {
             role: 'assistant',
-            content: `🐛 Report a Bug
+            content: `Report a Bug
 
 Please report issues at:
 https://github.com/anthropics/claude-code/issues
 
 Include:
-• Description of the issue
-• Steps to reproduce
-• Expected vs actual behavior
-• Version: ${VERSION}
-• Model: ${model}
-• Platform: ${process.platform}`,
+  Description of the issue
+  Steps to reproduce
+  Expected vs actual behavior
+  Version: ${VERSION}
+  Model: ${model}
+  Platform: ${process.platform}`,
             timestamp: new Date(),
           },
         ]);
@@ -376,7 +388,7 @@ Include:
           ...prev,
           {
             role: 'assistant',
-            content: `📝 Creating CLAUDE.md...
+            content: `Creating CLAUDE.md...
 
 To create a CLAUDE.md file with project instructions:
 
@@ -401,7 +413,7 @@ This is a TypeScript project using...
           ...prev,
           {
             role: 'assistant',
-            content: `🗜️ Compacting conversation history...
+            content: `Compacting conversation history...
 
 This feature summarizes long conversations to save context.
 Current messages: ${messages.length}`,
@@ -510,21 +522,22 @@ Type /help for available commands.`,
       {/* Todo List */}
       {todos.length > 0 && <TodoList todos={todos} />}
 
-      {/* Input */}
+      {/* Input with suggestion */}
       <Box marginTop={1}>
-        <Text color="gray" dimColor>
-          {showWelcome ? '> Try "how do I log an error?"' : ''}
-        </Text>
+        <Input
+          onSubmit={handleSubmit}
+          disabled={isProcessing}
+          suggestion={showWelcome ? currentSuggestion : undefined}
+        />
       </Box>
-      <Input onSubmit={handleSubmit} disabled={isProcessing} />
 
-      {/* Status Bar */}
+      {/* Status Bar - 底部状态栏 */}
       <Box justifyContent="space-between" paddingX={1} marginTop={1}>
         <Text color="gray" dimColor>
           ? for shortcuts
         </Text>
         <Text color="gray" dimColor>
-          {isProcessing ? 'Processing...' : 'Ready'}
+          {isProcessing ? 'Processing...' : 'Auto-updating...'}
         </Text>
       </Box>
     </Box>
