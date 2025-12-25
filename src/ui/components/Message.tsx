@@ -5,11 +5,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import type { ContentBlock } from '../../types/index.js';
+import type { ContentBlock, ToolUseBlock, ToolResultBlockParam, AnyContentBlock } from '../../types/messages.js';
 
 export interface MessageProps {
   role: 'user' | 'assistant' | 'system' | 'error';
-  content: string | ContentBlock[];
+  content: string | AnyContentBlock[];
   timestamp?: Date;
   streaming?: boolean; // 是否启用流式渲染
   streamSpeed?: number; // 流式渲染速度（ms/字符）
@@ -146,7 +146,7 @@ const CodeBlock: React.FC<{ content: string; language?: string }> = ({
 };
 
 // 工具调用块组件
-const ToolUseBlock: React.FC<{ block: ContentBlock }> = ({ block }) => {
+const ToolUseBlockComponent: React.FC<{ block: ToolUseBlock }> = ({ block }) => {
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Box>
@@ -165,8 +165,9 @@ const ToolUseBlock: React.FC<{ block: ContentBlock }> = ({ block }) => {
 };
 
 // 工具结果块组件
-const ToolResultBlock: React.FC<{ block: ContentBlock }> = ({ block }) => {
-  const isError = block.content?.toString().toLowerCase().includes('error');
+const ToolResultBlockComponent: React.FC<{ block: ToolResultBlockParam }> = ({ block }) => {
+  const contentStr = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+  const isError = block.is_error || contentStr?.toLowerCase().includes('error');
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Box>
@@ -176,13 +177,8 @@ const ToolResultBlock: React.FC<{ block: ContentBlock }> = ({ block }) => {
       </Box>
       <Box marginLeft={2}>
         <Text color="gray" dimColor>
-          {typeof block.content === 'string'
-            ? block.content.slice(0, 200)
-            : JSON.stringify(block.content, null, 2).slice(0, 200)}
-          {(typeof block.content === 'string' ? block.content : JSON.stringify(block.content))
-            .length > 200
-            ? '...'
-            : ''}
+          {contentStr ? contentStr.slice(0, 200) : ''}
+          {contentStr && contentStr.length > 200 ? '...' : ''}
         </Text>
       </Box>
     </Box>
@@ -190,15 +186,15 @@ const ToolResultBlock: React.FC<{ block: ContentBlock }> = ({ block }) => {
 };
 
 // 渲染内容块
-const renderContentBlocks = (blocks: ContentBlock[]) => {
+const renderContentBlocks = (blocks: AnyContentBlock[]) => {
   return blocks.map((block, index) => {
     switch (block.type) {
       case 'text':
-        return <Text key={index}>{block.text || ''}</Text>;
+        return <Text key={index}>{(block as { text?: string }).text || ''}</Text>;
       case 'tool_use':
-        return <ToolUseBlock key={index} block={block} />;
+        return <ToolUseBlockComponent key={index} block={block as ToolUseBlock} />;
       case 'tool_result':
-        return <ToolResultBlock key={index} block={block} />;
+        return <ToolResultBlockComponent key={index} block={block as ToolResultBlockParam} />;
       default:
         return null;
     }

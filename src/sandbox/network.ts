@@ -279,7 +279,7 @@ export class NetworkSandbox {
     const sandbox = this;
 
     return async function sandboxedFetch(
-      input: RequestInfo | URL,
+      input: string | Request | URL,
       init?: RequestInit
     ): Promise<Response> {
       const url = input instanceof Request ? input.url : input.toString();

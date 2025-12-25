@@ -324,13 +324,13 @@ export class McpDiscovery {
         reject(new Error('Server probe timeout'));
       }, DISCOVERY_TIMEOUT);
 
-      let process: ChildProcess | null = null;
+      let childProcess: ChildProcess | null = null;
       let resolved = false;
 
       const cleanup = () => {
         clearTimeout(timeout);
-        if (process && !process.killed) {
-          process.kill();
+        if (childProcess && !childProcess.killed) {
+          childProcess.kill();
         }
       };
 
@@ -351,8 +351,8 @@ export class McpDiscovery {
       };
 
       try {
-        const spawnEnv = { ...(process.env as Record<string, string>), ...info.env };
-        process = spawn(info.command!, info.args || [], {
+        const spawnEnv = { ...(globalThis.process.env as Record<string, string>), ...info.env };
+        childProcess = spawn(info.command!, info.args || [], {
           env: spawnEnv,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -365,11 +365,11 @@ export class McpDiscovery {
 
         let initDone = false;
 
-        process.on('error', (err) => {
+        childProcess.on('error', (err) => {
           rejectOnce(new Error(`Process error: ${err.message}`));
         });
 
-        process.on('exit', (code) => {
+        childProcess.on('exit', (code) => {
           if (!initDone) {
             rejectOnce(new Error(`Process exited with code ${code}`));
           }
@@ -377,7 +377,7 @@ export class McpDiscovery {
 
         // 收集输出
         const outputChunks: Buffer[] = [];
-        process.stdout?.on('data', (data: Buffer) => {
+        childProcess.stdout?.on('data', (data: Buffer) => {
           outputChunks.push(data);
 
           // 尝试解析每一行
@@ -402,17 +402,17 @@ export class McpDiscovery {
 
                 // 请求工具列表
                 if (result.capabilities?.tools) {
-                  this.sendMessage(process, 'tools/list', {});
+                  this.sendMessage(childProcess, 'tools/list', {});
                 }
 
                 // 请求资源列表
                 if (result.capabilities?.resources) {
-                  this.sendMessage(process, 'resources/list', {});
+                  this.sendMessage(childProcess, 'resources/list', {});
                 }
 
                 // 请求提示词列表
                 if (result.capabilities?.prompts) {
-                  this.sendMessage(process, 'prompts/list', {});
+                  this.sendMessage(childProcess, 'prompts/list', {});
                 }
               }
 
@@ -445,7 +445,7 @@ export class McpDiscovery {
         });
 
         // 发送初始化消息
-        this.sendMessage(process, 'initialize', {
+        this.sendMessage(childProcess, 'initialize', {
           protocolVersion: '2024-11-05',
           capabilities: {},
           clientInfo: {
