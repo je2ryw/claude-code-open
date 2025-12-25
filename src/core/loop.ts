@@ -87,7 +87,7 @@ export class ConversationLoop {
 
       // 处理响应内容
       const assistantContent: ContentBlock[] = [];
-      const toolResults: ContentBlock[] = [];
+      const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
       for (const block of response.content) {
         if (block.type === 'text') {
@@ -219,7 +219,7 @@ export class ConversationLoop {
       }
 
       // 执行所有工具调用
-      const toolResults: ContentBlock[] = [];
+      const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
       for (const [id, tool] of toolCalls) {
         try {

@@ -1,31 +1,54 @@
 /**
  * Claude Code - 主入口
  * 导出所有模块
+ *
+ * 注意: 使用命名空间导出避免名称冲突
  */
 
-// 核心模块
+// 核心模块 - 主要导出
 export * from './core/index.js';
 
-// 工具系统
-export * from './tools/index.js';
+// 类型定义 - 优先导出（可能被其他模块重复定义）
+export type {
+  UserConfig,
+  SessionState,
+  ContentBlock,
+  Message,
+  ToolDefinition,
+  ModelConfig,
+} from './types/index.js';
 
-// 类型定义
-export * from './types/index.js';
+// 工具系统
+export {
+  BaseTool,
+  ToolRegistry,
+  toolRegistry,
+} from './tools/index.js';
 
 // 配置
-export * from './config/index.js';
+export {
+  ConfigManager,
+  configManager,
+} from './config/index.js';
 
 // Hooks 系统
-export * from './hooks/index.js';
+export type { HookEvent, HookConfig, HookType } from './hooks/index.js';
+export { registerHook, runHooks } from './hooks/index.js';
 
 // 认证系统
 export * from './auth/index.js';
 
 // 会话管理
-export * from './session/index.js';
+export {
+  SessionManager,
+  sessionManager,
+} from './session/index.js';
 
 // 上下文管理
-export * from './context/index.js';
+export {
+  ContextManager,
+  contextManager,
+} from './context/index.js';
 
 // 代码解析器
 export * from './parser/index.js';
@@ -40,10 +63,11 @@ export * from './telemetry/index.js';
 export * from './utils/index.js';
 
 // 插件系统
-export * from './plugins/index.js';
+export type { PluginConfig, PluginMetadata, Plugin } from './plugins/index.js';
+export { PluginManager, pluginManager } from './plugins/index.js';
 
 // 流式 JSON I/O
-export * from './streaming/index.js';
+export { StreamJsonReader, StreamJsonWriter, StreamSession } from './streaming/index.js';
 
 // 权限系统
 export * from './permissions/index.js';

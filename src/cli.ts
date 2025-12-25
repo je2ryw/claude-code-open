@@ -1019,7 +1019,8 @@ function loadSettings(settingsPath: string): void {
     }
 
     if (settings.model) {
-      configManager.set('model', settings.model as string);
+      // 使用 any 避免严格的模型类型检查，因为设置文件可能包含任意模型名
+      configManager.set('model', settings.model as any);
     }
     if (settings.maxTokens) {
       configManager.set('maxTokens', settings.maxTokens as number);
