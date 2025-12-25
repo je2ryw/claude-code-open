@@ -87,7 +87,7 @@ export class ConversationLoop {
 
       // 处理响应内容
       const assistantContent: ContentBlock[] = [];
-      const toolResults: ContentBlock[] = [];
+      const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
       for (const block of response.content) {
         if (block.type === 'text') {
@@ -144,8 +144,15 @@ export class ConversationLoop {
       // 更新使用统计
       this.session.updateUsage(
         this.options.model || 'claude-sonnet-4-20250514',
-        response.usage.inputTokens + response.usage.outputTokens,
+        {
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          webSearchRequests: 0,
+        },
         0, // 成本计算需要模型价格
+        0,
         0
       );
     }
@@ -212,7 +219,7 @@ export class ConversationLoop {
       }
 
       // 执行所有工具调用
-      const toolResults: ContentBlock[] = [];
+      const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
       for (const [id, tool] of toolCalls) {
         try {

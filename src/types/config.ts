@@ -1184,15 +1184,31 @@ export interface McpServerConfig {
 export interface SessionState {
   sessionId: string;
   cwd: string;
+  originalCwd?: string; // T153: 原始工作目录
   startTime: number;
   totalCostUSD: number;
   totalAPIDuration: number;
-  modelUsage: Record<string, number>;
+  totalAPIDurationWithoutRetries?: number; // T143: 不含重试的 API 时间
+  totalToolDuration?: number; // T143: 工具执行总时间
+  modelUsage: Record<string, ModelUsageStats>; // T151: 扩展为详细统计
   todos: Array<{
     content: string;
     status: 'pending' | 'in_progress' | 'completed';
     activeForm: string;
   }>;
+}
+
+/**
+ * T151/T152: 详细的模型使用统计
+ */
+export interface ModelUsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  webSearchRequests?: number;
+  costUSD: number;
+  contextWindow: number;
 }
 
 /**

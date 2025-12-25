@@ -33,6 +33,9 @@ export interface PluginContext {
   // 命令注册
   commands: PluginCommandAPI;
 
+  // Skills/Prompts 注册
+  skills: PluginSkillAPI;
+
   // 钩子注册
   hooks: PluginHookAPI;
 
@@ -75,6 +78,12 @@ export interface PluginCommandAPI {
   getRegistered(): CommandDefinition[];
 }
 
+export interface PluginSkillAPI {
+  register(skill: SkillDefinition): void;
+  unregister(skillName: string): void;
+  getRegistered(): SkillDefinition[];
+}
+
 export interface PluginHookAPI {
   on(hookType: PluginHookType, handler: HookHandler): void;
   off(hookType: PluginHookType, handler: HookHandler): void;
@@ -111,6 +120,24 @@ export interface CommandDefinition {
   usage?: string;
   examples?: string[];
   execute: (args: string[], context: PluginContext) => Promise<void>;
+}
+
+/**
+ * Skill/Prompt 定义
+ * Skills 是插件提供的可被用户调用的提示词或功能
+ */
+export interface SkillDefinition {
+  name: string; // 技能名称，用户通过 /skill-name 调用
+  description: string; // 技能描述
+  prompt: string; // 提示词内容
+  category?: string; // 分类（如：coding, writing, analysis）
+  examples?: string[]; // 使用示例
+  parameters?: Array<{
+    name: string;
+    description: string;
+    required?: boolean;
+    type?: string;
+  }>; // 参数定义
 }
 
 /**
@@ -155,6 +182,7 @@ export interface Plugin {
   // 插件提供的功能
   tools?: ToolDefinition[];
   commands?: CommandDefinition[];
+  skills?: SkillDefinition[];
   hooks?: HookDefinition[];
 }
 
@@ -289,9 +317,10 @@ export class PluginManager extends EventEmitter {
   private fileWatchers: Map<string, fs.FSWatcher> = new Map();
   private claudeCodeVersion: string = '2.0.76'; // 当前 Claude Code 版本
 
-  // 注册的工具、命令和钩子
+  // 注册的工具、命令、技能和钩子
   private registeredTools: Map<string, ToolDefinition[]> = new Map();
   private registeredCommands: Map<string, CommandDefinition[]> = new Map();
+  private registeredSkills: Map<string, SkillDefinition[]> = new Map();
   private registeredHooks: Map<string, HookDefinition[]> = new Map();
 
   constructor(claudeCodeVersion?: string) {
@@ -661,6 +690,32 @@ export class PluginManager extends EventEmitter {
       },
     };
 
+    // Skills API
+    const skillsAPI: PluginSkillAPI = {
+      register: (skill: SkillDefinition): void => {
+        let skills = this.registeredSkills.get(name);
+        if (!skills) {
+          skills = [];
+          this.registeredSkills.set(name, skills);
+        }
+        skills.push(skill);
+        this.emit('skill:registered', name, skill);
+      },
+      unregister: (skillName: string): void => {
+        const skills = this.registeredSkills.get(name);
+        if (skills) {
+          const index = skills.findIndex(s => s.name === skillName);
+          if (index !== -1) {
+            skills.splice(index, 1);
+            this.emit('skill:unregistered', name, skillName);
+          }
+        }
+      },
+      getRegistered: (): SkillDefinition[] => {
+        return [...(this.registeredSkills.get(name) || [])];
+      },
+    };
+
     // 钩子 API
     const hooksAPI: PluginHookAPI = {
       on: (hookType: PluginHookType, handler: HookHandler): void => {
@@ -695,6 +750,7 @@ export class PluginManager extends EventEmitter {
       fs: fsAPI,
       tools: toolsAPI,
       commands: commandsAPI,
+      skills: skillsAPI,
       hooks: hooksAPI,
       events,
     };
@@ -777,7 +833,7 @@ export class PluginManager extends EventEmitter {
         state.activated = true;
       }
 
-      // 9. 注册插件提供的工具、命令、钩子
+      // 9. 注册插件提供的工具、命令、技能、钩子
       if (plugin.tools) {
         for (const tool of plugin.tools) {
           context.tools.register(tool);
@@ -787,6 +843,12 @@ export class PluginManager extends EventEmitter {
       if (plugin.commands) {
         for (const command of plugin.commands) {
           context.commands.register(command);
+        }
+      }
+
+      if (plugin.skills) {
+        for (const skill of plugin.skills) {
+          context.skills.register(skill);
         }
       }
 
@@ -857,9 +919,10 @@ export class PluginManager extends EventEmitter {
         await plugin.deactivate();
       }
 
-      // 5. 清理注册的工具、命令、钩子
+      // 5. 清理注册的工具、命令、技能、钩子
       this.registeredTools.delete(name);
       this.registeredCommands.delete(name);
+      this.registeredSkills.delete(name);
       this.registeredHooks.delete(name);
 
       // 6. 清理插件上下文
@@ -1064,6 +1127,17 @@ export class PluginManager extends EventEmitter {
   }
 
   /**
+   * 获取所有注册的技能
+   */
+  getSkills(): SkillDefinition[] {
+    const skills: SkillDefinition[] = [];
+    for (const skillList of Array.from(this.registeredSkills.values())) {
+      skills.push(...skillList);
+    }
+    return skills;
+  }
+
+  /**
    * 获取指定插件的工具
    */
   getPluginTools(name: string): ToolDefinition[] {
@@ -1075,6 +1149,13 @@ export class PluginManager extends EventEmitter {
    */
   getPluginCommands(name: string): CommandDefinition[] {
     return this.registeredCommands.get(name) || [];
+  }
+
+  /**
+   * 获取指定插件的技能
+   */
+  getPluginSkills(name: string): SkillDefinition[] {
+    return this.registeredSkills.get(name) || [];
   }
 
   /**
@@ -1282,6 +1363,130 @@ export class PluginManager extends EventEmitter {
   }
 
   /**
+   * 注册内联插件（无需文件系统）
+   * @param definition 内联插件定义
+   */
+  async registerInlinePlugin(definition: InlinePluginDefinition): Promise<boolean> {
+    const name = definition.name;
+
+    // 检查是否已存在
+    if (this.plugins.has(name)) {
+      throw new Error(`Plugin ${name} already registered`);
+    }
+
+    try {
+      let plugin: Plugin;
+
+      if (definition.plugin) {
+        // 直接使用提供的插件对象
+        plugin = definition.plugin;
+      } else if (definition.code) {
+        // 从代码字符串创建插件
+        // 使用 Function 构造器执行代码（注意：这有安全风险，仅用于受信任的代码）
+        const moduleFactory = new Function('return ' + definition.code);
+        const module = moduleFactory();
+        plugin = module.default || module;
+      } else {
+        throw new Error('Either plugin or code must be provided');
+      }
+
+      // 确保有元数据
+      if (!plugin.metadata) {
+        plugin.metadata = {
+          name,
+          version: definition.version || '1.0.0',
+          description: definition.description,
+        };
+      }
+
+      // 创建虚拟状态
+      const state: PluginState = {
+        metadata: plugin.metadata,
+        path: '<inline>', // 标记为内联插件
+        enabled: true,
+        loaded: false,
+        initialized: false,
+        activated: false,
+        dependencies: [],
+        dependents: [],
+      };
+
+      this.pluginStates.set(name, state);
+
+      // 创建上下文（使用内存路径）
+      const context = this.createPluginContext(name, '<inline>');
+
+      // 初始化插件
+      if (plugin.init) {
+        await plugin.init(context);
+        state.initialized = true;
+      }
+
+      // 激活插件
+      if (plugin.activate) {
+        await plugin.activate(context);
+        state.activated = true;
+      }
+
+      // 注册功能
+      if (plugin.tools) {
+        for (const tool of plugin.tools) {
+          context.tools.register(tool);
+        }
+      }
+
+      if (plugin.commands) {
+        for (const command of plugin.commands) {
+          context.commands.register(command);
+        }
+      }
+
+      if (plugin.skills) {
+        for (const skill of plugin.skills) {
+          context.skills.register(skill);
+        }
+      }
+
+      if (plugin.hooks) {
+        for (const hook of plugin.hooks) {
+          context.hooks.on(hook.type, hook.handler);
+        }
+      }
+
+      // 保存插件实例
+      this.plugins.set(name, plugin);
+      state.loaded = true;
+      state.loadTime = Date.now();
+
+      this.emit('plugin:inline-registered', name, plugin);
+      return true;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`Failed to register inline plugin ${name}:`, errorMsg);
+      return false;
+    }
+  }
+
+  /**
+   * 注销内联插件
+   */
+  async unregisterInlinePlugin(name: string): Promise<boolean> {
+    const state = this.pluginStates.get(name);
+    if (!state || state.path !== '<inline>') {
+      return false;
+    }
+
+    return await this.unload(name, { force: true });
+  }
+
+  /**
+   * 获取所有内联插件
+   */
+  getInlinePlugins(): PluginState[] {
+    return Array.from(this.pluginStates.values()).filter(s => s.path === '<inline>');
+  }
+
+  /**
    * 清理所有资源
    */
   async cleanup(): Promise<void> {
@@ -1479,6 +1684,412 @@ export class PluginCommandExecutor {
   }
 }
 
+/**
+ * 插件技能执行器
+ * 用于执行插件提供的 Skills/Prompts
+ */
+export class PluginSkillExecutor {
+  private manager: PluginManager;
+
+  constructor(manager: PluginManager) {
+    this.manager = manager;
+  }
+
+  /**
+   * 获取技能
+   */
+  getSkill(skillName: string): SkillDefinition | undefined {
+    const skills = this.manager.getSkills();
+    return skills.find(s => s.name === skillName);
+  }
+
+  /**
+   * 执行技能（返回提示词）
+   * @param skillName 技能名称
+   * @param params 参数对象
+   * @returns 处理后的提示词
+   */
+  execute(skillName: string, params: Record<string, unknown> = {}): string {
+    const skill = this.getSkill(skillName);
+    if (!skill) {
+      throw new Error(`Skill not found: ${skillName}`);
+    }
+
+    // 验证必需参数
+    if (skill.parameters) {
+      for (const param of skill.parameters) {
+        if (param.required && !(param.name in params)) {
+          throw new Error(`Missing required parameter: ${param.name}`);
+        }
+      }
+    }
+
+    // 替换提示词中的参数占位符
+    let prompt = skill.prompt;
+    for (const [key, value] of Object.entries(params)) {
+      const placeholder = new RegExp(`\\{${key}\\}`, 'g');
+      prompt = prompt.replace(placeholder, String(value));
+    }
+
+    return prompt;
+  }
+
+  /**
+   * 获取所有可用的技能
+   */
+  getAvailableSkills(): SkillDefinition[] {
+    return this.manager.getSkills();
+  }
+
+  /**
+   * 按分类获取技能
+   */
+  getSkillsByCategory(category: string): SkillDefinition[] {
+    return this.manager.getSkills().filter(s => s.category === category);
+  }
+
+  /**
+   * 获取技能帮助信息
+   */
+  getSkillHelp(skillName: string): string {
+    const skill = this.getSkill(skillName);
+    if (!skill) {
+      return `Skill not found: ${skillName}`;
+    }
+
+    let help = `Skill: /${skill.name}\n`;
+    help += `Description: ${skill.description}\n`;
+
+    if (skill.category) {
+      help += `Category: ${skill.category}\n`;
+    }
+
+    if (skill.parameters && skill.parameters.length > 0) {
+      help += '\nParameters:\n';
+      for (const param of skill.parameters) {
+        const required = param.required ? ' (required)' : ' (optional)';
+        const type = param.type ? ` [${param.type}]` : '';
+        help += `  ${param.name}${type}${required}: ${param.description}\n`;
+      }
+    }
+
+    if (skill.examples && skill.examples.length > 0) {
+      help += '\nExamples:\n';
+      for (const example of skill.examples) {
+        help += `  ${example}\n`;
+      }
+    }
+
+    return help;
+  }
+
+  /**
+   * 列出所有技能（格式化输出）
+   */
+  listSkills(): string {
+    const skills = this.getAvailableSkills();
+    if (skills.length === 0) {
+      return 'No skills available.';
+    }
+
+    // 按分类分组
+    const categories = new Map<string, SkillDefinition[]>();
+    for (const skill of skills) {
+      const category = skill.category || 'General';
+      if (!categories.has(category)) {
+        categories.set(category, []);
+      }
+      categories.get(category)!.push(skill);
+    }
+
+    let output = 'Available Plugin Skills:\n\n';
+    for (const [category, categorySkills] of Array.from(categories.entries())) {
+      output += `${category}:\n`;
+      for (const skill of categorySkills) {
+        output += `  /${skill.name}: ${skill.description}\n`;
+      }
+      output += '\n';
+    }
+
+    return output;
+  }
+}
+
+// ============ 内联插件 ============
+
+/**
+ * 内联插件定义
+ * 允许在代码中直接定义简单插件，无需文件系统
+ */
+export interface InlinePluginDefinition {
+  name: string;
+  version?: string;
+  description?: string;
+
+  // 内联代码（字符串形式的插件代码）
+  code?: string;
+
+  // 或直接提供插件对象
+  plugin?: Plugin;
+}
+
+// ============ 插件推荐系统 ============
+
+/**
+ * 插件推荐
+ */
+export interface PluginRecommendation {
+  pluginName: string;
+  reason: string;
+  relevance: number; // 0-1，相关度评分
+  context?: {
+    fileTypes?: string[];
+    keywords?: string[];
+    taskType?: string;
+  };
+}
+
+/**
+ * 插件推荐器
+ * 基于上下文智能推荐插件
+ */
+export class PluginRecommender {
+  private manager: PluginManager;
+
+  // 插件推荐规则
+  private recommendationRules: Array<{
+    pluginPattern: RegExp;
+    triggers: {
+      fileExtensions?: string[];
+      keywords?: string[];
+      taskTypes?: string[];
+    };
+    reason: string;
+  }> = [
+    // 前端开发插件推荐
+    {
+      pluginPattern: /frontend|html|css|design/i,
+      triggers: {
+        fileExtensions: ['.html', '.htm', '.css', '.scss', '.sass', '.less'],
+        keywords: ['html', 'css', 'frontend', 'design', 'styling'],
+      },
+      reason: 'Working with HTML/CSS files',
+    },
+    // React 开发插件推荐
+    {
+      pluginPattern: /react/i,
+      triggers: {
+        fileExtensions: ['.jsx', '.tsx'],
+        keywords: ['react', 'component', 'hook'],
+      },
+      reason: 'Working with React components',
+    },
+    // Vue 开发插件推荐
+    {
+      pluginPattern: /vue/i,
+      triggers: {
+        fileExtensions: ['.vue'],
+        keywords: ['vue', 'composition'],
+      },
+      reason: 'Working with Vue.js',
+    },
+    // Python 数据科学插件推荐
+    {
+      pluginPattern: /data|science|analysis|ml/i,
+      triggers: {
+        fileExtensions: ['.ipynb', '.py'],
+        keywords: ['pandas', 'numpy', 'scikit', 'tensorflow', 'pytorch', 'jupyter'],
+      },
+      reason: 'Working with data science/ML',
+    },
+    // API 测试插件推荐
+    {
+      pluginPattern: /api|test|http/i,
+      triggers: {
+        keywords: ['api', 'http', 'rest', 'graphql', 'postman'],
+        taskTypes: ['testing', 'debugging'],
+      },
+      reason: 'Testing APIs',
+    },
+    // 文档生成插件推荐
+    {
+      pluginPattern: /doc|markdown|readme/i,
+      triggers: {
+        fileExtensions: ['.md', '.mdx', '.rst'],
+        keywords: ['documentation', 'readme', 'doc'],
+        taskTypes: ['documentation'],
+      },
+      reason: 'Writing documentation',
+    },
+  ];
+
+  constructor(manager: PluginManager) {
+    this.manager = manager;
+  }
+
+  /**
+   * 添加自定义推荐规则
+   */
+  addRule(rule: {
+    pluginPattern: RegExp;
+    triggers: {
+      fileExtensions?: string[];
+      keywords?: string[];
+      taskTypes?: string[];
+    };
+    reason: string;
+  }): void {
+    this.recommendationRules.push(rule);
+  }
+
+  /**
+   * 基于上下文推荐插件
+   */
+  async recommend(context: {
+    currentFiles?: string[];
+    recentCommands?: string[];
+    userQuery?: string;
+    taskType?: string;
+  }): Promise<PluginRecommendation[]> {
+    const recommendations: PluginRecommendation[] = [];
+    const allPlugins = this.manager.getPluginStates();
+    const installedPluginNames = new Set(
+      allPlugins.filter(p => p.loaded).map(p => p.metadata.name)
+    );
+
+    // 提取文件扩展名
+    const fileExtensions: string[] = [];
+    if (context.currentFiles) {
+      for (const file of context.currentFiles) {
+        const ext = file.substring(file.lastIndexOf('.'));
+        if (ext) fileExtensions.push(ext.toLowerCase());
+      }
+    }
+
+    // 提取关键词
+    const keywords: string[] = [];
+    if (context.userQuery) {
+      keywords.push(...context.userQuery.toLowerCase().split(/\s+/));
+    }
+    if (context.recentCommands) {
+      for (const cmd of context.recentCommands) {
+        keywords.push(...cmd.toLowerCase().split(/\s+/));
+      }
+    }
+
+    // 检查每个规则
+    for (const rule of this.recommendationRules) {
+      let relevance = 0;
+      const matchedContext: {
+        fileTypes?: string[];
+        keywords?: string[];
+        taskType?: string;
+      } = {};
+
+      // 检查文件扩展名匹配
+      if (rule.triggers.fileExtensions && fileExtensions.length > 0) {
+        const matched = fileExtensions.filter(ext =>
+          rule.triggers.fileExtensions!.includes(ext)
+        );
+        if (matched.length > 0) {
+          relevance += 0.4;
+          matchedContext.fileTypes = matched;
+        }
+      }
+
+      // 检查关键词匹配
+      if (rule.triggers.keywords && keywords.length > 0) {
+        const matched = keywords.filter(kw =>
+          rule.triggers.keywords!.some(trigger => kw.includes(trigger))
+        );
+        if (matched.length > 0) {
+          relevance += 0.3;
+          matchedContext.keywords = matched;
+        }
+      }
+
+      // 检查任务类型匹配
+      if (rule.triggers.taskTypes && context.taskType) {
+        if (rule.triggers.taskTypes.includes(context.taskType)) {
+          relevance += 0.3;
+          matchedContext.taskType = context.taskType;
+        }
+      }
+
+      // 如果有匹配，查找符合规则的未安装插件
+      if (relevance > 0) {
+        for (const plugin of allPlugins) {
+          const pluginName = plugin.metadata.name;
+
+          // 跳过已安装的插件
+          if (installedPluginNames.has(pluginName)) {
+            continue;
+          }
+
+          // 检查插件名称是否符合规则
+          if (rule.pluginPattern.test(pluginName) ||
+              rule.pluginPattern.test(plugin.metadata.description || '')) {
+            recommendations.push({
+              pluginName,
+              reason: rule.reason,
+              relevance,
+              context: matchedContext,
+            });
+          }
+        }
+      }
+    }
+
+    // 按相关度排序并去重
+    const uniqueRecommendations = new Map<string, PluginRecommendation>();
+    for (const rec of recommendations) {
+      const existing = uniqueRecommendations.get(rec.pluginName);
+      if (!existing || rec.relevance > existing.relevance) {
+        uniqueRecommendations.set(rec.pluginName, rec);
+      }
+    }
+
+    return Array.from(uniqueRecommendations.values())
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, 5); // 最多返回5个推荐
+  }
+
+  /**
+   * 格式化推荐输出
+   */
+  formatRecommendations(recommendations: PluginRecommendation[]): string {
+    if (recommendations.length === 0) {
+      return '';
+    }
+
+    let output = '\n**Recommended Plugins:**\n\n';
+    for (const rec of recommendations) {
+      output += `- **${rec.pluginName}** (relevance: ${(rec.relevance * 100).toFixed(0)}%)\n`;
+      output += `  ${rec.reason}\n`;
+
+      if (rec.context) {
+        const details: string[] = [];
+        if (rec.context.fileTypes) {
+          details.push(`files: ${rec.context.fileTypes.join(', ')}`);
+        }
+        if (rec.context.keywords) {
+          details.push(`keywords: ${rec.context.keywords.join(', ')}`);
+        }
+        if (rec.context.taskType) {
+          details.push(`task: ${rec.context.taskType}`);
+        }
+        if (details.length > 0) {
+          output += `  (${details.join('; ')})\n`;
+        }
+      }
+
+      output += `  Install: \`claude plugin install ${rec.pluginName}\`\n\n`;
+    }
+
+    return output;
+  }
+}
+
 // ============ 默认实例 ============
 
 /**
@@ -1495,6 +2106,16 @@ export const pluginToolExecutor = new PluginToolExecutor(pluginManager);
  * 默认命令执行器实例
  */
 export const pluginCommandExecutor = new PluginCommandExecutor(pluginManager);
+
+/**
+ * 默认技能执行器实例
+ */
+export const pluginSkillExecutor = new PluginSkillExecutor(pluginManager);
+
+/**
+ * 默认插件推荐器实例
+ */
+export const pluginRecommender = new PluginRecommender(pluginManager);
 
 // ============ 便捷导出 ============
 

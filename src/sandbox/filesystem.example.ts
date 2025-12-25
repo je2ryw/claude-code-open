@@ -12,6 +12,7 @@ import {
   validatePolicy,
   mergePolicies,
   getSandboxStats,
+  type FilesystemPolicy,
 } from './filesystem.js';
 import * as path from 'path';
 
@@ -107,11 +108,11 @@ function example3() {
 async function example4() {
   console.log('\n=== Example 4: Custom Policy ===');
 
-  const policy = {
+  const policy: FilesystemPolicy = {
     allowedPaths: [
       {
         pattern: '/home/user/projects/**',
-        operations: ['read', 'write'] as const,
+        operations: ['read', 'write'],
         description: 'Project files',
       },
       {
@@ -125,7 +126,7 @@ async function example4() {
         description: 'Secret files',
       },
     ],
-    defaultAction: 'deny' as const,
+    defaultAction: 'deny',
   };
 
   const validation = validatePolicy(policy);

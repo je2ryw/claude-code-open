@@ -936,7 +936,7 @@ export interface ConfigChangedEvent {
 
 // ============ 导出类型扩展 ============
 
-declare module './lifecycle' {
+declare module './lifecycle.js' {
   interface McpLifecycleManager {
     on(event: 'server:starting', listener: (data: ServerEvent) => void): this;
     on(event: 'server:started', listener: (data: ServerEvent & { pid?: number }) => void): this;

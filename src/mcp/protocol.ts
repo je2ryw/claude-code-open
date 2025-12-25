@@ -226,6 +226,52 @@ export interface PromptContent {
   }>;
 }
 
+/**
+ * 根目录定义
+ */
+export interface Root {
+  uri: string;
+  name?: string;
+}
+
+/**
+ * 进度通知参数
+ */
+export interface ProgressNotification {
+  progressToken: string | number;
+  progress: number;
+  total?: number;
+}
+
+/**
+ * 取消通知参数
+ */
+export interface CancelledNotification {
+  requestId: string | number;
+  reason?: string;
+}
+
+/**
+ * 日志级别
+ */
+export enum LogLevel {
+  Debug = 'debug',
+  Info = 'info',
+  Notice = 'notice',
+  Warning = 'warning',
+  Error = 'error',
+  Critical = 'critical',
+  Alert = 'alert',
+  Emergency = 'emergency',
+}
+
+/**
+ * 设置日志级别参数
+ */
+export interface SetLevelParams {
+  level: LogLevel;
+}
+
 // ============ 消息验证结果 ============
 
 export interface ValidationResult {
@@ -282,8 +328,22 @@ export enum McpMethod {
   PromptsList = 'prompts/list',
   PromptsGet = 'prompts/get',
 
+  // 采样方法
+  SamplingCreateMessage = 'sampling/createMessage',
+
+  // 根目录方法
+  RootsList = 'roots/list',
+
   // 日志方法
   LoggingSetLevel = 'logging/setLevel',
+
+  // 通知方法 (from server)
+  NotificationCancelled = 'notifications/cancelled',
+  NotificationProgress = 'notifications/progress',
+  NotificationResourcesListChanged = 'notifications/resources/list_changed',
+  NotificationResourcesUpdated = 'notifications/resources/updated',
+  NotificationToolsListChanged = 'notifications/tools/list_changed',
+  NotificationPromptsListChanged = 'notifications/prompts/list_changed',
 
   // 补全方法
   CompletionComplete = 'completion/complete',
@@ -693,6 +753,50 @@ export class McpProtocol {
   ): Promise<PromptContent> {
     const result = await this.sendRequest(transport, McpMethod.PromptsGet, params);
     return result as PromptContent;
+  }
+
+  /**
+   * Roots/List - 获取根目录列表
+   */
+  async listRoots(transport: McpTransport): Promise<Root[]> {
+    const result = await this.sendRequest(transport, McpMethod.RootsList);
+
+    if (!result || typeof result !== 'object') {
+      return [];
+    }
+
+    const data = result as { roots?: Root[] };
+    return data.roots || [];
+  }
+
+  /**
+   * Logging/SetLevel - 设置日志级别
+   */
+  async setLoggingLevel(
+    transport: McpTransport,
+    level: LogLevel
+  ): Promise<void> {
+    await this.sendRequest(transport, McpMethod.LoggingSetLevel, { level });
+  }
+
+  /**
+   * Send progress notification
+   */
+  async sendProgressNotification(
+    transport: McpTransport,
+    params: ProgressNotification
+  ): Promise<void> {
+    await this.sendNotification(transport, McpMethod.NotificationProgress, params);
+  }
+
+  /**
+   * Send cancelled notification
+   */
+  async sendCancelledNotification(
+    transport: McpTransport,
+    params: CancelledNotification
+  ): Promise<void> {
+    await this.sendNotification(transport, McpMethod.NotificationCancelled, params);
   }
 
   /**

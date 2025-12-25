@@ -23,9 +23,9 @@ export function createMcpResourceManager(): McpResourceManager {
   // 从现有的 MCP 工具创建连接管理器适配器
   const connectionManager = createConnectionManagerAdapter({
     sendMessage: async (serverName: string, method: string, params: unknown) => {
-      // 使用现有的 MCP 消息发送机制
-      const { sendMcpMessage } = await import('../tools/mcp.js');
-      return sendMcpMessage(serverName, method, params);
+      // 使用 callMcpTool 作为消息发送机制
+      // 注意: 这是一个简化的适配器，实际使用可能需要更完整的实现
+      return callMcpTool(serverName, method, params as Record<string, unknown>);
     },
 
     isConnected: (serverName: string) => {
@@ -33,9 +33,10 @@ export function createMcpResourceManager(): McpResourceManager {
       return status?.connected || false;
     },
 
-    connect: async (serverName: string) => {
-      const { connectMcpServer } = await import('../tools/mcp.js');
-      return connectMcpServer(serverName);
+    connect: async (_serverName: string) => {
+      // MCP 服务器通过配置自动连接，这里返回成功
+      // 实际连接逻辑在 registerMcpServer 中处理
+      return true;
     },
 
     getServerNames: () => {
