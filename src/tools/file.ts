@@ -7,6 +7,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BaseTool } from './base.js';
 import type { FileReadInput, FileWriteInput, FileEditInput, FileResult, ToolDefinition } from '../types/index.js';
+import {
+  readImageFile,
+  readPdfFile,
+  renderSvgToPng,
+  detectMediaType,
+  isBlacklistedFile,
+  isSupportedImageFormat,
+  isPdfExtension,
+  isPdfSupported,
+  isSvgRenderEnabled,
+} from '../media/index.js';
 
 /**
  * 差异预览接口
@@ -82,15 +93,36 @@ Usage:
         return { success: false, error: `Path is a directory: ${file_path}. Use ls command instead.` };
       }
 
-      // 检测文件类型
-      const ext = path.extname(file_path).toLowerCase();
-      if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
-        return this.readImage(file_path);
+      const ext = path.extname(file_path).toLowerCase().slice(1);
+
+      // 检查是否在黑名单中
+      if (isBlacklistedFile(file_path)) {
+        return {
+          success: false,
+          error: `Cannot read binary file type: .${ext}. This file type is not supported.`
+        };
       }
-      if (ext === '.pdf') {
-        return this.readPdf(file_path);
+
+      // 检测媒体文件类型
+      const mediaType = detectMediaType(file_path);
+
+      // 处理图片
+      if (mediaType === 'image') {
+        return await this.readImageEnhanced(file_path);
       }
-      if (ext === '.ipynb') {
+
+      // 处理 PDF
+      if (mediaType === 'pdf') {
+        return await this.readPdfEnhanced(file_path);
+      }
+
+      // 处理 SVG（可选渲染）
+      if (mediaType === 'svg') {
+        return await this.readSvg(file_path);
+      }
+
+      // 处理 Jupyter Notebook
+      if (ext === 'ipynb') {
         return this.readNotebook(file_path);
       }
 
@@ -115,6 +147,117 @@ Usage:
       };
     } catch (err) {
       return { success: false, error: `Error reading file: ${err}` };
+    }
+  }
+
+  /**
+   * 增强的图片读取（使用媒体处理模块）
+   */
+  private async readImageEnhanced(filePath: string): Promise<FileResult> {
+    try {
+      const result = await readImageFile(filePath);
+      const sizeKB = (result.file.originalSize / 1024).toFixed(2);
+      const tokenEstimate = Math.ceil(result.file.base64.length * 0.125);
+
+      let output = `[Image: ${filePath}]\n`;
+      output += `Format: ${result.file.type}\n`;
+      output += `Size: ${sizeKB} KB\n`;
+      output += `Estimated tokens: ${tokenEstimate}\n`;
+
+      if (result.file.dimensions) {
+        const { originalWidth, originalHeight, displayWidth, displayHeight } = result.file.dimensions;
+        if (originalWidth && originalHeight) {
+          output += `Dimensions: ${originalWidth}x${originalHeight}`;
+          if (displayWidth !== originalWidth || displayHeight !== originalHeight) {
+            output += ` (compressed to ${displayWidth}x${displayHeight})`;
+          }
+          output += '\n';
+        }
+      }
+
+      return {
+        success: true,
+        output,
+        content: `data:${result.file.type};base64,${result.file.base64}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error reading image: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * 增强的 PDF 读取（使用媒体处理模块）
+   */
+  private async readPdfEnhanced(filePath: string): Promise<FileResult> {
+    try {
+      // 检查 PDF 支持
+      if (!isPdfSupported()) {
+        return {
+          success: false,
+          error: 'PDF support is not enabled. Set CLAUDE_PDF_SUPPORT=true to enable.',
+        };
+      }
+
+      const result = await readPdfFile(filePath);
+      const sizeMB = (result.file.originalSize / 1048576).toFixed(2);
+
+      let output = `[PDF Document: ${filePath}]\n`;
+      output += `Size: ${sizeMB} MB\n`;
+      output += `Base64 length: ${result.file.base64.length} chars\n`;
+
+      return {
+        success: true,
+        output,
+        content: result.file.base64,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error reading PDF: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * SVG 文件读取（可选渲染为 PNG）
+   */
+  private async readSvg(filePath: string): Promise<FileResult> {
+    try {
+      // 检查是否启用 SVG 渲染
+      if (isSvgRenderEnabled()) {
+        // 渲染为 PNG
+        const result = await renderSvgToPng(filePath, {
+          fitTo: { mode: 'width', value: 800 }
+        });
+
+        let output = `[SVG rendered to PNG: ${filePath}]\n`;
+        output += `Format: ${result.file.type}\n`;
+        if (result.file.dimensions) {
+          output += `Dimensions: ${result.file.dimensions.displayWidth}x${result.file.dimensions.displayHeight}\n`;
+        }
+
+        return {
+          success: true,
+          output,
+          content: `data:${result.file.type};base64,${result.file.base64}`,
+        };
+      } else {
+        // 作为文本读取
+        const content = fs.readFileSync(filePath, 'utf-8');
+        return {
+          success: true,
+          output: `[SVG File: ${filePath}]\n`,
+          content,
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Error reading SVG: ${error}`,
+      };
     }
   }
 

@@ -1419,3 +1419,7 @@ export type {
   ListSessionsResult,
   ExportOptions,
 } from './list.js';
+
+// ============ 导出新增模块 ============
+export * from './resume.js';
+export * from './cleanup.js';

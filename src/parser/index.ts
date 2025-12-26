@@ -1,10 +1,19 @@
 /**
  * 代码解析模块
  * 使用 Tree-sitter WASM 进行代码分析
+ *
+ * 增强功能：
+ * - T-004: Tree-sitter Query API 符号提取
+ * - T-005: 引用查找 (文本匹配 + 作用域过滤)
+ * - T-006: 多语言支持 (20+ 语言)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import Parser from 'web-tree-sitter';
+import { SymbolExtractor } from './symbol-extractor.js';
+import { ReferenceFinder, Reference } from './reference-finder.js';
+import { languageLoader, LanguageLoader } from './language-loader.js';
 
 // 语法节点类型
 export interface SyntaxNode {
@@ -199,6 +208,10 @@ export class TreeSitterWasmParser {
   private parseCache: Map<string, ParseCacheEntry> = new Map();
   private readonly CACHE_MAX_AGE = 5 * 60 * 1000; // 5 分钟
   private readonly MAX_CACHE_SIZE = 50; // 最多缓存 50 个文件
+  // 新增：符号提取器和引用查找器 (T-004, T-005)
+  private symbolExtractor: SymbolExtractor = new SymbolExtractor();
+  private referenceFinder: ReferenceFinder = new ReferenceFinder();
+  private languageLoader: LanguageLoader = languageLoader;
 
   async initialize(): Promise<boolean> {
     if (this.initialized) return true;
@@ -420,60 +433,78 @@ export class TreeSitterWasmParser {
   isInitialized(): boolean {
     return this.initialized;
   }
-}
 
-// 代码解析器（支持 Tree-sitter WASM 和 Regex 回退）
-export class CodeParser {
-  private treeSitter: TreeSitterWasmParser;
-  private useTreeSitter: boolean = true;
-
-  constructor() {
-    this.treeSitter = new TreeSitterWasmParser();
-  }
-
-  async initialize(): Promise<boolean> {
-    const success = await this.treeSitter.initialize();
-    this.useTreeSitter = success;
-    return success;
-  }
-
-  async parseFile(filePath: string): Promise<CodeSymbol[]> {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-    if (!language) return [];
-
-    // 尝试使用 Tree-sitter（支持增量解析）
-    if (this.useTreeSitter) {
-      const tree = await this.treeSitter.parse(content, language, filePath);
-      if (tree) {
-        const symbols = this.extractSymbolsFromTree(tree.rootNode, filePath, language);
-        // 注意：不要删除树，因为它被缓存了
-        // tree.delete();
-        return symbols;
+  /**
+   * 查找引用 (T-005)
+   * 在给定的树中查找标识符的所有引用
+   */
+  async findReferences(
+    tree: any,
+    language: string,
+    identifier: string,
+    position: { line: number; column: number },
+    filePath: string
+  ): Promise<Reference[]> {
+    try {
+      const lang = await this.languageLoader.loadLanguage(language);
+      if (!lang) {
+        console.warn(`Language ${language} not available for reference finding`);
+        return [];
       }
+
+      return await this.referenceFinder.findReferences(tree, lang, identifier, position, filePath);
+    } catch (error) {
+      console.warn('Failed to find references:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 获取符号提取器的缓存统计
+   */
+  getSymbolExtractorStats() {
+    return this.symbolExtractor.getCacheStats();
+  }
+
+  /**
+   * 清除所有缓存
+   */
+  clearAllCaches(): void {
+    this.clearCache();
+    this.symbolExtractor.clearCache();
+    this.languageLoader.clearCache();
+  }
+
+  /**
+   * 从Tree中提取符号 (增强版 - T-004)
+   * 优先使用Query API，回退到节点遍历
+   */
+  async extractSymbolsFromTree(
+    tree: any,
+    filePath: string,
+    language: string
+  ): Promise<CodeSymbol[]> {
+    // 尝试使用新的Query-based符号提取器 (T-004)
+    try {
+      const lang = await this.languageLoader.loadLanguage(language);
+      if (lang) {
+        const symbols = await this.symbolExtractor.extractSymbols(tree, lang, language, filePath);
+        if (symbols.length > 0) {
+          return symbols;
+        }
+      }
+    } catch (error) {
+      console.warn('Query-based extraction failed, falling back to node traversal:', error);
     }
 
-    // 回退到 Regex
-    return this.parseWithRegex(content, filePath, language);
+    // 回退到旧的节点遍历方式
+    return this.extractSymbolsFromTreeLegacy(tree.rootNode, filePath, language);
   }
 
-  parseFileSync(filePath: string): CodeSymbol[] {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-    if (!language) return [];
-    return this.parseWithRegex(content, filePath, language);
-  }
-
-  private detectLanguage(ext: string): string | null {
-    for (const [lang, config] of Object.entries(LANGUAGE_CONFIGS)) {
-      if (config.extensions.includes(ext)) return lang;
-    }
-    return null;
-  }
-
-  private extractSymbolsFromTree(node: any, filePath: string, language: string): CodeSymbol[] {
+  /**
+   * 旧版符号提取 (回退方案)
+   */
+  private extractSymbolsFromTreeLegacy(node: any, filePath: string, language: string): CodeSymbol[] {
     const symbols: CodeSymbol[] = [];
     const config = LANGUAGE_CONFIGS[language];
     if (!config) return symbols;
@@ -531,6 +562,58 @@ export class CodeParser {
       }
     }
 
+    return null;
+  }
+}
+
+// 代码解析器（支持 Tree-sitter WASM 和 Regex 回退）
+export class CodeParser {
+  private treeSitter: TreeSitterWasmParser;
+  private useTreeSitter: boolean = true;
+
+  constructor() {
+    this.treeSitter = new TreeSitterWasmParser();
+  }
+
+  async initialize(): Promise<boolean> {
+    const success = await this.treeSitter.initialize();
+    this.useTreeSitter = success;
+    return success;
+  }
+
+  async parseFile(filePath: string): Promise<CodeSymbol[]> {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const ext = path.extname(filePath);
+    const language = this.detectLanguage(ext);
+    if (!language) return [];
+
+    // 尝试使用 Tree-sitter（支持增量解析）
+    if (this.useTreeSitter) {
+      const tree = await (this.treeSitter as any).parse(content, language, filePath);
+      if (tree) {
+        const symbols = await (this.treeSitter as any).extractSymbolsFromTree(tree, filePath, language);
+        // 注意：不要删除树，因为它被缓存了
+        // tree.delete();
+        return symbols;
+      }
+    }
+
+    // 回退到 Regex
+    return this.parseWithRegex(content, filePath, language);
+  }
+
+  parseFileSync(filePath: string): CodeSymbol[] {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const ext = path.extname(filePath);
+    const language = this.detectLanguage(ext);
+    if (!language) return [];
+    return this.parseWithRegex(content, filePath, language);
+  }
+
+  private detectLanguage(ext: string): string | null {
+    for (const [lang, config] of Object.entries(LANGUAGE_CONFIGS)) {
+      if (config.extensions.includes(ext)) return lang;
+    }
     return null;
   }
 
@@ -939,6 +1022,64 @@ export class CodeAnalyzer {
     }
     return null;
   }
+
+  /**
+   * 查找文件中标识符的所有引用 (T-005)
+   */
+  async findReferencesInFile(
+    filePath: string,
+    identifier: string,
+    position: { line: number; column: number }
+  ): Promise<Reference[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const ext = path.extname(filePath);
+    const language = this.detectLanguage(ext);
+
+    if (!language) {
+      console.warn(`Language not detected for file: ${filePath}`);
+      return [];
+    }
+
+    try {
+      const tree = await (this.parser as any).treeSitter.parse(content, language, filePath);
+      if (!tree) {
+        return [];
+      }
+
+      return await (this.parser as any).treeSitter.findReferences(
+        tree,
+        language,
+        identifier,
+        position,
+        filePath
+      );
+    } catch (error) {
+      console.warn('Failed to find references in file:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 获取解析器统计信息
+   */
+  getParserStats() {
+    return {
+      parseCache: (this.parser as any).treeSitter.getCacheStats(),
+      symbolExtractor: (this.parser as any).treeSitter.getSymbolExtractorStats(),
+      languageLoader: languageLoader.getCacheStats(),
+    };
+  }
+
+  /**
+   * 清除所有缓存
+   */
+  clearAllCaches(): void {
+    (this.parser as any).treeSitter.clearAllCaches();
+  }
 }
 
 // 简化解析器（向后兼容）
@@ -974,3 +1115,9 @@ export const codeAnalyzer = new CodeAnalyzer();
 
 // 导出 Tree-sitter 解析器
 export const treeSitterParser = new TreeSitterWasmParser();
+
+// 导出新的模块 (T-004, T-005, T-006)
+export { SymbolExtractor } from './symbol-extractor.js';
+export { ReferenceFinder, Reference } from './reference-finder.js';
+export { LanguageLoader, languageLoader, LANGUAGE_MAPPINGS } from './language-loader.js';
+export { getQuery, getLanguageQueries, hasQuerySupport, getSupportedLanguagesWithQueries } from './queries.js';

@@ -7,6 +7,7 @@ import { commandRegistry } from './registry.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { generateTerminalConfig, detectTerminalType, formatConfigAsMarkdown } from '../utils/terminal-setup.js';
 
 // /cost - 费用统计 (官方风格)
 export const costCommand: SlashCommand = {
@@ -841,6 +842,59 @@ Use /think-back to see detailed statistics.`;
   },
 };
 
+// /terminal-setup - 终端配置指南
+export const terminalSetupCommand: SlashCommand = {
+  name: 'terminal-setup',
+  description: 'Show terminal configuration for Shift+Enter multi-line input',
+  category: 'utility',
+  execute: (ctx: CommandContext): CommandResult => {
+    const configs = generateTerminalConfig();
+    const currentTerminal = detectTerminalType();
+
+    let output = '# Terminal Configuration for Shift+Enter Multi-line Input\n\n';
+    output += 'Configure your terminal to send the escape sequence `\\x1b\\r` when pressing Shift+Enter.\n';
+    output += 'This allows you to insert newlines without submitting your prompt.\n\n';
+
+    if (currentTerminal) {
+      output += `✓ Detected terminal: **${currentTerminal}**\n\n`;
+      const config = configs.find(c => c.terminal === currentTerminal);
+      if (config) {
+        output += '## Your Terminal Configuration\n\n';
+        output += '```\n';
+        output += config.config;
+        output += '\n```\n\n';
+        if (config.instructions) {
+          output += `> ${config.instructions}\n\n`;
+        }
+        output += '---\n\n';
+      }
+    }
+
+    output += '## All Supported Terminals\n\n';
+
+    for (const { terminal, config, instructions } of configs) {
+      output += `### ${terminal}\n\n`;
+      output += '```\n';
+      output += config;
+      output += '\n```\n\n';
+      if (instructions) {
+        output += `> ${instructions}\n\n`;
+      }
+    }
+
+    output += '---\n\n';
+    output += 'After configuring, press **Shift+Enter** to insert a newline without submitting.\n';
+    output += 'Press **Enter** (without Shift) to submit your prompt as usual.\n\n';
+    output += '💡 Tip: Multi-line input is useful for:\n';
+    output += '  - Writing longer prompts\n';
+    output += '  - Formatting code snippets\n';
+    output += '  - Creating structured instructions\n';
+
+    ctx.ui.addMessage('assistant', output);
+    return { success: true };
+  },
+};
+
 // 注册所有工具命令
 export function registerUtilityCommands(): void {
   commandRegistry.register(costCommand);
@@ -854,4 +908,5 @@ export function registerUtilityCommands(): void {
   commandRegistry.register(statsCommand);
   commandRegistry.register(thinkBackCommand);
   commandRegistry.register(thinkbackPlayCommand);
+  commandRegistry.register(terminalSetupCommand);
 }

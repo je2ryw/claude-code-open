@@ -17,6 +17,8 @@ import { ConversationLoop } from '../core/loop.js';
 import { initializeCommands, executeCommand } from '../commands/index.js';
 import { isPlanModeActive } from '../tools/planmode.js';
 import { updateManager } from '../updater/index.js';
+import { useGlobalKeybindings } from './hooks/useGlobalKeybindings.js';
+import { configManager } from '../config/index.js';
 import type { TodoItem } from '../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -90,9 +92,15 @@ export const App: React.FC<AppProps> = ({
   const [hasUpdate, setHasUpdate] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | undefined>();
   const [planMode, setPlanMode] = useState(false);
+  const [showVerbose, setShowVerbose] = useState(verbose || false);
+  const [showTodosPanel, setShowTodosPanel] = useState(false);
+  const [stashedPrompt, setStashedPrompt] = useState<string>('');
 
   // 会话 ID
   const sessionId = useRef(uuidv4());
+
+  // 当前输入值的 ref（用于全局快捷键访问）
+  const currentInputRef = useRef<string>('');
 
   // 模型映射
   const modelMap: Record<string, string> = {
@@ -162,6 +170,37 @@ export const App: React.FC<AppProps> = ({
 
     return () => clearInterval(interval);
   }, []);
+
+  // 全局快捷键
+  const config = configManager.getAll();
+  useGlobalKeybindings({
+    config,
+    onVerboseToggle: () => {
+      setShowVerbose((v) => !v);
+      addActivity(`Verbose mode ${!showVerbose ? 'enabled' : 'disabled'}`);
+    },
+    onTodosToggle: () => {
+      setShowTodosPanel((v) => !v);
+      addActivity(`Todos panel ${!showTodosPanel ? 'shown' : 'hidden'}`);
+    },
+    onModelSwitch: () => {
+      addActivity('Model switch requested (feature coming soon)');
+      addMessage('assistant', 'Model switching via keyboard shortcut coming soon!\n\nFor now, use the /model command or restart with --model flag.');
+    },
+    onStashPrompt: (prompt) => {
+      setStashedPrompt(prompt);
+      if (prompt) {
+        addActivity(`Stashed prompt: ${prompt.slice(0, 30)}...`);
+        addMessage('assistant', `Prompt stashed: "${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}"\n\nYou can reference this later.`);
+      }
+    },
+    onUndo: () => {
+      addActivity('Undo requested');
+      // Note: Undo is handled within Input component for Vim mode
+    },
+    getCurrentInput: () => currentInputRef.current,
+    disabled: isProcessing,
+  });
 
   // 处理键盘输入
   useInput((input, key) => {
@@ -411,7 +450,7 @@ export const App: React.FC<AppProps> = ({
       </Box>
 
       {/* Todo List */}
-      {todos.length > 0 && <TodoList todos={todos} />}
+      {(todos.length > 0 || showTodosPanel) && <TodoList todos={todos} />}
 
       {/* Input with suggestion */}
       <Box marginTop={1}>

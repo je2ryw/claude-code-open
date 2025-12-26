@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import type { McpServerConfig } from '../types/index.js';
+import { envManager, maskSensitiveFields, getValidatedEnv } from '../env/index.js';
 
 // Re-export McpServerConfig for backwards compatibility
 export type { McpServerConfig };
@@ -349,8 +350,28 @@ export class ConfigManager {
     // 标志配置文件 (通过命令行指定)
     this.flagConfigFile = options?.flagSettingsPath;
 
+    // 验证环境变量
+    this.validateEnvironmentVariables();
+
     // 加载并合并配置
     this.mergedConfig = this.loadAndMergeConfig();
+  }
+
+  /**
+   * 验证所有环境变量
+   */
+  private validateEnvironmentVariables(): void {
+    // 验证环境变量并记录结果
+    const results = envManager.validateAll();
+
+    // 输出验证警告
+    for (const [name, result] of results) {
+      if (result.status === 'invalid') {
+        console.warn(`[Config] Invalid environment variable ${name}: ${result.message}`);
+      } else if (result.status === 'capped') {
+        console.warn(`[Config] Environment variable ${name} capped: ${result.message}`);
+      }
+    }
   }
 
   /**
@@ -592,44 +613,29 @@ export class ConfigManager {
   }
 
   /**
+   * 获取验证后的环境变量值
+   */
+  getValidatedEnv<T = any>(name: string): T | undefined {
+    return getValidatedEnv<T>(name);
+  }
+
+  /**
+   * 获取环境变量管理器
+   */
+  getEnvManager() {
+    return envManager;
+  }
+
+  /**
    * 导出配置（掩码敏感信息）
    */
   export(maskSecrets = true): string {
     const config = { ...this.mergedConfig };
 
     if (maskSecrets) {
-      // 掩码敏感信息
-      if (config.apiKey) {
-        config.apiKey = this.maskSecret(config.apiKey);
-      }
-      if (config.oauthToken) {
-        config.oauthToken = this.maskSecret(config.oauthToken);
-      }
-      if (config.mcpServers) {
-        for (const [name, server] of Object.entries(config.mcpServers)) {
-          if (server.headers) {
-            const maskedHeaders: Record<string, string> = {};
-            for (const [key, value] of Object.entries(server.headers)) {
-              maskedHeaders[key] = this.maskSecret(value);
-            }
-            config.mcpServers[name] = { ...server, headers: maskedHeaders };
-          }
-          if (server.env) {
-            const maskedEnv: Record<string, string> = {};
-            for (const [key, value] of Object.entries(server.env)) {
-              if (key.toLowerCase().includes('key') ||
-                  key.toLowerCase().includes('token') ||
-                  key.toLowerCase().includes('secret') ||
-                  key.toLowerCase().includes('password')) {
-                maskedEnv[key] = this.maskSecret(value);
-              } else {
-                maskedEnv[key] = value;
-              }
-            }
-            config.mcpServers[name] = { ...server, env: maskedEnv };
-          }
-        }
-      }
+      // 使用统一的敏感字段掩码函数
+      const masked = maskSensitiveFields(config);
+      return JSON.stringify(masked, null, 2);
     }
 
     return JSON.stringify(config, null, 2);
@@ -651,13 +657,6 @@ export class ConfigManager {
     }
   }
 
-  /**
-   * 掩码敏感信息
-   */
-  private maskSecret(value: string): string {
-    if (value.length <= 8) return '***';
-    return value.slice(0, 4) + '***' + value.slice(-4);
-  }
 
   /**
    * 验证配置
@@ -881,6 +880,40 @@ export const configManager = new ConfigManager();
 
 export { ClaudeMdParser, claudeMdParser } from './claude-md-parser.js';
 export { ConfigCommand, createConfigCommand } from './config-command.js';
+
+// ============ 重新导出环境变量模块 ============
+
+export {
+  // 验证器
+  type ValidationStatus,
+  type ValidationResult,
+  type EnvVarValidator,
+  envValidatorRegistry,
+  validateEnvVar,
+  getValidatedEnvValue,
+  validateAllEnvVars,
+
+  // 内置验证器
+  BASH_MAX_OUTPUT_LENGTH,
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+  createBooleanValidator,
+  createNumberRangeValidator,
+  createEnumValidator,
+
+  // 敏感变量
+  isSensitiveVar,
+  maskSensitive,
+  maskSensitiveFields,
+  getSensitiveEnvVars,
+  getMaskedSensitiveEnvVars,
+  getSafeEnvVars,
+
+  // 管理器
+  envManager,
+  getValidatedEnv,
+  validateAllEnv,
+  exportSafeEnv,
+} from '../env/index.js';
 
 // ============ 环境变量配置（向后兼容） ============
 

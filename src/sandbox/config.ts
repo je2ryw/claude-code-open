@@ -742,6 +742,25 @@ export class SandboxConfigManager {
   createScopedConfig(overrides: Partial<SandboxConfig>): SandboxConfig {
     return this.mergeConfigs(this.currentConfig, overrides);
   }
+
+  /**
+   * Execute command with current configuration
+   * Uses the unified executor to select best sandbox
+   */
+  async executeCommand(
+    command: string,
+    args: string[] = []
+  ): Promise<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    sandboxed: boolean;
+    sandboxType: string;
+  }> {
+    // Import executor dynamically to avoid circular dependencies
+    const { executeInSandbox } = await import('./executor.js');
+    return executeInSandbox(command, args, this.currentConfig);
+  }
 }
 
 // ============ Global Instance ============

@@ -251,7 +251,7 @@ export class DiagnosticsCollector {
   }
 
   /**
-   * 从 LSP 服务器收集诊断信息 (模拟)
+   * 从 LSP 服务器收集诊断信息 (真实实现)
    */
   async collectFromLSP(): Promise<DiagnosticInfo[]> {
     const cacheKey = 'lsp';
@@ -260,19 +260,62 @@ export class DiagnosticsCollector {
       return cached;
     }
 
-    // 这是一个模拟实现
-    // 在真实的 IDE 集成中，这会连接到实际的 LSP 服务器
-    // 目前返回空数组
     const diagnostics: DiagnosticInfo[] = [];
 
-    // TODO: 在未来的版本中实现真实的 LSP 集成
-    // 可能的实现方式:
-    // 1. 启动 TypeScript LSP 服务器
-    // 2. 通过 LSP 协议请求诊断信息
-    // 3. 解析响应并转换为 DiagnosticInfo 格式
+    try {
+      // 动态导入 LSP 管理器（避免循环依赖）
+      const { getLSPManager } = await import('../lsp/manager.js');
+      const manager = getLSPManager();
 
-    this.setCache(cacheKey, diagnostics);
-    return diagnostics;
+      if (!manager) {
+        this.setCache(cacheKey, []);
+        return [];
+      }
+
+      // 从管理器获取缓存的诊断信息
+      const lspDiagnostics = manager.getDiagnostics();
+
+      for (const [uri, fileDiagnostics] of lspDiagnostics) {
+        const filePath = uri.replace(/^file:\/\//, '');
+        const relativePath = this.normalizeFilePath(filePath);
+
+        for (const diag of fileDiagnostics) {
+          diagnostics.push({
+            file: relativePath,
+            line: diag.range.start.line + 1,
+            column: diag.range.start.character + 1,
+            severity: this.mapLSPSeverity(diag.severity),
+            message: diag.message,
+            source: diag.source || 'lsp',
+          });
+        }
+      }
+
+      this.setCache(cacheKey, diagnostics);
+      return diagnostics;
+    } catch (error) {
+      console.warn('Failed to collect LSP diagnostics:', error);
+      this.setCache(cacheKey, []);
+      return [];
+    }
+  }
+
+  /**
+   * 映射 LSP 严重性到标准严重性
+   */
+  private mapLSPSeverity(severity: number | undefined): DiagnosticInfo['severity'] {
+    switch (severity) {
+      case 1:
+        return 'error';
+      case 2:
+        return 'warning';
+      case 3:
+        return 'info';
+      case 4:
+        return 'hint';
+      default:
+        return 'error';
+    }
   }
 
   /**

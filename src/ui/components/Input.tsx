@@ -90,6 +90,8 @@ export const Input: React.FC<InputProps> = ({
   const [undoStack, setUndoStack] = useState<Array<{ value: string; cursor: number }>>([]);
   const [lastDeletedText, setLastDeletedText] = useState('');
   const [pendingCommand, setPendingCommand] = useState(''); // For multi-key commands like dd
+  const [yankRegister, setYankRegister] = useState<string>(''); // Yank register for y/p
+  const [replaceMode, setReplaceMode] = useState(false); // For 'r' command
 
   // 监听环境变量变化（通过轮询检测）
   useEffect(() => {
@@ -179,6 +181,20 @@ export const Input: React.FC<InputProps> = ({
     (input, key) => {
       if (disabled) return;
 
+      // 检测 Shift+Enter 的转义序列 (\x1b\r)
+      // 需要终端配置支持（详见 /terminal-setup 命令）
+      if (input === '\x1b' && key.return) {
+        // 插入换行符而非提交
+        if (vimModeEnabled) saveToUndoStack();
+        setValue((prev) => {
+          const before = prev.slice(0, cursor);
+          const after = prev.slice(cursor);
+          return before + '\n' + after;
+        });
+        setCursor((prev) => prev + 1);
+        return;
+      }
+
       // 在命令列表显示时的特殊处理
       if (showCommandList && !vimNormalMode) {
         if (key.upArrow) {
@@ -214,18 +230,39 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
-        // 处理多键命令（如 dd）
+        // 处理多键命令（如 dd, yy）
         if (pendingCommand === 'd') {
           if (input === 'd') {
             // dd - 删除整行
             saveToUndoStack();
             setLastDeletedText(value);
+            setYankRegister(value); // 删除的内容也会被 yank
             setValue('');
             setCursor(0);
             setPendingCommand('');
             return;
           }
           setPendingCommand('');
+        }
+
+        if (pendingCommand === 'y') {
+          if (input === 'y') {
+            // yy - 复制整行
+            setYankRegister(value);
+            setPendingCommand('');
+            return;
+          }
+          setPendingCommand('');
+        }
+
+        if (pendingCommand === 'r') {
+          // r{char} - 替换当前字符
+          if (input && input.length === 1 && cursor < value.length) {
+            saveToUndoStack();
+            setValue(value.slice(0, cursor) + input + value.slice(cursor + 1));
+            setPendingCommand('');
+          }
+          return;
         }
 
         // 撤销
@@ -299,12 +336,60 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
+        // Yank 操作 - y, yy
+        if (input === 'y') {
+          // y - 开始 yank 命令（等待第二个按键）
+          setPendingCommand('y');
+          return;
+        }
+
+        // Paste 操作 - p, P
+        if (input === 'p') {
+          // p - 在光标后粘贴
+          if (yankRegister) {
+            saveToUndoStack();
+            const newValue = value.slice(0, cursor + 1) + yankRegister + value.slice(cursor + 1);
+            setValue(newValue);
+            setCursor(cursor + yankRegister.length);
+          }
+          return;
+        }
+        if (input === 'P') {
+          // P - 在光标前粘贴
+          if (yankRegister) {
+            saveToUndoStack();
+            const newValue = value.slice(0, cursor) + yankRegister + value.slice(cursor);
+            setValue(newValue);
+            setCursor(cursor + yankRegister.length - 1);
+          }
+          return;
+        }
+
+        // Replace 操作 - r
+        if (input === 'r') {
+          // r - 开始替换命令（等待字符）
+          setPendingCommand('r');
+          return;
+        }
+
+        // Change 操作 - C
+        if (input === 'C') {
+          // C - 修改到行尾（删除到行尾并进入插入模式）
+          saveToUndoStack();
+          setLastDeletedText(value.slice(cursor));
+          setYankRegister(value.slice(cursor));
+          setValue(value.slice(0, cursor));
+          setVimNormalMode(false);
+          return;
+        }
+
         // 删除操作 - x, d, D
         if (input === 'x') {
           // x - 删除当前字符
           if (value.length > 0 && cursor < value.length) {
             saveToUndoStack();
             setLastDeletedText(value[cursor]);
+            setYankRegister(value[cursor]);
             setValue(value.slice(0, cursor) + value.slice(cursor + 1));
             if (cursor >= value.length - 1 && cursor > 0) {
               setCursor(cursor - 1);
@@ -321,6 +406,7 @@ export const Input: React.FC<InputProps> = ({
           // D - 删除到行尾
           saveToUndoStack();
           setLastDeletedText(value.slice(cursor));
+          setYankRegister(value.slice(cursor));
           setValue(value.slice(0, cursor));
           if (cursor > 0 && cursor >= value.length) {
             setCursor(cursor - 1);

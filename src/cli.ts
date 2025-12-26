@@ -20,6 +20,7 @@ import { listSessions, loadSession } from './session/index.js';
 import { getMemoryManager } from './memory/index.js';
 import { emitLifecycleEvent } from './lifecycle/index.js';
 import { runHooks } from './hooks/index.js';
+import { scheduleCleanup } from './session/cleanup.js';
 import type { PermissionMode, OutputFormat, InputFormat } from './types/index.js';
 
 // 工作目录列表
@@ -106,6 +107,9 @@ program
     // T504: action_handler_start - Action 处理器开始
     await emitLifecycleEvent('action_handler_start');
 
+    // ✅ 启动时自动清理过期数据（异步，不阻塞）
+    scheduleCleanup();
+
     // 调试模式
     if (options.debug) {
       process.env.CLAUDE_DEBUG = options.debug === true ? '*' : options.debug;
@@ -167,6 +171,19 @@ program
     // T503: action_after_setup - 设置后
     await emitLifecycleEvent('action_after_setup');
     await runHooks({ event: 'AfterSetup' });
+
+    // 初始化 LSP 管理器
+    try {
+      const { initializeLSPManager } = await import('./lsp/index.js');
+      const workspaceRoot = process.cwd();
+      await initializeLSPManager(workspaceRoot);
+      console.log(chalk.dim('[LSP] Language servers initialized'));
+    } catch (error) {
+      // LSP 初始化失败不应该阻止程序运行
+      if (options.debug) {
+        console.warn(chalk.yellow('[LSP] Failed to initialize language servers:'), error);
+      }
+    }
 
     // T505: action_commands_loaded - 命令加载完成
     // 注意：本项目的斜杠命令是内联定义的，这里标记为已加载

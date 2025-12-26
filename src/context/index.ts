@@ -45,11 +45,19 @@ export interface ContextStats {
   compressionCount: number; // 压缩执行次数
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  thinkingTokens?: number;
+}
+
 export interface ConversationTurn {
   user: Message;
   assistant: Message;
   timestamp: number;
-  tokenEstimate: number; // 原始 token 估算
+  tokenEstimate: number; // 后备 token 估算
   originalTokens: number; // 记录原始大小
   summarized?: boolean;
   summary?: string;
@@ -59,6 +67,8 @@ export interface ConversationTurn {
     compressedSize: number;
     method: 'truncate' | 'ai_summary' | 'code_extract' | 'file_ref';
   };
+  // ✅ 添加真实 API usage
+  apiUsage?: TokenUsage;
 }
 
 export interface CompressionResult {
@@ -479,9 +489,9 @@ export class ContextManager {
   }
 
   /**
-   * 添加对话轮次
+   * 添加对话轮次（支持真实 API usage）
    */
-  addTurn(user: Message, assistant: Message): void {
+  addTurn(user: Message, assistant: Message, apiUsage?: TokenUsage): void {
     const originalUserTokens = estimateMessageTokens(user);
     const originalAssistantTokens = estimateMessageTokens(assistant);
     const originalTokens = originalUserTokens + originalAssistantTokens;
@@ -514,6 +524,7 @@ export class ContextManager {
       tokenEstimate,
       originalTokens,
       compressed,
+      apiUsage, // ✅ 保存真实 API usage
     });
 
     // 检查是否需要摘要压缩
@@ -559,15 +570,25 @@ export class ContextManager {
   }
 
   /**
-   * 获取已使用的 token 数
+   * 获取已使用的 token 数（优先使用真实 API usage）
    */
   getUsedTokens(): number {
     let total = estimateTokens(this.systemPrompt);
 
     for (const turn of this.turns) {
       if (turn.summarized && turn.summary) {
+        // 已摘要的消息使用摘要 tokens
         total += estimateTokens(turn.summary);
+      } else if (turn.apiUsage) {
+        // ✅ 优先使用真实 API tokens
+        total +=
+          turn.apiUsage.inputTokens +
+          (turn.apiUsage.cacheCreationTokens ?? 0) +
+          (turn.apiUsage.cacheReadTokens ?? 0) +
+          turn.apiUsage.outputTokens +
+          (turn.apiUsage.thinkingTokens ?? 0);
       } else {
+        // 后备估算
         total += turn.tokenEstimate;
       }
     }
@@ -1094,3 +1115,7 @@ export const contextManager = new ContextManager();
 
 // ============ 导出增强功能 ============
 export * from './enhanced.js';
+
+// ============ 导出新增模块 ============
+export * from './summarizer.js';
+export * from './window.js';

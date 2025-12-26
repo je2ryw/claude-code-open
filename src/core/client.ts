@@ -267,7 +267,13 @@ export class ClaudeClient {
   ): Promise<{
     content: ContentBlock[];
     stopReason: string;
-    usage: { inputTokens: number; outputTokens: number };
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      thinkingTokens?: number;
+    };
     thinking?: ThinkingResult;
     model: string;
   }> {
@@ -359,6 +365,9 @@ export class ClaudeClient {
       usage: {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheCreationTokens: usage.cacheCreationTokens,
+        thinkingTokens: usage.thinkingTokens,
       },
       thinking: thinkingResult,
       model: usedModel,

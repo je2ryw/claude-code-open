@@ -5,6 +5,7 @@
 
 import axios, { AxiosProxyConfig } from 'axios';
 import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
 import { LRUCache } from 'lru-cache';
 import { BaseTool } from './base.js';
 import type { WebFetchInput, WebSearchInput, ToolResult, ToolDefinition } from '../types/index.js';
@@ -30,6 +31,20 @@ interface SearchResult {
 }
 
 /**
+ * 缓存的搜索结果接口
+ * T-012: WebSearch 缓存实现
+ */
+interface CachedSearchResults {
+  query: string;
+  results: SearchResult[];
+  fetchedAt: number;
+  filters?: {
+    allowedDomains?: string[];
+    blockedDomains?: string[];
+  };
+}
+
+/**
  * WebFetch 缓存
  * - TTL: 15分钟 (900,000ms)
  * - 最大大小: 50MB
@@ -44,13 +59,129 @@ const webFetchCache = new LRUCache<string, CachedContent>({
 });
 
 /**
+ * WebSearch 缓存
+ * T-012: WebSearch 缓存实现
+ * - TTL: 1小时 (3,600,000ms) - 搜索结果时效性较长
+ * - 最大条目: 500 个查询
+ * - 缓存键: query + allowedDomains + blockedDomains
+ */
+const webSearchCache = new LRUCache<string, CachedSearchResults>({
+  max: 500,                  // 最多缓存 500 个不同查询
+  ttl: 60 * 60 * 1000,      // 1小时过期
+  updateAgeOnGet: true,      // 访问时更新年龄
+  updateAgeOnHas: false,
+});
+
+/**
+ * 生成搜索缓存键
+ * T-012: 缓存键生成逻辑
+ * @param query 搜索查询
+ * @param allowedDomains 允许的域名列表
+ * @param blockedDomains 阻止的域名列表
+ * @returns 缓存键字符串
+ */
+function generateSearchCacheKey(
+  query: string,
+  allowedDomains?: string[],
+  blockedDomains?: string[]
+): string {
+  const normalizedQuery = query.trim().toLowerCase();
+  const allowed = allowedDomains?.sort().join(',') || '';
+  const blocked = blockedDomains?.sort().join(',') || '';
+
+  return `${normalizedQuery}|${allowed}|${blocked}`;
+}
+
+/**
+ * 创建增强的 Turndown 服务
+ * T-011: 优化 Turndown 配置，支持 GFM 扩展和自定义规则
+ */
+function createTurndownService(): TurndownService {
+  const service = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+    linkStyle: 'inlined',
+    linkReferenceStyle: 'full',
+    hr: '---',
+    bulletListMarker: '-',
+    fence: '```',
+    br: '  ',
+    preformattedCode: false,
+  });
+
+  // 启用 GFM 扩展（表格、删除线、任务列表等）
+  service.use(gfm);
+
+  // 自定义规则：删除 script 和 style 标签
+  service.addRule('removeScripts', {
+    filter: ['script', 'style', 'noscript'],
+    replacement: () => '',
+  });
+
+  // 自定义规则：优化图片 alt 文本
+  service.addRule('images', {
+    filter: 'img',
+    replacement: (content, node) => {
+      const element = node as any;
+      const alt = element.alt || '';
+      const src = element.src || '';
+      const title = element.title || '';
+
+      if (!src) return '';
+
+      const titlePart = title ? ` "${title}"` : '';
+      return `![${alt}](${src}${titlePart})`;
+    },
+  });
+
+  // 自定义规则：保留语义化标签
+  service.addRule('semanticTags', {
+    filter: ['mark', 'ins', 'kbd', 'sub', 'sup'],
+    replacement: (content, node) => {
+      const tagMap: Record<string, string> = {
+        'mark': '==',
+        'ins': '++',
+        'kbd': '`',
+        'sub': '~',
+        'sup': '^',
+      };
+      const delimiter = tagMap[node.nodeName.toLowerCase()] || '';
+      return delimiter + content + delimiter;
+    },
+  });
+
+  // 自定义规则：优化代码块语言标识
+  service.addRule('codeBlock', {
+    filter: (node) => {
+      return (
+        node.nodeName === 'PRE' &&
+        node.firstChild !== null &&
+        node.firstChild.nodeName === 'CODE'
+      );
+    },
+    replacement: (content, node) => {
+      const codeNode = node.firstChild as any;
+      const className = codeNode?.className || '';
+
+      // 提取语言标识（从 language-xxx 或 lang-xxx）
+      const langMatch = className.match(/(?:language|lang)-(\w+)/);
+      const lang = langMatch ? langMatch[1] : '';
+
+      const codeContent = codeNode?.textContent || content;
+
+      return '\n\n```' + lang + '\n' + codeContent + '\n```\n\n';
+    },
+  });
+
+  return service;
+}
+
+/**
  * Turndown 服务实例（HTML 到 Markdown 转换）
  */
-const turndownService = new TurndownService({
-  headingStyle: 'atx',
-  codeBlockStyle: 'fenced',
-  emDelimiter: '_',
-});
+const turndownService = createTurndownService();
 
 export class WebFetchTool extends BaseTool<WebFetchInput, ToolResult> {
   name = 'WebFetch';
@@ -472,32 +603,176 @@ IMPORTANT - Use the correct year in search queries:
   }
 
   /**
-   * 执行搜索（占位符实现）
+   * 执行搜索
+   * T-012: 集成 DuckDuckGo Instant Answer API（免费）
    *
-   * 注意：实际的搜索需要集成第三方搜索 API，例如：
-   * - DuckDuckGo API
-   * - Bing Search API
-   * - Google Custom Search API
-   * - SerpAPI
+   * 支持的搜索 API：
+   * - DuckDuckGo Instant Answer API (当前实现 - 免费)
+   * - Bing Search API (需要 BING_SEARCH_API_KEY 环境变量)
+   * - Google Custom Search API (需要 GOOGLE_SEARCH_API_KEY 和 GOOGLE_SEARCH_ENGINE_ID)
    */
   private async performSearch(query: string): Promise<SearchResult[]> {
-    // 这是一个占位符实现
-    // 在真实环境中，这里应该调用实际的搜索 API
+    // 优先使用 Bing Search API（如果配置）
+    const bingApiKey = process.env.BING_SEARCH_API_KEY;
+    if (bingApiKey) {
+      return this.searchWithBing(query, bingApiKey);
+    }
 
-    // 示例：如果集成了 DuckDuckGo API
-    // const results = await duckduckgo.search(query);
-    // return results.map(r => ({
-    //   title: r.title,
-    //   url: r.url,
-    //   snippet: r.snippet,
-    // }));
+    // 优先使用 Google Custom Search API（如果配置）
+    const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const googleCx = process.env.GOOGLE_SEARCH_ENGINE_ID;
+    if (googleApiKey && googleCx) {
+      return this.searchWithGoogle(query, googleApiKey, googleCx);
+    }
 
-    // 占位符返回
-    return [];
+    // 回退到 DuckDuckGo（免费，无需 API 密钥）
+    return this.searchWithDuckDuckGo(query);
+  }
+
+  /**
+   * DuckDuckGo Instant Answer API 搜索
+   * 免费，无需 API 密钥
+   */
+  private async searchWithDuckDuckGo(query: string): Promise<SearchResult[]> {
+    try {
+      const response = await axios.get('https://api.duckduckgo.com/', {
+        params: {
+          q: query,
+          format: 'json',
+          no_html: 1,
+          skip_disambig: 1,
+        },
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; ClaudeCode/2.0)',
+        },
+      });
+
+      const data = response.data;
+      const results: SearchResult[] = [];
+
+      // 提取相关主题
+      if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
+        for (const topic of data.RelatedTopics.slice(0, 10)) {
+          // 处理嵌套主题
+          if (topic.Topics && Array.isArray(topic.Topics)) {
+            for (const subTopic of topic.Topics.slice(0, 3)) {
+              if (subTopic.Text && subTopic.FirstURL) {
+                results.push({
+                  title: subTopic.Text.split(' - ')[0] || subTopic.Text,
+                  url: subTopic.FirstURL,
+                  snippet: subTopic.Text,
+                });
+              }
+            }
+          } else if (topic.Text && topic.FirstURL) {
+            results.push({
+              title: topic.Text.split(' - ')[0] || topic.Text,
+              url: topic.FirstURL,
+              snippet: topic.Text,
+            });
+          }
+        }
+      }
+
+      // 添加抽象答案（如果有）
+      if (data.Abstract && data.AbstractURL) {
+        results.unshift({
+          title: data.Heading || 'DuckDuckGo Instant Answer',
+          url: data.AbstractURL,
+          snippet: data.Abstract,
+        });
+      }
+
+      return results;
+    } catch (err: any) {
+      console.error('DuckDuckGo search error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Bing Search API 搜索
+   * 需要 Azure 订阅和 API 密钥
+   */
+  private async searchWithBing(query: string, apiKey: string): Promise<SearchResult[]> {
+    try {
+      const response = await axios.get(
+        'https://api.bing.microsoft.com/v7.0/search',
+        {
+          params: { q: query, count: 10 },
+          headers: {
+            'Ocp-Apim-Subscription-Key': apiKey,
+          },
+          timeout: 10000,
+        }
+      );
+
+      const webPages = response.data.webPages?.value || [];
+
+      return webPages.map((page: any) => ({
+        title: page.name || '',
+        url: page.url || '',
+        snippet: page.snippet || '',
+        publishDate: page.dateLastCrawled,
+      }));
+    } catch (err: any) {
+      console.error('Bing Search API error:', err.message);
+      // 回退到 DuckDuckGo
+      return this.searchWithDuckDuckGo(query);
+    }
+  }
+
+  /**
+   * Google Custom Search API 搜索
+   * 需要 API 密钥和搜索引擎 ID
+   */
+  private async searchWithGoogle(
+    query: string,
+    apiKey: string,
+    cx: string
+  ): Promise<SearchResult[]> {
+    try {
+      const response = await axios.get(
+        'https://www.googleapis.com/customsearch/v1',
+        {
+          params: { key: apiKey, cx, q: query, num: 10 },
+          timeout: 10000,
+        }
+      );
+
+      const items = response.data.items || [];
+
+      return items.map((item: any) => ({
+        title: item.title || '',
+        url: item.link || '',
+        snippet: item.snippet || '',
+      }));
+    } catch (err: any) {
+      console.error('Google Search API error:', err.message);
+      // 回退到 DuckDuckGo
+      return this.searchWithDuckDuckGo(query);
+    }
   }
 
   async execute(input: WebSearchInput): Promise<ToolResult> {
     const { query, allowed_domains, blocked_domains } = input;
+
+    // 生成缓存键
+    // T-012: 使用缓存优化搜索性能
+    const cacheKey = generateSearchCacheKey(query, allowed_domains, blocked_domains);
+
+    // 检查缓存
+    const cached = webSearchCache.get(cacheKey);
+    if (cached) {
+      const cacheAge = Math.floor((Date.now() - cached.fetchedAt) / 1000 / 60); // 分钟
+      return {
+        success: true,
+        output:
+          this.formatSearchResults(cached.results, query) +
+          `\n\n_[Cached results from ${cacheAge} minute(s) ago]_`,
+      };
+    }
 
     try {
       // 执行搜索
@@ -510,39 +785,58 @@ IMPORTANT - Use the correct year in search queries:
         blocked_domains
       );
 
+      // 缓存结果（即使为空也缓存，避免重复请求）
+      webSearchCache.set(cacheKey, {
+        query,
+        results: filteredResults,
+        fetchedAt: Date.now(),
+        filters: {
+          allowedDomains: allowed_domains,
+          blockedDomains: blocked_domains,
+        },
+      });
+
       // 如果有真实结果，格式化并返回
-      if (rawResults.length > 0) {
+      if (filteredResults.length > 0) {
         return {
           success: true,
           output: this.formatSearchResults(filteredResults, query),
         };
       }
 
-      // 占位符消息（当未集成搜索 API 时）
+      // 如果搜索返回了结果但被过滤器全部过滤掉了
+      if (rawResults.length > 0 && filteredResults.length === 0) {
+        return {
+          success: true,
+          output: `Web search for: "${query}"
+
+No results found after applying domain filters.
+
+Filters applied:
+- Allowed domains: ${allowed_domains?.join(', ') || 'all'}
+- Blocked domains: ${blocked_domains?.join(', ') || 'none'}
+
+Try adjusting your domain filters or search query.`,
+        };
+      }
+
+      // 如果搜索 API 没有返回结果
       return {
         success: true,
         output: `Web search for: "${query}"
 
-Note: Web search requires API integration (e.g., DuckDuckGo, Bing, Google).
-Please configure a search API to enable this feature.
+No results found. This could be due to:
+1. The search query is too specific or uncommon
+2. DuckDuckGo Instant Answer API has limited coverage
+3. Network or API issues
 
-To integrate a search API:
-1. Choose a search provider (DuckDuckGo, Bing, Google Custom Search, SerpAPI)
-2. Obtain API credentials
-3. Install the corresponding npm package
-4. Implement the performSearch() method in WebSearchTool
-5. Update the formatSearchResults() to display actual results
+Suggestions:
+- Try a different search query
+- Configure Bing or Google Search API for better results:
+  * Bing: Set BING_SEARCH_API_KEY environment variable
+  * Google: Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID
 
-Query parameters:
-- Allowed domains: ${allowed_domains?.join(', ') || 'all'}
-- Blocked domains: ${blocked_domains?.join(', ') || 'none'}
-
-Example search result format:
-1. [Example Result](https://example.com)
-   This is a snippet of the search result...
-
-Sources:
-- [Example Result](https://example.com)`,
+Current search provider: DuckDuckGo Instant Answer API (free)`,
       };
     } catch (err: any) {
       return {
@@ -551,4 +845,35 @@ Sources:
       };
     }
   }
+}
+
+/**
+ * 缓存统计信息
+ * 用于监控和调试缓存使用情况
+ */
+export function getWebCacheStats() {
+  return {
+    fetch: {
+      size: webFetchCache.size,
+      calculatedSize: webFetchCache.calculatedSize,
+      maxSize: webFetchCache.maxSize,
+      ttl: webFetchCache.ttl,
+      itemCount: webFetchCache.size,
+    },
+    search: {
+      size: webSearchCache.size,
+      max: webSearchCache.max,
+      ttl: webSearchCache.ttl,
+      itemCount: webSearchCache.size,
+    },
+  };
+}
+
+/**
+ * 清除所有 Web 缓存
+ * 用于调试或重置缓存状态
+ */
+export function clearWebCaches() {
+  webFetchCache.clear();
+  webSearchCache.clear();
 }

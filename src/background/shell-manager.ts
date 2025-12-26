@@ -1,0 +1,415 @@
+/**
+ * 后台 Shell 管理器
+ * 管理后台执行的 Shell 进程，包括状态追踪、输出收集和资源管理
+ */
+
+import { spawn, ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
+
+export type ShellStatus = 'running' | 'completed' | 'failed' | 'paused' | 'terminated';
+
+export interface BackgroundShell {
+  id: string;
+  command: string;
+  cwd: string;
+  process: ChildProcess;
+  status: ShellStatus;
+  startTime: number;
+  endTime?: number;
+  exitCode?: number;
+  output: string[];
+  outputSize: number;
+  maxRuntime?: number;
+  timeout?: NodeJS.Timeout;
+  metadata?: Record<string, any>;
+}
+
+export interface ShellManagerOptions {
+  maxShells?: number;
+  maxOutputSize?: number;
+  defaultMaxRuntime?: number;
+  onShellComplete?: (shell: BackgroundShell) => void;
+  onShellFailed?: (shell: BackgroundShell) => void;
+}
+
+/**
+ * 后台 Shell 管理器
+ * 负责创建、追踪和管理后台运行的 shell 进程
+ */
+export class ShellManager extends EventEmitter {
+  private shells = new Map<string, BackgroundShell>();
+  private readonly maxShells: number;
+  private readonly maxOutputSize: number;
+  private readonly defaultMaxRuntime: number;
+  private readonly options: ShellManagerOptions;
+
+  constructor(options: ShellManagerOptions = {}) {
+    super();
+    this.maxShells = options.maxShells || 10;
+    this.maxOutputSize = options.maxOutputSize || 10 * 1024 * 1024; // 10MB
+    this.defaultMaxRuntime = options.defaultMaxRuntime || 3600000; // 1 hour
+    this.options = options;
+  }
+
+  /**
+   * 创建并启动一个后台 shell
+   */
+  createShell(
+    command: string,
+    options: {
+      id?: string;
+      cwd?: string;
+      maxRuntime?: number;
+      metadata?: Record<string, any>;
+    } = {}
+  ): { success: boolean; id?: string; error?: string } {
+    // 检查 shell 数量限制
+    if (this.shells.size >= this.maxShells) {
+      // 尝试清理已完成的 shell
+      const cleaned = this.cleanupCompleted();
+      if (cleaned === 0 && this.shells.size >= this.maxShells) {
+        return {
+          success: false,
+          error: `Maximum number of background shells (${this.maxShells}) reached`,
+        };
+      }
+    }
+
+    const id = options.id || this.generateShellId();
+    const cwd = options.cwd || process.cwd();
+    const maxRuntime = options.maxRuntime || this.defaultMaxRuntime;
+
+    // 创建进程
+    const proc = spawn('bash', ['-c', command], {
+      cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // 创建 shell 状态
+    const shell: BackgroundShell = {
+      id,
+      command,
+      cwd,
+      process: proc,
+      status: 'running',
+      startTime: Date.now(),
+      output: [],
+      outputSize: 0,
+      maxRuntime,
+      metadata: options.metadata,
+    };
+
+    // 设置超时
+    if (maxRuntime > 0) {
+      const timeout = setTimeout(() => {
+        this.terminateShell(id, 'timeout');
+      }, maxRuntime);
+      shell.timeout = timeout;
+    }
+
+    // 监听输出
+    this.attachOutputListeners(shell);
+
+    // 监听进程事件
+    this.attachProcessListeners(shell);
+
+    // 保存到管理器
+    this.shells.set(id, shell);
+
+    // 触发事件
+    this.emit('shell:started', shell);
+
+    return { success: true, id };
+  }
+
+  /**
+   * 附加输出监听器
+   */
+  private attachOutputListeners(shell: BackgroundShell): void {
+    shell.process.stdout?.on('data', (data) => {
+      const dataStr = data.toString();
+      shell.outputSize += dataStr.length;
+
+      // 检查输出大小限制
+      if (shell.outputSize < this.maxOutputSize) {
+        shell.output.push(dataStr);
+      } else if (
+        shell.output[shell.output.length - 1] !== '[Output limit reached - further output discarded]'
+      ) {
+        shell.output.push('[Output limit reached - further output discarded]');
+      }
+
+      this.emit('shell:output', { id: shell.id, data: dataStr, type: 'stdout' });
+    });
+
+    shell.process.stderr?.on('data', (data) => {
+      const dataStr = `STDERR: ${data.toString()}`;
+      shell.outputSize += dataStr.length;
+
+      if (shell.outputSize < this.maxOutputSize) {
+        shell.output.push(dataStr);
+      } else if (
+        shell.output[shell.output.length - 1] !== '[Output limit reached - further output discarded]'
+      ) {
+        shell.output.push('[Output limit reached - further output discarded]');
+      }
+
+      this.emit('shell:output', { id: shell.id, data: dataStr, type: 'stderr' });
+    });
+  }
+
+  /**
+   * 附加进程事件监听器
+   */
+  private attachProcessListeners(shell: BackgroundShell): void {
+    shell.process.on('close', (code) => {
+      shell.endTime = Date.now();
+      shell.exitCode = code ?? undefined;
+      shell.status = code === 0 ? 'completed' : 'failed';
+
+      // 清理超时定时器
+      if (shell.timeout) {
+        clearTimeout(shell.timeout);
+        shell.timeout = undefined;
+      }
+
+      // 触发回调
+      if (code === 0 && this.options.onShellComplete) {
+        this.options.onShellComplete(shell);
+      } else if (code !== 0 && this.options.onShellFailed) {
+        this.options.onShellFailed(shell);
+      }
+
+      // 触发事件
+      this.emit(code === 0 ? 'shell:completed' : 'shell:failed', shell);
+    });
+
+    shell.process.on('error', (err) => {
+      shell.endTime = Date.now();
+      shell.status = 'failed';
+      shell.output.push(`ERROR: ${err.message}`);
+
+      // 清理超时定时器
+      if (shell.timeout) {
+        clearTimeout(shell.timeout);
+        shell.timeout = undefined;
+      }
+
+      // 触发回调
+      if (this.options.onShellFailed) {
+        this.options.onShellFailed(shell);
+      }
+
+      // 触发事件
+      this.emit('shell:error', { id: shell.id, error: err });
+    });
+  }
+
+  /**
+   * 获取 shell 状态
+   */
+  getShell(id: string): BackgroundShell | undefined {
+    return this.shells.get(id);
+  }
+
+  /**
+   * 获取 shell 输出（并清空已读输出）
+   */
+  getOutput(id: string, options: { clear?: boolean; filter?: RegExp } = {}): string | null {
+    const shell = this.shells.get(id);
+    if (!shell) return null;
+
+    let output = shell.output.join('');
+
+    // 应用过滤器
+    if (options.filter) {
+      output = output
+        .split('\n')
+        .filter((line) => options.filter!.test(line))
+        .join('\n');
+    }
+
+    // 清空输出
+    if (options.clear !== false) {
+      shell.output = [];
+    }
+
+    return output;
+  }
+
+  /**
+   * 终止 shell
+   */
+  terminateShell(id: string, reason: 'manual' | 'timeout' | 'error' = 'manual'): boolean {
+    const shell = this.shells.get(id);
+    if (!shell) return false;
+
+    try {
+      // 先发送 SIGTERM
+      shell.process.kill('SIGTERM');
+
+      // 等待 1 秒，如果还在运行则强制 SIGKILL
+      setTimeout(() => {
+        if (shell.status === 'running') {
+          shell.process.kill('SIGKILL');
+        }
+      }, 1000);
+
+      shell.status = 'terminated';
+
+      // 清理超时定时器
+      if (shell.timeout) {
+        clearTimeout(shell.timeout);
+        shell.timeout = undefined;
+      }
+
+      this.emit('shell:terminated', { id, reason });
+
+      return true;
+    } catch (err) {
+      console.error(`Failed to terminate shell ${id}:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * 暂停 shell（发送 SIGSTOP）
+   */
+  pauseShell(id: string): boolean {
+    const shell = this.shells.get(id);
+    if (!shell || shell.status !== 'running') return false;
+
+    try {
+      shell.process.kill('SIGSTOP');
+      shell.status = 'paused';
+      this.emit('shell:paused', shell);
+      return true;
+    } catch (err) {
+      console.error(`Failed to pause shell ${id}:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * 恢复 shell（发送 SIGCONT）
+   */
+  resumeShell(id: string): boolean {
+    const shell = this.shells.get(id);
+    if (!shell || shell.status !== 'paused') return false;
+
+    try {
+      shell.process.kill('SIGCONT');
+      shell.status = 'running';
+      this.emit('shell:resumed', shell);
+      return true;
+    } catch (err) {
+      console.error(`Failed to resume shell ${id}:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * 列出所有 shell
+   */
+  listShells(): Array<{
+    id: string;
+    command: string;
+    status: ShellStatus;
+    duration: number;
+    outputSize: number;
+  }> {
+    return Array.from(this.shells.values()).map((shell) => ({
+      id: shell.id,
+      command: shell.command.substring(0, 100) + (shell.command.length > 100 ? '...' : ''),
+      status: shell.status,
+      duration: shell.endTime ? shell.endTime - shell.startTime : Date.now() - shell.startTime,
+      outputSize: shell.outputSize,
+    }));
+  }
+
+  /**
+   * 清理已完成的 shell
+   */
+  cleanupCompleted(): number {
+    let cleaned = 0;
+
+    Array.from(this.shells.entries()).forEach(([id, shell]) => {
+      if (shell.status === 'completed' || shell.status === 'failed' || shell.status === 'terminated') {
+        // 清理超时定时器
+        if (shell.timeout) {
+          clearTimeout(shell.timeout);
+        }
+        this.shells.delete(id);
+        cleaned++;
+      }
+    });
+
+    return cleaned;
+  }
+
+  /**
+   * 清理超时的 shell
+   */
+  cleanupTimedOut(): number {
+    let cleaned = 0;
+    const now = Date.now();
+
+    Array.from(this.shells.entries()).forEach(([id, shell]) => {
+      if (shell.maxRuntime && now - shell.startTime > shell.maxRuntime && shell.status === 'running') {
+        this.terminateShell(id, 'timeout');
+        this.shells.delete(id);
+        cleaned++;
+      }
+    });
+
+    return cleaned;
+  }
+
+  /**
+   * 终止所有 shell
+   */
+  terminateAll(): number {
+    let terminated = 0;
+
+    Array.from(this.shells.keys()).forEach((id) => {
+      if (this.terminateShell(id)) {
+        terminated++;
+      }
+    });
+
+    this.shells.clear();
+    return terminated;
+  }
+
+  /**
+   * 获取统计信息
+   */
+  getStats() {
+    const statuses = {
+      running: 0,
+      completed: 0,
+      failed: 0,
+      paused: 0,
+      terminated: 0,
+    };
+
+    Array.from(this.shells.values()).forEach((shell) => {
+      statuses[shell.status]++;
+    });
+
+    return {
+      total: this.shells.size,
+      ...statuses,
+      maxShells: this.maxShells,
+      available: this.maxShells - statuses.running - statuses.paused,
+    };
+  }
+
+  /**
+   * 生成唯一的 shell ID
+   */
+  private generateShellId(): string {
+    return `bash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+}

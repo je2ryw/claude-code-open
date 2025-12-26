@@ -5,10 +5,13 @@
 
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition, ExitPlanModeInput } from '../types/index.js';
+import { PlanPersistenceManager } from '../plan/persistence.js';
+import type { SavedPlan } from '../plan/types.js';
 
 // 计划模式状态管理
 let planModeActive = false;
 let currentPlanFile: string | null = null;
+let currentPlanId: string | null = null;
 
 export function isPlanModeActive(): boolean {
   return planModeActive;
@@ -18,9 +21,14 @@ export function getPlanFile(): string | null {
   return currentPlanFile;
 }
 
-export function setPlanMode(active: boolean, planFile?: string): void {
+export function getCurrentPlanId(): string | null {
+  return currentPlanId;
+}
+
+export function setPlanMode(active: boolean, planFile?: string, planId?: string): void {
   planModeActive = active;
   currentPlanFile = planFile || null;
+  currentPlanId = planId || null;
 }
 
 export class EnterPlanModeTool extends BaseTool<Record<string, unknown>, ToolResult> {
@@ -117,13 +125,17 @@ User: "What files handle routing?"
 
     planModeActive = true;
 
-    // Generate plan file path
+    // Generate plan ID and file path
+    const planId = PlanPersistenceManager.generatePlanId();
     const planPath = process.cwd() + '/PLAN.md';
     currentPlanFile = planPath;
+    currentPlanId = planId;
 
     return {
       success: true,
       output: `Entered plan mode.
+
+Plan ID: ${planId}
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
 This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
@@ -140,6 +152,8 @@ Your role is EXCLUSIVELY to explore the codebase and design implementation plans
 ## Plan File Info:
 No plan file exists yet. You should create your plan at ${planPath} using the Write tool.
 You should build your plan incrementally by writing to or editing this file. NOTE that this is the only file you are allowed to edit - other than this you are only allowed to take READ-ONLY actions.
+
+The plan will be automatically saved to the persistent storage (~/.claude/plans/${planId}.json) when you exit plan mode.
 
 In plan mode, you should:
 1. Thoroughly explore the codebase to understand existing patterns
@@ -199,7 +213,9 @@ Before using this tool, ensure your plan is clear and unambiguous. If there are 
 
     planModeActive = false;
     const planFile = currentPlanFile;
+    const planId = currentPlanId;
     currentPlanFile = null;
+    currentPlanId = null;
 
     let planContent = '';
     if (planFile) {
@@ -213,11 +229,31 @@ Before using this tool, ensure your plan is clear and unambiguous. If there are 
       }
     }
 
+    // Parse and save plan to persistence
+    let savedPlanPath: string | undefined;
+    if (planId && planContent) {
+      try {
+        const plan = this.parsePlanContent(planId, planContent);
+        const saved = await PlanPersistenceManager.savePlan(plan);
+        if (saved) {
+          savedPlanPath = `~/.claude/plans/${planId}.json`;
+        }
+      } catch (error) {
+        console.error('Failed to save plan to persistence:', error);
+      }
+    }
+
     const output = planFile
       ? `Exited plan mode.
 
-Your plan has been saved to: ${planFile}
-You can refer back to it if needed during implementation.
+Your plan has been saved to:
+- Working file: ${planFile}${savedPlanPath ? `\n- Persistent storage: ${savedPlanPath}` : ''}
+${planId ? `\nPlan ID: ${planId}` : ''}
+
+You can refer back to this plan using:
+- List all plans: Use the session or plan list commands
+- Load plan: Use plan ID ${planId}
+- Compare plans: Compare this with other saved plans
 
 ## Approved Plan:
 ${planContent}
@@ -229,5 +265,131 @@ Awaiting user approval to proceed with implementation.`
       success: true,
       output,
     };
+  }
+
+  /**
+   * Parse plan content into SavedPlan structure
+   * This is a simplified parser - in a real implementation,
+   * you might use more sophisticated parsing or ask Claude to structure it
+   */
+  private parsePlanContent(planId: string, content: string): SavedPlan {
+    const now = Date.now();
+
+    // Extract title from first heading
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    const title = titleMatch ? titleMatch[1] : 'Untitled Plan';
+
+    // Create basic plan structure
+    const plan: SavedPlan = {
+      metadata: {
+        id: planId,
+        title,
+        description: title,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+        workingDirectory: process.cwd(),
+        version: 1,
+        priority: 'medium',
+      },
+      summary: this.extractSummary(content),
+      requirementsAnalysis: {
+        functionalRequirements: this.extractRequirements(content, 'Functional Requirements'),
+        nonFunctionalRequirements: this.extractRequirements(content, 'Non-Functional Requirements'),
+        technicalConstraints: this.extractRequirements(content, 'Technical Constraints'),
+        successCriteria: this.extractRequirements(content, 'Success Criteria'),
+      },
+      architecturalDecisions: [],
+      steps: this.extractSteps(content),
+      criticalFiles: this.extractCriticalFiles(content),
+      risks: this.extractRisks(content),
+      alternatives: [],
+      estimatedComplexity: 'moderate',
+      content,
+    };
+
+    return plan;
+  }
+
+  private extractSummary(content: string): string {
+    const summaryMatch = content.match(/##\s+Summary\s*\n\n([\s\S]*?)(?=\n##|$)/i);
+    return summaryMatch ? summaryMatch[1].trim() : 'No summary provided';
+  }
+
+  private extractRequirements(content: string, section: string): string[] {
+    const regex = new RegExp(`###\\s+${section}\\s*\\n([\\s\\S]*?)(?=\\n###|\\n##|$)`, 'i');
+    const match = content.match(regex);
+    if (!match) return [];
+
+    const lines = match[1].split('\n');
+    return lines
+      .filter((line) => line.trim().startsWith('-'))
+      .map((line) => line.trim().substring(1).trim())
+      .filter((line) => line.length > 0);
+  }
+
+  private extractSteps(content: string): import('../plan/types.js').PlanStep[] {
+    const steps: import('../plan/types.js').PlanStep[] = [];
+    const stepRegex = /###\s+Step\s+(\d+):\s+(.+?)\n/g;
+    let match;
+
+    while ((match = stepRegex.exec(content)) !== null) {
+      const stepNumber = parseInt(match[1], 10);
+      const description = match[2];
+
+      steps.push({
+        step: stepNumber,
+        description,
+        files: [],
+        complexity: 'medium',
+        dependencies: [],
+      });
+    }
+
+    return steps;
+  }
+
+  private extractCriticalFiles(content: string): import('../plan/types.js').CriticalFile[] {
+    const files: import('../plan/types.js').CriticalFile[] = [];
+    const filesSection = content.match(/###\s+Critical Files.*?\n([\s\S]*?)(?=\n##|$)/i);
+
+    if (filesSection) {
+      const lines = filesSection[1].split('\n');
+      for (const line of lines) {
+        const match = line.match(/^-\s+(.+?)\s+-\s+(.+)$/);
+        if (match) {
+          files.push({
+            path: match[1],
+            reason: match[2],
+            importance: 3,
+          });
+        }
+      }
+    }
+
+    return files;
+  }
+
+  private extractRisks(content: string): import('../plan/types.js').Risk[] {
+    const risks: import('../plan/types.js').Risk[] = [];
+    const risksSection = content.match(/##\s+Risks.*?\n([\s\S]*?)(?=\n##|$)/i);
+
+    if (risksSection) {
+      const riskBlocks = risksSection[1].split(/###\s+\d+\.\s+/);
+      for (const block of riskBlocks) {
+        if (!block.trim()) continue;
+
+        const lines = block.split('\n');
+        const description = lines[0].trim();
+
+        risks.push({
+          category: 'technical',
+          level: 'medium',
+          description,
+        });
+      }
+    }
+
+    return risks;
   }
 }
