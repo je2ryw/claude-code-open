@@ -7,7 +7,10 @@
       "Bash(npm run dev:*)",
       "Bash(cat:*)",
       "Bash(npm root:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npx tsx:*)",
+      "Bash(dir /s /b \"f:\\\\claude-code-open\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\*.js\")",
+      "Bash(dir \"f:\\\\claude-code-open\\\\nul\")"
     ]
   }
 }

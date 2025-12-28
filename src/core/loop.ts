@@ -155,11 +155,20 @@ export class ConversationLoop {
     while (turns < maxTurns) {
       turns++;
 
-      const response = await this.client.createMessage(
-        this.session.getMessages(),
-        this.tools,
-        systemPrompt
-      );
+      let response;
+      try {
+        response = await this.client.createMessage(
+          this.session.getMessages(),
+          this.tools,
+          systemPrompt
+        );
+      } catch (apiError: any) {
+        console.error(chalk.red(`[Loop] API call failed: ${apiError.message}`));
+        if (this.options.debug || this.options.verbose) {
+          console.error(chalk.red('[Loop] Full error:'), apiError);
+        }
+        throw apiError;
+      }
 
       // 处理响应内容
       const assistantContent: ContentBlock[] = [];
@@ -306,24 +315,37 @@ Guidelines:
       const toolCalls: Map<string, { name: string; input: string }> = new Map();
       let currentToolId = '';
 
-      for await (const event of this.client.createMessageStream(
-        this.session.getMessages(),
-        this.tools,
-        systemPrompt
-      )) {
-        if (event.type === 'text') {
-          yield { type: 'text', content: event.text };
-          assistantContent.push({ type: 'text', text: event.text });
-        } else if (event.type === 'tool_use_start') {
-          currentToolId = event.id || '';
-          toolCalls.set(currentToolId, { name: event.name || '', input: '' });
-          yield { type: 'tool_start', toolName: event.name, toolInput: undefined };
-        } else if (event.type === 'tool_use_delta') {
-          const tool = toolCalls.get(currentToolId);
-          if (tool) {
-            tool.input += event.input || '';
+      try {
+        for await (const event of this.client.createMessageStream(
+          this.session.getMessages(),
+          this.tools,
+          systemPrompt
+        )) {
+          if (event.type === 'text') {
+            yield { type: 'text', content: event.text };
+            assistantContent.push({ type: 'text', text: event.text });
+          } else if (event.type === 'tool_use_start') {
+            currentToolId = event.id || '';
+            toolCalls.set(currentToolId, { name: event.name || '', input: '' });
+            yield { type: 'tool_start', toolName: event.name, toolInput: undefined };
+          } else if (event.type === 'tool_use_delta') {
+            const tool = toolCalls.get(currentToolId);
+            if (tool) {
+              tool.input += event.input || '';
+            }
+          } else if (event.type === 'error') {
+            console.error(chalk.red(`[Loop] Stream error: ${event.error}`));
+            yield { type: 'tool_end', toolError: event.error };
+            break;
           }
         }
+      } catch (streamError: any) {
+        console.error(chalk.red(`[Loop] Stream failed: ${streamError.message}`));
+        if (this.options.debug) {
+          console.error(chalk.red('[Loop] Full error:'), streamError);
+        }
+        yield { type: 'tool_end', toolError: streamError.message };
+        break;
       }
 
       // 执行所有工具调用

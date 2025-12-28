@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.
-
+官方源码路径：\node_modules\@anthropic-ai\claude-code
 **Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions.
 
 ## Development Commands

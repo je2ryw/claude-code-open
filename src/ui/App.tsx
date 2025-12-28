@@ -310,11 +310,18 @@ export const App: React.FC<AppProps> = ({
       setConnectionStatus('connecting');
 
       const startTime = Date.now();
+      // 使用局部变量累积响应，避免闭包陷阱
+      let accumulatedResponse = '';
 
       try {
         for await (const event of loop.processMessageStream(input)) {
+          // 调试：记录收到的事件
+          if (verbose) {
+            console.log('[App] Event:', event.type, event.content?.slice(0, 50));
+          }
           if (event.type === 'text') {
-            setCurrentResponse((prev) => prev + (event.content || ''));
+            accumulatedResponse += (event.content || '');
+            setCurrentResponse(accumulatedResponse);
           } else if (event.type === 'tool_start') {
             const id = `tool_${Date.now()}`;
             setToolCalls((prev) => [
@@ -345,8 +352,13 @@ export const App: React.FC<AppProps> = ({
           }
         }
 
-        // 添加助手消息
-        addMessage('assistant', currentResponse);
+        // 添加助手消息 - 使用累积的响应而非闭包中的状态
+        if (verbose) {
+          console.log('[App] Final response length:', accumulatedResponse.length);
+        }
+        if (accumulatedResponse) {
+          addMessage('assistant', accumulatedResponse);
+        }
         addActivity(`Conversation: ${input.slice(0, 30)}...`);
         setConnectionStatus('connected');
       } catch (err) {
@@ -356,8 +368,9 @@ export const App: React.FC<AppProps> = ({
       }
 
       setIsProcessing(false);
+      setCurrentResponse(''); // 清空当前响应，因为已添加到消息列表
     },
-    [loop, currentResponse, showWelcome, addActivity, addMessage, handleSlashCommand]
+    [loop, showWelcome, addActivity, addMessage, handleSlashCommand] // 移除 currentResponse 依赖
   );
 
   // 初始 prompt
@@ -408,7 +421,7 @@ export const App: React.FC<AppProps> = ({
       <Box flexDirection="column" flexGrow={1} marginY={1}>
         {messages.map((msg, i) => (
           <Message
-            key={i}
+            key={`${msg.role}-${msg.timestamp.getTime()}-${i}`}
             role={msg.role}
             content={msg.content}
             timestamp={msg.timestamp}

@@ -263,12 +263,12 @@ export const Message: React.FC<MessageProps> = ({
     return () => clearInterval(interval);
   }, [content, streaming, streamSpeed, onComplete]);
 
-  // 渲染角色标签
+  // 渲染角色标签 - 官方风格
   const getRoleLabel = () => {
     if (isUser) return 'You';
     if (isSystem) return 'System';
     if (isError) return 'Error';
-    return model ? `Claude (${model})` : 'Claude';
+    return 'Claude';
   };
 
   const getRoleColor = () => {
@@ -276,6 +276,17 @@ export const Message: React.FC<MessageProps> = ({
     if (isSystem) return 'cyan';
     if (isError) return 'red';
     return 'green';
+  };
+
+  // 获取时间字符串
+  const getTimeString = () => {
+    if (!timestamp) return '';
+    return timestamp.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
   };
 
   // 如果内容是 ContentBlock 数组，直接渲染
@@ -288,8 +299,7 @@ export const Message: React.FC<MessageProps> = ({
           </Text>
           {timestamp && (
             <Text color="gray" dimColor>
-              {' '}
-              {timestamp.toLocaleTimeString()}
+              {' '}{getTimeString()}
             </Text>
           )}
         </Box>
@@ -303,29 +313,41 @@ export const Message: React.FC<MessageProps> = ({
   // 解析 Markdown 内容
   const blocks = parseMarkdownForTerminal(displayedContent);
 
+  // 用户消息 - 简洁样式
+  if (isUser) {
+    return (
+      <Box flexDirection="column" marginY={0}>
+        <Box>
+          <Text bold color="blue">You</Text>
+          {timestamp && (
+            <Text color="gray" dimColor> {getTimeString()}</Text>
+          )}
+        </Box>
+        <Box marginLeft={2}>
+          <Text>{displayedContent}</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // 助手消息 - 官方风格：使用 • 前缀
   return (
     <Box flexDirection="column" marginY={1}>
-      {/* 消息头部 */}
-      <Box>
-        <Text bold color={getRoleColor()}>
-          {getRoleLabel()}
-        </Text>
-        {timestamp && (
-          <Text color="gray" dimColor>
-            {' '}
-            {timestamp.toLocaleTimeString()}
-          </Text>
-        )}
-        {isStreaming && (
-          <Text color="gray" dimColor>
-            {' '}
-            ⋯
-          </Text>
-        )}
-      </Box>
+      {/* 消息头部 - 只在有多行内容时显示 */}
+      {blocks.length > 1 && (
+        <Box>
+          <Text bold color="green">Claude</Text>
+          {timestamp && (
+            <Text color="gray" dimColor> {getTimeString()}</Text>
+          )}
+          {isStreaming && (
+            <Text color="gray" dimColor> ⋯</Text>
+          )}
+        </Box>
+      )}
 
       {/* 消息内容 */}
-      <Box flexDirection="column" marginLeft={2}>
+      <Box flexDirection="column" marginLeft={blocks.length > 1 ? 2 : 0}>
         {blocks.map((block, index) => {
           switch (block.type) {
             case 'code':
@@ -339,11 +361,7 @@ export const Message: React.FC<MessageProps> = ({
             case 'heading':
               return (
                 <Box key={index} marginTop={1} marginBottom={0}>
-                  <Text
-                    bold
-                    color="cyan"
-                    underline={block.level === 1}
-                  >
+                  <Text bold color="white">
                     {block.content}
                   </Text>
                 </Box>
@@ -351,11 +369,22 @@ export const Message: React.FC<MessageProps> = ({
             case 'list':
               return (
                 <Box key={index}>
-                  <Text color="yellow">• </Text>
+                  <Text>• </Text>
                   <Text>{block.content}</Text>
                 </Box>
               );
             case 'text':
+              // 第一行使用 • 前缀（官方风格）
+              if (index === 0 && blocks.length === 1) {
+                return (
+                  <Box key={index}>
+                    <Text color="white">• </Text>
+                    <Text color={isError ? 'red' : undefined}>
+                      {block.content}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box key={index}>
                   <Text color={isError ? 'red' : undefined}>

@@ -102,8 +102,15 @@ export class ClaudeClient {
 
   constructor(config: ClientConfig = {}) {
     // 准备 Anthropic 客户端配置
+    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+
+    if (!apiKey) {
+      console.error('[ClaudeClient] ERROR: No API key found!');
+      console.error('[ClaudeClient] Please set ANTHROPIC_API_KEY environment variable or provide apiKey in config');
+    }
+
     const anthropicConfig: any = {
-      apiKey: config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
+      apiKey,
       baseURL: config.baseUrl,
       maxRetries: 0, // 我们自己处理重试
     };
@@ -186,17 +193,39 @@ export class ClaudeClient {
       return await operation();
     } catch (error: any) {
       const errorType = error.type || error.code || error.message || '';
+      const errorStatus = error.status || error.statusCode || '';
       const isRetryable = RETRYABLE_ERRORS.some(
         (e) => errorType.includes(e) || error.message?.includes(e)
       );
 
+      // 详细的错误日志
+      if (this.debug) {
+        console.error('[ClaudeClient] API Error Details:');
+        console.error(`  Type: ${errorType}`);
+        console.error(`  Status: ${errorStatus}`);
+        console.error(`  Message: ${error.message}`);
+        if (error.error) {
+          console.error(`  Error body: ${JSON.stringify(error.error, null, 2)}`);
+        }
+      }
+
       if (isRetryable && retryCount < this.maxRetries) {
         const delay = this.retryDelay * Math.pow(2, retryCount); // 指数退避
         console.error(
-          `API error (${errorType}), retrying in ${delay}ms... (attempt ${retryCount + 1}/${this.maxRetries})`
+          `[ClaudeClient] API error (${errorType}), retrying in ${delay}ms... (attempt ${retryCount + 1}/${this.maxRetries})`
         );
         await this.sleep(delay);
         return this.withRetry(operation, retryCount + 1);
+      }
+
+      // 非重试错误，打印详细信息
+      console.error(`[ClaudeClient] API request failed: ${error.message}`);
+      if (errorStatus === 401) {
+        console.error('[ClaudeClient] Authentication failed - check your API key');
+      } else if (errorStatus === 403) {
+        console.error('[ClaudeClient] Access denied - check API key permissions');
+      } else if (errorStatus === 400) {
+        console.error('[ClaudeClient] Bad request - check your request parameters');
       }
 
       throw error;
@@ -379,63 +408,90 @@ export class ClaudeClient {
     tools?: ToolDefinition[],
     systemPrompt?: string
   ): AsyncGenerator<{
-    type: 'text' | 'tool_use_start' | 'tool_use_delta' | 'stop' | 'usage';
+    type: 'text' | 'tool_use_start' | 'tool_use_delta' | 'stop' | 'usage' | 'error';
     text?: string;
     id?: string;
     name?: string;
     input?: string;
     stopReason?: string;
     usage?: { inputTokens: number; outputTokens: number };
+    error?: string;
   }> {
-    const stream = this.client.messages.stream({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      system: systemPrompt,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })) as any,
-      tools: tools?.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema,
-      })) as any,
-    });
+    let stream: any;
+
+    try {
+      if (this.debug) {
+        console.log('[ClaudeClient] Starting message stream...');
+        console.log(`[ClaudeClient] Model: ${this.model}, MaxTokens: ${this.maxTokens}`);
+        console.log(`[ClaudeClient] Messages: ${messages.length}, Tools: ${tools?.length || 0}`);
+      }
+
+      stream = this.client.messages.stream({
+        model: this.model,
+        max_tokens: this.maxTokens,
+        system: systemPrompt,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })) as any,
+        tools: tools?.map((t) => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema,
+        })) as any,
+      });
+    } catch (error: any) {
+      console.error('[ClaudeClient] Failed to create stream:', error.message);
+      yield { type: 'error', error: error.message };
+      return;
+    }
 
     let inputTokens = 0;
     let outputTokens = 0;
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta') {
-        const delta = event.delta as any;
-        if (delta.type === 'text_delta') {
-          yield { type: 'text', text: delta.text };
-        } else if (delta.type === 'input_json_delta') {
-          yield { type: 'tool_use_delta', input: delta.partial_json };
+    try {
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta') {
+          const delta = event.delta as any;
+          if (delta.type === 'text_delta') {
+            yield { type: 'text', text: delta.text };
+          } else if (delta.type === 'input_json_delta') {
+            yield { type: 'tool_use_delta', input: delta.partial_json };
+          }
+        } else if (event.type === 'content_block_start') {
+          const block = event.content_block as any;
+          if (block.type === 'tool_use') {
+            yield { type: 'tool_use_start', id: block.id, name: block.name };
+          }
+        } else if (event.type === 'message_delta') {
+          const delta = event as any;
+          if (delta.usage) {
+            outputTokens = delta.usage.output_tokens || 0;
+          }
+        } else if (event.type === 'message_start') {
+          const msg = (event as any).message;
+          if (msg?.usage) {
+            inputTokens = msg.usage.input_tokens || 0;
+          }
+        } else if (event.type === 'message_stop') {
+          this.updateUsage({ inputTokens, outputTokens });
+          yield {
+            type: 'usage',
+            usage: { inputTokens, outputTokens },
+          };
+          yield { type: 'stop' };
+        } else if (event.type === 'error') {
+          const errorEvent = event as any;
+          console.error('[ClaudeClient] Stream error event:', errorEvent.error);
+          yield { type: 'error', error: errorEvent.error?.message || 'Unknown stream error' };
         }
-      } else if (event.type === 'content_block_start') {
-        const block = event.content_block as any;
-        if (block.type === 'tool_use') {
-          yield { type: 'tool_use_start', id: block.id, name: block.name };
-        }
-      } else if (event.type === 'message_delta') {
-        const delta = event as any;
-        if (delta.usage) {
-          outputTokens = delta.usage.output_tokens || 0;
-        }
-      } else if (event.type === 'message_start') {
-        const msg = (event as any).message;
-        if (msg?.usage) {
-          inputTokens = msg.usage.input_tokens || 0;
-        }
-      } else if (event.type === 'message_stop') {
-        this.updateUsage({ inputTokens, outputTokens });
-        yield {
-          type: 'usage',
-          usage: { inputTokens, outputTokens },
-        };
-        yield { type: 'stop' };
       }
+    } catch (error: any) {
+      console.error('[ClaudeClient] Stream processing error:', error.message);
+      if (this.debug) {
+        console.error('[ClaudeClient] Full error:', error);
+      }
+      yield { type: 'error', error: error.message };
     }
   }
 

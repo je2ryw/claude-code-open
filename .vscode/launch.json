@@ -2,35 +2,47 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug CLI (Interactive)",
+      "name": "Debug CLI (tsx)",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["tsx", "src/cli.ts"],
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/tsx",
+      "args": ["src/cli.ts", "--debug"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "CLAUDE_DEBUG": "true"
+      },
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "name": "Debug CLI (node --loader)",
+      "type": "node",
+      "request": "launch",
+      "runtimeArgs": [
+        "--import",
+        "tsx"
+      ],
+      "args": ["src/cli.ts"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
       "envFile": "${workspaceFolder}/.env"
     },
     {
-      "name": "Debug CLI with Prompt",
+      "name": "Debug with Prompt",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["tsx", "src/cli.ts", "${input:prompt}"],
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/tsx",
+      "args": ["src/cli.ts", "-p", "${input:prompt}"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
-    },
-    {
-      "name": "Debug CLI (Print Mode)",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["tsx", "src/cli.ts", "-p", "${input:prompt}"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "name": "Debug Compiled JS",
@@ -40,6 +52,7 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
       "preLaunchTask": "npm: build"
     }
   ],

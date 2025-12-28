@@ -1172,11 +1172,17 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
 // 错误处理
 process.on('uncaughtException', (err) => {
   console.error(chalk.red('Uncaught Exception:'), err.message);
+  if (process.env.CLAUDE_DEBUG) {
+    console.error(chalk.red('Stack trace:'), err.stack);
+  }
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error(chalk.red('Unhandled Rejection:'), reason);
+process.on('unhandledRejection', (reason: any) => {
+  console.error(chalk.red('Unhandled Rejection:'), reason?.message || reason);
+  if (process.env.CLAUDE_DEBUG && reason?.stack) {
+    console.error(chalk.red('Stack trace:'), reason.stack);
+  }
 });
 
 /**
