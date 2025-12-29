@@ -46,7 +46,8 @@
       "Bash(npm info:*)",
       "Bash(npm ls:*)",
       "Bash(timeout 60 npm run dev:*)",
-      "Bash(timeout 120 npx tsx:*)"
+      "Bash(timeout 120 npx tsx:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

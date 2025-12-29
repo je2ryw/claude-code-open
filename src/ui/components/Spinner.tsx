@@ -56,7 +56,7 @@ export interface SpinnerProps {
   dimLabel?: boolean;
 }
 
-export const Spinner: React.FC<SpinnerProps> = ({
+export const Spinner: React.FC<SpinnerProps> = React.memo(({
   label,
   type = 'dots',
   color,
@@ -126,7 +126,7 @@ export const Spinner: React.FC<SpinnerProps> = ({
       )}
     </Box>
   );
-};
+});
 
 // 多任务 Spinner 组件
 export interface Task {

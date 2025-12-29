@@ -24,7 +24,7 @@ interface HeaderProps {
   latestVersion?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   version,
   model,
   cwd,
@@ -78,8 +78,17 @@ export const Header: React.FC<HeaderProps> = ({
             Claude Code
           </Text>
           <Text dimColor> v{version}</Text>
+          {isPlanMode && (
+            <Text dimColor>-restored</Text>
+          )}
           <Text dimColor> · </Text>
           <Text color="cyan">{model}</Text>
+          {apiType && apiType !== 'Claude API' && (
+            <>
+              <Text dimColor> · </Text>
+              <Text color="white">{apiType}</Text>
+            </>
+          )}
           {isPlanMode && (
             <>
               <Text dimColor> · </Text>
@@ -200,6 +209,6 @@ export const Header: React.FC<HeaderProps> = ({
       )}
     </Box>
   );
-};
+});
 
 export default Header;

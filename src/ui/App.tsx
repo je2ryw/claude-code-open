@@ -58,6 +58,30 @@ interface RecentActivity {
   timestamp: string;
 }
 
+/**
+ * 流式渲染块 - 用于按时间顺序交织显示文本和工具调用
+ * Stream block - Used to interleave text and tool calls in chronological order
+ */
+interface StreamBlock {
+  type: 'text' | 'tool';
+  id: string;
+  timestamp: Date;
+
+  // 文本块字段 (type === 'text')
+  text?: string;
+  isStreaming?: boolean;
+
+  // 工具块字段 (type === 'tool')
+  tool?: {
+    name: string;
+    status: 'running' | 'success' | 'error';
+    input?: Record<string, unknown>;
+    result?: string;
+    error?: string;
+    duration?: number;
+  };
+}
+
 // 默认建议提示
 const DEFAULT_SUGGESTIONS = [
   'how do I log an error?',
@@ -498,12 +522,13 @@ export const App: React.FC<AppProps> = ({
           />
         ))}
 
-        {/* 当前响应 */}
+        {/* 当前响应（流式渲染中）*/}
         {isProcessing && currentResponse && (
           <Message
             role="assistant"
             content={currentResponse}
             timestamp={new Date()}
+            streaming={true}
           />
         )}
 

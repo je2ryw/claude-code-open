@@ -12,11 +12,9 @@ export interface MessageProps {
   role: 'user' | 'assistant' | 'system' | 'error';
   content: string | AnyContentBlock[];
   timestamp?: Date;
-  streaming?: boolean; // 是否启用流式渲染
-  streamSpeed?: number; // 流式渲染速度（ms/字符）
+  streaming?: boolean; // 是否正在流式渲染中
   showCopyHint?: boolean; // 显示复制提示
   model?: string; // 使用的模型
-  onComplete?: () => void; // 流式渲染完成回调
 }
 
 // 渲染 Markdown 块组件
@@ -87,25 +85,19 @@ const renderContentBlocks = (blocks: AnyContentBlock[]) => {
   });
 };
 
-export const Message: React.FC<MessageProps> = ({
+export const Message: React.FC<MessageProps> = React.memo(({
   role,
   content,
   timestamp,
   streaming = false,
-  streamSpeed = 20,
   showCopyHint = false,
   model,
-  onComplete,
 }) => {
   const isUser = role === 'user';
   const isSystem = role === 'system';
   const isError = role === 'error';
 
-  // 流式渲染状态
-  const [displayedContent, setDisplayedContent] = useState('');
-  const [isStreaming, setIsStreaming] = useState(streaming);
-
-  // 获取纯文本内容
+  // 获取纯文本内容（直接显示，无模拟）
   const getTextContent = (): string => {
     if (typeof content === 'string') {
       return content;
@@ -119,35 +111,7 @@ export const Message: React.FC<MessageProps> = ({
       .join('\n');
   };
 
-  // 流式渲染效果
-  useEffect(() => {
-    if (!streaming || typeof content !== 'string') {
-      setDisplayedContent(getTextContent());
-      setIsStreaming(false);
-      return;
-    }
-
-    let currentIndex = 0;
-    const textContent = content;
-
-    const interval = setInterval(() => {
-      if (currentIndex < textContent.length) {
-        // 每次增加1-3个字符（模拟自然打字）
-        const increment = Math.min(
-          Math.floor(Math.random() * 3) + 1,
-          textContent.length - currentIndex
-        );
-        currentIndex += increment;
-        setDisplayedContent(textContent.slice(0, currentIndex));
-      } else {
-        clearInterval(interval);
-        setIsStreaming(false);
-        onComplete?.();
-      }
-    }, streamSpeed);
-
-    return () => clearInterval(interval);
-  }, [content, streaming, streamSpeed, onComplete]);
+  const displayedContent = getTextContent();
 
   // 渲染角色标签 - 官方风格
   const getRoleLabel = () => {
@@ -196,15 +160,12 @@ export const Message: React.FC<MessageProps> = ({
     );
   }
 
-  // 用户消息 - 简洁样式
+  // 用户消息 - 官方风格（只显示 > 符号，内容在同一行）
   if (isUser) {
     return (
-      <Box flexDirection="column" marginY={0}>
+      <Box flexDirection="column" marginY={1}>
         <Box>
-          <Text bold color="blue">You</Text>
-          {timestamp && (
-            <Text color="gray" dimColor> {getTimeString()}</Text>
-          )}
+          <Text bold color="blue">{'>'}</Text>
         </Box>
         <Box marginLeft={2}>
           <Text>{displayedContent}</Text>
@@ -213,25 +174,14 @@ export const Message: React.FC<MessageProps> = ({
     );
   }
 
-  // 解析 Markdown 内容
-  const blocks = parseMarkdown(displayedContent);
+  // 使用 useMemo 缓存 Markdown 解析（性能优化）
+  const blocks = React.useMemo(() => {
+    return parseMarkdown(displayedContent);
+  }, [displayedContent]);
 
-  // 助手消息 - 使用增强的 Markdown 渲染
+  // 助手消息 - 使用增强的 Markdown 渲染（官方风格：无时间戳）
   return (
     <Box flexDirection="column" marginY={1}>
-      {/* 消息头部 */}
-      <Box>
-        <Text bold color="green">
-          {getRoleLabel()}
-        </Text>
-        {timestamp && (
-          <Text color="gray" dimColor> {getTimeString()}</Text>
-        )}
-        {isStreaming && (
-          <Text color="gray" dimColor> ⋯</Text>
-        )}
-      </Box>
-
       {/* 消息内容 - 使用增强的 Markdown 渲染 */}
       <Box flexDirection="column">
         {blocks.map((block, index) => (
@@ -239,8 +189,15 @@ export const Message: React.FC<MessageProps> = ({
         ))}
       </Box>
 
+      {/* 流式渲染指示器（官方风格）*/}
+      {streaming && displayedContent.length > 0 && (
+        <Box marginLeft={2}>
+          <Text color="gray" dimColor italic>⋯</Text>
+        </Box>
+      )}
+
       {/* 复制提示 */}
-      {showCopyHint && !isStreaming && (
+      {showCopyHint && !streaming && (
         <Box marginLeft={2} marginTop={1}>
           <Text color="gray" dimColor italic>
             Press Cmd+A to select and copy
@@ -249,6 +206,4 @@ export const Message: React.FC<MessageProps> = ({
       )}
     </Box>
   );
-};
-
-export default Message;
+});
