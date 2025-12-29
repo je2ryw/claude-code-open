@@ -106,6 +106,11 @@ export const App: React.FC<AppProps> = ({
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
+
+  // 新增：流式块数组，用于按时间顺序交织显示文本和工具
+  const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([]);
+  const [activeTextBlockId, setActiveTextBlockId] = useState<string | null>(null);
+
   const [showWelcome, setShowWelcome] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -396,11 +401,15 @@ export const App: React.FC<AppProps> = ({
       setIsProcessing(true);
       setCurrentResponse('');
       setToolCalls([]);
+      setStreamBlocks([]); // 清空流式块
+      setActiveTextBlockId(null);
       setConnectionStatus('connecting');
 
       const startTime = Date.now();
       // 使用局部变量累积响应，避免闭包陷阱
       let accumulatedResponse = '';
+      // 局部变量跟踪当前活动的文本块ID
+      let localActiveTextBlockId: string | null = null;
 
       try {
         for await (const event of loop.processMessageStream(input)) {
@@ -408,11 +417,60 @@ export const App: React.FC<AppProps> = ({
           if (verbose) {
             console.log('[App] Event:', event.type, event.content?.slice(0, 50));
           }
+
           if (event.type === 'text') {
             accumulatedResponse += (event.content || '');
             setCurrentResponse(accumulatedResponse);
+
+            // 新增：追加或创建文本块
+            setStreamBlocks((prev) => {
+              if (localActiveTextBlockId) {
+                // 更新现有文本块
+                return prev.map(block =>
+                  block.id === localActiveTextBlockId && block.type === 'text'
+                    ? { ...block, text: (block.text || '') + (event.content || '') }
+                    : block
+                );
+              } else {
+                // 创建新文本块
+                const newId = `text-${Date.now()}-${Math.random()}`;
+                localActiveTextBlockId = newId;
+                setActiveTextBlockId(newId);
+                return [...prev, {
+                  type: 'text' as const,
+                  id: newId,
+                  timestamp: new Date(),
+                  text: event.content || '',
+                  isStreaming: true,
+                }];
+              }
+            });
           } else if (event.type === 'tool_start') {
-            const id = `tool_${Date.now()}`;
+            // 关闭当前文本块
+            if (localActiveTextBlockId) {
+              setStreamBlocks(prev => prev.map(block =>
+                block.id === localActiveTextBlockId
+                  ? { ...block, isStreaming: false }
+                  : block
+              ));
+              localActiveTextBlockId = null;
+              setActiveTextBlockId(null);
+            }
+
+            // 添加新工具块
+            const id = `tool-${Date.now()}-${Math.random()}`;
+            setStreamBlocks(prev => [...prev, {
+              type: 'tool' as const,
+              id,
+              timestamp: new Date(),
+              tool: {
+                name: event.toolName || '',
+                status: 'running' as const,
+                input: event.toolInput as Record<string, unknown>,
+              },
+            }]);
+
+            // 保持旧的toolCalls同步（兼容性）
             setToolCalls((prev) => [
               ...prev,
               {
@@ -424,6 +482,29 @@ export const App: React.FC<AppProps> = ({
             ]);
             addActivity(`Using tool: ${event.toolName}`);
           } else if (event.type === 'tool_end') {
+            // 更新最后一个运行中的工具块
+            setStreamBlocks(prev => {
+              const blocks = [...prev];
+              for (let i = blocks.length - 1; i >= 0; i--) {
+                if (blocks[i].type === 'tool' && blocks[i].tool?.status === 'running') {
+                  const isError = event.toolResult?.startsWith('Error') || event.toolError;
+                  blocks[i] = {
+                    ...blocks[i],
+                    tool: {
+                      ...blocks[i].tool!,
+                      status: isError ? 'error' as const : 'success' as const,
+                      result: event.toolResult,
+                      error: isError ? (event.toolError || event.toolResult) : undefined,
+                      duration: Date.now() - blocks[i].timestamp.getTime(),
+                    },
+                  };
+                  break;
+                }
+              }
+              return blocks;
+            });
+
+            // 保持旧的toolCalls同步（兼容性）
             setToolCalls((prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
@@ -439,6 +520,16 @@ export const App: React.FC<AppProps> = ({
           } else if (event.type === 'done') {
             // 完成
           }
+        }
+
+        // 关闭最后的文本块
+        if (localActiveTextBlockId) {
+          setStreamBlocks(prev => prev.map(block =>
+            block.id === localActiveTextBlockId
+              ? { ...block, isStreaming: false }
+              : block
+          ));
+          setActiveTextBlockId(null);
         }
 
         // 添加助手消息 - 使用累积的响应而非闭包中的状态
@@ -458,6 +549,7 @@ export const App: React.FC<AppProps> = ({
 
       setIsProcessing(false);
       setCurrentResponse(''); // 清空当前响应，因为已添加到消息列表
+      // 注意：不清空streamBlocks，让它保留在当前会话中直到下一次提交
     },
     [loop, showWelcome, addActivity, addMessage, handleSlashCommand] // 移除 currentResponse 依赖
   );
@@ -513,6 +605,7 @@ export const App: React.FC<AppProps> = ({
 
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1} marginY={1}>
+        {/* 历史消息 */}
         {messages.map((msg, i) => (
           <Message
             key={`${msg.role}-${msg.timestamp.getTime()}-${i}`}
@@ -522,35 +615,36 @@ export const App: React.FC<AppProps> = ({
           />
         ))}
 
-        {/* 当前响应（流式渲染中）*/}
-        {isProcessing && currentResponse && (
-          <Message
-            role="assistant"
-            content={currentResponse}
-            timestamp={new Date()}
-            streaming={true}
-          />
-        )}
-
-        {/* 工具调用 */}
-        {toolCalls.length > 0 && (
-          <Box flexDirection="column" marginY={1}>
-            {toolCalls.map((tool) => (
-              <ToolCall
-                key={tool.id}
-                name={tool.name}
-                status={tool.status}
-                input={tool.input}
-                result={tool.result}
-                error={tool.error}
-                duration={tool.duration}
+        {/* 当前流式块（按时间顺序交织显示文本和工具）*/}
+        {streamBlocks.map((block) => {
+          if (block.type === 'text') {
+            return (
+              <Message
+                key={block.id}
+                role="assistant"
+                content={block.text || ''}
+                timestamp={block.timestamp}
+                streaming={block.isStreaming}
               />
-            ))}
-          </Box>
-        )}
+            );
+          } else if (block.type === 'tool' && block.tool) {
+            return (
+              <ToolCall
+                key={block.id}
+                name={block.tool.name}
+                status={block.tool.status}
+                input={block.tool.input}
+                result={block.tool.result}
+                error={block.tool.error}
+                duration={block.tool.duration}
+              />
+            );
+          }
+          return null;
+        })}
 
-        {/* 加载中 */}
-        {isProcessing && !currentResponse && (
+        {/* 加载中指示器（仅在没有任何块时显示）*/}
+        {isProcessing && streamBlocks.length === 0 && (
           <Box marginLeft={2}>
             <Spinner label="Thinking..." />
           </Box>
