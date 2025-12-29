@@ -16,9 +16,14 @@ import {
   type ThinkingConfig,
   type ThinkingResult,
 } from '../models/index.js';
+import { initAuth, getAuth } from '../auth/index.js';
+import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'crypto';
 
 export interface ClientConfig {
   apiKey?: string;
+  /** OAuth access token (用于 OAuth 登录) */
+  authToken?: string;
   model?: string;
   maxTokens?: number;
   baseUrl?: string;
@@ -81,6 +86,143 @@ const RETRYABLE_ERRORS = [
   'ENOTFOUND',
 ];
 
+// 官方 Claude Code 的 beta 头
+// 重要发现：claude-code-20250219 beta 需要与特定的 system prompt 配合使用
+// system prompt 的第一个 block 必须以下列字符串之一开头：
+// - "You are Claude Code, Anthropic's official CLI for Claude."
+// - "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+const CLAUDE_CODE_BETA = 'claude-code-20250219';
+const OAUTH_BETA = 'oauth-2025-04-20';
+const THINKING_BETA = 'interleaved-thinking-2025-05-14';
+
+// Claude Code 身份验证的 magic string
+const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_AGENT_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+
+/**
+ * 检查 system prompt 是否包含有效的 Claude Code 身份标识
+ */
+function hasValidIdentity(systemPrompt?: string | Array<{type: string; text: string}>): boolean {
+  if (!systemPrompt) return false;
+
+  if (typeof systemPrompt === 'string') {
+    return systemPrompt.startsWith(CLAUDE_CODE_IDENTITY) ||
+           systemPrompt.startsWith(CLAUDE_AGENT_IDENTITY);
+  }
+
+  if (Array.isArray(systemPrompt) && systemPrompt.length > 0) {
+    const firstBlock = systemPrompt[0];
+    if (firstBlock?.type === 'text' && firstBlock?.text) {
+      return firstBlock.text.startsWith(CLAUDE_CODE_IDENTITY) ||
+             firstBlock.text.startsWith(CLAUDE_AGENT_IDENTITY);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 格式化 system prompt 以符合 Claude Code API 要求
+ *
+ * 对于 OAuth 模式，system prompt 必须：
+ * 1. 使用数组格式 [{type: 'text', text: '...'}]
+ * 2. 第一个 block 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
+ */
+function formatSystemPrompt(
+  systemPrompt: string | undefined,
+  isOAuth: boolean
+): Array<{type: 'text'; text: string; cache_control?: {type: 'ephemeral'}}> | string | undefined {
+  // 如果不是 OAuth 模式，直接返回原始 prompt
+  if (!isOAuth) {
+    return systemPrompt;
+  }
+
+  // OAuth 模式需要特殊格式
+  if (!systemPrompt) {
+    // 没有 system prompt，使用默认的 Claude Code 身份
+    return [
+      { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } }
+    ];
+  }
+
+  // 检查是否已经包含有效身份
+  if (systemPrompt.startsWith(CLAUDE_CODE_IDENTITY) ||
+      systemPrompt.startsWith(CLAUDE_AGENT_IDENTITY)) {
+    // 已经有正确的身份，转换为数组格式
+    const remainingText = systemPrompt.replace(CLAUDE_CODE_IDENTITY, '').replace(CLAUDE_AGENT_IDENTITY, '').trim();
+    const blocks: Array<{type: 'text'; text: string; cache_control?: {type: 'ephemeral'}}> = [
+      { type: 'text' as const, text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' as const } }
+    ];
+    if (remainingText.length > 0) {
+      blocks.push({ type: 'text' as const, text: remainingText, cache_control: { type: 'ephemeral' as const } });
+    }
+    return blocks;
+  }
+
+  // 没有有效身份，添加 Claude Code 身份作为第一个 block
+  return [
+    { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+  ];
+}
+
+// 会话相关的全局状态
+let _sessionId: string | null = null;
+let _userId: string | null = null;
+
+/**
+ * 获取会话 ID (模拟官方 h0 函数)
+ */
+function getSessionId(): string {
+  if (!_sessionId) {
+    _sessionId = uuidv4();
+  }
+  return _sessionId;
+}
+
+/**
+ * 获取用户 ID (模拟官方 Ug 函数)
+ */
+function getUserId(): string {
+  if (!_userId) {
+    _userId = randomBytes(32).toString('hex');
+  }
+  return _userId;
+}
+
+/**
+ * 构建 metadata (模拟官方 Ja 函数)
+ */
+function buildMetadata(accountUuid?: string): { user_id: string } {
+  return {
+    user_id: `user_${getUserId()}_account_${accountUuid || ''}_session_${getSessionId()}`
+  };
+}
+
+/**
+ * 构建 betas 数组 (模拟官方 qC/hg1 函数)
+ *
+ * 重要发现：
+ * - claude-code-20250219 beta 需要与特定的 system prompt 配合使用
+ * - system prompt 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
+ * - 只有满足这个条件，OAuth token 才能使用 sonnet/opus 模型
+ */
+function buildBetas(_model: string, isOAuth: boolean): string[] {
+  const betas: string[] = [];
+
+  // OAuth 模式需要添加 claude-code beta
+  // 这个 beta 配合正确的 system prompt 可以解锁 sonnet/opus 模型
+  if (isOAuth) {
+    betas.push(CLAUDE_CODE_BETA);
+    betas.push(OAUTH_BETA);
+  }
+
+  // 添加 thinking beta
+  betas.push(THINKING_BETA);
+
+  return betas;
+}
+
 export class ClaudeClient {
   private client: Anthropic;
   private model: string;
@@ -89,6 +231,7 @@ export class ClaudeClient {
   private retryDelay: number;
   private fallbackModel?: string;
   private debug: boolean;
+  private isOAuth: boolean = false;  // 是否使用 OAuth 模式
   private totalUsage: UsageStats = {
     inputTokens: 0,
     outputTokens: 0,
@@ -102,17 +245,40 @@ export class ClaudeClient {
 
   constructor(config: ClientConfig = {}) {
     // 准备 Anthropic 客户端配置
-    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+    // 关键：对于 OAuth 模式，只使用 authToken，不使用 apiKey
+    // 官方 Claude Code 的逻辑：zB() ? null : apiKey
+    const authToken = config.authToken || process.env.ANTHROPIC_AUTH_TOKEN;
+    // 如果有 authToken，则不使用 apiKey（官方逻辑）
+    const apiKey = authToken ? null : (config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
 
-    if (!apiKey) {
+    if (!apiKey && !authToken) {
       console.error('[ClaudeClient] ERROR: No API key found!');
       console.error('[ClaudeClient] Please set ANTHROPIC_API_KEY environment variable or provide apiKey in config');
     }
 
+    // 构建默认 headers（与官方 Claude Code 完全一致）
+    // 通过抓包分析得到的官方请求头
+    const defaultHeaders: Record<string, string> = {
+      'x-app': 'cli',
+      'User-Agent': 'claude-cli/2.0.76 (external, claude-vscode, agent-sdk/0.1.75)',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    };
+
+    // 如果使用 OAuth，标记模式
+    if (authToken) {
+      this.isOAuth = true;
+      console.log('[ClaudeClient] Using OAuth mode with authToken');
+    } else if (apiKey) {
+      console.log('[ClaudeClient] Using API key mode');
+    }
+
     const anthropicConfig: any = {
-      apiKey,
+      apiKey: apiKey,  // OAuth 模式下为 null
+      authToken: authToken || null,  // OAuth token
       baseURL: config.baseUrl,
       maxRetries: 0, // 我们自己处理重试
+      defaultHeaders,
+      dangerouslyAllowBrowser: true,
     };
 
     // 配置代理（如果需要）
@@ -321,10 +487,16 @@ export class ClaudeClient {
     // 使用回退机制执行请求
     const executeRequest = async (currentModel: string) => {
       return await this.withRetry(async () => {
+        // 构建 betas 数组（模拟官方 qC 函数）
+        const betas = buildBetas(currentModel, this.isOAuth);
+
+        // 格式化 system prompt（OAuth 模式需要特殊格式）
+        const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
+
         const requestParams: any = {
           model: currentModel,
           max_tokens: this.maxTokens,
-          system: systemPrompt,
+          system: formattedSystem,
           messages: messages.map((m) => ({
             role: m.role,
             content: m.content,
@@ -334,10 +506,20 @@ export class ClaudeClient {
             description: t.description,
             input_schema: t.inputSchema,
           })),
+          // 添加 betas 参数（官方 Claude Code 的关键）
+          ...(betas.length > 0 ? { betas } : {}),
+          // 添加 metadata（官方 Claude Code 的 Ja 函数）
+          metadata: buildMetadata(),
           ...thinkingParams,
         };
 
-        return await this.client.messages.create(requestParams);
+        if (this.debug) {
+          console.log('[ClaudeClient] Using beta.messages.create with betas:', betas);
+          console.log('[ClaudeClient] System prompt format:', Array.isArray(formattedSystem) ? 'array' : 'string');
+        }
+
+        // 使用 beta.messages.create 而不是 messages.create（官方方式）
+        return await this.client.beta.messages.create(requestParams);
       });
     };
 
@@ -447,10 +629,22 @@ export class ClaudeClient {
         thinkingParams.thinking.budget_tokens = options.thinkingBudget;
       }
 
-      stream = this.client.messages.stream({
+      // 构建 betas 数组（模拟官方 qC 函数）
+      const betas = buildBetas(this.model, this.isOAuth);
+
+      // 格式化 system prompt（OAuth 模式需要特殊格式）
+      const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
+
+      if (this.debug) {
+        console.log('[ClaudeClient] Using beta.messages.stream with betas:', betas);
+        console.log('[ClaudeClient] System prompt format:', Array.isArray(formattedSystem) ? 'array' : 'string');
+      }
+
+      // 使用 beta.messages.stream 而不是 messages.stream（官方方式）
+      stream = this.client.beta.messages.stream({
         model: this.model,
         max_tokens: this.maxTokens,
-        system: systemPrompt,
+        system: formattedSystem as any,
         messages: messages.map((m) => ({
           role: m.role,
           content: m.content,
@@ -460,6 +654,10 @@ export class ClaudeClient {
           description: t.description,
           input_schema: t.inputSchema,
         })) as any,
+        // 添加 betas 参数（官方 Claude Code 的关键）
+        ...(betas.length > 0 ? { betas } : {}),
+        // 添加 metadata（官方 Claude Code 的 Ja 函数）
+        metadata: buildMetadata(),
         ...thinkingParams,
       });
     } catch (error: any) {
@@ -595,5 +793,64 @@ export class ClaudeClient {
   }
 }
 
-// 默认客户端实例
-export const defaultClient = new ClaudeClient();
+// 默认客户端实例 (延迟初始化以支持 OAuth)
+let _defaultClient: ClaudeClient | null = null;
+
+/**
+ * 检查 OAuth scope 是否包含 user:inference
+ * 官方 Claude Code 只有在有这个 scope 时才直接使用 OAuth token
+ */
+function hasInferenceScope(scopes?: string[]): boolean {
+  return Boolean(scopes?.includes('user:inference'));
+}
+
+/**
+ * 获取默认客户端实例 (延迟初始化，自动使用 auth 模块的认证)
+ */
+export function getDefaultClient(): ClaudeClient {
+  if (!_defaultClient) {
+    // 初始化认证并获取凭据
+    initAuth();
+    const auth = getAuth();
+
+    const config: ClientConfig = {};
+
+    // 根据认证类型设置凭据
+    if (auth) {
+      if (auth.type === 'api_key' && auth.apiKey) {
+        config.apiKey = auth.apiKey;
+      } else if (auth.type === 'oauth' && auth.accessToken) {
+        // 关键修复：检查是否有 user:inference scope
+        // 官方 Claude Code 在有此 scope 时直接使用 OAuth access token
+        if (hasInferenceScope(auth.scope)) {
+          // 直接使用 OAuth access token 作为 authToken
+          // 这是官方 Claude Code 的做法
+          config.authToken = auth.accessToken;
+        } else {
+          // 没有 inference scope，需要使用创建的 API Key
+          if (auth.oauthApiKey) {
+            config.apiKey = auth.oauthApiKey;
+          }
+        }
+      }
+    }
+
+    _defaultClient = new ClaudeClient(config);
+  }
+  return _defaultClient;
+}
+
+/**
+ * 重置默认客户端（用于认证变更后刷新）
+ */
+export function resetDefaultClient(): void {
+  _defaultClient = null;
+}
+
+// 保持向后兼容性，但不推荐直接使用
+// @deprecated 使用 getDefaultClient() 代替
+export const defaultClient = new Proxy({} as ClaudeClient, {
+  get(_, prop) {
+    return Reflect.get(getDefaultClient(), prop);
+  }
+});

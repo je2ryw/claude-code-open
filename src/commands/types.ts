@@ -52,6 +52,8 @@ export interface CommandContext {
     addMessage: (role: 'user' | 'assistant', content: string) => void;
     addActivity: (description: string) => void;
     setShowWelcome: (show: boolean) => void;
+    setShowLoginScreen?: (show: boolean) => void;
+    setLoginPreselect?: (method: 'claudeai' | 'console' | null) => void;
     exit: () => void;
   };
 
@@ -63,7 +65,7 @@ export interface CommandContext {
 export interface CommandResult {
   success: boolean;
   message?: string;
-  action?: 'exit' | 'clear' | 'reload' | 'none';
+  action?: 'exit' | 'clear' | 'reload' | 'login' | 'reinitClient' | 'none';
   data?: any;
 }
 

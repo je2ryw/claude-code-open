@@ -91,7 +91,7 @@ getDefaultModel(agentType: string): string | null
 
 // 示例
 const defaultModel = subagentModelConfig.getDefaultModel('Explore');
-// 返回: 'claude-haiku-4-5-20250924'
+// 返回: 'claude-haiku-4-5-20251001'
 ```
 
 #### getAgentModelInfo()
@@ -166,7 +166,7 @@ console.log(estimate.breakdown.outputCost); // 0.075
 ```typescript
 const recommendation = subagentModelConfig.recommendAgentAndModel('quick-lookup');
 console.log(recommendation.agentType);  // 'claude-code-guide'
-console.log(recommendation.model);      // 'claude-haiku-4-5-20250924'
+console.log(recommendation.model);      // 'claude-haiku-4-5-20251001'
 console.log(recommendation.reason);     // 'Fast documentation queries...'
 
 // 支持的任务类型：

@@ -3,7 +3,7 @@
  * 处理用户输入、工具调用和响应
  */
 
-import { ClaudeClient } from './client.js';
+import { ClaudeClient, type ClientConfig } from './client.js';
 import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
@@ -15,6 +15,7 @@ import {
   type SystemPromptOptions,
 } from '../prompt/index.js';
 import { modelConfig, type ThinkingConfig } from '../models/index.js';
+import { initAuth, getAuth, ensureOAuthApiKey } from '../auth/index.js';
 
 export interface LoopOptions {
   model?: string;
@@ -51,13 +52,44 @@ export class ConversationLoop {
     // 解析模型别名
     const resolvedModel = modelConfig.resolveAlias(options.model || 'sonnet');
 
-    this.client = new ClaudeClient({
+    // 初始化认证并获取凭据
+    initAuth();
+    const auth = getAuth();
+
+    // 构建 ClaudeClient 配置
+    const clientConfig: ClientConfig = {
       model: resolvedModel,
       maxTokens: options.maxTokens,
       fallbackModel: options.fallbackModel,
       thinking: options.thinking,
       debug: options.debug,
-    });
+    };
+
+    // 根据认证类型设置凭据
+    if (auth) {
+      if (auth.type === 'api_key' && auth.apiKey) {
+        clientConfig.apiKey = auth.apiKey;
+      } else if (auth.type === 'oauth') {
+        // 检查是否有 user:inference scope (Claude.ai 订阅用户)
+        // 注意：auth.scopes 是数组形式，auth.scope 是旧格式
+        const scopes = auth.scopes || auth.scope || [];
+        const hasInferenceScope = scopes.includes('user:inference');
+
+        // 获取 OAuth token（可能是 authToken 或 accessToken）
+        const oauthToken = auth.authToken || auth.accessToken;
+
+        if (hasInferenceScope && oauthToken) {
+          // Claude.ai 订阅用户可以直接使用 OAuth token
+          clientConfig.authToken = oauthToken;
+        } else if (auth.oauthApiKey) {
+          // Console 用户使用创建的 API Key
+          clientConfig.apiKey = auth.oauthApiKey;
+        }
+        // 如果两者都没有，ensureAuthenticated() 会处理
+      }
+    }
+
+    this.client = new ClaudeClient(clientConfig);
 
     this.session = new Session();
     this.options = options;
@@ -95,6 +127,106 @@ export class ConversationLoop {
   }
 
   /**
+   * 重新初始化客户端（登录后调用）
+   * 从当前认证状态重新创建 ClaudeClient
+   */
+  reinitializeClient(): boolean {
+    // 重新初始化认证
+    initAuth();
+    const auth = getAuth();
+
+    if (!auth) {
+      console.warn('[Loop] No auth found after reinitialization');
+      return false;
+    }
+
+    const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
+
+    // 构建 ClaudeClient 配置
+    const clientConfig: ClientConfig = {
+      model: resolvedModel,
+      maxTokens: this.options.maxTokens,
+      fallbackModel: this.options.fallbackModel,
+      thinking: this.options.thinking,
+      debug: this.options.debug,
+    };
+
+    // 根据认证类型设置凭据
+    if (auth.type === 'api_key' && auth.apiKey) {
+      clientConfig.apiKey = auth.apiKey;
+    } else if (auth.type === 'oauth') {
+      // 检查是否有 user:inference scope (Claude.ai 订阅用户)
+      const hasInferenceScope = auth.scope?.includes('user:inference');
+
+      if (hasInferenceScope && auth.accessToken) {
+        // Claude.ai 订阅用户可以直接使用 OAuth token
+        clientConfig.authToken = auth.accessToken;
+      } else if (auth.oauthApiKey) {
+        // 使用创建的 OAuth API Key
+        clientConfig.apiKey = auth.oauthApiKey;
+      } else {
+        console.warn('[Loop] OAuth auth without valid credentials');
+        return false;
+      }
+    }
+
+    // 重新创建客户端
+    this.client = new ClaudeClient(clientConfig);
+    console.log('[Loop] Client reinitialized with new credentials');
+    return true;
+  }
+
+  /**
+   * 确保认证已完成（处理 OAuth API Key 创建）
+   * 在发送第一条消息前调用
+   */
+  async ensureAuthenticated(): Promise<boolean> {
+    const auth = getAuth();
+
+    if (!auth) {
+      return false;
+    }
+
+    if (auth.type === 'api_key') {
+      return !!auth.apiKey;
+    }
+
+    if (auth.type === 'oauth') {
+      // 检查是否有 user:inference scope (Claude.ai 订阅用户)
+      const hasInferenceScope = auth.scope?.includes('user:inference');
+
+      if (hasInferenceScope) {
+        // Claude.ai 订阅用户：尝试使用 authToken
+        // 注意：Anthropic 服务器可能会限制非官方客户端使用 OAuth token
+        if (auth.accessToken) {
+          return true;
+        }
+        console.warn('[Auth] OAuth access token not found');
+        return false;
+      }
+
+      // Console 用户需要创建 OAuth API Key
+      const apiKey = await ensureOAuthApiKey();
+      if (apiKey) {
+        // 重新创建客户端使用新的 API Key
+        const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
+        this.client = new ClaudeClient({
+          model: resolvedModel,
+          maxTokens: this.options.maxTokens,
+          fallbackModel: this.options.fallbackModel,
+          thinking: this.options.thinking,
+          debug: this.options.debug,
+          apiKey: apiKey,
+        });
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  }
+
+  /**
    * 检查是否为 Git 仓库
    */
   private checkIsGitRepo(dir: string): boolean {
@@ -122,6 +254,9 @@ export class ConversationLoop {
   }
 
   async processMessage(userInput: string): Promise<string> {
+    // 确保认证已完成（处理 OAuth API Key 创建）
+    await this.ensureAuthenticated();
+
     // 添加用户消息
     this.session.addMessage({
       role: 'user',
@@ -303,6 +438,9 @@ Guidelines:
     toolResult?: string;
     toolError?: string;
   }> {
+    // 确保认证已完成（处理 OAuth API Key 创建）
+    await this.ensureAuthenticated();
+
     this.session.addMessage({
       role: 'user',
       content: userInput,

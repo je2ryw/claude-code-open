@@ -3,3 +3,12 @@ dist/
 *.log
 .DS_Store
 .env
+.env.*
+*.key
+.lh/.env.json
+.claude/settings.local.json
+# API keys and sensitive data
+**/api_keys/**
+**/*secret*
+**/*password*
+**/*token*

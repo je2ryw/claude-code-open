@@ -13,12 +13,14 @@ import { TodoList } from './components/TodoList.js';
 import { Spinner } from './components/Spinner.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ShortcutHelp } from './components/ShortcutHelp.js';
+import { LoginSelector, type LoginMethod } from './LoginSelector.js';
 import { ConversationLoop } from '../core/loop.js';
 import { initializeCommands, executeCommand } from '../commands/index.js';
 import { isPlanModeActive } from '../tools/planmode.js';
 import { updateManager } from '../updater/index.js';
 import { useGlobalKeybindings } from './hooks/useGlobalKeybindings.js';
 import { configManager } from '../config/index.js';
+import { startOAuthLogin } from '../auth/index.js';
 import type { TodoItem } from '../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -95,6 +97,10 @@ export const App: React.FC<AppProps> = ({
   const [showVerbose, setShowVerbose] = useState(verbose || false);
   const [showTodosPanel, setShowTodosPanel] = useState(false);
   const [stashedPrompt, setStashedPrompt] = useState<string>('');
+
+  // 登录屏幕状态
+  const [showLoginScreen, setShowLoginScreen] = useState(false);
+  const [loginPreselect, setLoginPreselect] = useState<'claudeai' | 'console' | null>(null);
 
   // 会话 ID
   const sessionId = useRef(uuidv4());
@@ -238,6 +244,45 @@ export const App: React.FC<AppProps> = ({
     ]);
   }, []);
 
+  // 处理登录方法选择
+  const handleLoginSelect = useCallback(async (method: LoginMethod) => {
+    setShowLoginScreen(false);
+    setLoginPreselect(null);
+
+    if (method === 'exit') {
+      addActivity('Login cancelled');
+      return;
+    }
+
+    const isClaudeAi = method === 'claudeai';
+    addActivity(`Starting ${isClaudeAi ? 'Claude.ai' : 'Console'} OAuth login...`);
+    addMessage('assistant', `Starting OAuth login with ${isClaudeAi ? 'Claude.ai subscription' : 'Anthropic Console'}...\n\nPlease follow the instructions in the terminal.`);
+
+    try {
+      // 启动 OAuth 流程 - 转换类型名称
+      const accountType = isClaudeAi ? 'claude.ai' : 'console';
+      const result = await startOAuthLogin({
+        accountType: accountType as 'claude.ai' | 'console',
+        useDeviceFlow: false,
+      });
+
+      if (result && result.accessToken) {
+        // 重新初始化客户端以使用新的凭据
+        const reinitSuccess = loop.reinitializeClient();
+        if (reinitSuccess) {
+          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\nClient has been reinitialized with new credentials. You can now start chatting!`);
+          addActivity('OAuth login completed and client reinitialized');
+        } else {
+          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\n⚠️ Note: Could not reinitialize client. Please restart the application.`);
+          addActivity('OAuth login completed but client reinitialization failed');
+        }
+      }
+    } catch (error) {
+      addMessage('assistant', `❌ Login failed: ${error instanceof Error ? error.message : String(error)}\n\nPlease try again or use /login --api-key to set up an API key.`);
+      addActivity('OAuth login failed');
+    }
+  }, [addActivity, addMessage, loop]);
+
   // 处理斜杠命令
   const handleSlashCommand = useCallback(async (input: string): Promise<boolean> => {
     const session = loop.getSession();
@@ -269,6 +314,8 @@ export const App: React.FC<AppProps> = ({
         addMessage,
         addActivity,
         setShowWelcome,
+        setShowLoginScreen,
+        setLoginPreselect,
         exit,
       },
     };
@@ -280,6 +327,19 @@ export const App: React.FC<AppProps> = ({
         exit();
       } else if (result.action === 'clear') {
         // 清除已在命令中处理
+      } else if (result.action === 'login') {
+        // 显示登录屏幕
+        setShowLoginScreen(true);
+      } else if (result.action === 'reinitClient') {
+        // 重新初始化客户端（登录成功后）
+        const reinitSuccess = loop.reinitializeClient();
+        if (reinitSuccess) {
+          addMessage('assistant', '\n✅ Client reinitialized with new credentials. You can now start chatting!');
+          addActivity('Client reinitialized');
+        } else {
+          addMessage('assistant', '\n⚠️ Could not reinitialize client. Please restart the application.');
+          addActivity('Client reinitialization failed');
+        }
       }
 
       return result.success;
@@ -287,7 +347,7 @@ export const App: React.FC<AppProps> = ({
       addMessage('assistant', `Command error: ${error}`);
       return false;
     }
-  }, [loop, model, apiType, organization, username, addMessage, addActivity, exit]);
+  }, [loop, model, apiType, organization, username, addMessage, addActivity, exit, setShowLoginScreen, setLoginPreselect]);
 
   // 处理消息
   const handleSubmit = useCallback(
@@ -416,6 +476,11 @@ export const App: React.FC<AppProps> = ({
         isVisible={showShortcuts}
         onClose={() => setShowShortcuts(false)}
       />
+
+      {/* 登录选择器 */}
+      {showLoginScreen && (
+        <LoginSelector onSelect={handleLoginSelect} />
+      )}
 
       {/* Messages */}
       <Box flexDirection="column" flexGrow={1} marginY={1}>

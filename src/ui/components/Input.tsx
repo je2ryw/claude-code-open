@@ -155,8 +155,8 @@ export const Input: React.FC<InputProps> = ({
           );
           return;
         }
-        if (key.tab) {
-          // Tab 补全选中的项
+        if (key.tab || key.return) {
+          // Tab 或 Enter 补全选中的项
           const selectedCompletion = completions[selectedCompletionIndex];
           if (selectedCompletion) {
             // 应用补全
@@ -168,10 +168,33 @@ export const Input: React.FC<InputProps> = ({
               startPos,
               cursor
             );
-            setValue(result.newText);
-            setCursor(result.newCursor);
+
+            // 如果是命令补全且按的是 Enter，应用后直接提交
+            if (key.return && completionType === 'command') {
+              const finalValue = result.newText.trim();
+              if (finalValue) {
+                onSubmit(finalValue);
+                setHistory(prev => [finalValue, ...prev.slice(0, 99)]);
+                setValue('');
+                setCursor(0);
+                setHistoryIndex(-1);
+                if (vimModeEnabled) {
+                  setVimNormalMode(true);
+                  setUndoStack([]);
+                }
+              }
+            } else {
+              // Tab 键或其他类型的补全：只应用补全不提交
+              setValue(result.newText);
+              setCursor(result.newCursor);
+            }
+            return;
           }
-          return;
+          // 没有选中的补全项时，如果是 Enter 键，不 return，让后面的提交逻辑处理
+          if (key.tab) {
+            return;
+          }
+          // 如果是 Enter 键且没有有效的补全项，继续执行后面的提交逻辑
         }
       }
 

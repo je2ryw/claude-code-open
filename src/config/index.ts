@@ -40,7 +40,7 @@ const UserConfigSchema = z.object({
 
   // API 配置
   apiKey: z.string().optional(),
-  model: z.enum(['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20250924', 'opus', 'sonnet', 'haiku']).default('sonnet'),
+  model: z.enum(['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001', 'opus', 'sonnet', 'haiku']).default('sonnet'),
   maxTokens: z.number().int().positive().max(200000).default(8192),
   temperature: z.number().min(0).max(1).default(1),
 

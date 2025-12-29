@@ -67,7 +67,7 @@ function NoPricingExample() {
  * 示例 3: 不显示能力标签
  */
 function NoCapabilitiesExample() {
-  const [selectedModel, setSelectedModel] = useState('claude-haiku-4-5-20250924');
+  const [selectedModel, setSelectedModel] = useState('claude-haiku-4-5-20251001');
 
   return (
     <ModelSelector

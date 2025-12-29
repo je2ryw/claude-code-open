@@ -111,6 +111,17 @@ program
     // ✅ 启动时自动清理过期数据（异步，不阻塞）
     scheduleCleanup();
 
+    // 检查是否需要显示登录选择器
+    // 只在没有 prompt 且没有认证凭据时显示
+    if (!prompt && !options.print && !options.text) {
+      const { shouldShowLoginSelector } = await import('./ui/LoginSelector.js');
+
+      if (shouldShowLoginSelector()) {
+        await showLoginSelectorUI();
+        return;
+      }
+    }
+
     // 调试模式
     if (options.debug) {
       process.env.CLAUDE_DEBUG = options.debug === true ? '*' : options.debug;
@@ -121,11 +132,11 @@ program
       process.env.CLAUDE_SOLO_MODE = 'true';
     }
 
-    // 模型映射
+    // 模型映射（官方 Claude Code 使用的模型版本）
     const modelMap: Record<string, string> = {
-      'sonnet': 'claude-sonnet-4-20250514',
-      'opus': 'claude-opus-4-20250514',
-      'haiku': 'claude-haiku-3-5-20241022',
+      'sonnet': 'claude-sonnet-4-5-20250929',
+      'opus': 'claude-opus-4-5-20251101',
+      'haiku': 'claude-haiku-4-5-20251001',
     };
 
     // 加载 MCP 配置
@@ -1486,6 +1497,62 @@ tokensCommand
       console.log(chalk.gray('  unset CLAUDE_API_KEY\n'));
     }
   });
+
+// 辅助函数: 登录选择器 UI
+async function showLoginSelectorUI(): Promise<void> {
+  const { LoginSelector } = await import('./ui/LoginSelector.js');
+  const { startOAuthLogin } = await import('./auth/index.js');
+
+  return new Promise((resolve) => {
+    // 使用已导入的 render，不使用 require
+
+    const onSelect = async (method: 'claudeai' | 'console' | 'exit') => {
+      // 卸载 UI
+      app.unmount();
+
+      if (method === 'exit') {
+        console.log(chalk.yellow('\nSetup cancelled.'));
+        console.log(chalk.gray('\nTo login later, run:'));
+        console.log(chalk.gray('  claude login --api-key     Setup with API key'));
+        console.log(chalk.gray('  claude login --oauth       OAuth login'));
+        console.log(chalk.gray('  claude setup-token         Quick setup\n'));
+        process.exit(0);
+      }
+
+      // 执行 OAuth 登录
+      console.log(chalk.cyan(`\nStarting OAuth login with ${method === 'claudeai' ? 'Claude.ai' : 'Anthropic Console'}...\n`));
+
+      try {
+        // 转换方法名称: claudeai -> claude.ai
+        const accountType = method === 'claudeai' ? 'claude.ai' : 'console';
+        const authResult = await startOAuthLogin({ accountType });
+
+        if (authResult && authResult.accessToken) {
+          console.log(chalk.green('\n✅ OAuth Login Successful!\n'));
+          console.log('You can now use Claude Code.');
+          console.log(chalk.gray('\nRun:  claude  to start a new session\n'));
+          process.exit(0);
+        } else {
+          throw new Error('OAuth login failed');
+        }
+      } catch (error) {
+        console.log(chalk.red(`\n❌ OAuth Login Failed: ${error instanceof Error ? error.message : String(error)}\n`));
+        console.log(chalk.yellow('Alternative setup methods:\n'));
+        console.log('1. Use API key (recommended for developers):');
+        console.log(chalk.gray('   claude login --api-key\n'));
+        console.log('2. Set environment variable:');
+        console.log(chalk.gray('   export ANTHROPIC_API_KEY=sk-ant-your-key-here\n'));
+        console.log('3. Quick setup:');
+        console.log(chalk.gray('   claude setup-token\n'));
+        process.exit(1);
+      }
+
+      resolve();
+    };
+
+    const app = render(React.createElement(LoginSelector, { onSelect }));
+  });
+}
 
 // 辅助函数: 会话选择器
 async function showSessionPicker(loop: ConversationLoop): Promise<void> {

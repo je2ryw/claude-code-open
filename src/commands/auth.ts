@@ -46,8 +46,27 @@ export const loginCommand: SlashCommand = {
       authStatus = 'Authenticated (OAuth)';
     }
 
-    // 无参数或 help 时显示登录选项
-    if (!method || method === 'help' || method === '-h' || method === '--help') {
+    // 无参数时显示交互式登录选择器（官方行为）
+    if (!method) {
+      // 触发 UI 显示登录选择器
+      if (ctx.ui.setShowLoginScreen) {
+        ctx.ui.setShowLoginScreen(true);
+        ctx.ui.addActivity('Opening login selector...');
+        return { success: true, action: 'login' };
+      }
+      // 如果 UI 不支持，回退到文本提示
+      ctx.ui.addMessage('assistant', `Select login method:
+
+1. /login --claudeai    Claude account with subscription (Pro, Max, Team, Enterprise)
+2. /login --console     Anthropic Console account (API usage billing)
+3. /login --api-key     Setup with API key
+
+Current status: ${authStatus}`);
+      return { success: true };
+    }
+
+    // help 时显示详细帮助
+    if (method === 'help' || method === '-h' || method === '--help') {
       const loginInfo = `╭─ Claude Code Login ────────────────────────────────╮
 │                                                    │
 │  Current Status: ${authStatus.padEnd(32)}│
@@ -145,87 +164,35 @@ Note: API keys start with "sk-ant-"`;
       method === '--console' ||
       method === 'console'
     ) {
-      const loginType = method.includes('claudeai')
+      // 确定账户类型
+      const accountType: 'claude.ai' | 'console' = method.includes('claudeai')
+        ? 'claude.ai'
+        : 'console';
+
+      const loginType = accountType === 'claude.ai'
         ? 'Claude.ai (Subscription)'
-        : method.includes('console')
-        ? 'Console (API Billing)'
-        : 'OAuth';
+        : 'Console (API Billing)';
 
-      // 先显示说明信息
-      const oauthIntro = `OAuth Login: ${loginType}
+      // 显示开始登录信息
+      ctx.ui.addMessage('assistant', `Starting OAuth login with ${loginType}...
 
-OAuth authentication provides seamless integration with your Claude
-or Anthropic Console account.
-
-Login Method: ${loginType}
-
-${
-  method.includes('claudeai')
-    ? `Claude.ai Account:
-  • Requires: Active Claude Pro or Max subscription
-  • Benefits: Use your subscription credits
-  • Best for: Individual users with Claude subscriptions`
-    : method.includes('console')
-    ? `Anthropic Console Account:
-  • Billing: Pay-per-use API billing
-  • Benefits: Flexible usage limits
-  • Best for: Developers and teams`
-    : `Interactive OAuth:
-  • Choose between Claude.ai or Console account
-  • Browser-based authentication
-  • Secure token storage`
-}
-
-How OAuth Login Works:
-
-1. Start OAuth Flow:
-   The CLI will generate a secure login URL
-
-2. Authorize in Browser:
-   • Opens browser automatically (or copy URL manually)
-   • Sign in to your account
-   • Authorize Claude Code CLI access
-
-3. Complete Authorization:
-   • Browser redirects back to CLI
-   • Or manually paste authorization code
-   • CLI exchanges code for access token
-
-4. Store Credentials:
-   • Access token saved to ~/.claude/auth.json
-   • Refresh token for automatic renewal
-   • Encrypted storage (mode 0600)
-
-OAuth Implementation Note:
-
-  This educational reverse-engineering project includes a complete OAuth
-  framework in src/auth/index.ts with:
-  ✓ PKCE (Proof Key for Code Exchange) generation
-  ✓ Local callback server (port 9876)
-  ✓ Secure state parameter validation
-  ✓ Token exchange and storage
-  ✓ Automatic token refresh
-
-Attempting to start OAuth login...
-`;
-
-      ctx.ui.addMessage('assistant', oauthIntro);
+Please follow the instructions in the terminal to complete authentication.`);
+      ctx.ui.addActivity(`Starting OAuth login (${accountType})...`);
 
       // 尝试启动 OAuth 流程
       try {
-        ctx.ui.addActivity('Starting OAuth login flow...');
-
         // 调用认证系统的 startOAuthLogin()
-        const authResult = await startOAuthLogin();
+        const authResult = await startOAuthLogin({ accountType });
 
         if (authResult && authResult.accessToken) {
           const successMsg = `✅ OAuth Login Successful!
 
 Authentication Details:
-  • Type: OAuth
+  • Type: OAuth (${loginType})
   • Access Token: ${authResult.accessToken.substring(0, 20)}...
   • Expires At: ${authResult.expiresAt ? new Date(authResult.expiresAt).toLocaleString() : 'N/A'}
   • Scope: ${authResult.scope?.join(', ') || 'N/A'}
+  • OAuth API Key: ${authResult.oauthApiKey ? 'Created' : 'N/A (using OAuth token)'}
 
 Credentials saved to:
   ~/.claude/auth.json
@@ -240,7 +207,8 @@ To verify your authentication:
 
           ctx.ui.addMessage('assistant', successMsg);
           ctx.ui.addActivity('OAuth login completed successfully');
-          return { success: true };
+          // 返回 reinitClient action 以重新初始化客户端
+          return { success: true, action: 'reinitClient' };
         } else {
           throw new Error('OAuth login returned invalid result');
         }
@@ -248,12 +216,6 @@ To verify your authentication:
         const errorMsg = `❌ OAuth Login Failed
 
 Error: ${error instanceof Error ? error.message : String(error)}
-
-This educational project includes the OAuth framework, but full
-OAuth integration requires:
-  • Official OAuth client registration
-  • Valid authorization endpoints
-  • Proper redirect URI configuration
 
 For immediate use, please try:
   /login --api-key     Setup with API key

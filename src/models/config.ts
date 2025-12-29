@@ -39,7 +39,7 @@ const KNOWN_MODELS: ModelInfo[] = [
     releaseDate: '2025-09-29',
   },
   {
-    id: 'claude-haiku-4-5-20250924',
+    id: 'claude-haiku-4-5-20251001',
     displayName: 'Haiku 4.5',
     aliases: ['haiku', 'haiku-4-5', 'claude-haiku-4-5'],
     contextWindow: 200_000,
@@ -50,7 +50,7 @@ const KNOWN_MODELS: ModelInfo[] = [
     supportsPdf: true,
     supportsCaching: true,
     family: 'haiku',
-    releaseDate: '2025-09-24',
+    releaseDate: '2025-10-01',
   },
 
   // Claude 4 系列
@@ -132,7 +132,7 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
     cacheCreate: 3.75,
     thinking: 15,
   },
-  'claude-haiku-4-5-20250924': {
+  'claude-haiku-4-5-20251001': {
     input: 0.8,
     output: 4,
     cacheRead: 0.08,
@@ -418,7 +418,7 @@ export class ModelConfig {
   recommendModel(task: 'simple' | 'medium' | 'complex' | 'thinking'): string {
     switch (task) {
       case 'simple':
-        return 'claude-haiku-4-5-20250924';
+        return 'claude-haiku-4-5-20251001';
       case 'medium':
         return 'claude-sonnet-4-5-20250929';
       case 'complex':

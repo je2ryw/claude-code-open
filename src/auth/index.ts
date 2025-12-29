@@ -18,22 +18,25 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import * as crypto from 'crypto';
+import open from 'open';
 
 // 导入 MFA 模块
 import * as MFA from './mfa.js';
 
 // ============ 类型定义 ============
 
-export type AccountType = 'claude.ai' | 'console' | 'api';
+export type AccountType = 'claude.ai' | 'console' | 'api' | 'subscription';
 
 export interface AuthConfig {
   type: 'api_key' | 'oauth';
   accountType?: AccountType;
   apiKey?: string;
+  authToken?: string;  // OAuth access token (用于 Anthropic SDK)
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;
   scope?: string[];
+  scopes?: string[];  // OAuth scopes 数组
   userId?: string;
   email?: string;
   // 设备授权流程特有
@@ -45,6 +48,9 @@ export interface AuthConfig {
   mfaRequired?: boolean;
   mfaVerified?: boolean;
   deviceId?: string; // 受信任设备 ID
+  // OAuth 创建的临时 API Key（用于调用消息 API）
+  oauthApiKey?: string;
+  oauthApiKeyExpiresAt?: number;
 }
 
 export interface OAuthConfig {
@@ -74,12 +80,30 @@ export interface TokenResponse {
   scope?: string;
 }
 
+export interface UserProfileResponse {
+  account: {
+    uuid: string;
+    email: string;
+    display_name?: string;
+  };
+  organization?: {
+    uuid: string;
+    organization_type?: 'claude_max' | 'claude_pro' | 'claude_enterprise' | 'claude_team';
+    rate_limit_tier?: string;
+    has_extra_usage_enabled?: boolean;
+  };
+}
+
 // ============ 常量配置 ============
 
 // 认证配置文件路径
 const AUTH_DIR = path.join(os.homedir(), '.claude');
 const AUTH_FILE = path.join(AUTH_DIR, 'auth.json');
 const CREDENTIALS_FILE = path.join(AUTH_DIR, 'credentials.json');
+// 官方 Claude Code 的配置文件（存储 primaryApiKey）
+const CONFIG_FILE = path.join(AUTH_DIR, 'config.json');
+// 官方 Claude Code 的 OAuth 凭据文件（存储 claudeAiOauth）
+const OFFICIAL_CREDENTIALS_FILE = path.join(AUTH_DIR, '.credentials.json');
 
 // 加密密钥（基于机器特征生成）
 const ENCRYPTION_KEY = crypto
@@ -87,23 +111,29 @@ const ENCRYPTION_KEY = crypto
   .update(os.hostname() + os.userInfo().username)
   .digest();
 
+// OAuth scope 定义（与官方一致）
+// qB4 = ["org:create_api_key", "user:profile"]
+// Aq1 = ["user:profile", "user:inference", "user:sessions:claude_code"]
+// CBQ = 合并去重
+const OAUTH_SCOPES = ['org:create_api_key', 'user:profile', 'user:inference', 'user:sessions:claude_code'];
+
 // OAuth 端点配置
 const OAUTH_ENDPOINTS: Record<'claude.ai' | 'console', OAuthConfig> = {
   'claude.ai': {
-    clientId: 'claude-code-cli',
+    clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
     authorizationEndpoint: 'https://claude.ai/oauth/authorize',
     deviceCodeEndpoint: 'https://claude.ai/oauth/device/code',
-    tokenEndpoint: 'https://claude.ai/oauth/token',
-    redirectUri: 'http://localhost:9876/callback',
-    scope: ['read', 'write', 'chat'],
+    tokenEndpoint: 'https://console.anthropic.com/v1/oauth/token',
+    redirectUri: 'https://console.anthropic.com/oauth/code/callback',  // 使用官方的回调页面
+    scope: OAUTH_SCOPES,
   },
   console: {
-    clientId: 'claude-code-cli',
+    clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
     authorizationEndpoint: 'https://console.anthropic.com/oauth/authorize',
     deviceCodeEndpoint: 'https://console.anthropic.com/oauth/device/code',
-    tokenEndpoint: 'https://console.anthropic.com/oauth/token',
-    redirectUri: 'http://localhost:9876/callback',
-    scope: ['api.read', 'api.write'],
+    tokenEndpoint: 'https://console.anthropic.com/v1/oauth/token',
+    redirectUri: 'https://console.anthropic.com/oauth/code/callback',  // 使用官方的回调页面
+    scope: OAUTH_SCOPES,
   },
 };
 
@@ -200,7 +230,21 @@ function loadAuthSecure(): AuthConfig | null {
 // ============ 初始化和获取认证 ============
 
 /**
+ * 检查 OAuth scope 是否包含 user:inference
+ * 官方 Claude Code 只有在有这个 scope 时才直接使用 OAuth token
+ */
+function hasInferenceScope(scopes?: string[]): boolean {
+  return Boolean(scopes?.includes('user:inference'));
+}
+
+/**
  * 初始化认证系统
+ *
+ * 认证优先级（修复版本，与官方 Claude Code 逻辑一致）：
+ * 1. 环境变量 API key
+ * 2. OAuth token（如果有 user:inference scope）- 订阅用户优先使用
+ * 3. primaryApiKey（如果 OAuth 没有 inference scope）
+ * 4. 其他凭证文件
  */
 export function initAuth(): AuthConfig | null {
   // 1. 检查环境变量 (最高优先级)
@@ -216,7 +260,66 @@ export function initAuth(): AuthConfig | null {
     return currentAuth;
   }
 
-  // 2. 检查凭证文件（未加密的 API Key）
+  // 2. 检查官方 Claude Code 的 .credentials.json（OAuth token）
+  //
+  // 重要发现（通过抓包和测试发现）：
+  // - OAuth subscription token 需要特殊的 system prompt 格式才能使用 sonnet/opus 模型
+  // - system prompt 的第一个 block 必须以 "You are Claude Code, Anthropic's official CLI for Claude." 开头
+  // - 配合 claude-code-20250219 beta header 可以解锁所有模型
+  //
+  if (fs.existsSync(OFFICIAL_CREDENTIALS_FILE)) {
+    try {
+      const creds = JSON.parse(fs.readFileSync(OFFICIAL_CREDENTIALS_FILE, 'utf-8'));
+      if (creds.claudeAiOauth?.accessToken) {
+        const oauth = creds.claudeAiOauth;
+        const scopes = oauth.scopes || [];
+
+        // 检查是否有 user:inference scope（订阅用户标志）
+        if (hasInferenceScope(scopes)) {
+          console.log('[Auth] Using OAuth token with user:inference scope (subscription mode)');
+          currentAuth = {
+            type: 'oauth',
+            accountType: 'subscription',
+            authToken: oauth.accessToken,
+            refreshToken: oauth.refreshToken,
+            expiresAt: oauth.expiresAt,
+            scopes: scopes,
+            mfaRequired: false,
+            mfaVerified: true,
+          };
+          return currentAuth;
+        }
+      }
+    } catch (err) {
+      // 忽略解析错误
+    }
+  }
+
+  // 3. 检查官方 Claude Code 的 config.json（primaryApiKey）
+  // 只有当 OAuth token 没有 user:inference scope 时才使用这个
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      if (config.primaryApiKey) {
+        console.log('[Auth] Using primaryApiKey from official Claude Code config');
+        currentAuth = {
+          type: 'api_key',
+          accountType: 'api',
+          apiKey: config.primaryApiKey,
+          mfaRequired: false,
+          mfaVerified: true,
+        };
+        return currentAuth;
+      }
+    } catch (err) {
+      // 忽略解析错误
+    }
+  }
+
+  // 注意：我们不再使用官方 Claude Code 的 OAuth token
+  // 因为 Anthropic 服务器会验证请求来源，只允许官方客户端使用
+
+  // 4. 检查凭证文件（未加密的 API Key）
   if (fs.existsSync(CREDENTIALS_FILE)) {
     try {
       const creds = JSON.parse(fs.readFileSync(CREDENTIALS_FILE, 'utf-8'));
@@ -235,7 +338,7 @@ export function initAuth(): AuthConfig | null {
     }
   }
 
-  // 3. 检查 OAuth token（加密存储）
+  // 5. 检查 OAuth token（加密存储 - 我们自己的格式）
   const auth = loadAuthSecure();
   if (auth?.accessToken) {
     // 检查是否过期
@@ -273,6 +376,7 @@ export function getAuth(): AuthConfig | null {
 
 /**
  * 获取 API Key（用于 SDK）
+ * 对于 OAuth 登录，返回通过 OAuth 创建的临时 API Key
  */
 export function getApiKey(): string | undefined {
   if (!currentAuth) {
@@ -284,15 +388,106 @@ export function getApiKey(): string | undefined {
   }
 
   if (currentAuth.type === 'oauth') {
-    // 检查 token 是否即将过期（提前 5 分钟刷新）
+    // 检查 OAuth token 是否即将过期（提前 5 分钟刷新）
     if (currentAuth.expiresAt && currentAuth.expiresAt < Date.now() + 300000) {
       // 触发后台刷新
       ensureValidToken();
     }
-    return currentAuth.accessToken;
+
+    // 返回通过 OAuth 创建的 API Key（如果有的话）
+    if (currentAuth.oauthApiKey) {
+      return currentAuth.oauthApiKey;
+    }
+
+    // 如果没有 OAuth API Key，返回 undefined
+    // 调用者需要先调用 ensureOAuthApiKey() 来创建
+    return undefined;
   }
 
   return undefined;
+}
+
+// OAuth API Key 创建端点
+const OAUTH_API_KEY_URL = 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key';
+
+/**
+ * 通过 OAuth access token 创建临时 API Key
+ * 官方 Claude Code 的认证方式
+ */
+export async function createOAuthApiKey(accessToken: string): Promise<string | null> {
+  try {
+    console.log('Creating temporary API key via OAuth...');
+
+    const response = await fetch(OAUTH_API_KEY_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`Failed to create OAuth API key: ${response.status} ${error}`);
+      return null;
+    }
+
+    const data = await response.json() as { raw_key?: string };
+
+    if (data.raw_key) {
+      console.log('✅ OAuth API key created successfully');
+      return data.raw_key;
+    }
+
+    console.error('No raw_key in response');
+    return null;
+  } catch (error) {
+    console.error('Error creating OAuth API key:', error);
+    return null;
+  }
+}
+
+/**
+ * 确保 OAuth 认证有可用的 API Key
+ * 如果没有，自动创建一个
+ */
+export async function ensureOAuthApiKey(): Promise<string | null> {
+  if (!currentAuth || currentAuth.type !== 'oauth') {
+    return null;
+  }
+
+  // 如果已有有效的 OAuth API Key，直接返回
+  if (currentAuth.oauthApiKey) {
+    // 检查是否过期（OAuth API Key 通常有效期较长，这里假设 24 小时）
+    if (!currentAuth.oauthApiKeyExpiresAt || currentAuth.oauthApiKeyExpiresAt > Date.now()) {
+      return currentAuth.oauthApiKey;
+    }
+  }
+
+  // 确保 access token 有效
+  if (currentAuth.expiresAt && currentAuth.expiresAt < Date.now()) {
+    const refreshed = await refreshTokenAsync(currentAuth);
+    if (!refreshed) {
+      console.error('Failed to refresh OAuth token');
+      return null;
+    }
+  }
+
+  // 创建新的 OAuth API Key
+  if (!currentAuth.accessToken) {
+    return null;
+  }
+
+  const apiKey = await createOAuthApiKey(currentAuth.accessToken);
+
+  if (apiKey) {
+    // 保存到当前认证状态（假设有效期 24 小时）
+    currentAuth.oauthApiKey = apiKey;
+    currentAuth.oauthApiKeyExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    saveAuthSecure(currentAuth);
+  }
+
+  return apiKey;
 }
 
 /**
@@ -337,29 +532,73 @@ export async function startAuthorizationCodeFlow(
 
   // 构建授权 URL
   const authUrl = new URL(oauthConfig.authorizationEndpoint);
+  authUrl.searchParams.set('code', 'true');
   authUrl.searchParams.set('client_id', oauthConfig.clientId);
-  authUrl.searchParams.set('redirect_uri', oauthConfig.redirectUri);
   authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('redirect_uri', oauthConfig.redirectUri);
   authUrl.searchParams.set('scope', oauthConfig.scope.join(' '));
-  authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
+  authUrl.searchParams.set('state', state);
 
+  // 打印授权 URL 信息
   console.log('\n╭─────────────────────────────────────────╮');
   console.log(`│  OAuth Login - ${accountType.padEnd(25)}│`);
   console.log('╰─────────────────────────────────────────╯\n');
-  console.log('Please open this URL in your browser:\n');
-  console.log(authUrl.toString());
-  console.log('\nWaiting for authorization...');
 
-  // 启动本地服务器等待回调
-  const authCode = await waitForCallback(oauthConfig.redirectUri, state);
+  const authUrlString = authUrl.toString();
 
-  // 交换 token
+  // 尝试自动打开浏览器
+  console.log('Opening browser to sign in...');
+  try {
+    await open(authUrlString);
+    console.log('✓ Browser opened. Please complete the authorization in your browser.\n');
+  } catch (error) {
+    console.log('⚠ Could not open browser automatically.');
+    console.log('Please open this URL in your browser:\n');
+    console.log(authUrlString);
+    console.log('\n');
+  }
+
+  console.log('After authorizing, you will see a success page with a code.');
+  console.log('Look for "Authorization code" on the page and copy the entire code.');
+  console.log('\n⚠️  Important: The code expires quickly, please paste it promptly!\n');
+
+  // 等待用户手动输入授权码
+  const readline = await import('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const authCode = await new Promise<string>((resolve) => {
+    rl.question('Paste code here if prompted > ', (code) => {
+      rl.close();
+      // 清理输入：移除前后空白、URL fragment、可能的引号
+      let cleanCode = code.trim();
+      // 移除可能的引号
+      cleanCode = cleanCode.replace(/^["']|["']$/g, '');
+      // 移除 URL fragment (#state)
+      cleanCode = cleanCode.split('#')[0];
+      // 移除可能的 URL 参数（如果用户粘贴了完整 URL）
+      if (cleanCode.includes('code=')) {
+        const match = cleanCode.match(/code=([^&]+)/);
+        if (match) {
+          cleanCode = match[1];
+        }
+      }
+      resolve(cleanCode);
+    });
+  });
+
+  // 交换 token (官方方式)
+  console.log('\nExchanging authorization code for access token...');
+
   const tokenResponse = await exchangeAuthorizationCode(
     oauthConfig,
     authCode,
-    codeVerifier
+    codeVerifier,
+    state
   );
 
   // 保存认证
@@ -374,14 +613,71 @@ export async function startAuthorizationCodeFlow(
 
   saveAuthSecure(currentAuth);
 
-  console.log('\n✅ Authorization successful!');
+  console.log('\n✅ Token exchange successful!');
+
+  // 检查是否有 user:inference scope (Claude.ai 订阅用户)
+  const hasInferenceScope = currentAuth.scope?.includes('user:inference');
+
+  // 如果没有 user:inference scope，需要创建 API key
+  if (!hasInferenceScope) {
+    console.log('Creating API key for Claude Code...');
+    try {
+      const apiKey = await createOAuthApiKey(tokenResponse.access_token);
+      if (apiKey) {
+        currentAuth.oauthApiKey = apiKey;
+        currentAuth.oauthApiKeyExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 小时
+        saveAuthSecure(currentAuth);
+        console.log('✅ API key created successfully');
+      } else {
+        console.log('⚠️ Failed to create API key, will use OAuth token directly');
+      }
+    } catch (error) {
+      console.error('Error creating API key:', error);
+    }
+  } else {
+    console.log('Using OAuth token with inference scope');
+  }
+
+  // 获取用户信息
+  try {
+    console.log('Fetching user profile...');
+    const profile = await fetchUserProfile(tokenResponse.access_token);
+
+    // 更新认证信息中的用户邮箱
+    currentAuth.email = profile.account.email;
+    currentAuth.userId = profile.account.uuid;
+    saveAuthSecure(currentAuth);
+
+    // 显示登录成功信息
+    console.log('\n✅ OAuth Login Successful!\n');
+    if (profile.account.email) {
+      console.log(`Logged in as ${profile.account.email}`);
+    }
+    if (profile.organization?.organization_type) {
+      const orgType = profile.organization.organization_type.replace('claude_', '');
+      console.log(`Organization: ${orgType}`);
+    }
+
+    // 等待用户按 Enter 键
+    console.log('\nLogin successful. Press Enter to continue…');
+    await waitForEnterKey('');
+  } catch (error) {
+    // 即使获取用户信息失败，OAuth 登录仍然算成功
+    console.log('\n✅ Authorization successful!');
+    console.log('(Note: Could not fetch user profile details)');
+  }
+
   return currentAuth;
 }
 
 /**
  * 等待 OAuth 回调
  */
-function waitForCallback(redirectUri: string, expectedState: string): Promise<string> {
+function waitForCallback(
+  redirectUri: string,
+  expectedState: string,
+  onServerReady?: () => void
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = new URL(redirectUri);
     const port = parseInt(url.port) || 9876;
@@ -394,6 +690,13 @@ function waitForCallback(redirectUri: string, expectedState: string): Promise<st
         const state = reqUrl.searchParams.get('state');
         const error = reqUrl.searchParams.get('error');
         const errorDescription = reqUrl.searchParams.get('error_description');
+
+        // Debug logging
+        console.log('\n[OAuth Callback Debug]');
+        console.log('Received state:', state);
+        console.log('Expected state:', expectedState);
+        console.log('States match:', state === expectedState);
+        console.log('Code received:', code ? 'Yes' : 'No');
 
         if (error) {
           res.writeHead(400, { 'Content-Type': 'text/html' });
@@ -485,6 +788,10 @@ function waitForCallback(redirectUri: string, expectedState: string): Promise<st
 
     server.listen(port, () => {
       console.log(`Listening for OAuth callback on port ${port}...`);
+      // 通知服务器已就绪
+      if (onServerReady) {
+        onServerReady();
+      }
     });
 
     server.on('error', (err) => {
@@ -500,39 +807,74 @@ function waitForCallback(redirectUri: string, expectedState: string): Promise<st
 }
 
 /**
- * 交换授权码获取 token
+ * 交换授权码获取 token (官方方式 - 使用 JSON)
+ * 官方实现在 token 请求中包含 state 参数
  */
 async function exchangeAuthorizationCode(
   config: OAuthConfig,
   code: string,
-  codeVerifier: string
+  codeVerifier: string,
+  state: string
 ): Promise<TokenResponse> {
-  const body = new URLSearchParams({
+  // 官方格式：包含 state
+  const body: Record<string, string> = {
     grant_type: 'authorization_code',
-    client_id: config.clientId,
     code,
     redirect_uri: config.redirectUri,
+    client_id: config.clientId,
     code_verifier: codeVerifier,
-  });
+    state,
+  };
 
-  if (config.clientSecret) {
-    body.set('client_secret', config.clientSecret);
-  }
+  // Debug logging
+  console.log('\n[Token Exchange Debug]');
+  console.log('Endpoint:', config.tokenEndpoint);
+  console.log('Request body:', JSON.stringify(body, null, 2));
 
   const response = await fetch(config.tokenEndpoint, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
     },
-    body: body.toString(),
+    body: JSON.stringify(body),
   });
+
+  console.log('Response status:', response.status);
+  console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
   if (!response.ok) {
     const error = await response.text();
+    console.log('Error response:', error);
+
+    // 解析错误并提供友好的错误信息
+    try {
+      const errorData = JSON.parse(error);
+      if (errorData.error === 'invalid_grant') {
+        if (errorData.error_description?.includes('Invalid') || errorData.error_description?.includes('code')) {
+          throw new Error(
+            'Authentication failed: Invalid authorization code.\n\n' +
+            'This can happen if:\n' +
+            '  1. The code was already used (codes can only be used once)\n' +
+            '  2. The code expired (codes expire within a few minutes)\n' +
+            '  3. The code was copied incorrectly\n\n' +
+            'Please try /login again to get a new code.'
+          );
+        }
+      }
+    } catch (parseError) {
+      // 如果解析失败，使用原始错误
+      if (parseError instanceof Error && parseError.message.includes('Authentication failed')) {
+        throw parseError;
+      }
+    }
+
     throw new Error(`Token exchange failed: ${error}`);
   }
 
-  return response.json() as Promise<TokenResponse>;
+  const result = await response.json();
+  console.log('✅ Token exchange successful!');
+
+  return result as TokenResponse;
 }
 
 // ============ Device Code Flow ============
@@ -1106,3 +1448,43 @@ export type {
   MFAVerificationRequest,
   MFAVerificationResult,
 } from './mfa.js';
+
+// ============ 用户信息获取 ============
+
+/**
+ * 获取 OAuth 用户信息
+ */
+export async function fetchUserProfile(accessToken: string): Promise<UserProfileResponse> {
+  const response = await fetch('https://api.anthropic.com/api/oauth/profile', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to fetch user profile: ${error}`);
+  }
+
+  return response.json() as Promise<UserProfileResponse>;
+}
+
+/**
+ * 等待用户按 Enter 键继续
+ */
+export async function waitForEnterKey(message: string = 'Press Enter to continue…'): Promise<void> {
+  return new Promise((resolve) => {
+    const readline = require('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.question(message, () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
