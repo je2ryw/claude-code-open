@@ -65,7 +65,7 @@ export interface CommandContext {
 export interface CommandResult {
   success: boolean;
   message?: string;
-  action?: 'exit' | 'clear' | 'reload' | 'login' | 'reinitClient' | 'none';
+  action?: 'exit' | 'clear' | 'reload' | 'login' | 'logout' | 'reinitClient' | 'none';
   data?: any;
 }
 

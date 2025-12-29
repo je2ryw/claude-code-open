@@ -330,6 +330,11 @@ export const App: React.FC<AppProps> = ({
       } else if (result.action === 'login') {
         // 显示登录屏幕
         setShowLoginScreen(true);
+      } else if (result.action === 'logout') {
+        // 登出后延迟退出程序（与官方行为一致）
+        setTimeout(() => {
+          process.exit(0);
+        }, 200);
       } else if (result.action === 'reinitClient') {
         // 重新初始化客户端（登录成功后）
         const reinitSuccess = loop.reinitializeClient();

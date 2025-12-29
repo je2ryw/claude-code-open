@@ -570,15 +570,6 @@ export const Input: React.FC<InputProps> = ({
         </Box>
       )}
 
-      {/* 建议提示行 */}
-      {showSuggestion && (
-        <Box marginBottom={0}>
-          <Text dimColor>
-            {modeIndicator}{prompt}Try "{suggestion}"
-          </Text>
-        </Box>
-      )}
-
       {/* 输入行 */}
       <Box>
         {/* Vim 模式指示器 */}
@@ -596,7 +587,12 @@ export const Input: React.FC<InputProps> = ({
         <Text color="white" bold>
           {prompt}
         </Text>
-        {!disabled && value === '' ? (
+        {/* 显示建议文本或实际输入 */}
+        {showSuggestion ? (
+          <Text dimColor>
+            Try "{suggestion}"
+          </Text>
+        ) : !disabled && value === '' ? (
           <Text backgroundColor="gray" color="black">
             {' '}
           </Text>

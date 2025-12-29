@@ -118,7 +118,8 @@ program
 
       if (shouldShowLoginSelector()) {
         await showLoginSelectorUI();
-        return;
+        // 登录成功后继续启动交互界面,不要 return
+        // return; // ❌ 移除这个 return
       }
     }
 
@@ -1529,9 +1530,28 @@ async function showLoginSelectorUI(): Promise<void> {
 
         if (authResult && authResult.accessToken) {
           console.log(chalk.green('\n✅ OAuth Login Successful!\n'));
-          console.log('You can now use Claude Code.');
-          console.log(chalk.gray('\nRun:  claude  to start a new session\n'));
-          process.exit(0);
+          if (authResult.email) {
+            console.log(`Logged in as ${authResult.email}`);
+          }
+
+          // 等待用户按回车后继续
+          const readline = await import('readline');
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          });
+
+          await new Promise<void>((resolve) => {
+            console.log(chalk.gray('\nLogin successful. Press Enter to continue…'));
+            rl.question('', () => {
+              rl.close();
+              resolve();
+            });
+          });
+
+          // 登录成功后直接启动交互会话,而不是退出
+          console.log('\n');
+          resolve(); // 返回到主流程,让程序继续执行
         } else {
           throw new Error('OAuth login failed');
         }

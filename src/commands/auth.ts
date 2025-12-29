@@ -252,55 +252,31 @@ Use /login --help for detailed information.`);
 // /logout - 登出（基于官方源码完善）
 export const logoutCommand: SlashCommand = {
   name: 'logout',
-  description: 'Logout from Claude',
+  description: 'Sign out from your Anthropic account',
   category: 'auth',
   execute: async (ctx: CommandContext): Promise<CommandResult> => {
-    const authFile = getAuthFile();
     const credentialsFile = getCredentialsFile();
     const configFile = getConfigFile();
 
-    // 检查当前认证状态
-    const wasAuthenticated = isAuthenticated();
-    const authType = getAuthType();
-    const currentAuthInfo = getAuth();
-
-    let clearedItems: string[] = [];
-
-    // 显示当前认证状态
     ctx.ui.addActivity('Logging out...');
-
-    if (!wasAuthenticated) {
-      ctx.ui.addMessage('assistant', `No active session found.
-
-You are not currently authenticated.
-
-To login:
-  /login              Show login options
-  /login --api-key    Setup with API key
-  /login --oauth      OAuth login
-  /setup-token        Quick API key setup`);
-      return { success: true };
-    }
 
     // 调用认证系统的 logout() 函数
     try {
       authLogout();
-      clearedItems.push('OAuth token (from auth system)');
     } catch (err) {
       // 继续处理其他清理
     }
 
-    // 2. 清除存储的 API key
+    // 清除存储的 API key
     if (fs.existsSync(credentialsFile)) {
       try {
         fs.unlinkSync(credentialsFile);
-        clearedItems.push('Stored API key');
       } catch (err) {
         // 忽略错误
       }
     }
 
-    // 3. 清除配置文件中的会话信息
+    // 清除配置文件中的会话信息
     if (fs.existsSync(configFile)) {
       try {
         const config = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
@@ -309,13 +285,11 @@ To login:
         if (config.sessionToken) {
           delete config.sessionToken;
           modified = true;
-          clearedItems.push('Session token');
         }
 
         if (config.oauthAccount) {
           delete config.oauthAccount;
           modified = true;
-          clearedItems.push('OAuth account');
         }
 
         if (modified) {
@@ -326,48 +300,12 @@ To login:
       }
     }
 
-    // 构建退出消息
-    let logoutInfo = `✅ Logout Successful
-
-Previous Authentication:
-  • Type: ${authType || 'Unknown'}
-  ${currentAuthInfo?.accessToken ? `• Access Token: ${currentAuthInfo.accessToken.substring(0, 20)}...` : ''}
-  ${currentAuthInfo?.apiKey ? `• API Key: ${currentAuthInfo.apiKey.substring(0, 15)}...` : ''}
-
-Cleared:
-`;
-
-    for (const item of clearedItems) {
-      logoutInfo += `  • ${item}\n`;
-    }
-
-    logoutInfo += `
-To completely remove all authentication:
-
-1. Remove environment variables:
-   unset ANTHROPIC_API_KEY
-   unset CLAUDE_API_KEY
-   unset CLAUDE_CODE_OAUTH_TOKEN
-
-2. Verify credentials cleared:
-   ls -la ~/.claude/
-
-3. Clear session history (optional):
-   rm -rf ~/.claude/sessions/*
-
-After logout:
-  • You'll need to re-authenticate to use Claude
-  • Session history is preserved
-  • Settings are preserved
-
-To login again:
-  /login              Show login options
-  /login --api-key    Setup with API key
-  /login --oauth      OAuth login`;
-
-    ctx.ui.addMessage('assistant', logoutInfo);
+    // 显示登出成功消息（与官方一致）
+    ctx.ui.addMessage('assistant', 'Successfully logged out from your Anthropic account.');
     ctx.ui.addActivity('Logged out successfully');
-    return { success: true };
+
+    // 返回 logout action，App.tsx 会在 200ms 后退出程序（与官方行为一致）
+    return { success: true, action: 'logout' };
   },
 };
 

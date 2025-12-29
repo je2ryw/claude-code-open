@@ -638,33 +638,17 @@ export async function startAuthorizationCodeFlow(
     console.log('Using OAuth token with inference scope');
   }
 
-  // 获取用户信息
+  // 获取用户信息(静默处理,不显示消息)
   try {
-    console.log('Fetching user profile...');
     const profile = await fetchUserProfile(tokenResponse.access_token);
 
     // 更新认证信息中的用户邮箱
     currentAuth.email = profile.account.email;
     currentAuth.userId = profile.account.uuid;
     saveAuthSecure(currentAuth);
-
-    // 显示登录成功信息
-    console.log('\n✅ OAuth Login Successful!\n');
-    if (profile.account.email) {
-      console.log(`Logged in as ${profile.account.email}`);
-    }
-    if (profile.organization?.organization_type) {
-      const orgType = profile.organization.organization_type.replace('claude_', '');
-      console.log(`Organization: ${orgType}`);
-    }
-
-    // 等待用户按 Enter 键
-    console.log('\nLogin successful. Press Enter to continue…');
-    await waitForEnterKey('');
   } catch (error) {
     // 即使获取用户信息失败，OAuth 登录仍然算成功
-    console.log('\n✅ Authorization successful!');
-    console.log('(Note: Could not fetch user profile details)');
+    // 静默处理,不影响登录流程
   }
 
   return currentAuth;
@@ -1465,18 +1449,19 @@ export async function fetchUserProfile(accessToken: string): Promise<UserProfile
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to fetch user profile: ${error}`);
+    throw new Error(`Failed to fetch user profile (${response.status}): ${error}`);
   }
 
-  return response.json() as Promise<UserProfileResponse>;
+  const data = await response.json();
+  return data as UserProfileResponse;
 }
 
 /**
  * 等待用户按 Enter 键继续
  */
 export async function waitForEnterKey(message: string = 'Press Enter to continue…'): Promise<void> {
-  return new Promise((resolve) => {
-    const readline = require('readline');
+  return new Promise(async (resolve) => {
+    const readline = await import('readline');
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
