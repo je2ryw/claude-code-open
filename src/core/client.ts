@@ -96,7 +96,9 @@ const OAUTH_BETA = 'oauth-2025-04-20';
 const THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
 // Claude Code 身份验证的 magic string
+// 官方有三种身份标识，根据不同场景使用
 const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_CODE_AGENT_SDK_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
 const CLAUDE_AGENT_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
 
 /**
@@ -107,6 +109,7 @@ function hasValidIdentity(systemPrompt?: string | Array<{type: string; text: str
 
   if (typeof systemPrompt === 'string') {
     return systemPrompt.startsWith(CLAUDE_CODE_IDENTITY) ||
+           systemPrompt.startsWith(CLAUDE_CODE_AGENT_SDK_IDENTITY) ||
            systemPrompt.startsWith(CLAUDE_AGENT_IDENTITY);
   }
 
@@ -114,6 +117,7 @@ function hasValidIdentity(systemPrompt?: string | Array<{type: string; text: str
     const firstBlock = systemPrompt[0];
     if (firstBlock?.type === 'text' && firstBlock?.text) {
       return firstBlock.text.startsWith(CLAUDE_CODE_IDENTITY) ||
+             firstBlock.text.startsWith(CLAUDE_CODE_AGENT_SDK_IDENTITY) ||
              firstBlock.text.startsWith(CLAUDE_AGENT_IDENTITY);
     }
   }
@@ -146,24 +150,34 @@ function formatSystemPrompt(
   }
 
   // 检查是否已经包含有效身份
-  if (systemPrompt.startsWith(CLAUDE_CODE_IDENTITY) ||
-      systemPrompt.startsWith(CLAUDE_AGENT_IDENTITY)) {
-    // 已经有正确的身份，转换为数组格式
-    const remainingText = systemPrompt.replace(CLAUDE_CODE_IDENTITY, '').replace(CLAUDE_AGENT_IDENTITY, '').trim();
-    const blocks: Array<{type: 'text'; text: string; cache_control?: {type: 'ephemeral'}}> = [
-      { type: 'text' as const, text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' as const } }
+  let identityToUse = CLAUDE_CODE_IDENTITY;
+  let remainingText = '';
+
+  if (systemPrompt.startsWith(CLAUDE_CODE_IDENTITY)) {
+    identityToUse = CLAUDE_CODE_IDENTITY;
+    remainingText = systemPrompt.slice(CLAUDE_CODE_IDENTITY.length).trim();
+  } else if (systemPrompt.startsWith(CLAUDE_CODE_AGENT_SDK_IDENTITY)) {
+    identityToUse = CLAUDE_CODE_AGENT_SDK_IDENTITY;
+    remainingText = systemPrompt.slice(CLAUDE_CODE_AGENT_SDK_IDENTITY.length).trim();
+  } else if (systemPrompt.startsWith(CLAUDE_AGENT_IDENTITY)) {
+    identityToUse = CLAUDE_AGENT_IDENTITY;
+    remainingText = systemPrompt.slice(CLAUDE_AGENT_IDENTITY.length).trim();
+  } else {
+    // 没有有效身份，添加 Claude Code 身份作为第一个 block
+    return [
+      { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
     ];
-    if (remainingText.length > 0) {
-      blocks.push({ type: 'text' as const, text: remainingText, cache_control: { type: 'ephemeral' as const } });
-    }
-    return blocks;
   }
 
-  // 没有有效身份，添加 Claude Code 身份作为第一个 block
-  return [
-    { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
+  // 已经有正确的身份，转换为数组格式
+  const blocks: Array<{type: 'text'; text: string; cache_control?: {type: 'ephemeral'}}> = [
+    { type: 'text' as const, text: identityToUse, cache_control: { type: 'ephemeral' as const } }
   ];
+  if (remainingText.length > 0) {
+    blocks.push({ type: 'text' as const, text: remainingText, cache_control: { type: 'ephemeral' as const } });
+  }
+  return blocks;
 }
 
 // 会话相关的全局状态
