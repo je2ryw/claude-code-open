@@ -17,7 +17,7 @@ import { ConversationLoop } from './core/loop.js';
 import { Session } from './core/session.js';
 import { toolRegistry } from './tools/index.js';
 import { configManager } from './config/index.js';
-import { listSessions, loadSession } from './session/index.js';
+import { listSessions, loadSession, forkSession } from './session/index.js';
 import { getMemoryManager } from './memory/index.js';
 import { emitLifecycleEvent } from './lifecycle/index.js';
 import { runHooks } from './hooks/index.js';
@@ -72,7 +72,9 @@ program
   .option('--strict-mcp-config', 'Only use MCP servers from --mcp-config')
   // 系统提示
   .option('--system-prompt <prompt>', 'System prompt to use for the session')
+  .option('--system-prompt-file <file>', 'Read system prompt from a file')
   .option('--append-system-prompt <prompt>', 'Append to default system prompt')
+  .option('--append-system-prompt-file <file>', 'Read system prompt from a file and append to the default system prompt')
   // 权限模式
   .addOption(
     new Option('--permission-mode <mode>', 'Permission mode for the session')
@@ -110,6 +112,16 @@ program
 
     // ✅ 启动时自动清理过期数据（异步，不阻塞）
     scheduleCleanup();
+
+    // 🔍 提前验证系统提示选项的互斥性
+    if (options.systemPrompt && options.systemPromptFile) {
+      process.stderr.write(chalk.red('Error: Cannot use both --system-prompt and --system-prompt-file. Please use only one.\n'));
+      process.exit(1);
+    }
+    if (options.appendSystemPrompt && options.appendSystemPromptFile) {
+      process.stderr.write(chalk.red('Error: Cannot use both --append-system-prompt and --append-system-prompt-file. Please use only one.\n'));
+      process.exit(1);
+    }
 
     // 检查是否需要显示登录选择器
     // 只在没有 prompt 且没有认证凭据时显示
@@ -151,8 +163,43 @@ program
 
     // 构建系统提示
     let systemPrompt = options.systemPrompt;
-    if (options.appendSystemPrompt) {
-      systemPrompt = (systemPrompt || '') + '\n' + options.appendSystemPrompt;
+
+    // 处理 --system-prompt-file（互斥性已在前面验证）
+    if (options.systemPromptFile) {
+      try {
+        const filePath = path.resolve(options.systemPromptFile);
+        if (!fs.existsSync(filePath)) {
+          process.stderr.write(chalk.red(`Error: System prompt file not found: ${filePath}\n`));
+          process.exit(1);
+        }
+        systemPrompt = fs.readFileSync(filePath, 'utf-8');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(chalk.red(`Error reading system prompt file: ${errorMsg}\n`));
+        process.exit(1);
+      }
+    }
+
+    // 处理 --append-system-prompt 和 --append-system-prompt-file（互斥性已在前面验证）
+    let appendSystemPrompt = options.appendSystemPrompt;
+    if (options.appendSystemPromptFile) {
+      try {
+        const filePath = path.resolve(options.appendSystemPromptFile);
+        if (!fs.existsSync(filePath)) {
+          process.stderr.write(chalk.red(`Error: Append system prompt file not found: ${filePath}\n`));
+          process.exit(1);
+        }
+        appendSystemPrompt = fs.readFileSync(filePath, 'utf-8');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(chalk.red(`Error reading append system prompt file: ${errorMsg}\n`));
+        process.exit(1);
+      }
+    }
+
+    // 合并 append system prompt
+    if (appendSystemPrompt) {
+      systemPrompt = (systemPrompt || '') + '\n' + appendSystemPrompt;
     }
 
     // Include dependencies - 添加依赖类型定义到系统提示
@@ -408,12 +455,59 @@ async function runTextInterface(
     if (options.resume === true || options.resume === '') {
       await showSessionPicker(loop);
     } else {
-      const session = Session.load(options.resume);
-      if (session) {
-        loop.setSession(session);
-        console.log(chalk.green(`Resumed session: ${options.resume}`));
+      // 检查是否需要 fork 会话
+      if (options.forkSession) {
+        // Fork 会话：创建新会话 ID，但保留历史消息
+        const forkedSessionData = forkSession(options.resume, {
+          name: undefined, // 使用默认名称
+          tags: undefined,
+          fromMessageIndex: 0, // 从开始复制所有消息
+          includeFutureMessages: true,
+        });
+
+        if (forkedSessionData) {
+          // 从 forkedSessionData 创建 Session 对象
+          const forkedSession = new Session(forkedSessionData.metadata.workingDirectory);
+
+          // 手动设置会话状态
+          forkedSession['state'] = {
+            sessionId: forkedSessionData.metadata.id,
+            cwd: forkedSessionData.metadata.workingDirectory,
+            originalCwd: forkedSessionData.metadata.workingDirectory,
+            startTime: forkedSessionData.metadata.createdAt,
+            totalCostUSD: forkedSessionData.metadata.cost || 0,
+            totalAPIDuration: 0,
+            totalAPIDurationWithoutRetries: 0,
+            totalToolDuration: 0,
+            totalLinesAdded: 0,
+            totalLinesRemoved: 0,
+            modelUsage: {},
+            alwaysAllowedTools: [],
+            todos: [],
+          };
+
+          // 设置消息历史
+          forkedSessionData.messages.forEach(msg => forkedSession.addMessage(msg));
+
+          // 设置到 loop
+          loop.setSession(forkedSession);
+
+          console.log(chalk.green(`✓ Forked session from: ${options.resume.slice(0, 8)}`));
+          console.log(chalk.green(`  New session ID: ${forkedSessionData.metadata.id.slice(0, 8)}`));
+          console.log(chalk.gray(`  Copied ${forkedSessionData.messages.length} messages`));
+          console.log(chalk.gray(`  This is a new independent session based on the original`));
+        } else {
+          console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
+        }
       } else {
-        console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
+        // 正常恢复会话
+        const session = Session.load(options.resume);
+        if (session) {
+          loop.setSession(session);
+          console.log(chalk.green(`Resumed session: ${options.resume}`));
+        } else {
+          console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
+        }
       }
     }
   }
