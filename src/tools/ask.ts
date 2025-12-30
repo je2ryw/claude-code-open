@@ -91,18 +91,23 @@ interface QuestionOption {
   description: string;
 }
 
+// 官方 Question 接口（与 SDK 完全一致）
 interface Question {
   question: string;
   header: string;
   options: QuestionOption[];
   multiSelect: boolean;
-  // 增强功能（实现层面）
-  defaultIndex?: number; // 默认选中的选项索引
-  timeout?: number; // 超时时间（毫秒）
-  validator?: (input: string) => { valid: boolean; message?: string }; // 自定义验证器
 }
 
-// 最大 header 长度
+// 扩展接口（包含本地增强功能，但不暴露给 API）
+// 这些字段是可选的，不影响与官方 API 的兼容性
+interface QuestionWithExtensions extends Question {
+  defaultIndex?: number; // 默认选中的选项索引 (0-based)
+  timeout?: number; // 超时时间（毫秒）
+  validator?: (input: string) => { valid: boolean; message?: string }; // 自定义验证函数
+}
+
+// 最大 header 长度（官方限制）
 const MAX_HEADER_LENGTH = 12;
 
 export class AskUserQuestionTool extends BaseTool<AskUserQuestionInput, ToolResult> {
@@ -175,10 +180,12 @@ Usage notes:
 
     // 如果已有答案（通过权限组件收集），直接返回
     if (preAnswers && Object.keys(preAnswers).length > 0) {
-      let output = 'User Responses:\n\n';
-      for (const [header, answer] of Object.entries(preAnswers)) {
-        output += `  ${chalk.bold(header)}: ${chalk.cyan(answer)}\n`;
-      }
+      // 使用官方格式：User has answered your questions: "header1"="answer1", "header2"="answer2"
+      const formattedAnswers = Object.entries(preAnswers)
+        .map(([header, answer]) => `"${header}"="${answer}"`)
+        .join(', ');
+      const output = `User has answered your questions: ${formattedAnswers}. You can now continue with the user's answers in mind.`;
+
       return {
         success: true,
         output,
@@ -244,11 +251,11 @@ Usage notes:
       };
     }
 
-    // 格式化答案输出
-    let output = 'User Responses:\n\n';
-    for (const [header, answer] of Object.entries(answers)) {
-      output += `  ${chalk.bold(header)}: ${chalk.cyan(answer)}\n`;
-    }
+    // 格式化答案输出 - 使用官方格式
+    const formattedAnswers = Object.entries(answers)
+      .map(([header, answer]) => `"${header}"="${answer}"`)
+      .join(', ');
+    const output = `User has answered your questions: ${formattedAnswers}. You can now continue with the user's answers in mind.`;
 
     return {
       success: true,
@@ -260,7 +267,7 @@ Usage notes:
    * 交互式问题选择器 - 支持键盘导航
    */
   private async askInteractiveQuestion(
-    question: Question,
+    question: QuestionWithExtensions,
     questionNum: number,
     totalQuestions: number
   ): Promise<string> {
@@ -282,7 +289,7 @@ Usage notes:
    * 交互式选择模式 - 支持箭头键导航和复选框 UI
    */
   private async interactiveSelect(
-    question: Question,
+    question: QuestionWithExtensions,
     options: QuestionOption[],
     questionNum: number,
     totalQuestions: number
@@ -506,7 +513,7 @@ Usage notes:
    * 在不支持原始输入模式的终端中使用
    */
   private async simpleSelect(
-    question: Question,
+    question: QuestionWithExtensions,
     options: QuestionOption[],
     questionNum: number,
     totalQuestions: number
@@ -607,7 +614,7 @@ Usage notes:
   /**
    * 显示问题头部
    */
-  private displayQuestionHeader(question: Question, questionNum: number, totalQuestions: number): void {
+  private displayQuestionHeader(question: QuestionWithExtensions, questionNum: number, totalQuestions: number): void {
     console.log();
     console.log(chalk.bgBlue.white.bold(` Question ${questionNum}/${totalQuestions} `));
     console.log();
@@ -625,7 +632,7 @@ Usage notes:
   /**
    * 获取自定义输入（带验证）
    */
-  private async getCustomInput(question?: Question): Promise<string> {
+  private async getCustomInput(question?: QuestionWithExtensions): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
