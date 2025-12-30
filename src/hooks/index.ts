@@ -158,13 +158,44 @@ export interface LegacyHookConfig {
   blocking?: boolean;
 }
 
+/**
+ * Hook 输入数据（完整接口，符合官方 CLI v2.0.76）
+ */
 export interface HookInput {
   event: HookEvent;
+  // 通用字段
   toolName?: string;
   toolInput?: unknown;
   toolOutput?: string;
   message?: string;
   sessionId?: string;
+
+  // PostToolUseFailure 专用字段
+  tool_use_id?: string;
+  error?: string;
+  error_type?: 'permission_denied' | 'execution_failed' | 'timeout' | 'invalid_input';
+  is_interrupt?: boolean;
+  is_timeout?: boolean;
+
+  // SubagentStart/SubagentStop 专用字段
+  agent_id?: string;
+  agent_type?: string;
+  result?: unknown;
+
+  // PermissionRequest 专用字段（tool_use_id已包含）
+
+  // Notification 专用字段
+  notification_type?: 'permission_prompt' | 'idle_prompt' | 'auth_success' | 'elicitation_dialog';
+
+  // SessionStart 专用字段
+  source?: 'startup' | 'resume' | 'clear' | 'compact';
+
+  // SessionEnd 专用字段
+  reason?: 'clear' | 'logout' | 'prompt_input_exit' | 'other';
+
+  // PreCompact 专用字段
+  trigger?: 'manual' | 'auto';
+  currentTokens?: number;
 }
 
 export interface HookResult {
@@ -1061,18 +1092,35 @@ export async function runPreCompactHooks(
 
 /**
  * PostToolUseFailure hook - 工具执行失败后触发
+ *
+ * @param toolName 工具名称
+ * @param toolInput 工具输入
+ * @param toolUseId 工具使用ID
+ * @param error 错误信息
+ * @param errorType 错误类型
+ * @param isInterrupt 是否被中断
+ * @param isTimeout 是否超时
+ * @param sessionId 会话ID
  */
 export async function runPostToolUseFailureHooks(
   toolName: string,
   toolInput: unknown,
+  toolUseId: string,
   error: string,
+  errorType: 'permission_denied' | 'execution_failed' | 'timeout' | 'invalid_input' = 'execution_failed',
+  isInterrupt: boolean = false,
+  isTimeout: boolean = false,
   sessionId?: string
 ): Promise<void> {
   await runHooks({
     event: 'PostToolUseFailure',
     toolName,
     toolInput,
-    message: error,
+    tool_use_id: toolUseId,
+    error,
+    error_type: errorType,
+    is_interrupt: isInterrupt,
+    is_timeout: isTimeout,
     sessionId,
   });
 }
@@ -1106,64 +1154,101 @@ export function getEventHookCount(event: HookEvent): number {
 
 /**
  * SessionStart hook - 会话开始时触发
+ *
+ * @param sessionId 会话ID
+ * @param source 会话启动来源
  */
-export async function runSessionStartHooks(sessionId: string): Promise<void> {
+export async function runSessionStartHooks(
+  sessionId: string,
+  source?: 'startup' | 'resume' | 'clear' | 'compact'
+): Promise<void> {
   await runHooks({
     event: 'SessionStart',
+    source,
     sessionId,
   });
 }
 
 /**
  * SessionEnd hook - 会话结束时触发
+ *
+ * @param sessionId 会话ID
+ * @param reason 会话结束原因
  */
-export async function runSessionEndHooks(sessionId: string): Promise<void> {
+export async function runSessionEndHooks(
+  sessionId: string,
+  reason?: 'clear' | 'logout' | 'prompt_input_exit' | 'other'
+): Promise<void> {
   await runHooks({
     event: 'SessionEnd',
+    reason,
     sessionId,
   });
 }
 
 /**
  * SubagentStart hook - 子代理启动时触发
+ *
+ * @param agentId 代理ID
+ * @param agentType 代理类型
+ * @param sessionId 会话ID
  */
 export async function runSubagentStartHooks(
+  agentId: string,
   agentType: string,
   sessionId?: string
 ): Promise<void> {
   await runHooks({
     event: 'SubagentStart',
-    toolName: agentType,
+    agent_id: agentId,
+    agent_type: agentType,
     sessionId,
   });
 }
 
 /**
  * SubagentStop hook - 子代理停止时触发
+ *
+ * @param agentId 代理ID
+ * @param agentType 代理类型
+ * @param result 代理执行结果
+ * @param sessionId 会话ID
  */
 export async function runSubagentStopHooks(
+  agentId: string,
   agentType: string,
+  result?: unknown,
   sessionId?: string
 ): Promise<void> {
   await runHooks({
     event: 'SubagentStop',
-    toolName: agentType,
+    agent_id: agentId,
+    agent_type: agentType,
+    result,
     sessionId,
   });
 }
 
 /**
  * PermissionRequest hook - 权限请求时触发
+ *
+ * @param toolName 工具名称
+ * @param toolInput 工具输入
+ * @param toolUseId 工具使用ID
+ * @param sessionId 会话ID
+ * @returns Hook决策结果
  */
 export async function runPermissionRequestHooks(
   toolName: string,
   toolInput: unknown,
+  toolUseId?: string,
   sessionId?: string
 ): Promise<{ decision?: 'allow' | 'deny'; message?: string }> {
   const results = await runHooks({
     event: 'PermissionRequest',
     toolName,
     toolInput,
+    tool_use_id: toolUseId,
     sessionId,
   });
 
@@ -1189,14 +1274,20 @@ export async function runPermissionRequestHooks(
 
 /**
  * Notification hook - 发送通知时触发
+ *
+ * @param message 通知消息
+ * @param notificationType 通知类型
+ * @param sessionId 会话ID
  */
 export async function runNotificationHooks(
   message: string,
+  notificationType?: 'permission_prompt' | 'idle_prompt' | 'auth_success' | 'elicitation_dialog',
   sessionId?: string
 ): Promise<void> {
   await runHooks({
     event: 'Notification',
     message,
+    notification_type: notificationType,
     sessionId,
   });
 }

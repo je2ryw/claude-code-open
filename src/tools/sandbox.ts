@@ -7,6 +7,8 @@ import { spawn, spawnSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { getGlobalAppState } from './planmode.js';
+import type { ToolPermissionContext } from './planmode.js';
 
 // ============ 类型定义 ============
 
@@ -39,6 +41,10 @@ export interface SandboxOptions {
   maxMemory?: number;
   /** 最大 CPU 使用率 (0-100) */
   maxCpu?: number;
+  /** 工具权限上下文（用于权限模式判断） */
+  permissionContext?: ToolPermissionContext;
+  /** 命令（用于特殊处理，如 mcp-cli） */
+  command?: string;
 }
 
 export interface SandboxResult {
