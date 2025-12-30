@@ -349,7 +349,7 @@ async function showPluginInfo(pluginName: string): Promise<void> {
     if (hooks.length > 0) {
       console.log(`\nHooks (${hooks.length}):`);
       const hookTypes = new Set(hooks.map(h => h.type));
-      for (const type of hookTypes) {
+      for (const type of Array.from(hookTypes)) {
         const count = hooks.filter(h => h.type === type).length;
         console.log(`  - ${type}: ${count} handler(s)`);
       }
