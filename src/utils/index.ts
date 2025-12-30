@@ -198,3 +198,6 @@ export async function openUrl(url: string): Promise<boolean> {
     return false;
   }
 }
+
+// Re-export attribution utilities
+export { getAttribution, getCommitAttribution, getPRAttribution, isAttributionEnabled } from './attribution.js';
