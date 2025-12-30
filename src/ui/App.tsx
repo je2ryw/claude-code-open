@@ -563,7 +563,7 @@ export const App: React.FC<AppProps> = ({
   }, []);
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column">
       {/* 欢迎屏幕或头部 */}
       {showWelcome && messages.length === 0 ? (
         <WelcomeScreen
