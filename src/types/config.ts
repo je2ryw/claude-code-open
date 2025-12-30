@@ -1193,6 +1193,7 @@ export interface SessionState {
   totalLinesAdded?: number; // 代码修改统计：添加的行数
   totalLinesRemoved?: number; // 代码修改统计：删除的行数
   modelUsage: Record<string, ModelUsageStats>; // T151: 扩展为详细统计
+  alwaysAllowedTools?: string[]; // 会话级权限：总是允许的工具列表
   todos: Array<{
     content: string;
     status: 'pending' | 'in_progress' | 'completed';

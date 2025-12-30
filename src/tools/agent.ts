@@ -517,8 +517,8 @@ Usage notes:
    * 参照官方 B4A 函数实现
    */
   private async executeAgentLoop(agent: BackgroundAgent, agentDef: AgentTypeDefinition): Promise<void> {
-    // 调用 SubagentStart Hook
-    await runSubagentStartHooks(agent.agentType, agent.id);
+    // 调用 SubagentStart Hook - 注意参数顺序是 (id, agentType)
+    await runSubagentStartHooks(agent.id, agent.agentType);
 
     try {
       // 构建代理的初始消息
@@ -561,7 +561,17 @@ Usage notes:
       // 创建子对话循环
       const loop = new ConversationLoop(loopOptions);
 
-      // 执行代理任务
+      // 如果有初始消息上下文（forkContext），需要注入到session中
+      if (initialMessages.length > 1) { // >1 因为至少会有当前任务提示
+        // 获取session并注入初始消息（除了最后一条当前任务提示）
+        const session = loop.getSession();
+        const contextMessages = initialMessages.slice(0, -1);
+        for (const msg of contextMessages) {
+          session.addMessage(msg);
+        }
+      }
+
+      // 执行代理任务（添加当前任务提示）
       const response = await loop.processMessage(agent.prompt);
 
       // 保存结果
@@ -573,12 +583,12 @@ Usage notes:
       // 保存对话历史以支持恢复
       agent.messages = initialMessages;
 
-      // 调用 SubagentStop Hook
-      await runSubagentStopHooks(agent.agentType, agent.id);
+      // 调用 SubagentStop Hook - 注意参数顺序是 (id, agentType, result)
+      await runSubagentStopHooks(agent.id, agent.agentType);
 
     } catch (error) {
-      // 即使失败也要调用 SubagentStop Hook
-      await runSubagentStopHooks(agent.agentType, agent.id);
+      // 即使失败也要调用 SubagentStop Hook - 注意参数顺序是 (id, agentType, result)
+      await runSubagentStopHooks(agent.id, agent.agentType);
 
       throw error;
     }

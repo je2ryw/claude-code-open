@@ -41,6 +41,7 @@ export class Session {
       totalLinesAdded: 0, // 代码修改统计：添加的行数
       totalLinesRemoved: 0, // 代码修改统计：删除的行数
       modelUsage: {},
+      alwaysAllowedTools: [], // 会话级权限：总是允许的工具列表
       todos: [],
     };
 
@@ -570,5 +571,52 @@ ${modelUsageStr ? '\n模型使用统计:' + modelUsageStr : ''}
    */
   getOriginalCwd(): string {
     return this.originalCwd;
+  }
+
+  /**
+   * 检查工具是否在会话允许列表中
+   */
+  isToolAlwaysAllowed(toolName: string): boolean {
+    return this.state.alwaysAllowedTools?.includes(toolName) || false;
+  }
+
+  /**
+   * 将工具添加到会话允许列表中
+   */
+  addAlwaysAllowedTool(toolName: string): void {
+    if (!this.state.alwaysAllowedTools) {
+      this.state.alwaysAllowedTools = [];
+    }
+
+    if (!this.state.alwaysAllowedTools.includes(toolName)) {
+      this.state.alwaysAllowedTools.push(toolName);
+    }
+  }
+
+  /**
+   * 从会话允许列表中移除工具
+   */
+  removeAlwaysAllowedTool(toolName: string): void {
+    if (!this.state.alwaysAllowedTools) {
+      return;
+    }
+
+    this.state.alwaysAllowedTools = this.state.alwaysAllowedTools.filter(
+      (tool) => tool !== toolName
+    );
+  }
+
+  /**
+   * 清空会话允许列表
+   */
+  clearAlwaysAllowedTools(): void {
+    this.state.alwaysAllowedTools = [];
+  }
+
+  /**
+   * 获取会话允许的工具列表
+   */
+  getAllowedTools(): string[] {
+    return [...(this.state.alwaysAllowedTools || [])];
   }
 }

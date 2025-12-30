@@ -447,8 +447,9 @@ Sandbox: ${isBubblewrapAvailable() ? 'Available (bubblewrap)' : 'Not available'}
       return this.executeBackground(command, maxTimeout);
     }
 
-    // 使用沙箱执行
-    const useSandbox = !dangerouslyDisableSandbox && isBubblewrapAvailable();
+    // 使用沙箱执行（与官方实现对齐）
+    // 注意：这里通过 executeInSandbox 来决定是否使用沙箱，而不是在这里判断
+    // executeInSandbox 内部会调用 shouldUseSandbox 来判断
 
     // 如果禁用沙箱，记录警告
     if (dangerouslyDisableSandbox) {
@@ -458,48 +459,30 @@ Sandbox: ${isBubblewrapAvailable() ? 'Available (bubblewrap)' : 'Not available'}
     try {
       let result: BashResult;
 
-      if (useSandbox) {
-        const sandboxResult = await executeInSandbox(command, {
-          cwd: process.cwd(),
-          timeout: maxTimeout,
-          disableSandbox: false,
-        });
+      // 统一使用 executeInSandbox 来执行命令
+      // 它会根据各种条件自动决定是否真正使用沙箱
+      const sandboxResult = await executeInSandbox(command, {
+        cwd: process.cwd(),
+        timeout: maxTimeout,
+        disableSandbox: dangerouslyDisableSandbox,
+        command, // 传递命令用于特殊处理（如 MCP 检测）
+        // 可选：传递权限上下文（暂时不传，使用全局状态）
+        // permissionContext: getGlobalAppState()?.toolPermissionContext,
+      });
 
-        let output = sandboxResult.stdout + (sandboxResult.stderr ? `\nSTDERR:\n${sandboxResult.stderr}` : '');
-        if (output.length > MAX_OUTPUT_LENGTH) {
-          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
-        }
-
-        result = {
-          success: sandboxResult.exitCode === 0,
-          output,
-          stdout: sandboxResult.stdout,
-          stderr: sandboxResult.stderr,
-          exitCode: sandboxResult.exitCode ?? 1,
-          error: sandboxResult.error,
-        };
-      } else {
-        // 直接执行
-        const { stdout, stderr } = await execAsync(command, {
-          timeout: maxTimeout,
-          maxBuffer: 50 * 1024 * 1024, // 50MB
-          cwd: process.cwd(),
-          env: { ...process.env },
-        });
-
-        let output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
-        if (output.length > MAX_OUTPUT_LENGTH) {
-          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
-        }
-
-        result = {
-          success: true,
-          output,
-          stdout,
-          stderr,
-          exitCode: 0,
-        };
+      let output = sandboxResult.stdout + (sandboxResult.stderr ? `\nSTDERR:\n${sandboxResult.stderr}` : '');
+      if (output.length > MAX_OUTPUT_LENGTH) {
+        output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
       }
+
+      result = {
+        success: sandboxResult.exitCode === 0,
+        output,
+        stdout: sandboxResult.stdout,
+        stderr: sandboxResult.stderr,
+        exitCode: sandboxResult.exitCode ?? 1,
+        error: sandboxResult.error,
+      };
 
       // 运行 post-tool hooks
       await runPostToolUseHooks('Bash', input, result.output || '');
@@ -510,7 +493,7 @@ Sandbox: ${isBubblewrapAvailable() ? 'Available (bubblewrap)' : 'Not available'}
         timestamp: Date.now(),
         command,
         cwd: process.cwd(),
-        sandboxed: useSandbox,
+        sandboxed: sandboxResult.sandboxed, // 从 sandboxResult 中获取实际的沙箱状态
         success: result.success,
         exitCode: result.exitCode,
         duration,
@@ -542,7 +525,7 @@ Sandbox: ${isBubblewrapAvailable() ? 'Available (bubblewrap)' : 'Not available'}
         timestamp: Date.now(),
         command,
         cwd: process.cwd(),
-        sandboxed: useSandbox,
+        sandboxed: false, // 发生错误时默认为 false
         success: false,
         exitCode,
         duration,

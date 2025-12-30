@@ -7,8 +7,9 @@ import axios, { AxiosProxyConfig } from 'axios';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import { LRUCache } from 'lru-cache';
-import { BaseTool } from './base.js';
+import { BaseTool, type ToolOptions } from './base.js';
 import type { WebFetchInput, WebSearchInput, ToolResult, ToolDefinition } from '../types/index.js';
+import { ErrorCode } from '../types/errors.js';
 
 /**
  * 响应体大小限制 (10MB)
@@ -219,6 +220,21 @@ Usage notes:
 `;
 
   private skipWebFetchPreflight = false;
+
+  constructor(options?: ToolOptions) {
+    super({
+      maxRetries: 3, // 网络请求失败时重试最多3次
+      baseTimeout: 30000, // 30秒超时
+      retryableErrors: [
+        ErrorCode.NETWORK_CONNECTION_FAILED,
+        ErrorCode.NETWORK_TIMEOUT,
+        ErrorCode.NETWORK_RATE_LIMITED,
+        ErrorCode.NETWORK_DNS_FAILED,
+        ErrorCode.NETWORK_HOST_UNREACHABLE,
+      ],
+      ...options,
+    });
+  }
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -498,65 +514,67 @@ Usage notes:
   }
 
   async execute(input: WebFetchInput): Promise<ToolResult> {
-    let { url, prompt } = input;
+    // 使用重试和超时包装器
+    return this.executeWithRetryAndTimeout(async () => {
+      let { url, prompt } = input;
 
-    // URL 验证和规范化
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
+      // URL 验证和规范化
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
 
-      // HTTP 到 HTTPS 自动升级
-      if (parsedUrl.protocol === 'http:') {
-        parsedUrl.protocol = 'https:';
-        url = parsedUrl.toString();
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: `Invalid URL: ${url}`,
-      };
-    }
-
-    // 域名安全检查
-    const isSafe = await this.checkDomainSafety(parsedUrl.hostname);
-    if (!isSafe) {
-      return {
-        success: false,
-        error: `Domain safety check failed: ${parsedUrl.hostname} is not allowed for security reasons (localhost, private IP, or metadata service)`,
-        errorCode: 3,
-      };
-    }
-
-    // 检查缓存
-    const cached = webFetchCache.get(url);
-    if (cached) {
-      const maxLength = 100000;
-      let content = cached.content;
-      if (content.length > maxLength) {
-        content = content.substring(0, maxLength) + '\n\n... [content truncated]';
-      }
-
-      return {
-        success: true,
-        output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content (Cached) ---\n${content}`,
-      };
-    }
-
-    try {
-      const result = await this.fetchUrl(url);
-
-      // 处理跨域重定向
-      if (result.redirectUrl) {
-        const statusText = {
-          301: 'Moved Permanently',
-          302: 'Found',
-          307: 'Temporary Redirect',
-          308: 'Permanent Redirect',
-        }[result.statusCode] || 'Redirect';
-
+        // HTTP 到 HTTPS 自动升级
+        if (parsedUrl.protocol === 'http:') {
+          parsedUrl.protocol = 'https:';
+          url = parsedUrl.toString();
+        }
+      } catch (err) {
         return {
           success: false,
-          error: `REDIRECT DETECTED: The URL redirects to a different host.
+          error: `Invalid URL: ${url}`,
+        };
+      }
+
+      // 域名安全检查
+      const isSafe = await this.checkDomainSafety(parsedUrl.hostname);
+      if (!isSafe) {
+        return {
+          success: false,
+          error: `Domain safety check failed: ${parsedUrl.hostname} is not allowed for security reasons (localhost, private IP, or metadata service)`,
+          errorCode: 3,
+        };
+      }
+
+      // 检查缓存
+      const cached = webFetchCache.get(url);
+      if (cached) {
+        const maxLength = 100000;
+        let content = cached.content;
+        if (content.length > maxLength) {
+          content = content.substring(0, maxLength) + '\n\n... [content truncated]';
+        }
+
+        return {
+          success: true,
+          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content (Cached) ---\n${content}`,
+        };
+      }
+
+      try {
+        const result = await this.fetchUrl(url);
+
+        // 处理跨域重定向
+        if (result.redirectUrl) {
+          const statusText = {
+            301: 'Moved Permanently',
+            302: 'Found',
+            307: 'Temporary Redirect',
+            308: 'Permanent Redirect',
+          }[result.statusCode] || 'Redirect';
+
+          return {
+            success: false,
+            error: `REDIRECT DETECTED: The URL redirects to a different host.
 
 Original URL: ${result.originalUrl || url}
 Redirect URL: ${result.redirectUrl}
@@ -565,34 +583,50 @@ Status: ${result.statusCode} ${statusText}
 To complete your request, I need to fetch content from the redirected URL. Please use WebFetch again with these parameters:
 - url: "${result.redirectUrl}"
 - prompt: "${prompt}"`,
+          };
+        }
+
+        // 截断过长的内容
+        const maxLength = 100000;
+        let { content } = result;
+        if (content.length > maxLength) {
+          content = content.substring(0, maxLength) + '\n\n... [content truncated]';
+        }
+
+        // 缓存结果
+        webFetchCache.set(url, {
+          content: result.content,
+          contentType: result.contentType,
+          statusCode: result.statusCode,
+          fetchedAt: Date.now(),
+        });
+
+        return {
+          success: true,
+          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content ---\n${content}`,
+        };
+      } catch (err: any) {
+        // 将网络错误转换为可重试的错误
+        const error = new Error(`Fetch error: ${err.message || String(err)}`);
+        // 检查是否为可重试的网络错误
+        if (
+          err.code === 'ETIMEDOUT' ||
+          err.code === 'ECONNRESET' ||
+          err.code === 'ECONNREFUSED' ||
+          err.code === 'ENETUNREACH' ||
+          err.message?.includes('timeout') ||
+          err.message?.includes('network')
+        ) {
+          // 抛出错误让重试机制捕获
+          throw error;
+        }
+        // 其他错误直接返回
+        return {
+          success: false,
+          error: error.message,
         };
       }
-
-      // 截断过长的内容
-      const maxLength = 100000;
-      let { content } = result;
-      if (content.length > maxLength) {
-        content = content.substring(0, maxLength) + '\n\n... [content truncated]';
-      }
-
-      // 缓存结果
-      webFetchCache.set(url, {
-        content: result.content,
-        contentType: result.contentType,
-        statusCode: result.statusCode,
-        fetchedAt: Date.now(),
-      });
-
-      return {
-        success: true,
-        output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content ---\n${content}`,
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: `Fetch error: ${err.message || String(err)}`,
-      };
-    }
+    });
   }
 }
 
@@ -627,6 +661,21 @@ IMPORTANT - Use the correct year in search queries:
 `;
 
   private searchProgress?: (update: SearchProgressUpdate) => void;
+
+  constructor(options?: ToolOptions) {
+    super({
+      maxRetries: 3, // 搜索API失败时重试最多3次
+      baseTimeout: 15000, // 15秒超时（搜索通常更快）
+      retryableErrors: [
+        ErrorCode.NETWORK_CONNECTION_FAILED,
+        ErrorCode.NETWORK_TIMEOUT,
+        ErrorCode.NETWORK_RATE_LIMITED,
+        ErrorCode.NETWORK_DNS_FAILED,
+        ErrorCode.NETWORK_HOST_UNREACHABLE,
+      ],
+      ...options,
+    });
+  }
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -943,58 +992,60 @@ IMPORTANT - Use the correct year in search queries:
       };
     }
 
-    try {
-      // 执行搜索
-      const rawResults = await this.performSearch(query);
+    // 使用重试和超时包装器
+    return this.executeWithRetryAndTimeout(async () => {
+      try {
+        // 执行搜索
+        const rawResults = await this.performSearch(query);
 
-      // 应用域名过滤
-      const filteredResults = this.applyDomainFilters(
-        rawResults,
-        allowed_domains,
-        blocked_domains
-      );
+        // 应用域名过滤
+        const filteredResults = this.applyDomainFilters(
+          rawResults,
+          allowed_domains,
+          blocked_domains
+        );
 
-      // 计算持续时间
-      const durationSeconds = (performance.now() - startTime) / 1000;
+        // 计算持续时间
+        const durationSeconds = (performance.now() - startTime) / 1000;
 
-      // 发送进度更新：搜索结果接收
-      if (this.searchProgress) {
-        this.searchProgress({
-          type: 'search_results_received',
-          query,
-          resultCount: filteredResults.length,
-        });
-      }
-
-      // 缓存结果（即使为空也缓存，避免重复请求）
-      webSearchCache.set(cacheKey, {
-        query,
-        results: filteredResults,
-        fetchedAt: Date.now(),
-        filters: {
-          allowedDomains: allowed_domains,
-          blockedDomains: blocked_domains,
-        },
-      });
-
-      // 如果有真实结果，格式化并返回
-      if (filteredResults.length > 0) {
-        return {
-          success: true,
-          output: this.formatSearchResults(filteredResults, query),
-          data: {
+        // 发送进度更新：搜索结果接收
+        if (this.searchProgress) {
+          this.searchProgress({
+            type: 'search_results_received',
             query,
-            results: filteredResults,
-            durationSeconds,
-          },
-        };
-      }
+            resultCount: filteredResults.length,
+          });
+        }
 
-      // 如果搜索返回了结果但被过滤器全部过滤掉了
-      if (rawResults.length > 0 && filteredResults.length === 0) {
-        return {
-          success: true,
-          output: `Web search for: "${query}"
+        // 缓存结果（即使为空也缓存，避免重复请求）
+        webSearchCache.set(cacheKey, {
+          query,
+          results: filteredResults,
+          fetchedAt: Date.now(),
+          filters: {
+            allowedDomains: allowed_domains,
+            blockedDomains: blocked_domains,
+          },
+        });
+
+        // 如果有真实结果，格式化并返回
+        if (filteredResults.length > 0) {
+          return {
+            success: true,
+            output: this.formatSearchResults(filteredResults, query),
+            data: {
+              query,
+              results: filteredResults,
+              durationSeconds,
+            },
+          };
+        }
+
+        // 如果搜索返回了结果但被过滤器全部过滤掉了
+        if (rawResults.length > 0 && filteredResults.length === 0) {
+          return {
+            success: true,
+            output: `Web search for: "${query}"
 
 No results found after applying domain filters.
 
@@ -1003,18 +1054,18 @@ Filters applied:
 - Blocked domains: ${blocked_domains?.join(', ') || 'none'}
 
 Try adjusting your domain filters or search query.`,
-          data: {
-            query,
-            results: [],
-            durationSeconds,
-          },
-        };
-      }
+            data: {
+              query,
+              results: [],
+              durationSeconds,
+            },
+          };
+        }
 
-      // 如果搜索 API 没有返回结果
-      return {
-        success: true,
-        output: `Web search for: "${query}"
+        // 如果搜索 API 没有返回结果
+        return {
+          success: true,
+          output: `Web search for: "${query}"
 
 No results found. This could be due to:
 1. The search query is too specific or uncommon
@@ -1028,24 +1079,38 @@ Suggestions:
   * Google: Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID
 
 Current search provider: DuckDuckGo Instant Answer API (free)`,
-        data: {
-          query,
-          results: [],
-          durationSeconds,
-        },
-      };
-    } catch (err: any) {
-      const durationSeconds = (performance.now() - startTime) / 1000;
-      return {
-        success: false,
-        error: `Search error: ${err.message || String(err)}`,
-        data: {
-          query,
-          results: [],
-          durationSeconds,
-        },
-      };
-    }
+          data: {
+            query,
+            results: [],
+            durationSeconds,
+          },
+        };
+      } catch (err: any) {
+        const durationSeconds = (performance.now() - startTime) / 1000;
+        // 检查是否为可重试的网络错误
+        if (
+          err.code === 'ETIMEDOUT' ||
+          err.code === 'ECONNRESET' ||
+          err.code === 'ECONNREFUSED' ||
+          err.code === 'ENETUNREACH' ||
+          err.message?.includes('timeout') ||
+          err.message?.includes('network')
+        ) {
+          // 抛出错误让重试机制捕获
+          throw new Error(`Search error: ${err.message || String(err)}`);
+        }
+        // 其他错误直接返回
+        return {
+          success: false,
+          error: `Search error: ${err.message || String(err)}`,
+          data: {
+            query,
+            results: [],
+            durationSeconds,
+          },
+        };
+      }
+    });
   }
 }
 

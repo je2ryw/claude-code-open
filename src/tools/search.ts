@@ -338,7 +338,10 @@ Usage:
       if (output_mode === 'content') {
         // Content 模式：显示匹配行
         const content = lines.join('\n') || 'No matches found';
-        const pagination = this.formatPagination(head_limit, offset);
+        const pagination = this.formatPagination(
+          head_limit,
+          offset > 0 ? offset : undefined
+        );
         finalOutput = pagination
           ? `${content}\n\n[Showing results with pagination = ${pagination}]`
           : content;
@@ -361,7 +364,10 @@ Usage:
           }
         }
 
-        const pagination = this.formatPagination(head_limit, offset);
+        const pagination = this.formatPagination(
+          head_limit,
+          offset > 0 ? offset : undefined
+        );
         const summary = `\n\nFound ${totalMatches} total ${totalMatches === 1 ? 'occurrence' : 'occurrences'} across ${numFiles} ${numFiles === 1 ? 'file' : 'files'}.${pagination ? ` with pagination = ${pagination}` : ''}`;
         finalOutput = (content || 'No matches found') + summary;
       } else {
@@ -370,7 +376,11 @@ Usage:
           return { success: true, output: 'No files found' };
         }
 
-        const pagination = this.formatPagination(head_limit, offset);
+        // 遵循官方逻辑：只有 offset > 0 时才传入 offset，否则传入 undefined
+        const pagination = this.formatPagination(
+          head_limit,
+          offset > 0 ? offset : undefined
+        );
         const header = `Found ${lines.length} file${lines.length === 1 ? '' : 's'}${pagination ? ` ${pagination}` : ''}`;
         finalOutput = `${header}\n${lines.join('\n')}`;
       }

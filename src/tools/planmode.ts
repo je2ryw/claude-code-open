@@ -278,11 +278,12 @@ Before using this tool, ensure your plan is clear and unambiguous. If there are 
 
   /**
    * 权限检查方法（官方实现）
-   * ExitPlanMode 通常不需要特殊权限，直接允许
+   * ExitPlanMode 需要用户确认，以便用户可以查看计划内容
    */
   async checkPermissions(input: ExitPlanModeInput): Promise<PermissionCheckResult<ExitPlanModeInput>> {
     return {
-      behavior: 'allow',
+      behavior: 'ask',
+      message: 'Exit plan mode?',
       updatedInput: input,
     };
   }

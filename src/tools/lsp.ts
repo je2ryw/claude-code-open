@@ -307,7 +307,15 @@ Note: LSP servers must be configured for the file type. If no server is availabl
    * 格式化引用结果
    */
   private formatReferencesResult(result: any, workingDir: string) {
-    const references = result || [];
+    if (!result || result.length === 0) {
+      return {
+        formatted: 'No references found. This may occur if the symbol is not used elsewhere, or if the LSP server has not fully indexed the project.',
+        resultCount: 0,
+        fileCount: 0,
+      };
+    }
+
+    const references = result;
 
     // 过滤并验证位置
     const validReferences = references.filter((loc: unknown) => this.isValidLocation(loc));
@@ -323,7 +331,7 @@ Note: LSP servers must be configured for the file type. If no server is availabl
     // 规范化所有引用
     const normalizedReferences = validReferences.map((ref: any) => this.normalizeLocation(ref));
     const grouped = this.groupNormalizedByFile(normalizedReferences, workingDir);
-    const lines = [`Found ${normalizedReferences.length} references across ${grouped.size} files:`];
+    const lines = [`Found ${normalizedReferences.length} reference${normalizedReferences.length === 1 ? '' : 's'} across ${grouped.size} file${grouped.size === 1 ? '' : 's'}:`];
 
     for (const [file, refs] of grouped) {
       lines.push(`\n${file}:`);
@@ -418,8 +426,23 @@ Note: LSP servers must be configured for the file type. If no server is availabl
    * 格式化工作区符号结果
    */
   private formatWorkspaceSymbolResult(result: any, workingDir: string) {
-    // 验证并过滤符号
-    const symbols = (result || []).filter(
+    if (!result || result.length === 0) {
+      return {
+        formatted: 'No symbols found in workspace. This may occur if the workspace is empty, or if the LSP server has not finished indexing the project.',
+        resultCount: 0,
+        fileCount: 0,
+      };
+    }
+
+    // 验证并过滤符号 - 记录警告但继续处理
+    const invalidSymbols = result.filter((s: any) => !s || !s.location || !s.location.uri);
+    if (invalidSymbols.length > 0) {
+      console.warn(
+        `formatWorkspaceSymbolResult: Filtering out ${invalidSymbols.length} invalid symbol(s) - this should have been caught earlier`
+      );
+    }
+
+    const symbols = result.filter(
       (s: any) => s && s.location && s.location.uri && this.isValidLocation(s.location)
     );
 
@@ -457,12 +480,31 @@ Note: LSP servers must be configured for the file type. If no server is availabl
   }
 
   /**
+   * 格式化调用层次项
+   */
+  private formatCallHierarchyItem(item: any, workingDir: string): string {
+    if (!item.uri) {
+      console.warn('formatCallHierarchyItem: CallHierarchyItem has undefined URI');
+      return `${item.name} (${this.symbolKindToString(item.kind)}) - <unknown location>`;
+    }
+
+    const filePath = this.uriToPath(item.uri, workingDir);
+    const kind = this.symbolKindToString(item.kind);
+    const line = item.range.start.line + 1;
+    let result = `${item.name} (${kind}) - ${filePath}:${line}`;
+
+    if (item.detail) {
+      result += ` [${item.detail}]`;
+    }
+
+    return result;
+  }
+
+  /**
    * 格式化调用层次结果
    */
   private formatCallHierarchyResult(result: any, workingDir: string) {
-    const items = result || [];
-
-    if (items.length === 0) {
+    if (!result || result.length === 0) {
       return {
         formatted: 'No call hierarchy item found at this position',
         resultCount: 0,
@@ -470,14 +512,11 @@ Note: LSP servers must be configured for the file type. If no server is availabl
       };
     }
 
-    if (items.length === 1) {
-      const item = items[0];
-      const filePath = this.uriToPath(item.uri, workingDir);
-      const kind = this.symbolKindToString(item.kind);
-      const line = item.range.start.line + 1;
+    const items = result;
 
+    if (items.length === 1) {
       return {
-        formatted: `Call hierarchy item: ${item.name} (${kind}) - ${filePath}:${line}`,
+        formatted: `Call hierarchy item: ${this.formatCallHierarchyItem(items[0], workingDir)}`,
         resultCount: 1,
         fileCount: 1,
       };
@@ -485,16 +524,13 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
     const lines = [`Found ${items.length} call hierarchy items:`];
     for (const item of items) {
-      const filePath = this.uriToPath(item.uri, workingDir);
-      const kind = this.symbolKindToString(item.kind);
-      const line = item.range.start.line + 1;
-      lines.push(`  ${item.name} (${kind}) - ${filePath}:${line}`);
+      lines.push(`  ${this.formatCallHierarchyItem(item, workingDir)}`);
     }
 
     return {
       formatted: lines.join('\n'),
       resultCount: items.length,
-      fileCount: new Set(items.map((i: any) => i.uri)).size,
+      fileCount: new Set(items.map((i: any) => i.uri).filter(Boolean)).size,
     };
   }
 
@@ -502,14 +538,33 @@ Note: LSP servers must be configured for the file type. If no server is availabl
    * 格式化调用结果
    */
   private formatCallsResult(operation: string, result: any, workingDir: string) {
-    const calls = result || [];
+    if (!result || result.length === 0) {
+      const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
+      return {
+        formatted: `No ${type} calls found (${operation === 'incomingCalls' ? 'nothing calls this function' : 'this function calls nothing'})`,
+        resultCount: 0,
+        fileCount: 0,
+      };
+    }
 
-    // 验证调用数据
-    const validCalls = calls.filter((call: any) => {
-      const isIncoming = operation === 'incomingCalls';
-      const item = call[isIncoming ? 'from' : 'to'];
-      return item && item.uri && item.range;
-    });
+    const calls = result;
+    const isIncoming = operation === 'incomingCalls';
+    const callItem = isIncoming ? 'from' : 'to';
+
+    // 验证调用数据 - 记录警告并跳过无效项
+    const validCalls = [];
+    for (const call of calls) {
+      const item = call[callItem];
+      if (!item) {
+        console.warn(
+          `format${isIncoming ? 'Incoming' : 'Outgoing'}CallsResult: CallHierarchy${isIncoming ? 'Incoming' : 'Outgoing'}Call has undefined ${callItem} field`
+        );
+        continue;
+      }
+      if (item.uri && item.range) {
+        validCalls.push(call);
+      }
+    }
 
     if (validCalls.length === 0) {
       const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
@@ -520,8 +575,6 @@ Note: LSP servers must be configured for the file type. If no server is availabl
       };
     }
 
-    const isIncoming = operation === 'incomingCalls';
-    const callItem = isIncoming ? 'from' : 'to';
     const label = isIncoming ? 'caller' : 'callee';
     const lines = [`Found ${validCalls.length} ${label}${validCalls.length === 1 ? '' : 's'}:`];
 

@@ -33,47 +33,72 @@ const PERSISTED_OUTPUT_END = '</persisted-output>';
 const MAX_OUTPUT_LINES = 2000;
 
 /** 输出阈值（字符数），超过此值使用持久化标签 */
-const OUTPUT_THRESHOLD = 50000;
+const OUTPUT_THRESHOLD = 400000; // 400KB
 
 /** 预览大小（字节） */
-const PREVIEW_SIZE = 2000000; // 2MB
+const PREVIEW_SIZE = 2000; // 2KB
 
 // ============================================================================
 // 工具结果处理辅助函数
 // ============================================================================
 
 /**
- * 截断输出到指定行数
+ * 智能截断输出内容
+ * 优先在换行符处截断，以保持内容的可读性
  * @param content 原始内容
- * @returns 截断后的内容
+ * @param maxSize 最大字节数
+ * @returns 截断结果 { preview: 预览内容, hasMore: 是否有更多内容 }
  */
-function truncateOutput(content: string): string {
-  const lines = content.split('\n');
-  if (lines.length > MAX_OUTPUT_LINES) {
-    const truncated = lines.slice(0, MAX_OUTPUT_LINES).join('\n');
-    const remaining = lines.length - MAX_OUTPUT_LINES;
-    return `${truncated}\n... (${remaining} more lines truncated)`;
+function truncateOutput(content: string, maxSize: number): { preview: string; hasMore: boolean } {
+  if (content.length <= maxSize) {
+    return { preview: content, hasMore: false };
   }
-  return content;
+
+  // 找到最后一个换行符的位置
+  const lastNewline = content.slice(0, maxSize).lastIndexOf('\n');
+
+  // 如果换行符在前半部分（>50%），就在换行符处截断，否则直接截断
+  const cutoff = lastNewline > maxSize * 0.5 ? lastNewline : maxSize;
+
+  return {
+    preview: content.slice(0, cutoff),
+    hasMore: true,
+  };
 }
 
 /**
  * 使用持久化标签包装大型输出
+ * 生成带预览的持久化格式
  * @param content 输出内容
- * @param toolName 工具名称
  * @returns 包装后的内容
  */
-function wrapPersistedOutput(content: string, toolName: string): string {
-  // 如果输出超过阈值，使用持久化标签包装
-  if (content.length > OUTPUT_THRESHOLD) {
-    return `${PERSISTED_OUTPUT_START}\n${content}\n${PERSISTED_OUTPUT_END}`;
+function wrapPersistedOutput(content: string): string {
+  // 如果输出未超过阈值，直接返回
+  if (content.length <= OUTPUT_THRESHOLD) {
+    return content;
   }
-  return content;
+
+  // 生成预览
+  const { preview, hasMore } = truncateOutput(content, PREVIEW_SIZE);
+
+  // 格式化持久化输出
+  let result = `${PERSISTED_OUTPUT_START}\n`;
+  result += `Preview (first ${PREVIEW_SIZE} bytes):\n`;
+  result += preview;
+  if (hasMore) {
+    result += '\n...\n';
+  } else {
+    result += '\n';
+  }
+  result += PERSISTED_OUTPUT_END;
+
+  return result;
 }
 
 /**
  * 格式化工具结果
- * @param toolName 工具名称
+ * 统一处理所有工具的输出，根据大小自动应用持久化
+ * @param toolName 工具名称（暂未使用，保留用于未来扩展）
  * @param result 工具执行结果
  * @returns 格式化后的内容
  */
@@ -81,44 +106,16 @@ function formatToolResult(
   toolName: string,
   result: { success: boolean; output?: string; error?: string }
 ): string {
+  // 获取原始内容
   let content: string;
-
   if (!result.success) {
     content = `Error: ${result.error}`;
   } else {
     content = result.output || '';
   }
 
-  // 先截断到最大行数
-  content = truncateOutput(content);
-
-  // 对于特定工具，应用特殊处理
-  switch (toolName) {
-    case 'Read':
-      // 图片和二进制文件已经在工具内部处理
-      // 这里只处理文本输出
-      break;
-
-    case 'Bash':
-      // Bash 输出可能非常大，使用持久化
-      content = wrapPersistedOutput(content, toolName);
-      break;
-
-    case 'Grep':
-      // Grep 输出可能很长，使用持久化
-      content = wrapPersistedOutput(content, toolName);
-      break;
-
-    case 'Glob':
-      // 文件列表可能很长
-      content = wrapPersistedOutput(content, toolName);
-      break;
-
-    default:
-      // 对于其他工具，根据大小决定是否持久化
-      content = wrapPersistedOutput(content, toolName);
-      break;
-  }
+  // 统一应用持久化处理（根据大小自动决定）
+  content = wrapPersistedOutput(content);
 
   return content;
 }
@@ -172,20 +169,11 @@ function cleanOldPersistedOutputs(messages: Message[], keepRecent: number = 3): 
               block.type === 'tool_result' &&
               typeof block.content === 'string'
             ) {
-              // 移除持久化标签，只保留简要信息
+              // 移除持久化标签，替换为简单的清理提示
               let content = block.content;
               if (content.includes(PERSISTED_OUTPUT_START)) {
-                const start = content.indexOf(PERSISTED_OUTPUT_START);
-                const end = content.indexOf(PERSISTED_OUTPUT_END);
-                if (start !== -1 && end !== -1) {
-                  const persistedContent = content.substring(
-                    start + PERSISTED_OUTPUT_START.length,
-                    end
-                  );
-                  const lines = persistedContent.trim().split('\n');
-                  const preview = lines.slice(0, 10).join('\n');
-                  content = `[Previous output truncated - ${lines.length} lines]\n${preview}\n...`;
-                }
+                // 官方实现：直接替换为固定的清理消息
+                content = '[Old tool result content cleared]';
               }
               return { ...block, content };
             }
@@ -244,7 +232,15 @@ export class ConversationLoop {
     toolInput: unknown,
     message?: string
   ): Promise<boolean> {
-    // 1. 触发 PermissionRequest Hooks
+    // 1. 检查会话级权限记忆
+    if (this.session.isToolAlwaysAllowed(toolName)) {
+      if (this.options.verbose) {
+        console.log(chalk.green(`[Permission] Auto-allowed by session permission: ${toolName}`));
+      }
+      return true;
+    }
+
+    // 2. 触发 PermissionRequest Hooks
     const hookResult = await runPermissionRequestHooks(
       toolName,
       toolInput,
@@ -264,7 +260,7 @@ export class ConversationLoop {
       return false;
     }
 
-    // 2. 检查权限模式
+    // 3. 检查权限模式
     if (this.options.permissionMode === 'bypassPermissions' || this.options.dangerouslySkipPermissions) {
       if (this.options.verbose) {
         console.log(chalk.yellow('[Permission] Bypassed due to permission mode'));
@@ -280,7 +276,7 @@ export class ConversationLoop {
       return false;
     }
 
-    // 3. 显示权限请求对话框
+    // 4. 显示权限请求对话框
     console.log(chalk.yellow('\n┌─────────────────────────────────────────┐'));
     console.log(chalk.yellow('│          Permission Request             │'));
     console.log(chalk.yellow('├─────────────────────────────────────────┤'));
@@ -299,7 +295,7 @@ export class ConversationLoop {
     console.log('  [n] No, deny');
     console.log('  [a] Always allow for this session');
 
-    // 4. 等待用户输入
+    // 5. 等待用户输入
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -318,8 +314,9 @@ export class ConversationLoop {
             break;
 
           case 'a':
-            console.log(chalk.green('✓ Permission granted for all requests in this session'));
-            // TODO: 实现会话级权限记忆
+            console.log(chalk.green(`✓ Permission granted for all '${toolName}' requests in this session`));
+            // 实现会话级权限记忆
+            this.session.addAlwaysAllowedTool(toolName);
             resolve(true);
             break;
 
@@ -400,7 +397,11 @@ export class ConversationLoop {
     // 应用工具过滤
     if (options.allowedTools && options.allowedTools.length > 0) {
       const allowed = new Set(options.allowedTools.flatMap(t => t.split(',')).map(t => t.trim()));
-      tools = tools.filter(t => allowed.has(t.name));
+
+      // 如果包含通配符 '*'，允许所有工具
+      if (!allowed.has('*')) {
+        tools = tools.filter(t => allowed.has(t.name));
+      }
     }
 
     if (options.disallowedTools && options.disallowedTools.length > 0) {
