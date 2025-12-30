@@ -2,42 +2,46 @@
  * AskUserQuestion 工具
  * 向用户提出问题并获取选择
  *
- * 支持特性:
+ * 官方 API 规范（与 @anthropic-ai/claude-code 完全一致）:
+ *
+ * Schema:
+ * {
+ *   questions: [{
+ *     question: string,        // 完整问题文本
+ *     header: string,          // 最多 12 字符的标签
+ *     options: [{
+ *       label: string,         // 1-5 个单词的选项标签
+ *       description: string    // 选项说明
+ *     }],                     // 2-4 个选项
+ *     multiSelect: boolean    // 是否允许多选
+ *   }],                       // 1-4 个问题
+ *   answers?: Record<string, string>  // 可选的预填答案
+ * }
+ *
+ * 返回格式:
+ * User has answered your questions: "header1"="answer1", "header2"="answer2". You can now continue with the user's answers in mind.
+ *
+ * 核心功能:
  * - 键盘导航 (↑/↓ 箭头键)
  * - 多选模式 (空格键选择/取消，支持复选框 UI)
  * - 数字快捷键 (1-9)
- * - 自定义答案选项 ("Other" 选项自动添加)
+ * - 自动添加 "Other" 选项支持自定义输入
  * - 美化的终端 UI
  * - 支持 1-4 个问题同时询问
  * - 每个问题支持 2-4 个选项
- * - 选项包含 label 和 description
+ * - Header 最大 12 字符
+ * - Label 限制 1-5 个单词
  *
- * 增强特性（实现层面）:
- * - 默认值支持 (defaultIndex) - 自动选中指定选项
- * - 超时处理 (timeout) - 超时后自动使用默认值或当前选中项
- * - 输入验证 (validator) - 自定义验证函数验证用户输入
+ * 本地增强功能（实现层面，不影响 API 兼容性）:
+ * - defaultIndex: 默认选中的选项索引 (0-based)
+ * - timeout: 超时时间（毫秒），超时后使用默认值
+ * - validator: 自定义验证函数 (input: string) => { valid: boolean; message?: string }
  * - 空输入保护 - 自动拒绝空的自定义输入
  *
- * 官方 schema:
- * {
- *   questions: [{
- *     question: string,
- *     header: string, // max 12 chars
- *     options: [{
- *       label: string,
- *       description: string
- *     }],
- *     multiSelect: boolean,
- *     // 增强字段（可选，实现层面）
- *     defaultIndex?: number,  // 默认选中的选项索引 (0-based)
- *     timeout?: number,       // 超时时间（毫秒）
- *     validator?: (input: string) => { valid: boolean; message?: string }
- *   }]
- * }
+ * 注意: 增强功能是可选的，通过类型断言使用，不会破坏与官方 API 的兼容性
  *
- * 使用示例:
+ * 基本使用示例:
  * ```typescript
- * // 带默认值的问题
  * {
  *   question: "Which framework should we use?",
  *   header: "Framework",
@@ -45,38 +49,7 @@
  *     { label: "React (Recommended)", description: "Popular UI library" },
  *     { label: "Vue", description: "Progressive framework" }
  *   ],
- *   multiSelect: false,
- *   defaultIndex: 0  // 默认选中 React
- * }
- *
- * // 带超时的问题
- * {
- *   question: "Continue with default settings?",
- *   header: "Settings",
- *   options: [
- *     { label: "Yes", description: "Use default configuration" },
- *     { label: "No", description: "Customize settings" }
- *   ],
- *   multiSelect: false,
- *   defaultIndex: 0,
- *   timeout: 10000  // 10秒后自动选择默认值
- * }
- *
- * // 带验证器的问题
- * {
- *   question: "Enter project name",
- *   header: "Project",
- *   options: [
- *     { label: "my-app", description: "Default name" },
- *     { label: "Other", description: "Custom name" }
- *   ],
- *   multiSelect: false,
- *   validator: (input) => {
- *     if (!/^[a-z0-9-]+$/.test(input)) {
- *       return { valid: false, message: "Only lowercase letters, numbers, and hyphens allowed" };
- *     }
- *     return { valid: true };
- *   }
+ *   multiSelect: false
  * }
  * ```
  */

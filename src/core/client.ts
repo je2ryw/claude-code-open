@@ -557,15 +557,20 @@ export class ClaudeClient {
 
     // 处理 Extended Thinking 响应
     let thinkingResult: ThinkingResult | undefined;
-    if (response.thinking) {
-      usage.thinkingTokens = response.thinking_tokens || 0;
-      thinkingResult = thinkingManager.processThinkingResponse(
-        {
-          thinking: response.thinking,
-          thinking_tokens: response.thinking_tokens,
-        },
-        startTime
-      ) || undefined;
+    if (response.thinking || response.thinking_tokens) {
+      // 优先使用 usage 中的 thinking_tokens，如果没有则使用 response 顶层的
+      const thinkingTokensCount = (response as any).usage?.thinking_tokens || response.thinking_tokens || 0;
+      usage.thinkingTokens = thinkingTokensCount;
+
+      if (response.thinking) {
+        thinkingResult = thinkingManager.processThinkingResponse(
+          {
+            thinking: response.thinking,
+            thinking_tokens: thinkingTokensCount,
+          },
+          startTime
+        ) || undefined;
+      }
     }
 
     this.updateUsage(usage);
@@ -710,7 +715,13 @@ export class ClaudeClient {
           // 从最终消息中获取 thinking_tokens
           const finalMessage = await stream.finalMessage();
           if (finalMessage?.usage) {
+            // 优先使用 usage 中的 thinking_tokens
             thinkingTokens = (finalMessage.usage as any).thinking_tokens || 0;
+
+            // 如果有 thinking 内容但没有 tokens 统计，记录警告
+            if (this.debug && finalMessage.thinking && !thinkingTokens) {
+              console.warn('[ClaudeClient] Thinking content present but no thinking_tokens in usage');
+            }
           }
 
           this.updateUsage({
