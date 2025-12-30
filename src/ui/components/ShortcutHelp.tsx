@@ -29,6 +29,10 @@ const SHORTCUTS: Shortcut[] = [
   { key: '↑/↓', description: 'Navigate history', category: 'Input' },
   { key: 'Tab', description: 'Autocomplete command', category: 'Input' },
 
+  // 模型
+  { key: 'Alt+P', description: 'Switch model (opus → sonnet → haiku)', category: 'Model' },
+  { key: 'Ctrl+M', description: 'Switch model (alternative)', category: 'Model' },
+
   // 命令
   { key: '/help', description: 'Show all commands', category: 'Commands' },
   { key: '/clear', description: 'Clear conversation', category: 'Commands' },

@@ -7,6 +7,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getCompletions, applyCompletion, type CompletionItem } from '../autocomplete/index.js';
+import { getHistoryManager } from '../utils/history-manager.js';
+import { HistorySearch } from './HistorySearch.js';
 
 // 官方 claude 颜色
 const CLAUDE_COLOR = '#D77757';
@@ -43,6 +45,24 @@ export const Input: React.FC<InputProps> = ({
   const [yankRegister, setYankRegister] = useState<string>(''); // Yank register for y/p
   const [replaceMode, setReplaceMode] = useState(false); // For 'r' command
 
+  // IME (输入法编辑器) 组合状态支持
+  const [isComposing, setIsComposing] = useState(false);
+  const compositionTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Ctrl+R 反向历史搜索
+  const [reverseSearchMode, setReverseSearchMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<string[]>([]);
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [searchOriginalValue, setSearchOriginalValue] = useState('');
+  const historyManager = useMemo(() => getHistoryManager(), []);
+
+  // 初始化：从持久化存储加载历史记录
+  useEffect(() => {
+    const loadedHistory = historyManager.getHistory();
+    setHistory(loadedHistory);
+  }, [historyManager]);
+
   // 监听环境变量变化（通过轮询检测）
   useEffect(() => {
     const checkVimMode = () => {
@@ -56,6 +76,15 @@ export const Input: React.FC<InputProps> = ({
     const interval = setInterval(checkVimMode, 500); // 每500ms检查一次
     return () => clearInterval(interval);
   }, [vimModeEnabled]);
+
+  // 反向搜索：当搜索查询变化时更新匹配结果
+  useEffect(() => {
+    if (reverseSearchMode) {
+      const matches = historyManager.search(searchQuery);
+      setSearchMatches(matches);
+      setSearchIndex(0);
+    }
+  }, [searchQuery, reverseSearchMode, historyManager]);
 
   // 获取自动补全建议
   useEffect(() => {
@@ -78,6 +107,62 @@ export const Input: React.FC<InputProps> = ({
 
   // 显示补全列表
   const showCompletionList = completions.length > 0 && completionType !== 'none';
+
+  // IME 辅助函数
+  // 检测字符是否为 CJK（中日韩）字符
+  const isCJKChar = (char: string): boolean => {
+    if (!char || char.length === 0) return false;
+    const code = char.charCodeAt(0);
+    // CJK 统一表意文字: U+4E00-U+9FFF
+    // CJK 扩展 A: U+3400-U+4DBF
+    // 日文假名: U+3040-U+309F (平假名), U+30A0-U+30FF (片假名)
+    // 韩文音节: U+AC00-U+D7AF
+    return (
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x3040 && code <= 0x309f) ||
+      (code >= 0x30a0 && code <= 0x30ff) ||
+      (code >= 0xac00 && code <= 0xd7af)
+    );
+  };
+
+  // 开始组合输入（检测到 CJK 字符输入时）
+  const startComposition = () => {
+    setIsComposing(true);
+    // 清除之前的定时器
+    if (compositionTimerRef.current) {
+      clearTimeout(compositionTimerRef.current);
+    }
+  };
+
+  // 延迟结束组合（等待可能的后续输入）
+  const scheduleEndComposition = () => {
+    if (compositionTimerRef.current) {
+      clearTimeout(compositionTimerRef.current);
+    }
+    // 500ms 后自动结束组合状态
+    compositionTimerRef.current = setTimeout(() => {
+      setIsComposing(false);
+    }, 500);
+  };
+
+  // 立即结束组合
+  const endComposition = () => {
+    if (compositionTimerRef.current) {
+      clearTimeout(compositionTimerRef.current);
+      compositionTimerRef.current = null;
+    }
+    setIsComposing(false);
+  };
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (compositionTimerRef.current) {
+        clearTimeout(compositionTimerRef.current);
+      }
+    };
+  }, []);
 
   // Vim 辅助函数
   const saveToUndoStack = () => {
@@ -141,6 +226,75 @@ export const Input: React.FC<InputProps> = ({
         return;
       }
 
+      // ===== Ctrl+R 反向历史搜索模式处理 =====
+      if (reverseSearchMode) {
+        // ESC - 退出搜索模式，恢复原始值
+        if (key.escape) {
+          setValue(searchOriginalValue);
+          setCursor(searchOriginalValue.length);
+          setReverseSearchMode(false);
+          setSearchQuery('');
+          setSearchMatches([]);
+          setSearchIndex(0);
+          return;
+        }
+
+        // Enter - 选择当前匹配项
+        if (key.return) {
+          if (searchMatches.length > 0) {
+            const selected = searchMatches[searchIndex];
+            setValue(selected);
+            setCursor(selected.length);
+          }
+          setReverseSearchMode(false);
+          setSearchQuery('');
+          setSearchMatches([]);
+          setSearchIndex(0);
+          return;
+        }
+
+        // Ctrl+R - 下一个匹配项（向后搜索）
+        if (key.ctrl && input === 'r') {
+          if (searchMatches.length > 0) {
+            setSearchIndex((prev) => (prev + 1) % searchMatches.length);
+          }
+          return;
+        }
+
+        // Ctrl+S - 上一个匹配项（向前搜索）
+        if (key.ctrl && input === 's') {
+          if (searchMatches.length > 0) {
+            setSearchIndex((prev) => (prev - 1 + searchMatches.length) % searchMatches.length);
+          }
+          return;
+        }
+
+        // Backspace - 删除搜索查询的最后一个字符
+        if (key.backspace || key.delete) {
+          setSearchQuery((prev) => prev.slice(0, -1));
+          return;
+        }
+
+        // 其他字符 - 添加到搜索查询
+        if (input && !key.ctrl && !key.meta) {
+          setSearchQuery((prev) => prev + input);
+          return;
+        }
+
+        return; // 在搜索模式下忽略其他按键
+      }
+
+      // Ctrl+R - 进入反向历史搜索模式（非搜索模式下）
+      if (key.ctrl && input === 'r' && !reverseSearchMode) {
+        setReverseSearchMode(true);
+        setSearchOriginalValue(value);
+        setSearchQuery('');
+        const allMatches = historyManager.search('');
+        setSearchMatches(allMatches);
+        setSearchIndex(0);
+        return;
+      }
+
       // 在补全列表显示时的特殊处理
       if (showCompletionList && !vimNormalMode) {
         if (key.upArrow) {
@@ -171,6 +325,13 @@ export const Input: React.FC<InputProps> = ({
 
             // 如果是命令补全且按的是 Enter，应用后直接提交
             if (key.return && completionType === 'command') {
+              // IME 组合期间不提交
+              if (isComposing) {
+                endComposition();
+                setValue(result.newText);
+                setCursor(result.newCursor);
+                return;
+              }
               const finalValue = result.newText.trim();
               if (finalValue) {
                 onSubmit(finalValue);
@@ -431,9 +592,16 @@ export const Input: React.FC<InputProps> = ({
 
         // Enter - 提交
         if (key.return) {
+          // IME 组合期间不提交
+          if (isComposing) {
+            endComposition();
+            return;
+          }
           if (value.trim()) {
-            onSubmit(value.trim());
-            setHistory(prev => [value.trim(), ...prev.slice(0, 99)]);
+            const trimmedValue = value.trim();
+            onSubmit(trimmedValue);
+            historyManager.addCommand(trimmedValue);
+            setHistory(prev => [trimmedValue, ...prev.slice(0, 99)]);
             setValue('');
             setCursor(0);
             setHistoryIndex(-1);
@@ -466,9 +634,16 @@ export const Input: React.FC<InputProps> = ({
       }
 
       if (key.return) {
+        // IME 组合期间不提交
+        if (isComposing) {
+          endComposition();
+          return;
+        }
         if (value.trim()) {
-          onSubmit(value.trim());
-          setHistory(prev => [value.trim(), ...prev.slice(0, 99)]);
+          const trimmedValue = value.trim();
+          onSubmit(trimmedValue);
+          historyManager.addCommand(trimmedValue);
+          setHistory(prev => [trimmedValue, ...prev.slice(0, 99)]);
           setValue('');
           setCursor(0);
           setHistoryIndex(-1);
@@ -524,6 +699,16 @@ export const Input: React.FC<InputProps> = ({
         setValue(value.slice(0, cursor));
       } else if (!key.ctrl && !key.meta && input) {
         if (vimModeEnabled && input.length === 1) saveToUndoStack();
+
+        // IME 支持：检测 CJK 字符输入
+        if (input.length > 0) {
+          const hasCJK = Array.from(input).some(char => isCJKChar(char));
+          if (hasCJK) {
+            startComposition();
+            scheduleEndComposition(); // 延迟结束组合状态
+          }
+        }
+
         setValue((prev) => prev.slice(0, cursor) + input + prev.slice(cursor));
         setCursor((prev) => prev + input.length);
       }
@@ -543,6 +728,9 @@ export const Input: React.FC<InputProps> = ({
 
   // 显示待处理命令
   const commandIndicator = pendingCommand ? `[${pendingCommand}] ` : '';
+
+  // IME 组合状态指示器
+  const imeIndicator = isComposing ? '[组合中] ' : '';
 
   return (
     <Box flexDirection="column">
@@ -582,6 +770,12 @@ export const Input: React.FC<InputProps> = ({
         {commandIndicator && (
           <Text color="cyan" bold>
             {commandIndicator}
+          </Text>
+        )}
+        {/* IME 组合状态指示器 */}
+        {imeIndicator && (
+          <Text color="magenta" bold>
+            {imeIndicator}
           </Text>
         )}
         <Text color="white" bold>

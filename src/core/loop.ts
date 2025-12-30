@@ -895,4 +895,22 @@ Guidelines:
   setSession(session: Session): void {
     this.session = session;
   }
+
+  /**
+   * 设置模型
+   * @param model 模型名称或别名
+   */
+  setModel(model: string): void {
+    const resolvedModel = modelConfig.resolveAlias(model);
+    this.client.setModel(resolvedModel);
+    this.options.model = model; // 保存原始别名
+  }
+
+  /**
+   * 获取当前模型
+   * @returns 当前模型 ID
+   */
+  getModel(): string {
+    return this.client.getModel();
+  }
 }

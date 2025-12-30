@@ -478,6 +478,71 @@ export const App: React.FC<AppProps> = ({
 
       try {
         for await (const event of loop.processMessageStream(input)) {
+          // 检查是否需要将任务移到后台
+          if (shouldMoveToBackground) {
+            setShouldMoveToBackground(false);
+
+            // 创建后台任务
+            const bgTask = createBackgroundTask(input);
+            setCurrentBackgroundTaskId(bgTask.id);
+
+            // 添加消息提示用户任务已转到后台
+            addMessage('assistant', `⏳ Task moved to background (ID: ${bgTask.id.substring(0, 8)})\n\nYou can continue with other tasks. Use /tasks to check status.`);
+
+            // 重置 UI 状态
+            setIsProcessing(false);
+            setCurrentResponse('');
+            setStreamBlocks([]);
+            setActiveTextBlockId(null);
+            setConnectionStatus('connected');
+
+            // 在后台继续处理流
+            (async () => {
+              try {
+                let bgAccumulatedResponse = accumulatedResponse;
+
+                // 继续处理剩余的事件
+                for await (const bgEvent of loop.processMessageStream(input)) {
+                  // 检查任务是否被取消
+                  if (isTaskCancelled(bgTask.id)) {
+                    break;
+                  }
+
+                  if (bgEvent.type === 'text') {
+                    bgAccumulatedResponse += (bgEvent.content || '');
+                    appendTaskText(bgTask.id, bgEvent.content || '');
+                  } else if (bgEvent.type === 'tool_start') {
+                    addTaskToolCall(
+                      bgTask.id,
+                      bgEvent.toolName || '',
+                      bgEvent.toolInput
+                    );
+                  } else if (bgEvent.type === 'tool_end') {
+                    addTaskToolCall(
+                      bgTask.id,
+                      bgEvent.toolName || '',
+                      bgEvent.toolInput,
+                      bgEvent.toolResult,
+                      bgEvent.toolError
+                    );
+                  }
+                }
+
+                // 标记任务完成
+                completeTask(bgTask.id, true);
+
+                // 更新后台任务列表
+                setBackgroundTasks(getTaskSummaries());
+              } catch (err) {
+                completeTask(bgTask.id, false, String(err));
+                setBackgroundTasks(getTaskSummaries());
+              }
+            })();
+
+            // 立即返回，不继续处理当前循环
+            return;
+          }
+
           // 调试：记录收到的事件
           if (verbose) {
             console.log('[App] Event:', event.type, event.content?.slice(0, 50));
