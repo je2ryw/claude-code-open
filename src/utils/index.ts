@@ -198,3 +198,9 @@ export async function openUrl(url: string): Promise<boolean> {
     return false;
   }
 }
+
+// Re-export attribution utilities
+export { getAttribution, getCommitAttribution, getPRAttribution, isAttributionEnabled } from './attribution.js';
+
+// Re-export git helper utilities
+export { addCommitAttribution, isGitCommitCommand, processGitCommitCommand, hasCommitAttribution } from './git-helper.js';

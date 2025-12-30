@@ -76,6 +76,15 @@ const UserConfigSchema = z.object({
   disableFileCheckpointing: z.boolean().default(false),
   enableAutoSave: z.boolean().default(true),
 
+  // Git 配置
+  includeCoAuthoredBy: z.boolean().default(true), // 是否在 git commit 中添加 Claude 署名（已弃用，使用 attribution）
+
+  // Git 署名配置（新增，v2.0.76+）
+  attribution: z.object({
+    commit: z.string().optional(), // commit 消息署名（包含 Co-Authored-By trailer）
+    pr: z.string().optional(),     // PR 描述署名（包含链接）
+  }).optional(),
+
   // 高级配置
   maxConcurrentTasks: z.number().int().positive().max(100).default(10),
   requestTimeout: z.number().int().positive().default(300000), // 5分钟
@@ -197,6 +206,7 @@ const DEFAULT_CONFIG: Partial<UserConfig> = {
   enableTelemetry: false,
   disableFileCheckpointing: false,
   enableAutoSave: true,
+  includeCoAuthoredBy: true, // Git 署名默认开启
   maxConcurrentTasks: 10,
   requestTimeout: 300000,
   useBedrock: false,

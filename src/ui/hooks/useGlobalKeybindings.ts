@@ -26,6 +26,8 @@ export interface UseGlobalKeybindingsOptions {
   onModelSwitch?: () => void;
   onStashPrompt?: (prompt: string) => void;
   onUndo?: () => void;
+  onThinkingToggle?: () => void;
+  onBackgroundTask?: () => void; // 新增：后台运行当前任务
   getCurrentInput?: () => string;
   disabled?: boolean;
 }
@@ -38,6 +40,8 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
     onModelSwitch,
     onStashPrompt,
     onUndo,
+    onThinkingToggle,
+    onBackgroundTask,
     getCurrentInput,
     disabled = false,
   } = options;
@@ -97,6 +101,27 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
       ctrl: true,
       handler: () => onModelSwitch?.(),
       description: 'Switch model',
+      category: 'System',
+    },
+    {
+      key: 'p',
+      alt: true,
+      handler: () => onModelSwitch?.(),
+      description: 'Switch model (Alt+P)',
+      category: 'System',
+    },
+    {
+      key: 't',
+      alt: true,
+      handler: () => onThinkingToggle?.(),
+      description: 'Toggle extended thinking',
+      category: 'System',
+    },
+    {
+      key: 'b',
+      ctrl: true,
+      handler: () => onBackgroundTask?.(),
+      description: 'Move current task to background (Ctrl+B)',
       category: 'System',
     },
   ];

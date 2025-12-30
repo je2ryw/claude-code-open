@@ -13,6 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { BaseTool } from './base.js';
 import { executeInSandbox, isBubblewrapAvailable } from './sandbox.js';
 import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
+import { processGitCommitCommand } from '../utils/git-helper.js';
+import { configManager } from '../config/index.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -417,9 +419,10 @@ Git Safety Protocol:
   - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files
   - Draft a concise (1-2 sentences) commit message that focuses on the "why" rather than the "what"
   - Ensure it accurately reflects the changes and their purpose
+  - IMPORTANT: Automatically append attribution to the commit message using the format specified in the configuration (defaults to including Co-Authored-By trailer)
 3. You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. run the following commands:
    - Add relevant untracked files to the staging area.
-   - Create the commit with a message.
+   - Create the commit with a message that includes the attribution trailer.
    - Run git status after the commit completes to verify success.
    Note: git status depends on the commit completing, so run it sequentially after the commit.
 4. If the commit fails due to pre-commit hook, fix the issue and create a NEW commit (see amend rules above)
@@ -434,9 +437,14 @@ Important notes:
 <example>
 git commit -m "$(cat <<'EOF'
    Commit message here.
+
+   🤖 Generated with Claude Code (https://claude.com/claude-code)
+   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
    EOF
    )"
 </example>
+- The attribution (Co-Authored-By trailer) is configurable via the "attribution.commit" setting in ~/.claude/settings.json
+- Users can disable attribution by setting "attribution.commit" to an empty string or "includeCoAuthoredBy" to false
 
 # Creating pull requests
 Use the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a Github URL use the gh command to get the information needed.
@@ -501,7 +509,7 @@ Important:
   }
 
   async execute(input: BashInput): Promise<BashResult> {
-    const {
+    let {
       command,
       timeout = DEFAULT_TIMEOUT,
       run_in_background = false,
@@ -510,6 +518,14 @@ Important:
 
     const startTime = Date.now();
     const maxTimeout = Math.min(timeout, MAX_TIMEOUT);
+
+    // Git commit 命令预处理：自动添加署名
+    // 获取当前配置的模型ID用于署名
+    const config = configManager.getAll();
+    const modelId = config.model;
+
+    // 处理 git commit 命令以添加署名
+    command = processGitCommitCommand(command, modelId);
 
     // 安全检查
     const safetyCheck = checkCommandSafety(command);

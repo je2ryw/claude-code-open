@@ -952,6 +952,29 @@ export interface UpdateSettings {
 }
 
 // ============================================================================
+// Attribution Settings
+// ============================================================================
+
+/**
+ * Attribution settings for git commits and PRs
+ */
+export interface AttributionSettings {
+  /**
+   * Attribution text for git commits, including any trailers.
+   * Empty string hides attribution.
+   * Default includes Co-Authored-By trailer with model name.
+   */
+  commit?: string;
+
+  /**
+   * Attribution text for pull request descriptions.
+   * Empty string hides attribution.
+   * Default includes link to Claude Code.
+   */
+  pr?: string;
+}
+
+// ============================================================================
 // Advanced Settings
 // ============================================================================
 
@@ -1136,6 +1159,20 @@ export interface ClaudeConfig {
 
   /** Advanced settings */
   advanced?: AdvancedSettings;
+
+  /**
+   * Attribution settings for git commits and pull requests
+   * @since 2.0.76
+   */
+  attribution?: AttributionSettings;
+
+  /**
+   * Deprecated: Use attribution instead.
+   * Whether to include Claude's co-authored by attribution in commits and PRs.
+   * Defaults to true.
+   * @deprecated Use attribution.commit and attribution.pr instead
+   */
+  includeCoAuthoredBy?: boolean;
 }
 
 /**

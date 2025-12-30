@@ -21,9 +21,20 @@ import { updateManager } from '../updater/index.js';
 import { useGlobalKeybindings } from './hooks/useGlobalKeybindings.js';
 import { configManager } from '../config/index.js';
 import { startOAuthLogin } from '../auth/index.js';
+import { thinkingManager } from '../models/thinking.js';
 import type { TodoItem } from '../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
+import {
+  createBackgroundTask,
+  appendTaskText,
+  addTaskToolCall,
+  completeTask,
+  isTaskCancelled,
+  getTaskSummaries,
+  type TaskSummary,
+} from '../core/backgroundTasks.js';
+import { BackgroundTasksPanel } from './components/BackgroundTasksPanel.js';
 const VERSION = '2.0.76-restored';
 
 interface AppProps {
@@ -126,6 +137,13 @@ export const App: React.FC<AppProps> = ({
   const [showVerbose, setShowVerbose] = useState(verbose || false);
   const [showTodosPanel, setShowTodosPanel] = useState(false);
   const [stashedPrompt, setStashedPrompt] = useState<string>('');
+  const [thinkingEnabled, setThinkingEnabled] = useState(thinkingManager.isEnabled());
+
+  // 后台任务相关状态
+  const [backgroundTasks, setBackgroundTasks] = useState<TaskSummary[]>([]);
+  const [showBackgroundPanel, setShowBackgroundPanel] = useState(false);
+  const [currentBackgroundTaskId, setCurrentBackgroundTaskId] = useState<string | null>(null);
+  const [shouldMoveToBackground, setShouldMoveToBackground] = useState(false);
 
   // 登录屏幕状态
   const [showLoginScreen, setShowLoginScreen] = useState(false);
@@ -152,6 +170,12 @@ export const App: React.FC<AppProps> = ({
     'claude-opus-4-20250514': 'Opus 4',
     'claude-haiku-3-5-20241022': 'Haiku 3.5',
   };
+
+  // 模型切换顺序
+  const modelCycle = ['opus', 'sonnet', 'haiku'];
+
+  // 当前模型状态（用于显示和切换）
+  const [currentModel, setCurrentModel] = useState(model);
 
   const [loop] = useState(
     () =>
@@ -219,8 +243,21 @@ export const App: React.FC<AppProps> = ({
       addActivity(`Todos panel ${!showTodosPanel ? 'shown' : 'hidden'}`);
     },
     onModelSwitch: () => {
-      addActivity('Model switch requested (feature coming soon)');
-      addMessage('assistant', 'Model switching via keyboard shortcut coming soon!\n\nFor now, use the /model command or restart with --model flag.');
+      // 循环切换模型：opus → sonnet → haiku → opus
+      const currentIndex = modelCycle.indexOf(currentModel);
+      const nextIndex = (currentIndex + 1) % modelCycle.length;
+      const nextModel = modelCycle[nextIndex];
+
+      // 更新 ConversationLoop 中的模型
+      loop.setModel(nextModel);
+
+      // 更新本地状态
+      setCurrentModel(nextModel);
+
+      // 记录活动和显示消息
+      const displayName = modelDisplayName[nextModel] || nextModel;
+      addActivity(`Switched to ${displayName}`);
+      addMessage('assistant', `✨ Switched to ${displayName}\n\nThe next message will use this model.`);
     },
     onStashPrompt: (prompt) => {
       setStashedPrompt(prompt);
@@ -233,8 +270,34 @@ export const App: React.FC<AppProps> = ({
       addActivity('Undo requested');
       // Note: Undo is handled within Input component for Vim mode
     },
+    onThinkingToggle: () => {
+      const newState = !thinkingEnabled;
+      if (newState) {
+        thinkingManager.enable();
+        setThinkingEnabled(true);
+        addActivity('Extended thinking enabled');
+        addMessage('assistant', '🧠 Extended thinking enabled\n\nClaude will now use extended thinking for complex reasoning tasks.');
+      } else {
+        thinkingManager.disable();
+        setThinkingEnabled(false);
+        addActivity('Extended thinking disabled');
+        addMessage('assistant', '💤 Extended thinking disabled\n\nClaude will respond without extended thinking.');
+      }
+    },
+    onBackgroundTask: () => {
+      if (isProcessing) {
+        // 如果有任务正在运行，设置标志将其转到后台
+        setShouldMoveToBackground(true);
+        addActivity('Moving current task to background...');
+      } else {
+        // 如果没有正在运行的任务，切换后台面板显示
+        setShowBackgroundPanel((v) => !v);
+        // 更新后台任务列表
+        setBackgroundTasks(getTaskSummaries());
+      }
+    },
     getCurrentInput: () => currentInputRef.current,
-    disabled: isProcessing,
+    disabled: false, // 不禁用，即使在处理中也允许 Ctrl+B
   });
 
   // 处理键盘输入
@@ -415,6 +478,71 @@ export const App: React.FC<AppProps> = ({
 
       try {
         for await (const event of loop.processMessageStream(input)) {
+          // 检查是否需要将任务移到后台
+          if (shouldMoveToBackground) {
+            setShouldMoveToBackground(false);
+
+            // 创建后台任务
+            const bgTask = createBackgroundTask(input);
+            setCurrentBackgroundTaskId(bgTask.id);
+
+            // 添加消息提示用户任务已转到后台
+            addMessage('assistant', `⏳ Task moved to background (ID: ${bgTask.id.substring(0, 8)})\n\nYou can continue with other tasks. Use /tasks to check status.`);
+
+            // 重置 UI 状态
+            setIsProcessing(false);
+            setCurrentResponse('');
+            setStreamBlocks([]);
+            setActiveTextBlockId(null);
+            setConnectionStatus('connected');
+
+            // 在后台继续处理流
+            (async () => {
+              try {
+                let bgAccumulatedResponse = accumulatedResponse;
+
+                // 继续处理剩余的事件
+                for await (const bgEvent of loop.processMessageStream(input)) {
+                  // 检查任务是否被取消
+                  if (isTaskCancelled(bgTask.id)) {
+                    break;
+                  }
+
+                  if (bgEvent.type === 'text') {
+                    bgAccumulatedResponse += (bgEvent.content || '');
+                    appendTaskText(bgTask.id, bgEvent.content || '');
+                  } else if (bgEvent.type === 'tool_start') {
+                    addTaskToolCall(
+                      bgTask.id,
+                      bgEvent.toolName || '',
+                      bgEvent.toolInput
+                    );
+                  } else if (bgEvent.type === 'tool_end') {
+                    addTaskToolCall(
+                      bgTask.id,
+                      bgEvent.toolName || '',
+                      bgEvent.toolInput,
+                      bgEvent.toolResult,
+                      bgEvent.toolError
+                    );
+                  }
+                }
+
+                // 标记任务完成
+                completeTask(bgTask.id, true);
+
+                // 更新后台任务列表
+                setBackgroundTasks(getTaskSummaries());
+              } catch (err) {
+                completeTask(bgTask.id, false, String(err));
+                setBackgroundTasks(getTaskSummaries());
+              }
+            })();
+
+            // 立即返回，不继续处理当前循环
+            return;
+          }
+
           // 调试：记录收到的事件
           if (verbose) {
             console.log('[App] Event:', event.type, event.content?.slice(0, 50));
@@ -571,7 +699,7 @@ export const App: React.FC<AppProps> = ({
         <WelcomeScreen
           version={VERSION}
           username={username}
-          model={modelDisplayName[model] || model}
+          model={modelDisplayName[currentModel] || currentModel}
           apiType={apiType as any}
           organization={organization}
           cwd={process.cwd()}
@@ -580,7 +708,7 @@ export const App: React.FC<AppProps> = ({
       ) : (
         <Header
           version={VERSION}
-          model={modelDisplayName[model] || model}
+          model={modelDisplayName[currentModel] || currentModel}
           cwd={process.cwd()}
           username={username}
           apiType={apiType}
@@ -655,6 +783,12 @@ export const App: React.FC<AppProps> = ({
 
       {/* Todo List */}
       {(todos.length > 0 || showTodosPanel) && <TodoList todos={todos} />}
+
+      {/* Background Tasks Panel */}
+      <BackgroundTasksPanel
+        tasks={backgroundTasks}
+        isVisible={showBackgroundPanel}
+      />
 
       {/* Input with suggestion */}
       <Box marginTop={1}>
