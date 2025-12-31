@@ -1845,6 +1845,52 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
       }
       break;
 
+    case 'chrome':
+      (async () => {
+        const { isChromeIntegrationSupported, isChromeIntegrationConfigured, isExtensionInstalled, setupChromeNativeHost, CHROME_INSTALL_URL } = await import('./chrome-mcp/index.js');
+
+        console.log(chalk.bold('\n🌐 Claude in Chrome (Beta)\n'));
+
+        const supported = isChromeIntegrationSupported();
+        const configured = await isChromeIntegrationConfigured();
+        const extensionInstalled = await isExtensionInstalled();
+
+        console.log(chalk.bold('Status:'));
+        console.log(`  Platform Support: ${supported ? chalk.green('✓ Supported') : chalk.red('✗ Not supported')}`);
+        console.log(`  Native Host:      ${configured ? chalk.green('✓ Installed') : chalk.yellow('○ Not installed')}`);
+        console.log(`  Chrome Extension: ${extensionInstalled ? chalk.green('✓ Detected') : chalk.yellow('○ Not detected')}`);
+        console.log();
+
+        console.log(chalk.bold('Claude in Chrome allows you to:'));
+        console.log('  • Use Claude directly in your browser');
+        console.log('  • Interact with web pages');
+        console.log('  • Automate browser tasks');
+        console.log('  • Take screenshots and analyze content');
+        console.log();
+
+        console.log(chalk.bold('Available MCP Tools:'));
+        console.log('  navigate <url>      Go to a URL');
+        console.log('  click <ref_id>      Click an element');
+        console.log('  type <text>         Enter text');
+        console.log('  read_page           Read page content');
+        console.log('  javascript_tool     Execute JavaScript');
+        console.log('  gif_creator         Record actions as GIF');
+        console.log();
+
+        if (!configured && supported) {
+          console.log(chalk.bold('Setup:'));
+          console.log(chalk.cyan('  Run: claude --chrome    Enable Chrome integration'));
+          console.log();
+        }
+
+        if (!extensionInstalled) {
+          console.log(chalk.bold('Install Extension:'));
+          console.log(chalk.cyan(`  Visit: ${CHROME_INSTALL_URL}`));
+          console.log();
+        }
+      })();
+      break;
+
     case 'exit':
     case 'quit':
       console.log(chalk.yellow('\nGoodbye!'));
@@ -1890,6 +1936,22 @@ async function main(): Promise<void> {
   if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) {
     await emitLifecycleEvent('cli_version_fast_path');
     program.parse();
+    return;
+  }
+
+  // Chrome MCP 服务器路径 - 用于 Claude CLI 与 Chrome 扩展通信
+  if (args[0] === '--claude-in-chrome-mcp') {
+    await emitLifecycleEvent('cli_claude_in_chrome_mcp_path');
+    const { runMcpServer } = await import('./chrome-mcp/index.js');
+    await runMcpServer();
+    return;
+  }
+
+  // Chrome Native Host 路径 - 用于 Chrome 扩展与 Native Host 通信
+  if (args[0] === '--chrome-native-host') {
+    await emitLifecycleEvent('cli_chrome_native_host_path');
+    const { runNativeHost } = await import('./chrome-mcp/index.js');
+    await runNativeHost();
     return;
   }
 
