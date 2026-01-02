@@ -65,6 +65,16 @@ export const BUILT_IN_AGENT_TYPES: AgentTypeDefinition[] = [
   },
 ];
 
+// 兼容性导出：将数组转换为对象格式（用于测试）
+export const AGENT_TYPES: Record<string, { description: string; tools: string[] }> =
+  BUILT_IN_AGENT_TYPES.reduce((acc, agent) => {
+    acc[agent.agentType] = {
+      description: agent.whenToUse,
+      tools: agent.tools || ['*'],
+    };
+    return acc;
+  }, {} as Record<string, { description: string; tools: string[] }>);
+
 // 代理执行历史条目
 export interface AgentHistoryEntry {
   timestamp: Date;
