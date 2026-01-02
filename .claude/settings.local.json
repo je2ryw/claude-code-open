@@ -101,7 +101,16 @@
       "Bash(curl:*)",
       "Bash(cmd /c:*)",
       "Bash(netstat:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(git -C f:/claude-code-open status src/web/server/conversation.ts)",
+      "Bash(find:*)",
+      "Bash(git -C f:/claude-code-open diff src/web/server/conversation.ts)",
+      "Bash(git -C f:/claude-code-open diff src/web/server/index.ts)",
+      "Bash(git -C f:/claude-code-open checkout -- src/web/server/index.ts)",
+      "Bash(CLAUDE_WEB_PORT=3458 timeout 10 node:*)",
+      "Bash(git -C f:/claude-code-open status:*)",
+      "Bash(git -C f:/claude-code-open stash list)",
+      "Bash(CLAUDE_WEB_PORT=3457 timeout 8 node:*)"
     ]
   }
 }

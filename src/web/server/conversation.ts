@@ -19,6 +19,33 @@ import { TaskManager } from './task-manager.js';
 import { McpConfigManager } from '../../mcp/config.js';
 import type { ExtendedMcpServerConfig } from '../../mcp/config.js';
 
+// ============================================================================
+// 工具输出截断常量和函数（参考官方 CLI 实现）
+// ============================================================================
+
+/** 工具输出阈值（字符数），超过此值进行截断 */
+const OUTPUT_THRESHOLD = 30000; // 30KB（官方默认值）
+
+/** 预览大小（字符数） */
+const PREVIEW_SIZE = 2000; // 2KB
+
+/**
+ * 智能截断输出内容
+ * 优先在换行符处截断，以保持内容的可读性
+ */
+function truncateToolOutput(content: string): string {
+  if (content.length <= OUTPUT_THRESHOLD) {
+    return content;
+  }
+
+  // 找到最后一个换行符的位置（在预览大小范围内）
+  const lastNewline = content.slice(0, PREVIEW_SIZE).lastIndexOf('\n');
+  const cutoff = lastNewline > PREVIEW_SIZE * 0.5 ? lastNewline : PREVIEW_SIZE;
+
+  const preview = content.slice(0, cutoff);
+  return preview + '\n\n... [Output truncated. Total length: ' + content.length + ' characters. Showing first ' + cutoff + ' characters.]';
+}
+
 /**
  * 流式回调接口
  */
@@ -364,13 +391,12 @@ export class ConversationManager {
                 assistantContent.push({ type: 'text', text: currentTextContent } as TextBlock);
                 currentTextContent = '';
               }
-              // 开始新的工具调用
+              // 开始新的工具调用（先不发送 onToolUseStart，等参数解析完成后再发送）
               currentToolUse = {
                 id: event.id || '',
                 name: event.name || '',
                 inputJson: '',
               };
-              callbacks.onToolUseStart?.(currentToolUse.id, currentToolUse.name, {});
               break;
 
             case 'tool_use_delta':
@@ -400,6 +426,8 @@ export class ConversationManager {
                   name: currentToolUse.name,
                   input: parsedInput,
                 } as ToolUseBlock);
+                // 现在发送 onToolUseStart（参数已完整解析，只发送一次）
+                callbacks.onToolUseStart?.(currentToolUse.id, currentToolUse.name, parsedInput);
                 currentToolUse = null;
               }
               stopReason = event.stopReason || null;
@@ -438,10 +466,15 @@ export class ConversationManager {
             if (state.cancelled) break;
 
             const result = await this.executeTool(toolUse, state, callbacks);
+            // 截断过长的工具输出，避免上下文溢出
+            const toolContent = result.success
+              ? truncateToolOutput(result.output || '')
+              : `Error: ${result.error}`;
+
             toolResults.push({
               type: 'tool_result',
               tool_use_id: toolUse.id,
-              content: result.success ? result.output : `Error: ${result.error}`,
+              content: toolContent,
               is_error: !result.success,
             });
           }

@@ -1909,6 +1909,7 @@ function getInlineReactApp(port: number): string {
       const [permissionRequest, setPermissionRequest] = useState(null);
       const [userQuestion, setUserQuestion] = useState(null);
       const [sessions, setSessions] = useState([]);
+      const [showSettings, setShowSettings] = useState(false);
       const chatContainerRef = useRef(null);
       const inputRef = useRef(null);
       const fileInputRef = useRef(null);
@@ -2358,6 +2359,10 @@ function getInlineReactApp(port: number): string {
             onSessionRename: handleSessionRename
           }),
           React.createElement('div', { className: 'sidebar-footer' },
+            React.createElement('button', {
+              className: 'settings-btn',
+              onClick: () => setShowSettings(true)
+            }, '⚙️ 设置'),
             React.createElement('div', { className: 'status-indicator' },
               React.createElement('span', {
                 className: \`status-dot \${status === 'idle' ? '' : 'thinking'}\`
@@ -2457,7 +2462,6 @@ function getInlineReactApp(port: number): string {
               )
             )
           )
-        )
         ),
         // 权限对话框
         permissionRequest && React.createElement(PermissionDialog, {

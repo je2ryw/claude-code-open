@@ -325,12 +325,9 @@ export const Input: React.FC<InputProps> = ({
 
             // 如果是命令补全且按的是 Enter，应用后直接提交
             if (key.return && completionType === 'command') {
-              // IME 组合期间不提交
+              // IME 组合期间：先结束组合，然后继续提交
               if (isComposing) {
                 endComposition();
-                setValue(result.newText);
-                setCursor(result.newCursor);
-                return;
               }
               const finalValue = result.newText.trim();
               if (finalValue) {
@@ -593,10 +590,9 @@ export const Input: React.FC<InputProps> = ({
 
         // Enter - 提交
         if (key.return) {
-          // IME 组合期间不提交
+          // IME 组合期间：先结束组合，然后继续提交（不再 return）
           if (isComposing) {
             endComposition();
-            return;
           }
           if (value.trim()) {
             const trimmedValue = value.trim();
@@ -635,10 +631,9 @@ export const Input: React.FC<InputProps> = ({
       }
 
       if (key.return) {
-        // IME 组合期间不提交
+        // IME 组合期间：先结束组合，然后继续提交（不再 return）
         if (isComposing) {
           endComposition();
-          return;
         }
         if (value.trim()) {
           const trimmedValue = value.trim();

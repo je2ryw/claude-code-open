@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 3,
+            "activePatchIndex": 4,
             "patches": [
                 {
                     "date": 1766738180370,
@@ -20,6 +20,10 @@
                 {
                     "date": 1767238334960,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,9 +1,9 @@\n # CLAUDE.md\r\n \r\n This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\r\n \r\n-你的编程搭子是中国人，记得用中文回复，没有经过用户同意情况下，永远不要增加降级方案\r\n+你的编程搭子是中国人，记得用中文回复，没有经过用户同意情况下，永远不要增加降级方案，当你遇到解决不了的难题的时候，请直接copy官网的实现的源码\r\n \r\n ## Project Overview\r\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n"
+                },
+                {
+                    "date": 1767339123882,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,9 +1,9 @@\n # CLAUDE.md\r\n \r\n This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\r\n \r\n-你的编程搭子是中国人，记得用中文回复，没有经过用户同意情况下，永远不要增加降级方案，当你遇到解决不了的难题的时候，请直接copy官网的实现的源码\r\n+你的编程搭子是中国人，记得用中文回复，没有经过用户同意情况下，永远不要增加降级方案，当你遇到解决不了的难题的时候，请直接copy官网的实现的源码，使用第一性原理解决问题，不要掩盖问题\r\n \r\n ## Project Overview\r\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n"
                 }
             ],
             "date": 1766738180370,

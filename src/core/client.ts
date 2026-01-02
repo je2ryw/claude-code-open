@@ -629,8 +629,11 @@ export class ClaudeClient {
     error?: string;
   }> {
     let stream: any;
+    let retryCount = 0;
+    const maxStreamRetries = this.maxRetries;
 
-    try {
+    // 创建流的辅助函数（支持重试）
+    const attemptCreateStream = async (): Promise<any> => {
       if (this.debug) {
         console.log('[ClaudeClient] Starting message stream...');
         console.log(`[ClaudeClient] Model: ${this.model}, MaxTokens: ${this.maxTokens}`);
@@ -678,9 +681,38 @@ export class ClaudeClient {
         metadata: buildMetadata(),
         ...thinkingParams,
       });
-    } catch (error: any) {
-      console.error('[ClaudeClient] Failed to create stream:', error.message);
-      yield { type: 'error', error: error.message };
+      return stream;
+    };
+
+    // 带重试的流创建
+    while (retryCount <= maxStreamRetries) {
+      try {
+        stream = await attemptCreateStream();
+        break; // 成功创建，跳出重试循环
+      } catch (error: any) {
+        const errorType = error.type || error.code || error.message || '';
+        const isRetryable = RETRYABLE_ERRORS.some(
+          (e) => errorType.includes(e) || error.message?.includes(e)
+        );
+
+        if (isRetryable && retryCount < maxStreamRetries) {
+          retryCount++;
+          const delay = this.retryDelay * Math.pow(2, retryCount - 1);
+          console.error(
+            `[ClaudeClient] Stream creation failed (${errorType}), retrying in ${delay}ms... (attempt ${retryCount}/${maxStreamRetries})`
+          );
+          await this.sleep(delay);
+          continue;
+        }
+
+        console.error('[ClaudeClient] Failed to create stream:', error.message);
+        yield { type: 'error', error: error.message };
+        return;
+      }
+    }
+
+    if (!stream) {
+      yield { type: 'error', error: 'Failed to create stream after retries' };
       return;
     }
 
@@ -755,7 +787,7 @@ export class ClaudeClient {
               thinkingTokens,
             },
           };
-          yield { type: 'stop' };
+          yield { type: 'stop', stopReason: finalMessage?.stop_reason || 'end_turn' };
         } else if (event.type === 'error') {
           const errorEvent = event as any;
           console.error('[ClaudeClient] Stream error event:', errorEvent.error);

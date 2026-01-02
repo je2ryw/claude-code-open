@@ -3,7 +3,7 @@
  * 负责分析代码文件，提取符号和结构信息
  *
  * 符号提取策略：
- * 1. Tree-sitter - 语法层面解析（主要方案）
+ * 1. LSP - 语义层面分析（主要方案）
  * 2. 正则表达式 - 处理 re-export 文件（补充方案）
  */
 
@@ -12,7 +12,6 @@ import * as path from 'path';
 import { glob } from 'glob';
 import {
   codeAnalyzer,
-  treeSitterParser,
   CodeSymbol,
   SymbolKind,
 } from '../parser/index.js';

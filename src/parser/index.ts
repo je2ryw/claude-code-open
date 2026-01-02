@@ -1,50 +1,31 @@
 /**
  * 代码解析模块
- * 使用 Tree-sitter WASM 进行代码分析
+ * 使用 LSP (Language Server Protocol) 进行代码分析
  *
  * 增强功能：
- * - T-004: Tree-sitter Query API 符号提取
- * - T-005: 引用查找 (文本匹配 + 作用域过滤)
- * - T-006: 多语言支持 (20+ 语言)
+ * - 基于 LSP 的符号提取 (更准确的语义分析)
+ * - 引用查找 (通过 LSP textDocument/references)
+ * - 跳转到定义 (通过 LSP textDocument/definition)
+ * - 自动安装 LSP 服务器
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import Parser from 'web-tree-sitter';
+import {
+  LSPManager,
+  lspManager,
+  LSP_SERVERS,
+} from './lsp/lsp-manager.js';
+import {
+  LSPSymbolExtractor,
+  lspSymbolExtractor,
+  CodeSymbol,
+  SymbolKind,
+  Reference,
+} from './lsp/lsp-symbol-extractor.js';
 
-// ESM 兼容: 获取 __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-import { SymbolExtractor } from './symbol-extractor.js';
-import { ReferenceFinder, Reference } from './reference-finder.js';
-import { languageLoader, LanguageLoader } from './language-loader.js';
-
-// 语法节点类型
-export interface SyntaxNode {
-  type: string;
-  text: string;
-  startPosition: { row: number; column: number };
-  endPosition: { row: number; column: number };
-  children: SyntaxNode[];
-  parent?: SyntaxNode;
-  isNamed: boolean;
-}
-
-// 代码符号类型
-export type SymbolKind =
-  | 'function'
-  | 'class'
-  | 'method'
-  | 'property'
-  | 'variable'
-  | 'constant'
-  | 'interface'
-  | 'type'
-  | 'enum'
-  | 'module'
-  | 'import'
-  | 'export';
+// 重新导出类型
+export { CodeSymbol, SymbolKind, Reference };
 
 // 语法错误
 export interface SyntaxError {
@@ -61,784 +42,102 @@ export interface FoldingRange {
   kind: 'comment' | 'imports' | 'region' | 'block';
 }
 
-// 代码符号
-export interface CodeSymbol {
-  name: string;
-  kind: SymbolKind;
-  location: {
-    file: string;
-    startLine: number;
-    startColumn: number;
-    endLine: number;
-    endColumn: number;
-  };
-  children?: CodeSymbol[];
-  signature?: string;
-  documentation?: string;
-}
-
 // 语言配置
 export interface LanguageConfig {
   extensions: string[];
-  wasmName: string;
-  symbolPatterns: {
-    [key in SymbolKind]?: string[];
+  languageId: string;
+}
+
+// 从 LSP 服务器配置生成语言配置
+const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {};
+for (const [lang, server] of Object.entries(LSP_SERVERS)) {
+  LANGUAGE_CONFIGS[lang] = {
+    extensions: server.extensions,
+    languageId: server.languageId,
   };
 }
 
-// 支持的语言配置
-const LANGUAGE_CONFIGS: Record<string, LanguageConfig> = {
-  bash: {
-    extensions: ['.sh', '.bash', '.zsh', '.fish'],
-    wasmName: 'tree-sitter-bash',
-    symbolPatterns: {
-      function: ['function_definition'],
-      variable: ['variable_assignment', 'declaration_command'],
-      import: ['source_command'],
-    },
-  },
-  javascript: {
-    extensions: ['.js', '.mjs', '.cjs', '.jsx'],
-    wasmName: 'tree-sitter-javascript',
-    symbolPatterns: {
-      function: ['function_declaration', 'arrow_function', 'function_expression', 'generator_function_declaration'],
-      class: ['class_declaration', 'class_expression'],
-      method: ['method_definition'],
-      variable: ['variable_declarator', 'lexical_declaration'],
-      import: ['import_statement'],
-      export: ['export_statement', 'export_default_declaration'],
-    },
-  },
-  typescript: {
-    extensions: ['.ts', '.tsx', '.mts', '.cts'],
-    wasmName: 'tree-sitter-typescript',
-    symbolPatterns: {
-      function: ['function_declaration', 'arrow_function', 'function_expression', 'generator_function_declaration'],
-      class: ['class_declaration', 'class_expression', 'abstract_class_declaration'],
-      method: ['method_definition', 'method_signature'],
-      interface: ['interface_declaration'],
-      type: ['type_alias_declaration'],
-      enum: ['enum_declaration'],
-      import: ['import_statement'],
-      export: ['export_statement', 'export_default_declaration'],
-      property: ['property_signature', 'public_field_definition'],
-    },
-  },
-  python: {
-    extensions: ['.py', '.pyw', '.pyi'],
-    wasmName: 'tree-sitter-python',
-    symbolPatterns: {
-      function: ['function_definition'],
-      class: ['class_definition'],
-      method: ['function_definition'],
-      import: ['import_statement', 'import_from_statement'],
-      variable: ['assignment', 'augmented_assignment'],
-    },
-  },
-  go: {
-    extensions: ['.go'],
-    wasmName: 'tree-sitter-go',
-    symbolPatterns: {
-      function: ['function_declaration', 'method_declaration'],
-      type: ['type_declaration', 'type_spec'],
-      interface: ['interface_type'],
-      variable: ['var_declaration', 'const_declaration', 'short_var_declaration'],
-      import: ['import_declaration'],
-    },
-  },
-  rust: {
-    extensions: ['.rs'],
-    wasmName: 'tree-sitter-rust',
-    symbolPatterns: {
-      function: ['function_item'],
-      class: ['struct_item', 'impl_item'],
-      interface: ['trait_item'],
-      type: ['type_item'],
-      enum: ['enum_item'],
-      variable: ['let_declaration', 'const_item', 'static_item'],
-      import: ['use_declaration'],
-      module: ['mod_item'],
-    },
-  },
-  java: {
-    extensions: ['.java'],
-    wasmName: 'tree-sitter-java',
-    symbolPatterns: {
-      function: ['method_declaration', 'constructor_declaration'],
-      class: ['class_declaration', 'interface_declaration', 'enum_declaration'],
-      interface: ['interface_declaration'],
-      enum: ['enum_declaration'],
-      variable: ['field_declaration', 'local_variable_declaration'],
-      import: ['import_declaration'],
-    },
-  },
-  c: {
-    extensions: ['.c', '.h'],
-    wasmName: 'tree-sitter-c',
-    symbolPatterns: {
-      function: ['function_definition', 'function_declarator'],
-      type: ['struct_specifier', 'union_specifier', 'enum_specifier', 'type_definition'],
-      variable: ['declaration', 'init_declarator'],
-    },
-  },
-  cpp: {
-    extensions: ['.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.h'],
-    wasmName: 'tree-sitter-cpp',
-    symbolPatterns: {
-      function: ['function_definition', 'function_declarator'],
-      class: ['class_specifier', 'struct_specifier'],
-      type: ['type_definition', 'alias_declaration'],
-      variable: ['declaration', 'init_declarator'],
-      import: ['preproc_include'],
-    },
-  },
-};
-
-// 解析缓存条目
-interface ParseCacheEntry {
-  tree: any;
-  content: string;
-  timestamp: number;
-  language: string;
-}
-
-// Tree-sitter 解析器（优先使用原生，回退到 WASM）
-export class TreeSitterWasmParser {
-  private ParserClass: any = null;
-  private LanguageClass: any = null;  // web-tree-sitter Language 类
-  private languages: Map<string, any> = new Map();
-  private initialized: boolean = false;
-  private initPromise: Promise<boolean> | null = null;
-  private useNative: boolean = false;
-  // 增量解析缓存（T256）
-  private parseCache: Map<string, ParseCacheEntry> = new Map();
-  private readonly CACHE_MAX_AGE = 5 * 60 * 1000; // 5 分钟
-  private readonly MAX_CACHE_SIZE = 50; // 最多缓存 50 个文件
-  // 新增：符号提取器和引用查找器 (T-004, T-005)
-  private symbolExtractor: SymbolExtractor = new SymbolExtractor();
-  private referenceFinder: ReferenceFinder = new ReferenceFinder();
-  private languageLoader: LanguageLoader = languageLoader;
-
-  async initialize(): Promise<boolean> {
-    if (this.initialized) return true;
-    if (this.initPromise) return this.initPromise;
-
-    this.initPromise = this.doInitialize();
-    return this.initPromise;
-  }
-
-  /**
-   * 获取 web-tree-sitter wasm 文件目录
-   */
-  private getWebTreeSitterWasmDir(): string {
-    const possibleDirs = [
-      path.join(__dirname, '../../node_modules/web-tree-sitter'),
-      path.join(process.cwd(), 'node_modules/web-tree-sitter'),
-    ];
-
-    for (const dir of possibleDirs) {
-      const wasmPath = path.join(dir, 'web-tree-sitter.wasm');
-      if (fs.existsSync(wasmPath)) {
-        return dir;
-      }
-    }
-
-    return possibleDirs[0];
-  }
-
-  private async doInitialize(): Promise<boolean> {
-    // 由于原生 tree-sitter 语言包通常不可用（需要编译），
-    // 我们直接使用 web-tree-sitter WASM 模式以获得更好的跨平台兼容性
-    try {
-      // 动态导入 web-tree-sitter
-      const TreeSitter = await import('web-tree-sitter');
-      // web-tree-sitter@0.22.x 使用 default export，0.26.x 使用 named exports
-      const Parser = (TreeSitter as any).default || (TreeSitter as any).Parser;
-      const wasmDir = this.getWebTreeSitterWasmDir();
-
-      // 初始化 Parser，提供正确的 wasm 文件位置
-      await Parser.init({
-        locateFile: (scriptName: string) => {
-          return path.join(wasmDir, scriptName);
-        }
-      });
-
-      // 保存 Language 类的引用用于后续加载
-      // 0.22.x: Parser.Language, 0.26.x: TreeSitter.Language
-      this.LanguageClass = Parser.Language || (TreeSitter as any).Language;
-      this.ParserClass = Parser;
-      this.useNative = false;
-      this.initialized = true;
-      // Tree-sitter: 使用 WASM 模块
-      return true;
-    } catch (err) {
-      // Tree-sitter 初始化失败，静默回退到 Regex
-      return false;
-    }
-  }
-
-  isNative(): boolean {
-    return this.useNative;
-  }
-
-  async loadLanguage(languageName: string): Promise<any | null> {
-    if (!this.initialized || !this.ParserClass) {
-      return null;
-    }
-
-    if (this.languages.has(languageName)) {
-      return this.languages.get(languageName)!;
-    }
-
-    try {
-      // 原生模块和 WASM 模块使用不同的加载方式
-      if (this.useNative) {
-        // 原生 tree-sitter：通过 npm 包加载语言
-        const language = await this.loadNativeLanguage(languageName);
-        if (language) {
-          this.languages.set(languageName, language);
-          return language;
-        }
-        // 原生包不可用，尝试 WASM 回退
-        const wasmLang = await this.loadWasmLanguage(languageName);
-        if (wasmLang) {
-          this.languages.set(languageName, wasmLang);
-          return wasmLang;
-        }
-      } else {
-        // WASM 模式
-        const wasmLang = await this.loadWasmLanguage(languageName);
-        if (wasmLang) {
-          this.languages.set(languageName, wasmLang);
-          return wasmLang;
-        }
-      }
-    } catch (err) {
-      // 静默处理语言加载失败
-    }
-
-    return null;
-  }
-
-  private async loadWasmLanguage(languageName: string): Promise<any | null> {
-    try {
-      const wasmPath = this.getWasmPath(languageName);
-      if (wasmPath && fs.existsSync(wasmPath)) {
-        // 如果当前是原生模式，需要先初始化 web-tree-sitter
-        if (this.useNative && !this.LanguageClass) {
-          try {
-            const TreeSitter = await import('web-tree-sitter');
-            // web-tree-sitter@0.22.x 使用 default export
-            const Parser = (TreeSitter as any).default || (TreeSitter as any).Parser;
-            const wasmDir = this.getWebTreeSitterWasmDir();
-
-            await Parser.init({
-              locateFile: (scriptName: string) => {
-                return path.join(wasmDir, scriptName);
-              }
-            });
-
-            // 0.22.x: Parser.Language
-            this.LanguageClass = Parser.Language || (TreeSitter as any).Language;
-          } catch (initErr) {
-            // 静默处理初始化失败
-            return null;
-          }
-        }
-
-        // 使用 Language 类加载语言
-        if (this.LanguageClass) {
-          const language = await this.LanguageClass.load(wasmPath);
-          return language;
-        }
-        return null;
-      }
-    } catch (err) {
-      // 静默处理 WASM 加载失败
-    }
-    return null;
-  }
-
-  private async loadNativeLanguage(languageName: string): Promise<any | null> {
-    // 原生 tree-sitter 语言包名称映射
-    const nativePackages: Record<string, string> = {
-      typescript: 'tree-sitter-typescript',
-      javascript: 'tree-sitter-javascript',
-      tsx: 'tree-sitter-typescript',
-      python: 'tree-sitter-python',
-      go: 'tree-sitter-go',
-      rust: 'tree-sitter-rust',
-      java: 'tree-sitter-java',
-      c: 'tree-sitter-c',
-      cpp: 'tree-sitter-cpp',
-      csharp: 'tree-sitter-c-sharp',
-      ruby: 'tree-sitter-ruby',
-      php: 'tree-sitter-php',
-      bash: 'tree-sitter-bash',
-      json: 'tree-sitter-json',
-      yaml: 'tree-sitter-yaml',
-      html: 'tree-sitter-html',
-      css: 'tree-sitter-css',
-      markdown: 'tree-sitter-markdown',
-    };
-
-    const packageName = nativePackages[languageName];
-    if (!packageName) {
-      // 没有原生语言包
-      return null;
-    }
-
-    try {
-      const langModule = await import(packageName);
-      // TypeScript 包有 typescript 和 tsx 两个语言
-      if (languageName === 'tsx' && langModule.tsx) {
-        return langModule.tsx;
-      }
-      if (languageName === 'typescript' && langModule.typescript) {
-        return langModule.typescript;
-      }
-      // 其他语言通常是默认导出
-      return langModule.default || langModule;
-    } catch (err) {
-      // 原生包不可用，回退到 WASM
-      // 原生语言包不可用，尝试 WASM
-      return null;
-    }
-  }
-
-  private getWasmPath(languageName: string): string | null {
-    const config = LANGUAGE_CONFIGS[languageName];
-    if (!config) return null;
-
-    // 优先查找官方包中的 WASM 文件（用于 Bash）
-    const possiblePaths = [
-      // 官方包的 WASM 文件（tree-sitter.wasm, tree-sitter-bash.wasm）
-      path.join(__dirname, '../../node_modules/@anthropic-ai/claude-code', `${config.wasmName}.wasm`),
-      path.join(process.cwd(), 'node_modules/@anthropic-ai/claude-code', `${config.wasmName}.wasm`),
-      // tree-sitter-wasms 包中的语言 WASM
-      path.join(__dirname, '../../node_modules/tree-sitter-wasms/out', `${config.wasmName}.wasm`),
-      path.join(process.cwd(), 'node_modules/tree-sitter-wasms/out', `${config.wasmName}.wasm`),
-      // 本地 vendor 目录（如果有的话）
-      path.join(__dirname, '../../vendor/tree-sitter', `${config.wasmName}.wasm`),
-      path.join(process.cwd(), 'vendor/tree-sitter', `${config.wasmName}.wasm`),
-    ];
-
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        // Found WASM
-        return p;
-      }
-    }
-
-    // WASM not found
-    return null;
-  }
-
-  async parse(content: string, languageName: string, filePath?: string): Promise<any | null> {
-    if (!this.initialized) {
-      const success = await this.initialize();
-      if (!success) return null;
-    }
-
-    const language = await this.loadLanguage(languageName);
-    if (!language) return null;
-
-    try {
-      const parser = new this.ParserClass();
-      parser.setLanguage(language);
-
-      // 增量解析支持（T256）
-      if (filePath && this.parseCache.has(filePath)) {
-        const cached = this.parseCache.get(filePath)!;
-        const now = Date.now();
-
-        // 如果缓存仍然有效且语言相同
-        if (now - cached.timestamp < this.CACHE_MAX_AGE && cached.language === languageName) {
-          // 检测变更
-          if (cached.content === content) {
-            // 内容未变化，返回缓存的树
-            return cached.tree;
-          } else {
-            // 内容有变化，使用增量解析
-            try {
-              const oldTree = cached.tree;
-              const newTree = parser.parse(content, oldTree);
-
-              // 更新缓存
-              this.updateCache(filePath, newTree, content, languageName);
-
-              return newTree;
-            } catch (err) {
-              console.warn('增量解析失败，回退到完整解析:', err);
-            }
-          }
-        }
-      }
-
-      // 完整解析
-      const tree = parser.parse(content);
-
-      // 缓存结果
-      if (filePath) {
-        this.updateCache(filePath, tree, content, languageName);
-      }
-
-      return tree;
-    } catch (err) {
-      console.warn('解析失败:', err);
-      return null;
-    }
-  }
-
-  /**
-   * 更新解析缓存
-   */
-  private updateCache(filePath: string, tree: any, content: string, language: string): void {
-    // 如果缓存太大，删除最旧的条目
-    if (this.parseCache.size >= this.MAX_CACHE_SIZE) {
-      let oldestKey: string | null = null;
-      let oldestTime = Infinity;
-
-      for (const [key, entry] of this.parseCache.entries()) {
-        if (entry.timestamp < oldestTime) {
-          oldestTime = entry.timestamp;
-          oldestKey = key;
-        }
-      }
-
-      if (oldestKey) {
-        const oldEntry = this.parseCache.get(oldestKey);
-        if (oldEntry?.tree?.delete) {
-          oldEntry.tree.delete();
-        }
-        this.parseCache.delete(oldestKey);
-      }
-    }
-
-    this.parseCache.set(filePath, {
-      tree,
-      content,
-      timestamp: Date.now(),
-      language,
-    });
-  }
-
-  /**
-   * 清除解析缓存
-   */
-  clearCache(filePath?: string): void {
-    if (filePath) {
-      const entry = this.parseCache.get(filePath);
-      if (entry?.tree?.delete) {
-        entry.tree.delete();
-      }
-      this.parseCache.delete(filePath);
-    } else {
-      // 清除所有缓存
-      for (const entry of this.parseCache.values()) {
-        if (entry.tree?.delete) {
-          entry.tree.delete();
-        }
-      }
-      this.parseCache.clear();
-    }
-  }
-
-  /**
-   * 获取缓存统计
-   */
-  getCacheStats(): { size: number; maxSize: number; entries: string[] } {
-    return {
-      size: this.parseCache.size,
-      maxSize: this.MAX_CACHE_SIZE,
-      entries: Array.from(this.parseCache.keys()),
-    };
-  }
-
-  isInitialized(): boolean {
-    return this.initialized;
-  }
-
-  /**
-   * 查找引用 (T-005)
-   * 在给定的树中查找标识符的所有引用
-   */
-  async findReferences(
-    tree: any,
-    language: string,
-    identifier: string,
-    position: { line: number; column: number },
-    filePath: string
-  ): Promise<Reference[]> {
-    try {
-      const lang = await this.languageLoader.loadLanguage(language);
-      if (!lang) {
-        console.warn(`Language ${language} not available for reference finding`);
-        return [];
-      }
-
-      return await this.referenceFinder.findReferences(tree, lang, identifier, position, filePath);
-    } catch (error) {
-      console.warn('Failed to find references:', error);
-      return [];
-    }
-  }
-
-  /**
-   * 获取符号提取器的缓存统计
-   */
-  getSymbolExtractorStats() {
-    return this.symbolExtractor.getCacheStats();
-  }
-
-  /**
-   * 清除所有缓存
-   */
-  clearAllCaches(): void {
-    this.clearCache();
-    this.symbolExtractor.clearCache();
-    this.languageLoader.clearCache();
-  }
-
-  /**
-   * 从Tree中提取符号 (增强版 - T-004)
-   * 优先使用Query API，回退到节点遍历
-   */
-  async extractSymbolsFromTree(
-    tree: any,
-    filePath: string,
-    language: string
-  ): Promise<CodeSymbol[]> {
-    // 尝试使用新的Query-based符号提取器 (T-004)
-    try {
-      const lang = await this.languageLoader.loadLanguage(language);
-      if (lang) {
-        const symbols = await this.symbolExtractor.extractSymbols(tree, lang, language, filePath);
-        if (symbols.length > 0) {
-          return symbols;
-        }
-      }
-    } catch (error) {
-      console.warn('Query-based extraction failed, falling back to node traversal:', error);
-    }
-
-    // 回退到旧的节点遍历方式
-    return this.extractSymbolsFromTreeLegacy(tree.rootNode, filePath, language);
-  }
-
-  /**
-   * 旧版符号提取 (回退方案)
-   */
-  private extractSymbolsFromTreeLegacy(node: any, filePath: string, language: string): CodeSymbol[] {
-    const symbols: CodeSymbol[] = [];
-    const config = LANGUAGE_CONFIGS[language];
-    if (!config) return symbols;
-
-    const visit = (n: any) => {
-      for (const [kind, patterns] of Object.entries(config.symbolPatterns)) {
-        if (patterns && patterns.includes(n.type)) {
-          const name = this.extractName(n, kind as SymbolKind, language);
-          if (name) {
-            symbols.push({
-              name,
-              kind: kind as SymbolKind,
-              location: {
-                file: filePath,
-                startLine: n.startPosition.row + 1,
-                startColumn: n.startPosition.column,
-                endLine: n.endPosition.row + 1,
-                endColumn: n.endPosition.column,
-              },
-              signature: n.text.split('\n')[0].slice(0, 100),
-            });
-          }
-          break;
-        }
-      }
-
-      // 递归访问子节点
-      if (n.namedChildren) {
-        for (const child of n.namedChildren) {
-          visit(child);
-        }
-      }
-    };
-
-    visit(node);
-    return symbols;
-  }
-
-  private extractName(node: any, _kind: SymbolKind, _language: string): string | null {
-    // 尝试从常见的字段名提取名称
-    const nameNode = node.childForFieldName?.('name') ||
-                     node.childForFieldName?.('declarator') ||
-                     node.namedChildren?.find((c: any) => c.type === 'identifier' || c.type === 'property_identifier');
-
-    if (nameNode) {
-      return nameNode.text;
-    }
-
-    // 对于某些节点类型，尝试从第一个标识符子节点获取名称
-    if (node.namedChildren) {
-      for (const child of node.namedChildren) {
-        if (child.type === 'identifier' || child.type === 'type_identifier') {
-          return child.text;
-        }
-      }
-    }
-
-    return null;
-  }
-}
-
-// 代码解析器（支持 Tree-sitter WASM 和 Regex 回退）
+/**
+ * 代码解析器 (基于 LSP)
+ */
 export class CodeParser {
-  private treeSitter: TreeSitterWasmParser;
-  private useTreeSitter: boolean = true;
+  private extractor: LSPSymbolExtractor;
+  private manager: LSPManager;
+  private initialized: boolean = false;
 
   constructor() {
-    this.treeSitter = new TreeSitterWasmParser();
+    this.manager = lspManager;
+    this.extractor = new LSPSymbolExtractor(this.manager);
   }
 
-  async initialize(): Promise<boolean> {
-    const success = await this.treeSitter.initialize();
-    this.useTreeSitter = success;
-    return success;
+  /**
+   * 初始化解析器
+   * 会自动安装需要的 LSP 服务器，安装失败时抛出错误
+   */
+  async initialize(languages?: string[]): Promise<void> {
+    if (this.initialized) return;
+
+    // 如果没有指定语言，使用默认语言
+    const defaultLanguages = languages || ['typescript', 'javascript'];
+
+    // 初始化 LSP 服务器（失败时会抛出 LSPServerError）
+    await this.manager.initializeServers(defaultLanguages);
+    this.initialized = true;
   }
 
+  /**
+   * 解析文件获取符号
+   */
   async parseFile(filePath: string): Promise<CodeSymbol[]> {
-    const content = fs.readFileSync(filePath, 'utf-8');
+    // 确保对应语言的 LSP 已初始化
     const ext = path.extname(filePath);
     const language = this.detectLanguage(ext);
-    if (!language) return [];
 
-    // 尝试使用 Tree-sitter（支持增量解析）
-    if (this.useTreeSitter) {
-      const tree = await (this.treeSitter as any).parse(content, language, filePath);
-      if (tree) {
-        const symbols = await (this.treeSitter as any).extractSymbolsFromTree(tree, filePath, language);
-        // 注意：不要删除树，因为它被缓存了
-        // tree.delete();
-        return symbols;
-      }
+    if (language) {
+      await this.manager.ensureServer(language);
     }
 
-    // 回退到 Regex
-    return this.parseWithRegex(content, filePath, language);
+    return this.extractor.extractSymbols(filePath);
   }
 
-  parseFileSync(filePath: string): CodeSymbol[] {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-    if (!language) return [];
-    return this.parseWithRegex(content, filePath, language);
-  }
-
-  private detectLanguage(ext: string): string | null {
+  /**
+   * 检测语言
+   */
+  detectLanguage(ext: string): string | null {
     for (const [lang, config] of Object.entries(LANGUAGE_CONFIGS)) {
       if (config.extensions.includes(ext)) return lang;
     }
     return null;
   }
 
-  parseWithRegex(content: string, filePath: string, language: string): CodeSymbol[] {
-    const symbols: CodeSymbol[] = [];
-    const lines = content.split('\n');
-    const patterns = this.getRegexPatterns(language);
-
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      for (const [kind, pattern] of Object.entries(patterns)) {
-        const match = trimmed.match(pattern);
-        if (match && match[1]) {
-          symbols.push({
-            name: match[1],
-            kind: kind as SymbolKind,
-            location: {
-              file: filePath,
-              startLine: idx + 1,
-              startColumn: line.indexOf(match[1]),
-              endLine: idx + 1,
-              endColumn: line.indexOf(match[1]) + match[1].length,
-            },
-            signature: trimmed.slice(0, 100),
-          });
-          break;
-        }
-      }
-    });
-
-    return symbols;
-  }
-
-  private getRegexPatterns(language: string): Record<string, RegExp> {
-    const commonPatterns: Record<string, RegExp> = {
-      function: /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/,
-      class: /^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/,
-      interface: /^(?:export\s+)?interface\s+(\w+)/,
-      type: /^(?:export\s+)?type\s+(\w+)/,
-      enum: /^(?:export\s+)?enum\s+(\w+)/,
-      variable: /^(?:export\s+)?(?:const|let|var)\s+(\w+)/,
-    };
-
-    const languagePatterns: Record<string, Record<string, RegExp>> = {
-      bash: {
-        function: /^(?:function\s+)?(\w+)\s*\(\s*\)\s*\{?/,
-        variable: /^(?:declare\s+)?(?:local\s+)?(?:export\s+)?(\w+)=/,
-        import: /^(?:source|\.)(?:\s+|=)['"]?([^'"]+)/,
-      },
-      python: {
-        function: /^(?:async\s+)?def\s+(\w+)/,
-        class: /^class\s+(\w+)/,
-        variable: /^(\w+)\s*=/,
-      },
-      go: {
-        function: /^func\s+(?:\([^)]+\)\s+)?(\w+)/,
-        type: /^type\s+(\w+)/,
-        variable: /^(?:var|const)\s+(\w+)/,
-      },
-      rust: {
-        function: /^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/,
-        class: /^(?:pub\s+)?struct\s+(\w+)/,
-        interface: /^(?:pub\s+)?trait\s+(\w+)/,
-        enum: /^(?:pub\s+)?enum\s+(\w+)/,
-        type: /^(?:pub\s+)?type\s+(\w+)/,
-        module: /^(?:pub\s+)?mod\s+(\w+)/,
-      },
-      java: {
-        function: /^(?:public|private|protected)?\s*(?:static\s+)?(?:\w+\s+)+(\w+)\s*\(/,
-        class: /^(?:public\s+)?(?:abstract\s+)?class\s+(\w+)/,
-        interface: /^(?:public\s+)?interface\s+(\w+)/,
-        enum: /^(?:public\s+)?enum\s+(\w+)/,
-      },
-      c: {
-        function: /^(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*\{?$/,
-        type: /^(?:typedef\s+)?struct\s+(\w+)/,
-      },
-      cpp: {
-        function: /^(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*(?:const\s*)?\{?$/,
-        class: /^(?:template\s*<[^>]*>\s*)?class\s+(\w+)/,
-        type: /^(?:typedef\s+)?struct\s+(\w+)/,
-      },
-    };
-
-    return languagePatterns[language] || commonPatterns;
+  /**
+   * 获取 LSP 管理器
+   */
+  getManager(): LSPManager {
+    return this.manager;
   }
 }
 
-// 代码分析器
+/**
+ * 代码分析器
+ */
 export class CodeAnalyzer {
   private parser: CodeParser;
+  private extractor: LSPSymbolExtractor;
   private initialized: boolean = false;
 
   constructor() {
     this.parser = new CodeParser();
+    this.extractor = lspSymbolExtractor;
   }
 
-  async initialize(): Promise<boolean> {
-    this.initialized = await this.parser.initialize();
-    return this.initialized;
+  /**
+   * 初始化，LSP 不可用时抛出错误
+   */
+  async initialize(languages?: string[]): Promise<void> {
+    if (this.initialized) return;
+    await this.parser.initialize(languages);
+    this.initialized = true;
   }
 
   async analyzeFile(filePath: string): Promise<CodeSymbol[]> {
@@ -846,10 +145,6 @@ export class CodeAnalyzer {
       await this.initialize();
     }
     return this.parser.parseFile(filePath);
-  }
-
-  analyzeFileSync(filePath: string): CodeSymbol[] {
-    return this.parser.parseFileSync(filePath);
   }
 
   async analyzeDirectory(dirPath: string, extensions?: string[]): Promise<CodeSymbol[]> {
@@ -895,182 +190,66 @@ export class CodeAnalyzer {
     return this.analyzeFile(filePath);
   }
 
-  getOutlineSync(filePath: string): CodeSymbol[] {
-    return this.analyzeFileSync(filePath);
+  /**
+   * 查找引用 (通过 LSP)
+   */
+  async findReferencesInFile(
+    filePath: string,
+    line: number,
+    column: number
+  ): Promise<Reference[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    return this.extractor.findReferences(filePath, line, column);
   }
 
   /**
-   * 检测语法错误（T255）
+   * 跳转到定义 (通过 LSP)
+   */
+  async getDefinition(
+    filePath: string,
+    line: number,
+    column: number
+  ): Promise<Reference | null> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    return this.extractor.getDefinition(filePath, line, column);
+  }
+
+  /**
+   * 检测语法错误 (简化版，基于 Regex)
    */
   async detectSyntaxErrors(filePath: string): Promise<SyntaxError[]> {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-    if (!language) return [];
-
-    const errors: SyntaxError[] = [];
-
-    // 尝试使用 Tree-sitter 解析
-    if (this.initialized) {
-      try {
-        const tree = await (this.parser as any).treeSitter.parse(content, language);
-        if (tree && tree.rootNode) {
-          // 查找所有 ERROR 和 MISSING 节点
-          this.findErrorNodes(tree.rootNode, errors, filePath);
-          tree.delete?.();
-        }
-      } catch (err) {
-        errors.push({
-          message: `Parse error: ${err instanceof Error ? err.message : String(err)}`,
-          line: 1,
-          column: 0,
-          severity: 'error',
-        });
-      }
-    }
-
-    return errors;
-  }
-
-  private findErrorNodes(node: any, errors: SyntaxError[], filePath: string): void {
-    if (node.type === 'ERROR' || node.isMissing) {
-      errors.push({
-        message: node.isMissing ? `Missing ${node.type}` : `Syntax error`,
-        line: node.startPosition.row + 1,
-        column: node.startPosition.column,
-        severity: 'error',
-      });
-    }
-
-    // 递归查找子节点
-    if (node.namedChildren) {
-      for (const child of node.namedChildren) {
-        this.findErrorNodes(child, errors, filePath);
-      }
-    }
+    // LSP 通常通过 publishDiagnostics 推送诊断
+    // 这里返回空数组，实际应用中可以订阅诊断事件
+    return [];
   }
 
   /**
-   * 识别代码折叠区域（T257）
+   * 识别代码折叠区域 (简化版，基于缩进)
    */
   async detectFoldingRanges(filePath: string): Promise<FoldingRange[]> {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-    if (!language) return [];
-
-    const ranges: FoldingRange[] = [];
-
-    // 尝试使用 Tree-sitter 解析
-    if (this.initialized) {
-      try {
-        const tree = await (this.parser as any).treeSitter.parse(content, language);
-        if (tree && tree.rootNode) {
-          this.findFoldingRanges(tree.rootNode, ranges, language);
-          tree.delete?.();
-        }
-      } catch (err) {
-        console.warn('Failed to detect folding ranges:', err);
-      }
-    }
-
-    // 回退：基于缩进检测
-    if (ranges.length === 0) {
-      this.detectFoldingRangesByIndent(content, ranges);
-    }
-
-    return ranges;
+    return this.detectFoldingRangesByIndent(content);
   }
 
-  private findFoldingRanges(node: any, ranges: FoldingRange[], language: string): void {
-    const nodeType = node.type;
-    const startLine = node.startPosition.row + 1;
-    const endLine = node.endPosition.row + 1;
-
-    // 只折叠多行节点
-    if (endLine - startLine < 1) {
-      // 递归子节点
-      if (node.namedChildren) {
-        for (const child of node.namedChildren) {
-          this.findFoldingRanges(child, ranges, language);
-        }
-      }
-      return;
-    }
-
-    // 检测可折叠的节点类型
-    const foldableNodes: Record<string, 'block' | 'comment' | 'imports'> = {
-      // 通用
-      'block': 'block',
-      'statement_block': 'block',
-      'compound_statement': 'block',
-      'object': 'block',
-      'array': 'block',
-      'if_statement': 'block',
-      'for_statement': 'block',
-      'while_statement': 'block',
-      // 注释
-      'comment': 'comment',
-      'block_comment': 'comment',
-      'multiline_comment': 'comment',
-      // 导入
-      'import_statement': 'imports',
-      'import_declaration': 'imports',
-      // JavaScript/TypeScript
-      'class_body': 'block',
-      'function_declaration': 'block',
-      'arrow_function': 'block',
-      'object_type': 'block',
-      'method_definition': 'block',
-      // Python
-      'function_definition': 'block',
-      'class_definition': 'block',
-      // Go
-      'type_declaration': 'block',
-      'method_declaration': 'block',
-      // Rust
-      'impl_item': 'block',
-      'struct_item': 'block',
-      'enum_item': 'block',
-      'trait_item': 'block',
-      // Java/C/C++
-      'class_declaration': 'block',
-      'method_body': 'block',
-    };
-
-    const kind = foldableNodes[nodeType];
-    if (kind) {
-      ranges.push({
-        startLine,
-        endLine,
-        kind,
-      });
-    }
-
-    // 递归子节点
-    if (node.namedChildren) {
-      for (const child of node.namedChildren) {
-        this.findFoldingRanges(child, ranges, language);
-      }
-    }
-  }
-
-  private detectFoldingRangesByIndent(content: string, ranges: FoldingRange[]): void {
+  private detectFoldingRangesByIndent(content: string): FoldingRange[] {
     const lines = content.split('\n');
+    const ranges: FoldingRange[] = [];
     const stack: { line: number; indent: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
 
-      // 跳过空行和注释
       if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) {
         continue;
       }
 
       const indent = line.length - line.trimStart().length;
 
-      // 如果缩进减少，创建折叠区域
       while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
         const start = stack.pop()!;
         if (i - start.line > 1) {
@@ -1082,13 +261,11 @@ export class CodeAnalyzer {
         }
       }
 
-      // 如果这行可能开始一个块，加入栈
       if (trimmed.endsWith('{') || trimmed.endsWith(':')) {
         stack.push({ line: i, indent });
       }
     }
 
-    // 处理剩余的栈
     while (stack.length > 0) {
       const start = stack.pop()!;
       if (lines.length - start.line > 1) {
@@ -1099,128 +276,22 @@ export class CodeAnalyzer {
         });
       }
     }
+
+    return ranges;
   }
 
   /**
-   * 查找特定类型的符号（T254）
+   * 停止所有 LSP 服务器
    */
-  async findSymbolsByKind(filePath: string, kind: SymbolKind): Promise<CodeSymbol[]> {
-    const symbols = await this.analyzeFile(filePath);
-    return symbols.filter(s => s.kind === kind);
+  async shutdown(): Promise<void> {
+    await this.extractor.shutdown();
   }
 
   /**
-   * 按名称查找符号（T254）
+   * 获取 LSP 管理器
    */
-  async findSymbolsByName(filePath: string, name: string, exact: boolean = false): Promise<CodeSymbol[]> {
-    const symbols = await this.analyzeFile(filePath);
-    if (exact) {
-      return symbols.filter(s => s.name === name);
-    } else {
-      const lowerName = name.toLowerCase();
-      return symbols.filter(s => s.name.toLowerCase().includes(lowerName));
-    }
-  }
-
-  /**
-   * 查找位置处的符号（T253）
-   */
-  async findSymbolAtPosition(filePath: string, line: number, column: number): Promise<CodeSymbol | null> {
-    const symbols = await this.analyzeFile(filePath);
-
-    for (const symbol of symbols) {
-      const { startLine, startColumn, endLine, endColumn } = symbol.location;
-
-      if (line >= startLine && line <= endLine) {
-        if (line === startLine && column < startColumn) continue;
-        if (line === endLine && column > endColumn) continue;
-        return symbol;
-      }
-    }
-
-    return null;
-  }
-
-  private detectLanguage(ext: string): string | null {
-    for (const [lang, config] of Object.entries(LANGUAGE_CONFIGS)) {
-      if (config.extensions.includes(ext)) return lang;
-    }
-    return null;
-  }
-
-  /**
-   * 查找文件中标识符的所有引用 (T-005)
-   */
-  async findReferencesInFile(
-    filePath: string,
-    identifier: string,
-    position: { line: number; column: number }
-  ): Promise<Reference[]> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const ext = path.extname(filePath);
-    const language = this.detectLanguage(ext);
-
-    if (!language) {
-      console.warn(`Language not detected for file: ${filePath}`);
-      return [];
-    }
-
-    try {
-      const tree = await (this.parser as any).treeSitter.parse(content, language, filePath);
-      if (!tree) {
-        return [];
-      }
-
-      return await (this.parser as any).treeSitter.findReferences(
-        tree,
-        language,
-        identifier,
-        position,
-        filePath
-      );
-    } catch (error) {
-      console.warn('Failed to find references in file:', error);
-      return [];
-    }
-  }
-
-  /**
-   * 获取解析器统计信息
-   */
-  getParserStats() {
-    return {
-      parseCache: (this.parser as any).treeSitter.getCacheStats(),
-      symbolExtractor: (this.parser as any).treeSitter.getSymbolExtractorStats(),
-      languageLoader: languageLoader.getCacheStats(),
-    };
-  }
-
-  /**
-   * 清除所有缓存
-   */
-  clearAllCaches(): void {
-    (this.parser as any).treeSitter.clearAllCaches();
-  }
-}
-
-// 简化解析器（向后兼容）
-export class SimpleCodeParser {
-  private parser: CodeParser;
-
-  constructor() {
-    this.parser = new CodeParser();
-  }
-
-  parseFile(filePath: string): CodeSymbol[] {
-    return this.parser.parseFileSync(filePath);
-  }
-
-  parseContent(content: string, filePath: string, language: string): CodeSymbol[] {
-    return this.parser.parseWithRegex(content, filePath, language);
+  getManager(): LSPManager {
+    return this.parser.getManager();
   }
 }
 
@@ -1238,12 +309,5 @@ export function getLanguageConfig(language: string): LanguageConfig | null {
 export const codeParser = new CodeParser();
 export const codeAnalyzer = new CodeAnalyzer();
 
-// 导出 Tree-sitter 解析器
-export const treeSitterParser = new TreeSitterWasmParser();
-
-// 导出新的模块 (T-004, T-005, T-006)
-export { SymbolExtractor } from './symbol-extractor.js';
-export { ReferenceFinder } from './reference-finder.js';
-export type { Reference } from './reference-finder.js';
-export { LanguageLoader, languageLoader, LANGUAGE_MAPPINGS } from './language-loader.js';
-export { getQuery, getLanguageQueries, hasQuerySupport, getSupportedLanguagesWithQueries } from './queries.js';
+// 导出 LSP 模块
+export * from './lsp/index.js';
