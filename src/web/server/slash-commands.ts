@@ -1440,11 +1440,12 @@ const pluginsCommand: SlashCommand = {
   },
 };
 
-// /auth - 认证管理命令
-const authCommand: SlashCommand = {
-  name: 'auth',
+// /login - 认证管理命令（与 CLI 模式一致，auth 作为别名）
+const loginCommand: SlashCommand = {
+  name: 'login',
+  aliases: ['auth'],
   description: '管理认证和API密钥',
-  usage: '/auth [status|set <key>|clear]',
+  usage: '/login [status|set <key>|clear]',
   category: 'config',
   execute: async (ctx: ExtendedCommandContext): Promise<CommandResult> => {
     const { args } = ctx;
@@ -1477,10 +1478,10 @@ const authCommand: SlashCommand = {
         }
 
         message += '\n可用命令:\n';
-        message += '  /auth status       - 显示认证状态\n';
-        message += '  /auth set <key>    - 设置API密钥\n';
-        message += '  /auth clear        - 清除认证（登出）\n';
-        message += '  /logout            - 等同于 /auth clear';
+        message += '  /login status      - 显示认证状态\n';
+        message += '  /login set <key>   - 设置API密钥\n';
+        message += '  /login clear       - 清除认证（登出）\n';
+        message += '  /logout            - 等同于 /login clear';
 
         return { success: true, message };
       } catch (error) {
@@ -1493,12 +1494,12 @@ const authCommand: SlashCommand = {
 
     const subcommand = args[0].toLowerCase();
 
-    // /auth set <api_key>
+    // /login set <api_key>
     if (subcommand === 'set') {
       if (args.length < 2) {
         return {
           success: false,
-          message: '用法: /auth set <api_key>\n\n示例: /auth set sk-ant-api03-...',
+          message: '用法: /login set <api_key>\n\n示例: /login set sk-ant-api03-...',
         };
       }
 
@@ -1527,7 +1528,7 @@ const authCommand: SlashCommand = {
       }
     }
 
-    // /auth clear
+    // /login clear
     if (subcommand === 'clear') {
       try {
         authManager.clearAuth();
@@ -1544,12 +1545,12 @@ const authCommand: SlashCommand = {
       }
     }
 
-    // /auth validate <api_key>
+    // /login validate <api_key>
     if (subcommand === 'validate') {
       if (args.length < 2) {
         return {
           success: false,
-          message: '用法: /auth validate <api_key>\n\n验证API密钥是否有效。',
+          message: '用法: /login validate <api_key>\n\n验证API密钥是否有效。',
         };
       }
 
@@ -1589,8 +1590,8 @@ const logoutCommand: SlashCommand = {
   description: '登出（清除API密钥）',
   category: 'config',
   execute: async (ctx: ExtendedCommandContext): Promise<CommandResult> => {
-    // 直接调用 /auth clear
-    return authCommand.execute({
+    // 直接调用 /login clear
+    return loginCommand.execute({
       ...ctx,
       args: ['clear'],
     });
@@ -1599,14 +1600,11 @@ const logoutCommand: SlashCommand = {
 
 // 注册工具和提示命令
 registry.register(tasksCommand);
-registry.register(toolsCommand);
-registry.register(promptCommand);
-registry.register(apiCommand);
 registry.register(doctorCommand);
 registry.register(mcpCommand);
 registry.register(checkpointCommand);
 registry.register(pluginsCommand);
-registry.register(authCommand);
+registry.register(loginCommand);
 registry.register(logoutCommand);
 
 /**
