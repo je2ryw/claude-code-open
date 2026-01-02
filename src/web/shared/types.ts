@@ -32,7 +32,18 @@ export type ClientMessage =
   | { type: 'ping' }
   | { type: 'get_history' }
   | { type: 'clear_history' }
-  | { type: 'set_model'; payload: { model: string } };
+  | { type: 'set_model'; payload: { model: string } }
+  | { type: 'slash_command'; payload: { command: string } }
+  | { type: 'permission_response'; payload: PermissionResponsePayload }
+  | { type: 'permission_config'; payload: PermissionConfigPayload }
+  | { type: 'user_answer'; payload: UserAnswerPayload }
+  | { type: 'session_list'; payload?: SessionListRequestPayload }
+  | { type: 'session_create'; payload: SessionCreatePayload }
+  | { type: 'session_switch'; payload: { sessionId: string } }
+  | { type: 'session_delete'; payload: { sessionId: string } }
+  | { type: 'session_rename'; payload: { sessionId: string; name: string } }
+  | { type: 'session_export'; payload: { sessionId: string; format?: 'json' | 'md' } }
+  | { type: 'session_resume'; payload: { sessionId: string } };
 
 /**
  * 服务端发送的消息类型
@@ -51,7 +62,16 @@ export type ServerMessage =
   | { type: 'thinking_start'; payload: { messageId: string } }
   | { type: 'thinking_delta'; payload: { messageId: string; text: string } }
   | { type: 'thinking_complete'; payload: { messageId: string } }
-  | { type: 'status'; payload: StatusPayload };
+  | { type: 'permission_request'; payload: PermissionRequestPayload }
+  | { type: 'status'; payload: StatusPayload }
+  | { type: 'user_question'; payload: UserQuestionPayload }
+  | { type: 'slash_command_result'; payload: SlashCommandResultPayload }
+  | { type: 'session_list_response'; payload: SessionListResponsePayload }
+  | { type: 'session_created'; payload: SessionCreatedPayload }
+  | { type: 'session_switched'; payload: { sessionId: string } }
+  | { type: 'session_deleted'; payload: { sessionId: string; success: boolean } }
+  | { type: 'session_renamed'; payload: { sessionId: string; name: string; success: boolean } }
+  | { type: 'session_exported'; payload: { sessionId: string; content: string; format: 'json' | 'md' } };
 
 // ============ 消息负载类型 ============
 
@@ -83,6 +103,75 @@ export interface MessageCompletePayload {
 export interface StatusPayload {
   status: 'idle' | 'thinking' | 'tool_executing' | 'streaming';
   message?: string;
+}
+
+/**
+ * 权限请求负载（服务端发送给前端）
+ */
+export interface PermissionRequestPayload {
+  requestId: string;
+  tool: string;
+  args: Record<string, unknown>;
+  description: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  timestamp: number;
+}
+
+/**
+ * 权限响应负载（前端发送给服务端）
+ */
+export interface PermissionResponsePayload {
+  requestId: string;
+  approved: boolean;
+  remember?: boolean;
+  scope?: 'once' | 'session' | 'always';
+}
+
+/**
+ * 权限配置负载（前端发送给服务端）
+ */
+export interface PermissionConfigPayload {
+  mode?: 'default' | 'bypassPermissions' | 'acceptEdits' | 'plan' | 'dontAsk';
+  timeout?: number;
+  bypassTools?: string[];
+  alwaysAllow?: string[];
+  alwaysDeny?: string[];
+}
+
+/**
+ * 用户问题负载（服务端发送给前端）
+ */
+export interface UserQuestionPayload {
+  requestId: string;
+  question: string;
+  header: string;
+  options?: QuestionOption[];
+  multiSelect?: boolean;
+  timeout?: number;
+}
+
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+/**
+ * 用户回答负载（前端发送给服务端）
+ */
+export interface UserAnswerPayload {
+  requestId: string;
+  answer: string;
+}
+
+/**
+ * 斜杠命令结果负载（服务端发送给前端）
+ */
+export interface SlashCommandResultPayload {
+  command: string;
+  success: boolean;
+  message?: string;
+  data?: any;
+  action?: 'clear' | 'reload' | 'none';
 }
 
 // ============ 聊天消息类型 ============
@@ -292,6 +381,69 @@ export interface SessionInfo {
   messageCount: number;
   totalCost: number;
   cwd: string;
+}
+
+// ============ 会话相关 Payload ============
+
+/**
+ * 会话列表请求负载
+ */
+export interface SessionListRequestPayload {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  sortBy?: 'createdAt' | 'updatedAt' | 'messageCount' | 'cost';
+  sortOrder?: 'asc' | 'desc';
+}
+
+/**
+ * 会话列表响应负载
+ */
+export interface SessionListResponsePayload {
+  sessions: SessionSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+/**
+ * 会话摘要信息
+ */
+export interface SessionSummary {
+  id: string;
+  name?: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  model: string;
+  cost?: number;
+  tokenUsage: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  tags?: string[];
+  workingDirectory: string;
+}
+
+/**
+ * 创建会话请求负载
+ */
+export interface SessionCreatePayload {
+  name?: string;
+  model: string;
+  tags?: string[];
+}
+
+/**
+ * 会话创建响应负载
+ */
+export interface SessionCreatedPayload {
+  sessionId: string;
+  name?: string;
+  model: string;
+  createdAt: number;
 }
 
 // ============ 工具名称映射 ============

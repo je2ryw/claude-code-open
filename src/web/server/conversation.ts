@@ -10,7 +10,11 @@ import { systemPromptBuilder } from '../../prompt/index.js';
 import { modelConfig } from '../../models/index.js';
 import { initAuth, getAuth } from '../../auth/index.js';
 import type { Message, ContentBlock, ToolUseBlock, TextBlock } from '../../types/index.js';
-import type { ChatMessage, ChatContent, ToolResultData } from '../shared/types.js';
+import type { ChatMessage, ChatContent, ToolResultData, PermissionConfigPayload, PermissionRequestPayload } from '../shared/types.js';
+import { UserInteractionHandler } from './user-interaction.js';
+import type { WebSocket } from 'ws';
+import { WebSessionManager, type WebSessionData } from './session-manager.js';
+import type { SessionMetadata, SessionListOptions } from '../../session/index.js';
 
 /**
  * 流式回调接口
@@ -23,6 +27,7 @@ export interface StreamCallbacks {
   onToolUseStart?: (toolUseId: string, toolName: string, input: unknown) => void;
   onToolUseDelta?: (toolUseId: string, partialJson: string) => void;
   onToolResult?: (toolUseId: string, success: boolean, output?: string, error?: string, data?: ToolResultData) => void;
+  onPermissionRequest?: (request: any) => void;
   onComplete?: (stopReason: string | null, usage?: { inputTokens: number; outputTokens: number }) => void;
   onError?: (error: Error) => void;
 }
@@ -37,6 +42,8 @@ interface SessionState {
   model: string;
   cancelled: boolean;
   chatHistory: ChatMessage[];
+  userInteractionHandler: UserInteractionHandler;
+  ws?: WebSocket;
 }
 
 /**
@@ -44,12 +51,14 @@ interface SessionState {
  */
 export class ConversationManager {
   private sessions = new Map<string, SessionState>();
+  private sessionManager: WebSessionManager;
   private cwd: string;
   private defaultModel: string;
 
   constructor(cwd: string, defaultModel: string = 'sonnet') {
     this.cwd = cwd;
     this.defaultModel = defaultModel;
+    this.sessionManager = new WebSessionManager(cwd);
   }
 
   /**
@@ -117,6 +126,9 @@ export class ConversationManager {
       const clientConfig = this.buildClientConfig(model || this.defaultModel);
       const client = new ClaudeClient(clientConfig);
 
+      // 创建用户交互处理器
+      const userInteractionHandler = new UserInteractionHandler();
+
       state = {
         session,
         client,
@@ -124,6 +136,7 @@ export class ConversationManager {
         model: model || this.defaultModel,
         cancelled: false,
         chatHistory: [],
+        userInteractionHandler,
       };
 
       this.sessions.set(sessionId, state);
@@ -183,6 +196,28 @@ export class ConversationManager {
     const state = this.sessions.get(sessionId);
     if (state) {
       state.cancelled = true;
+      // 取消所有待处理的用户问题
+      state.userInteractionHandler?.cancelAll();
+    }
+  }
+
+  /**
+   * 设置会话的 WebSocket 连接
+   */
+  setWebSocket(sessionId: string, ws: WebSocket): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.userInteractionHandler.setWebSocket(ws);
+    }
+  }
+
+  /**
+   * 处理用户回答
+   */
+  handleUserAnswer(sessionId: string, requestId: string, answer: string): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.userInteractionHandler.handleAnswer(requestId, answer);
     }
   }
 
@@ -467,7 +502,49 @@ export class ConversationManager {
     try {
       console.log(`[Tool] 执行 ${toolUse.name}:`, JSON.stringify(toolUse.input).slice(0, 200));
 
-      // 执行工具
+      // 拦截 AskUserQuestion 工具 - 通过 WebSocket 向前端发送问题
+      if (toolUse.name === 'AskUserQuestion') {
+        const input = toolUse.input as any;
+        const questions = input.questions || [];
+
+        if (questions.length === 0) {
+          const error = 'No questions provided';
+          callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+          return { success: false, error };
+        }
+
+        const answers: Record<string, string> = {};
+
+        try {
+          // 逐个发送问题并等待回答
+          for (const question of questions) {
+            const answer = await state.userInteractionHandler.askQuestion({
+              question: question.question,
+              header: question.header,
+              options: question.options,
+              multiSelect: question.multiSelect,
+              timeout: 300000, // 5分钟超时
+            });
+            answers[question.header] = answer;
+          }
+
+          // 格式化答案输出（使用官方格式）
+          const formattedAnswers = Object.entries(answers)
+            .map(([header, answer]) => `"${header}"="${answer}"`)
+            .join(', ');
+          const output = `User has answered your questions: ${formattedAnswers}. You can now continue with the user's answers in mind.`;
+
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] AskUserQuestion 失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 执行其他工具
       const result = await tool.execute(toolUse.input);
 
       // 构建结构化数据
@@ -696,5 +773,178 @@ ${toolRegistry.getAll().map(t => `- ${t.name}: ${t.description.slice(0, 100)}...
 Respond in Chinese when the user writes in Chinese.`;
 
     return prompt;
+  }
+
+  /**
+   * 处理权限响应
+   */
+  handlePermissionResponse(
+    sessionId: string,
+    requestId: string,
+    approved: boolean,
+    remember?: boolean,
+    scope?: 'once' | 'session' | 'always'
+  ): void {
+    const state = this.sessions.get(sessionId);
+    if (!state) {
+      console.warn(`[ConversationManager] 未找到会话: ${sessionId}`);
+      return;
+    }
+
+    state.userInteractionHandler.handleResponse(requestId, approved, remember, scope);
+  }
+
+  /**
+   * 更新权限配置
+   */
+  updatePermissionConfig(sessionId: string, config: PermissionConfigPayload): void {
+    const state = this.sessions.get(sessionId);
+    if (!state) {
+      console.warn(`[ConversationManager] 未找到会话: ${sessionId}`);
+      return;
+    }
+
+    state.userInteractionHandler.updateConfig(config);
+    console.log(`[ConversationManager] 已更新会话 ${sessionId} 的权限配置:`, config);
+  }
+
+  /**
+   * 处理用户回答
+   */
+  handleUserAnswer(sessionId: string, requestId: string, answer: string): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.userInteractionHandler.handleUserAnswer(requestId, answer);
+    }
+  }
+
+  /**
+   * 设置 WebSocket 连接
+   */
+  setWebSocket(sessionId: string, ws: WebSocket): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.ws = ws;
+    }
+  }
+
+  // ============ 会话持久化方法 ============
+
+  /**
+   * 获取会话管理器
+   */
+  getSessionManager(): WebSessionManager {
+    return this.sessionManager;
+  }
+
+  /**
+   * 持久化会话
+   */
+  async persistSession(sessionId: string): Promise<boolean> {
+    const state = this.sessions.get(sessionId);
+    if (!state) {
+      return false;
+    }
+
+    try {
+      // 先检查会话是否存在于 sessionManager
+      let sessionData = this.sessionManager.loadSessionById(sessionId);
+
+      if (!sessionData) {
+        // 如果不存在，创建新会话
+        sessionData = this.sessionManager.createSession({
+          name: `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
+          model: state.model,
+          tags: ['webui'],
+        });
+      }
+
+      // 更新会话数据
+      sessionData.messages = state.messages;
+      sessionData.chatHistory = state.chatHistory;
+      sessionData.currentModel = state.model;
+
+      // 保存到磁盘
+      const success = this.sessionManager.saveSession(sessionId);
+      if (success) {
+        console.log(`[ConversationManager] 会话已持久化: ${sessionId}`);
+      }
+      return success;
+    } catch (error) {
+      console.error(`[ConversationManager] 持久化会话失败:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 恢复会话
+   */
+  async resumeSession(sessionId: string): Promise<boolean> {
+    try {
+      const sessionData = this.sessionManager.loadSessionById(sessionId);
+      if (!sessionData) {
+        console.warn(`[ConversationManager] 会话不存在: ${sessionId}`);
+        return false;
+      }
+
+      // 从持久化数据恢复会话状态
+      const session = new Session(sessionData.metadata.workingDirectory || this.cwd);
+      await session.initializeGitInfo();
+
+      const clientConfig = this.buildClientConfig(sessionData.currentModel || this.defaultModel);
+      const client = new ClaudeClient(clientConfig);
+
+      const state: SessionState = {
+        session,
+        client,
+        messages: sessionData.messages,
+        model: sessionData.currentModel || sessionData.metadata.model,
+        cancelled: false,
+        chatHistory: sessionData.chatHistory || [],
+        userInteractionHandler: new UserInteractionHandler(),
+      };
+
+      this.sessions.set(sessionId, state);
+      console.log(`[ConversationManager] 会话已恢复: ${sessionId}, 消息数: ${sessionData.messages.length}`);
+      return true;
+    } catch (error) {
+      console.error(`[ConversationManager] 恢复会话失败:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 列出持久化会话
+   */
+  listPersistedSessions(options?: SessionListOptions): SessionMetadata[] {
+    return this.sessionManager.listSessions(options);
+  }
+
+  /**
+   * 删除持久化会话
+   */
+  deletePersistedSession(sessionId: string): boolean {
+    // 从内存中删除
+    this.sessions.delete(sessionId);
+    // 从磁盘删除
+    return this.sessionManager.deleteSession(sessionId);
+  }
+
+  /**
+   * 重命名持久化会话
+   */
+  renamePersistedSession(sessionId: string, name: string): boolean {
+    return this.sessionManager.renameSession(sessionId, name);
+  }
+
+  /**
+   * 导出持久化会话
+   */
+  exportPersistedSession(sessionId: string, format: 'json' | 'md' = 'json'): string | null {
+    if (format === 'json') {
+      return this.sessionManager.exportSessionJSON(sessionId);
+    } else {
+      return this.sessionManager.exportSessionMarkdown(sessionId);
+    }
   }
 }

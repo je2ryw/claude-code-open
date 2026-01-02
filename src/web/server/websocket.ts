@@ -6,6 +6,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import { ConversationManager } from './conversation.js';
+import { isSlashCommand, executeSlashCommand } from './slash-commands.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
 
 interface ClientConnection {
@@ -124,6 +125,8 @@ async function handleClientMessage(
       break;
 
     case 'chat':
+      // 确保会话关联 WebSocket
+      conversationManager.setWebSocket(client.sessionId, ws);
       await handleChatMessage(client, message.payload.content, message.payload.attachments || message.payload.images, conversationManager);
       break;
 
@@ -156,6 +159,60 @@ async function handleClientMessage(
       conversationManager.setModel(client.sessionId, message.payload.model);
       break;
 
+    case 'permission_response':
+      conversationManager.handlePermissionResponse(
+        client.sessionId,
+        message.payload.requestId,
+        message.payload.approved,
+        message.payload.remember,
+        message.payload.scope
+      );
+      break;
+
+    case 'permission_config':
+      conversationManager.updatePermissionConfig(client.sessionId, message.payload);
+      break;
+
+    case 'user_answer':
+      conversationManager.handleUserAnswer(
+        client.sessionId,
+        message.payload.requestId,
+        message.payload.answer
+      );
+      break;
+
+    case 'slash_command':
+      await handleSlashCommand(client, message.payload.command, conversationManager);
+      break;
+
+    case 'session_list':
+      await handleSessionList(client, message.payload, conversationManager);
+      break;
+
+    case 'session_create':
+      await handleSessionCreate(client, message.payload, conversationManager);
+      break;
+
+    case 'session_switch':
+      await handleSessionSwitch(client, message.payload.sessionId, conversationManager);
+      break;
+
+    case 'session_delete':
+      await handleSessionDelete(client, message.payload.sessionId, conversationManager);
+      break;
+
+    case 'session_rename':
+      await handleSessionRename(client, message.payload.sessionId, message.payload.name, conversationManager);
+      break;
+
+    case 'session_export':
+      await handleSessionExport(client, message.payload.sessionId, message.payload.format, conversationManager);
+      break;
+
+    case 'session_resume':
+      await handleSessionResume(client, message.payload.sessionId, conversationManager);
+      break;
+
     default:
       console.warn('[WebSocket] 未知消息类型:', (message as any).type);
   }
@@ -171,6 +228,13 @@ async function handleChatMessage(
   conversationManager: ConversationManager
 ): Promise<void> {
   const { ws, sessionId, model } = client;
+
+  // 检查是否为斜杠命令
+  if (isSlashCommand(content)) {
+    await handleSlashCommand(client, content, conversationManager);
+    return;
+  }
+
   const messageId = randomUUID();
 
   // 处理附件：转换为 images 数组（向后兼容）或增强内容
@@ -263,7 +327,20 @@ async function handleChatMessage(
       onToolResult: (toolUseId: string, success: boolean, output?: string, error?: string, data?: unknown) => {
         sendMessage(ws, {
           type: 'tool_result',
-          payload: { toolUseId, success, output, error, data } as any,
+          payload: {
+            toolUseId,
+            success,
+            output,
+            error,
+            data: data as any, // 工具特定的结构化数据
+          },
+        });
+      },
+
+      onPermissionRequest: (request: any) => {
+        sendMessage(ws, {
+          type: 'permission_request',
+          payload: request,
         });
       },
 
@@ -272,7 +349,7 @@ async function handleChatMessage(
           type: 'message_complete',
           payload: {
             messageId,
-            stopReason: stopReason as any,
+            stopReason: (stopReason || 'end_turn') as 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use',
             usage,
           },
         });
@@ -302,6 +379,358 @@ async function handleChatMessage(
     sendMessage(ws, {
       type: 'status',
       payload: { status: 'idle' },
+    });
+  }
+}
+
+/**
+ * 处理斜杠命令
+ */
+async function handleSlashCommand(
+  client: ClientConnection,
+  command: string,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws, sessionId, model } = client;
+
+  try {
+    // 获取当前工作目录
+    const cwd = process.cwd();
+
+    // 执行斜杠命令
+    const result = await executeSlashCommand(command, {
+      conversationManager,
+      ws,
+      sessionId,
+      cwd,
+      model,
+    });
+
+    // 发送命令执行结果
+    sendMessage(ws, {
+      type: 'slash_command_result',
+      payload: {
+        command,
+        success: result.success,
+        message: result.message,
+        data: result.data,
+        action: result.action,
+      },
+    });
+
+    // 如果命令要求清除历史
+    if (result.action === 'clear') {
+      sendMessage(ws, {
+        type: 'history',
+        payload: { messages: [] },
+      });
+    }
+  } catch (error) {
+    console.error('[WebSocket] 斜杠命令执行错误:', error);
+    sendMessage(ws, {
+      type: 'slash_command_result',
+      payload: {
+        command,
+        success: false,
+        message: error instanceof Error ? error.message : '命令执行失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理会话列表请求
+ */
+async function handleSessionList(
+  client: ClientConnection,
+  payload: any,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const limit = payload?.limit || 20;
+    const offset = payload?.offset || 0;
+    const search = payload?.search;
+
+    const sessions = conversationManager.listPersistedSessions({
+      limit,
+      offset,
+      search,
+    });
+
+    sendMessage(ws, {
+      type: 'session_list_response',
+      payload: {
+        sessions: sessions.map(s => ({
+          id: s.id,
+          name: s.name,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          messageCount: s.messageCount,
+          model: s.model,
+          cost: s.cost,
+          tokenUsage: s.tokenUsage,
+          tags: s.tags,
+          workingDirectory: s.workingDirectory,
+        })),
+        total: sessions.length,
+        offset,
+        limit,
+        hasMore: false,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 获取会话列表失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '获取会话列表失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理创建会话请求
+ */
+async function handleSessionCreate(
+  client: ClientConnection,
+  payload: any,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const { name, model, tags } = payload;
+    const sessionManager = conversationManager.getSessionManager();
+
+    const newSession = sessionManager.createSession({
+      name: name || `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
+      model: model || 'sonnet',
+      tags: tags || ['webui'],
+    });
+
+    sendMessage(ws, {
+      type: 'session_created',
+      payload: {
+        sessionId: newSession.metadata.id,
+        name: newSession.metadata.name,
+        model: newSession.metadata.model,
+        createdAt: newSession.metadata.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 创建会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '创建会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理切换会话请求
+ */
+async function handleSessionSwitch(
+  client: ClientConnection,
+  sessionId: string,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    // 保存当前会话
+    await conversationManager.persistSession(client.sessionId);
+
+    // 恢复目标会话
+    const success = await conversationManager.resumeSession(sessionId);
+
+    if (success) {
+      // 更新客户端会话ID
+      client.sessionId = sessionId;
+
+      // 获取会话历史
+      const history = conversationManager.getHistory(sessionId);
+
+      sendMessage(ws, {
+        type: 'session_switched',
+        payload: { sessionId },
+      });
+
+      sendMessage(ws, {
+        type: 'history',
+        payload: { messages: history },
+      });
+    } else {
+      sendMessage(ws, {
+        type: 'error',
+        payload: {
+          message: '会话不存在或加载失败',
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[WebSocket] 切换会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '切换会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理删除会话请求
+ */
+async function handleSessionDelete(
+  client: ClientConnection,
+  sessionId: string,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const success = conversationManager.deletePersistedSession(sessionId);
+
+    sendMessage(ws, {
+      type: 'session_deleted',
+      payload: {
+        sessionId,
+        success,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 删除会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '删除会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理重命名会话请求
+ */
+async function handleSessionRename(
+  client: ClientConnection,
+  sessionId: string,
+  name: string,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const success = conversationManager.renamePersistedSession(sessionId, name);
+
+    sendMessage(ws, {
+      type: 'session_renamed',
+      payload: {
+        sessionId,
+        name,
+        success,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 重命名会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '重命名会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理导出会话请求
+ */
+async function handleSessionExport(
+  client: ClientConnection,
+  sessionId: string,
+  format: 'json' | 'md' | undefined,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const exportFormat = format || 'json';
+    const content = conversationManager.exportPersistedSession(sessionId, exportFormat);
+
+    if (content) {
+      sendMessage(ws, {
+        type: 'session_exported',
+        payload: {
+          sessionId,
+          content,
+          format: exportFormat,
+        },
+      });
+    } else {
+      sendMessage(ws, {
+        type: 'error',
+        payload: {
+          message: '会话不存在或导出失败',
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[WebSocket] 导出会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '导出会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理恢复会话请求
+ */
+async function handleSessionResume(
+  client: ClientConnection,
+  sessionId: string,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const success = await conversationManager.resumeSession(sessionId);
+
+    if (success) {
+      client.sessionId = sessionId;
+      const history = conversationManager.getHistory(sessionId);
+
+      sendMessage(ws, {
+        type: 'session_switched',
+        payload: { sessionId },
+      });
+
+      sendMessage(ws, {
+        type: 'history',
+        payload: { messages: history },
+      });
+    } else {
+      sendMessage(ws, {
+        type: 'error',
+        payload: {
+          message: '会话不存在或恢复失败',
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[WebSocket] 恢复会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '恢复会话失败',
+      },
     });
   }
 }
