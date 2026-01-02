@@ -168,7 +168,8 @@ program
 
       if (chromeConfig) {
         // 导入 MCP 注册函数和 Chrome 工具定义
-        const { registerMcpServer } = await import('./tools/mcp.js');
+        const { registerMcpServer, registerMcpToolsToRegistry } = await import('./tools/mcp.js');
+        const { toolRegistry } = await import('./tools/index.js');
         const { CHROME_MCP_TOOLS } = await import('./chrome-mcp/tools.js');
 
         // 添加 Chrome MCP 服务器配置并注册到 MCP 系统
@@ -183,6 +184,9 @@ program
           // 注册到 MCP 服务器映射（运行时），使用预加载的工具定义
           // 这样工具可以立即被发现，无需连接 MCP 服务器
           registerMcpServer(name, config as any, CHROME_MCP_TOOLS as any);
+
+          // 将工具直接注册到 ToolRegistry，这样 AI 可以直接调用它们
+          registerMcpToolsToRegistry(name, CHROME_MCP_TOOLS as any, toolRegistry);
         }
 
         // 保存 Chrome 系统提示以便后续合并
@@ -202,6 +206,17 @@ program
     // T507: action_mcp_configs_loaded - MCP 配置加载完成
     await emitLifecycleEvent('action_mcp_configs_loaded');
     await runHooks({ event: 'McpConfigsLoaded' });
+
+    // 【与官方一致】自动加载并连接所有配置的 MCP 服务器
+    // 官方逻辑：在 useManageMcpConnections hook 中，自动加载所有配置的 MCP 服务器并连接
+    // 除非服务器在 disabledMcpServers 列表中
+    try {
+      await initializeAllMcpServers(options.verbose, options.strictMcpConfig);
+    } catch (error) {
+      if (options.debug) {
+        console.warn(chalk.yellow('[MCP] Failed to initialize some MCP servers:'), error);
+      }
+    }
 
     // 构建系统提示
     let systemPrompt = options.systemPrompt;
@@ -1783,6 +1798,128 @@ function loadSettings(settingsPath: string): void {
   } catch (err) {
     console.warn(chalk.yellow(`Failed to load settings: ${settingsPath}`));
   }
+}
+
+/**
+ * 【与官方一致】自动初始化所有 MCP 服务器
+ *
+ * 官方逻辑（DZ0 函数）：
+ * 1. 从配置中获取所有 MCP 服务器
+ * 2. 检查每个服务器是否在 disabledMcpServers 列表中
+ * 3. 如果未禁用，则连接服务器
+ * 4. 连接成功后，获取工具列表并注册到 ToolRegistry
+ *
+ * @param verbose 是否显示详细信息
+ * @param strictMode 严格模式 - 仅使用命令行指定的 MCP 配置
+ */
+async function initializeAllMcpServers(verbose?: boolean, strictMode?: boolean): Promise<void> {
+  // 导入必要的模块
+  const { registerMcpServer, connectMcpServer, getMcpServers, createMcpTools } = await import('./tools/mcp.js');
+
+  // 获取所有配置的 MCP 服务器
+  const mcpServers = configManager.getMcpServers();
+  const serverNames = Object.keys(mcpServers);
+
+  if (serverNames.length === 0) {
+    return; // 没有配置的服务器
+  }
+
+  // 获取禁用的服务器列表（从 settings.local.json 或 settings.json）
+  const disabledServers = getDisabledMcpServers();
+
+  // 统计信息
+  let connectedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  // 并发连接所有服务器（与官方一致，使用 Promise.all）
+  const connectionPromises = serverNames.map(async (name) => {
+    const config = mcpServers[name];
+
+    // 检查是否被禁用
+    if (disabledServers.includes(name)) {
+      if (verbose) {
+        console.log(chalk.gray(`[MCP] Skipping disabled server: ${name}`));
+      }
+      skippedCount++;
+      return;
+    }
+
+    try {
+      // 注册服务器配置
+      registerMcpServer(name, config);
+
+      // 连接服务器
+      const connected = await connectMcpServer(name);
+
+      if (connected) {
+        connectedCount++;
+
+        // 获取工具列表并注册到 ToolRegistry
+        const mcpTools = await createMcpTools(name);
+        for (const tool of mcpTools) {
+          toolRegistry.register(tool);
+        }
+
+        if (verbose) {
+          console.log(chalk.green(`[MCP] Connected: ${name} (${mcpTools.length} tools)`));
+        }
+      } else {
+        failedCount++;
+        if (verbose) {
+          console.log(chalk.yellow(`[MCP] Failed to connect: ${name}`));
+        }
+      }
+    } catch (error) {
+      failedCount++;
+      if (verbose) {
+        console.log(chalk.yellow(`[MCP] Error connecting to ${name}:`, error));
+      }
+    }
+  });
+
+  // 等待所有连接完成
+  await Promise.all(connectionPromises);
+
+  // 显示摘要
+  if (verbose && (connectedCount > 0 || failedCount > 0)) {
+    console.log(chalk.dim(`[MCP] Summary: ${connectedCount} connected, ${skippedCount} skipped, ${failedCount} failed`));
+  }
+}
+
+/**
+ * 获取禁用的 MCP 服务器列表
+ *
+ * 官方逻辑（MPA 函数）：
+ * 从 settings 中读取 disabledMcpServers 数组
+ */
+function getDisabledMcpServers(): string[] {
+  try {
+    // 尝试从 settings.local.json 读取
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const globalDir = process.env.CLAUDE_CONFIG_DIR || path.join(homeDir, '.claude');
+
+    // 读取顺序：local -> project -> global
+    const configPaths = [
+      path.join(process.cwd(), '.claude', 'settings.local.json'),
+      path.join(process.cwd(), '.claude', 'settings.json'),
+      path.join(globalDir, 'settings.json'),
+    ];
+
+    for (const configPath of configPaths) {
+      if (fs.existsSync(configPath)) {
+        const content = fs.readFileSync(configPath, 'utf-8');
+        const config = JSON.parse(content);
+        if (config.disabledMcpServers && Array.isArray(config.disabledMcpServers)) {
+          return config.disabledMcpServers;
+        }
+      }
+    }
+  } catch (error) {
+    // 忽略读取错误
+  }
+
+  return [];
 }
 
 // 斜杠命令处理 (for text mode)

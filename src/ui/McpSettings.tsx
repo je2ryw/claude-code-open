@@ -621,8 +621,10 @@ export function McpSettings({
 
       // 加载用户配置
       const userConfig = loadMcpConfig(userConfigPath);
+      console.log('[MCP Settings] Loaded user config from', userConfigPath, ':', JSON.stringify(userConfig, null, 2));
       for (const [name, config] of Object.entries(userConfig)) {
         const info = getRuntimeInfo(name);
+        console.log('[MCP Settings] Adding server from user config:', name, 'config:', JSON.stringify(config, null, 2));
         allServers.push({
           name,
           config,
@@ -655,9 +657,11 @@ export function McpSettings({
 
       // 加载本地配置
       const localConfig = loadMcpConfig(localConfigPath);
+      console.log('[MCP Settings] Loaded local config from', localConfigPath, ':', JSON.stringify(localConfig, null, 2));
       for (const [name, config] of Object.entries(localConfig)) {
         if (!allServers.some((s) => s.name === name)) {
           const info = getRuntimeInfo(name);
+          console.log('[MCP Settings] Adding server from local config:', name, 'config:', JSON.stringify(config, null, 2));
           allServers.push({
             name,
             config,

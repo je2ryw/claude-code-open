@@ -74,6 +74,7 @@ export function getClaudeConfigDir(): string {
 
 /**
  * 获取 Socket 路径
+ * 复用官方 Claude Code 的 pipe 名称，这样可以连接到官方 Chrome 扩展启动的 Native Host
  */
 export function getSocketPath(): string {
   const username = os.userInfo().username || process.env.USER || process.env.USERNAME || 'default';
@@ -282,7 +283,13 @@ export async function setupChromeNativeHost(): Promise<{
 }> {
   // 构建启动命令
   const nodeExe = process.execPath;
-  const cliPath = path.join(__dirname, '..', 'cli.js');
+  // 确保使用 dist 目录下的 cli.js，无论是开发模式还是生产模式
+  // __dirname 在开发模式下是 src/chrome-mcp，在生产模式下是 dist/chrome-mcp
+  let cliPath = path.join(__dirname, '..', 'cli.js');
+  // 如果路径包含 src，替换为 dist
+  if (cliPath.includes(path.sep + 'src' + path.sep)) {
+    cliPath = cliPath.replace(path.sep + 'src' + path.sep, path.sep + 'dist' + path.sep);
+  }
   const command = `"${nodeExe}" "${cliPath}" --chrome-native-host`;
 
   // 安装 wrapper script

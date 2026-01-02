@@ -162,7 +162,17 @@ export class McpServer {
   /**
    * 标准化内容格式
    */
-  private normalizeContent(content: unknown[]): Array<{ type: string; text?: string; data?: string; mimeType?: string }> {
+  private normalizeContent(content: unknown): Array<{ type: string; text?: string; data?: string; mimeType?: string }> {
+    // 处理字符串类型（Chrome 扩展有时候返回 error.content 为字符串）
+    if (typeof content === 'string') {
+      return [{ type: 'text', text: content }];
+    }
+
+    // 如果不是数组，包装成数组
+    if (!Array.isArray(content)) {
+      return [{ type: 'text', text: String(content) }];
+    }
+
     return content.map((item) => {
       if (typeof item === 'string') {
         return { type: 'text', text: item };
@@ -380,4 +390,11 @@ export async function runMcpServer(): Promise<void> {
   });
 
   await server.start();
+
+  // 保持进程运行，直到 stdin 关闭
+  // 这是 MCP stdio 传输的标准行为
+  await new Promise<void>((resolve) => {
+    process.stdin.on('end', resolve);
+    process.stdin.on('close', resolve);
+  });
 }

@@ -19,18 +19,34 @@ interface McpClientInfo {
   buffer: Buffer;
 }
 
+import { appendFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+const LOG_FILE = join(homedir(), '.claude', 'native-host.log');
+
 /**
- * 日志输出到 stderr（Native Messaging 使用 stdout）
+ * 日志输出到 stderr 和文件（Native Messaging 使用 stdout）
  */
 function log(message: string, ...args: unknown[]): void {
+  const timestamp = new Date().toISOString();
+  const formattedArgs = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  const logLine = `[${timestamp}] ${message} ${formattedArgs}\n`;
+
   console.error(`[Claude Chrome Native Host] ${message}`, ...args);
+
+  try {
+    appendFileSync(LOG_FILE, logLine);
+  } catch {}
 }
 
 /**
  * 向 Chrome 扩展发送消息（Native Messaging 协议）
  */
 function sendToChrome(message: object): void {
-  const json = Buffer.from(JSON.stringify(message), 'utf-8');
+  const jsonStr = JSON.stringify(message);
+  log(`Sending to Chrome: ${jsonStr.substring(0, 200)}`);
+  const json = Buffer.from(jsonStr, 'utf-8');
   const header = Buffer.alloc(4);
   header.writeUInt32LE(json.length, 0);
   process.stdout.write(header);
@@ -127,8 +143,23 @@ export class SocketServer {
    * 处理来自 Chrome 扩展的消息
    */
   async handleChromeMessage(message: string): Promise<void> {
+    log(`Raw Chrome message: ${message.substring(0, 500)}`);
     const data = JSON.parse(message);
-    log(`Handling Chrome message type: ${data.type}`);
+    log(`Handling Chrome message: ${JSON.stringify(data).substring(0, 300)}`);
+
+    // 检查是否是工具响应（包含 result 或 error 字段）
+    if ('result' in data || 'error' in data) {
+      log('Received tool response, forwarding to MCP clients');
+      this.forwardToMcpClients(data);
+      return;
+    }
+
+    // 检查是否是通知（包含 method 字段）
+    if ('method' in data && typeof data.method === 'string') {
+      log(`Received notification: ${data.method}`);
+      this.forwardToMcpClients(data);
+      return;
+    }
 
     switch (data.type) {
       case 'ping':
@@ -156,10 +187,8 @@ export class SocketServer {
 
       default:
         log(`Unknown message type: ${data.type}`);
-        sendToChrome({
-          type: 'error',
-          error: `Unknown message type: ${data.type}`
-        });
+        // 尝试转发所有未知消息给 MCP 客户端
+        this.forwardToMcpClients(data);
     }
   }
 
@@ -257,11 +286,9 @@ export class SocketServer {
   private handleMcpClientMessage(client: McpClientInfo, message: unknown): void {
     log(`Received from MCP client ${client.id}:`, JSON.stringify(message).substring(0, 200));
 
-    // 转发到 Chrome 扩展
-    sendToChrome({
-      type: 'tool_call',
-      ...(message as object)
-    });
+    // 直接转发消息到 Chrome 扩展（不做格式转换）
+    // MCP Client 已经使用了正确的格式: { method: "execute_tool", params: { client_id, tool, args } }
+    sendToChrome(message as object);
   }
 }
 
@@ -347,11 +374,38 @@ export async function runNativeHost(): Promise<void> {
 
   await server.start();
 
-  // 主消息循环
-  while (true) {
-    const message = await reader.read();
-    if (message === null) break;
-    await server.handleChromeMessage(message);
+  // 检查是否有 stdin（Chrome 扩展连接）
+  const hasStdin = process.stdin.isTTY === false || !process.stdin.isTTY;
+
+  if (hasStdin) {
+    // 正常模式：从 Chrome 扩展读取消息
+    log('Running in Native Messaging mode');
+    while (true) {
+      const message = await reader.read();
+      if (message === null) break;
+      await server.handleChromeMessage(message);
+    }
+  } else {
+    // 独立模式：保持运行等待 MCP 客户端连接
+    log('Running in standalone mode (no Chrome extension connected)');
+    log('Waiting for MCP client connections...');
+
+    // 保持进程运行，直到收到终止信号
+    await new Promise<void>((resolve) => {
+      process.on('SIGINT', () => {
+        log('Received SIGINT, shutting down...');
+        resolve();
+      });
+      process.on('SIGTERM', () => {
+        log('Received SIGTERM, shutting down...');
+        resolve();
+      });
+
+      // Windows 上监听 stdin 关闭
+      process.stdin.on('end', () => {
+        log('stdin closed, but keeping server running...');
+      });
+    });
   }
 
   await server.stop();

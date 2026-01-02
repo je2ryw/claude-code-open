@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { BaseTool } from './base.js';
+import { BaseTool, ToolRegistry } from './base.js';
 import type {
   McpInput,
   ListMcpResourcesInput,
@@ -195,26 +195,68 @@ export async function connectMcpServer(name: string, retry = true): Promise<bool
           await sleep(delay);
         }
 
-        const proc = spawn(config.command, config.args || [], {
+        // Windows 上需要特殊处理，使用 cmd.exe 启动以避免 Git Bash 兼容性问题
+        // Git Bash/MSYS2 环境下无法正确访问 Windows Named Pipes
+        let spawnCommand: string;
+        let spawnArgs: string[];
+        const isWindows = process.platform === 'win32';
+
+        if (isWindows && config.command !== 'cmd' && config.command !== 'cmd.exe') {
+          // 将命令和参数组合成一个完整的命令行
+          const fullCommand = [config.command, ...(config.args || [])].join(' ');
+          spawnCommand = 'cmd';
+          spawnArgs = ['/c', fullCommand];
+        } else {
+          spawnCommand = config.command;
+          spawnArgs = config.args || [];
+        }
+
+        const proc = spawn(spawnCommand, spawnArgs, {
           env: { ...process.env, ...config.env },
           stdio: ['pipe', 'pipe', 'pipe'],
+          shell: isWindows, // Windows 上使用 shell 以确保命令正确解析
         });
 
         server.process = proc;
 
         // 监听进程错误和退出
+        let processExited = false;
+        let processError: Error | null = null;
+
         proc.on('error', (err) => {
           console.error(`MCP server ${name} process error:`, err);
+          processError = err;
+          processExited = true;
           server.connected = false;
           server.connecting = false;
         });
 
         proc.on('exit', (code) => {
           console.log(`MCP server ${name} exited with code ${code}`);
+          processExited = true;
           server.connected = false;
           server.connecting = false;
           server.process = undefined;
         });
+
+        // 等待进程启动稳定 - 关键！
+        // 如果进程在此期间退出，说明启动失败
+        await sleep(500);
+
+        // 检查进程是否已退出
+        if (processExited) {
+          const errorMsg = processError ? processError.message : 'Process exited during startup';
+          console.error(`MCP server ${name} failed to start: ${errorMsg}`);
+          continue; // 尝试下一次重试
+        }
+
+        // 确保 stdin/stdout 可用
+        if (!proc.stdin || !proc.stdout) {
+          console.error(`MCP server ${name} stdio not available`);
+          proc.kill();
+          server.process = undefined;
+          continue;
+        }
 
         // 发送初始化消息
         const initResult = await sendMcpMessage(name, 'initialize', {
@@ -342,6 +384,15 @@ async function sendMcpMessage(
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      // 每次尝试前检查进程状态
+      if (!server?.process?.stdin || !server.process.stdout) {
+        // 尝试重新连接
+        const reconnected = await connectMcpServer(serverName);
+        if (!reconnected || !server?.process?.stdin || !server.process.stdout) {
+          throw new Error(`MCP server ${serverName} is not connected`);
+        }
+      }
+
       const id = messageId++;
       const message: McpMessage = {
         jsonrpc: '2.0',
@@ -354,6 +405,13 @@ async function sendMcpMessage(
         const timeoutHandle = setTimeout(() => {
           reject(new Error(`Timeout waiting for response to ${method}`));
         }, timeout);
+
+        // 再次检查，因为可能在等待期间断开
+        if (!server.process?.stdout) {
+          clearTimeout(timeoutHandle);
+          reject(new Error(`MCP server ${serverName} disconnected`));
+          return;
+        }
 
         const onData = (data: Buffer) => {
           try {
@@ -377,10 +435,16 @@ async function sendMcpMessage(
           }
         };
 
-        server.process!.stdout!.on('data', onData);
+        server.process.stdout.on('data', onData);
 
         try {
-          server.process!.stdin!.write(JSON.stringify(message) + '\n');
+          if (!server.process?.stdin) {
+            clearTimeout(timeoutHandle);
+            server.process?.stdout?.removeListener('data', onData);
+            reject(new Error(`MCP server ${serverName} stdin not available`));
+            return;
+          }
+          server.process.stdin.write(JSON.stringify(message) + '\n');
         } catch (err) {
           clearTimeout(timeoutHandle);
           server.process?.stdout?.removeListener('data', onData);
@@ -1036,4 +1100,25 @@ export async function createMcpTools(serverName: string): Promise<McpTool[]> {
   }
 
   return server.tools.map((tool) => new McpTool(serverName, tool));
+}
+
+/**
+ * 将预加载的 MCP 工具直接注册到 ToolRegistry
+ *
+ * 这允许在不连接 MCP 服务器的情况下注册工具，
+ * 工具会在实际调用时才尝试连接服务器。
+ *
+ * @param serverName MCP 服务器名称
+ * @param tools 预加载的工具定义
+ * @param registry ToolRegistry 实例
+ */
+export function registerMcpToolsToRegistry(
+  serverName: string,
+  tools: McpToolDefinition[],
+  registry: ToolRegistry
+): void {
+  for (const toolDef of tools) {
+    const mcpTool = new McpTool(serverName, toolDef);
+    registry.register(mcpTool);
+  }
 }

@@ -11,7 +11,9 @@ import { getSocketPath } from './native-host.js';
 
 const MAX_MESSAGE_SIZE = 1048576; // 1MB
 const CONNECT_TIMEOUT = 5000; // 5 秒
-const RECONNECT_DELAY = 1000; // 1 秒
+const RECONNECT_DELAY = 1000; // 1 秒初始延迟
+const MAX_RECONNECT_ATTEMPTS = 10; // 最大重连次数
+const MAX_RECONNECT_DELAY = 30000; // 最大重连延迟 30 秒
 
 /**
  * Socket 连接错误
@@ -49,6 +51,8 @@ export class SocketClient extends EventEmitter {
   }> = new Map();
   private callId = 0;
   private notificationHandler: ((notification: unknown) => void) | null = null;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private logger: {
     info: (msg: string, ...args: unknown[]) => void;
     warn: (msg: string, ...args: unknown[]) => void;
@@ -126,6 +130,7 @@ export class SocketClient extends EventEmitter {
         clearTimeout(timeoutId);
         this.connected = true;
         this.connecting = false;
+        this.reconnectAttempts = 0; // 重置重连计数
         this.logger.info('Connected to socket server');
         resolve();
       });
@@ -144,16 +149,85 @@ export class SocketClient extends EventEmitter {
           pending.reject(new SocketConnectionError('Connection closed'));
         }
         this.pendingToolCalls.clear();
+
+        // 自动重连
+        this.scheduleReconnect();
       });
 
-      this.socket.on('error', (err) => {
+      this.socket.on('error', (err: NodeJS.ErrnoException) => {
         clearTimeout(timeoutId);
         this.connected = false;
         this.connecting = false;
         this.logger.error('Socket error:', err);
+
+        // 对于连接被拒绝/重置/管道断开的错误，尝试重连
+        if (err.code && ['ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'ENOENT'].includes(err.code)) {
+          this.scheduleReconnect();
+        }
+
         reject(new SocketConnectionError(err.message));
       });
     });
+  }
+
+  /**
+   * 调度自动重连
+   */
+  private scheduleReconnect(): void {
+    // 如果已有重连计划，跳过
+    if (this.reconnectTimer) {
+      this.logger.info('Reconnect already scheduled, skipping');
+      return;
+    }
+
+    // 如果已达到最大重连次数，放弃
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.logger.info('Max reconnection attempts reached');
+      this.cleanup();
+      return;
+    }
+
+    this.reconnectAttempts++;
+
+    // 指数退避延迟，最大 30 秒
+    const delay = Math.min(
+      RECONNECT_DELAY * Math.pow(1.5, this.reconnectAttempts - 1),
+      MAX_RECONNECT_DELAY
+    );
+
+    this.logger.info(`Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch((err) => {
+        this.logger.error('Reconnect failed:', err);
+      });
+    }, delay);
+  }
+
+  /**
+   * 清理资源
+   */
+  private cleanup(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.closeSocket();
+  }
+
+  /**
+   * 关闭 socket 连接
+   */
+  private closeSocket(): void {
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.end();
+      this.socket.destroy();
+      this.socket = null;
+    }
+    this.connected = false;
+    this.connecting = false;
   }
 
   /**
@@ -195,8 +269,23 @@ export class SocketClient extends EventEmitter {
     if (!message || typeof message !== 'object') return;
 
     const msg = message as Record<string, unknown>;
+    this.logger.info(`Received message: ${JSON.stringify(msg).substring(0, 300)}`);
 
-    // 检查是否是工具调用响应
+    // 检查是否是工具调用响应（包含 result 或 error 字段）
+    // 官方格式不包含 callId，所以我们只检查 result/error
+    if ('result' in msg || 'error' in msg) {
+      this.logger.info('Received tool response');
+      // 由于官方代码不使用 callId，我们处理第一个等待中的请求
+      const firstPending = this.pendingToolCalls.entries().next().value;
+      if (firstPending) {
+        const [callId, pending] = firstPending;
+        this.pendingToolCalls.delete(callId);
+        pending.resolve(msg as ToolCallResult);
+      }
+      return;
+    }
+
+    // 兼容旧格式：检查是否有 callId
     if ('callId' in msg && typeof msg.callId === 'string') {
       const pending = this.pendingToolCalls.get(msg.callId);
       if (pending) {
@@ -212,7 +301,7 @@ export class SocketClient extends EventEmitter {
       return;
     }
 
-    this.logger.info('Received unknown message:', msg);
+    this.logger.info('Received unknown message type');
   }
 
   /**
@@ -260,11 +349,20 @@ export class SocketClient extends EventEmitter {
       });
 
       try {
-        this.send({
-          callId,
-          tool: toolName,
-          arguments: args
-        });
+        // Chrome 扩展期望的消息格式:
+        // { type: "tool_request", method: "execute_tool", params: { tool, client_id, args } }
+        const message = {
+          type: 'tool_request',
+          method: 'execute_tool',
+          params: {
+            tool: toolName,
+            client_id: 'claude-code',
+            args: args
+          }
+        };
+        this.logger.info(`Sending tool call: ${JSON.stringify(message).substring(0, 200)}`);
+        this.send(message);
+        this.logger.info('Tool call sent successfully');
       } catch (err) {
         this.pendingToolCalls.delete(callId);
         clearTimeout(timeoutId);
@@ -277,12 +375,14 @@ export class SocketClient extends EventEmitter {
    * 断开连接
    */
   disconnect(): void {
-    if (this.socket) {
-      this.socket.destroy();
-      this.socket = null;
-    }
-    this.connected = false;
-    this.connecting = false;
+    this.cleanup();
+  }
+
+  /**
+   * 检查是否已连接
+   */
+  isConnected(): boolean {
+    return this.connected;
   }
 }
 
