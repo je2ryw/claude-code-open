@@ -10,7 +10,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { getBackgroundShell, isShellId } from './bash.js';
-import { ConversationLoop, type LoopOptions } from '../core/loop.js';
+// 使用动态导入避免循环依赖：agent.ts -> loop.ts -> tools/index.ts -> agent.ts
+import type { LoopOptions } from '../core/loop.js';
 import {
   runSubagentStartHooks,
   runSubagentStopHooks,
@@ -630,7 +631,8 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         systemPrompt: agentDef.getSystemPrompt?.(),
       };
 
-      // 创建子对话循环
+      // 创建子对话循环（动态导入避免循环依赖）
+      const { ConversationLoop } = await import('../core/loop.js');
       const loop = new ConversationLoop(loopOptions);
 
       // 如果有初始消息上下文（forkContext），需要注入到session中
