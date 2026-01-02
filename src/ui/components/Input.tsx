@@ -54,6 +54,9 @@ export const Input: React.FC<InputProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatches, setSearchMatches] = useState<string[]>([]);
   const [searchIndex, setSearchIndex] = useState(0);
+  // 双击 ESC 检测
+  const lastEscPressTimeRef = React.useRef<number>(0);
+
   const [searchOriginalValue, setSearchOriginalValue] = useState('');
   const historyManager = useMemo(() => getHistoryManager(), []);
 
@@ -623,7 +626,18 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
       } else if (!vimModeEnabled && key.escape) {
-        // 非 Vim 模式下 ESC 清除输入
+        // 非 Vim 模式下 ESC: 检测双击触发 Rewind
+        const now = Date.now();
+        const timeSinceLastEsc = now - lastEscPressTimeRef.current;
+        lastEscPressTimeRef.current = now;
+
+        if (timeSinceLastEsc < DOUBLE_PRESS_INTERVAL && onRewindRequest) {
+          // 双击 ESC - 触发 Rewind
+          onRewindRequest();
+          return;
+        }
+
+        // 单击 ESC - 清除输入
         setValue('');
         setCursor(0);
         setHistoryIndex(-1);

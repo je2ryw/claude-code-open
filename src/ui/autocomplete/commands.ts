@@ -73,6 +73,13 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 18
   },
   {
+    value: '/discover',
+    label: '/discover',
+    description: 'Discover and browse MCP servers',
+    type: 'command',
+    priority: 43
+  },
+  {
     value: '/doctor ',
     label: '/doctor',
     description: 'Run diagnostics to check for issues',
@@ -93,6 +100,13 @@ export const ALL_COMMANDS: CompletionItem[] = [
     description: 'Export conversation to file',
     type: 'command',
     priority: 28
+  },
+  {
+    value: '/extra-usage',
+    label: '/extra-usage',
+    description: 'Request additional usage beyond plan limits',
+    type: 'command',
+    priority: 44
   },
   {
     value: '/feedback ',
@@ -146,6 +160,22 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 26
   },
   {
+    value: '/install-github-app',
+    label: '/install-github-app',
+    description: 'Install Claude Code GitHub App for CI/CD',
+    type: 'command',
+    aliases: ['github-app'],
+    priority: 51
+  },
+  {
+    value: '/install-slack-app',
+    label: '/install-slack-app',
+    description: 'Install Claude Code Slack App for notifications',
+    type: 'command',
+    aliases: ['slack-app'],
+    priority: 52
+  },
+  {
     value: '/login',
     label: '/login',
     description: 'Log in to Anthropic account',
@@ -174,12 +204,27 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 27
   },
   {
+    value: '/mobile',
+    label: '/mobile',
+    description: 'Show QR code for mobile connection',
+    type: 'command',
+    priority: 47
+  },
+  {
     value: '/model ',
     label: '/model',
     description: 'Switch or view current model',
     type: 'command',
     aliases: ['m'],
     priority: 7
+  },
+  {
+    value: '/output-style ',
+    label: '/output-style',
+    description: 'Configure output style (concise/verbose)',
+    type: 'command',
+    aliases: ['style'],
+    priority: 53
   },
   {
     value: '/permissions ',
@@ -212,12 +257,36 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 29
   },
   {
+    value: '/privacy-settings',
+    label: '/privacy-settings',
+    description: 'View and update privacy settings',
+    type: 'command',
+    aliases: ['privacy'],
+    priority: 54
+  },
+  {
+    value: '/rate-limit-options',
+    label: '/rate-limit-options',
+    description: 'View rate limit options and status',
+    type: 'command',
+    aliases: ['rate-limit', 'limits'],
+    priority: 55
+  },
+  {
     value: '/release-notes',
     label: '/release-notes',
     description: 'Show recent release notes and changes',
     type: 'command',
     aliases: ['changelog', 'whats-new'],
     priority: 36
+  },
+  {
+    value: '/remote-env',
+    label: '/remote-env',
+    description: 'Configure remote environment for teleport',
+    type: 'command',
+    aliases: ['remote', 'teleport'],
+    priority: 56
   },
   {
     value: '/resume ',
@@ -249,6 +318,20 @@ export const ALL_COMMANDS: CompletionItem[] = [
     type: 'command',
     aliases: ['security', 'sec'],
     priority: 17
+  },
+  {
+    value: '/skills',
+    label: '/skills',
+    description: 'List available skills',
+    type: 'command',
+    priority: 31
+  },
+  {
+    value: '/stats',
+    label: '/stats',
+    description: 'Show your Claude Code usage statistics',
+    type: 'command',
+    priority: 15
   },
   {
     value: '/status',
@@ -286,12 +369,42 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 41
   },
   {
+    value: '/tag ',
+    label: '/tag',
+    description: 'Add, remove, or list session tags',
+    type: 'command',
+    aliases: ['tags'],
+    priority: 42
+  },
+  {
+    value: '/think-back',
+    label: '/think-back',
+    description: 'Your Claude Code Year in Review',
+    type: 'command',
+    aliases: ['thinkback', 'year-review'],
+    priority: 48
+  },
+  {
+    value: '/thinkback-play',
+    label: '/thinkback-play',
+    description: 'Play the thinkback animation',
+    type: 'command',
+    priority: 49
+  },
+  {
     value: '/todos ',
     label: '/todos',
     description: 'Show or manage the current todo list',
     type: 'command',
     aliases: ['todo'],
     priority: 6
+  },
+  {
+    value: '/upgrade',
+    label: '/upgrade',
+    description: 'Upgrade Claude Code to latest version',
+    type: 'command',
+    priority: 57
   },
   {
     value: '/usage',

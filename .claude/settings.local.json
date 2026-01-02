@@ -112,7 +112,9 @@
       "Bash(git -C f:/claude-code-open stash list)",
       "Bash(CLAUDE_WEB_PORT=3457 timeout 8 node:*)",
       "Bash(git -C f:/claude-code-open log --oneline -10)",
-      "Bash(timeout 3 npm run dev:*)"
+      "Bash(timeout 3 npm run dev:*)",
+      "Bash(gh issue list:*)",
+      "Bash(timeout:*)"
     ]
   }
 }

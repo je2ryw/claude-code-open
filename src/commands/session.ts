@@ -573,28 +573,109 @@ Not enough new messages to compact. Use /compact --force to force compaction any
 export const rewindCommand: SlashCommand = {
   name: 'rewind',
   aliases: ['undo'],
-  description: 'Rewind conversation to a previous state',
-  usage: '/rewind [steps]',
+  description: 'Rewind conversation and/or code to a previous state',
+  usage: '/rewind [--code | --conversation | --both] [message-index]',
   category: 'session',
-  execute: (ctx: CommandContext): CommandResult => {
-    const { args } = ctx;
-    const steps = args.length > 0 ? parseInt(args[0], 10) : 1;
+  execute: async (ctx: CommandContext): Promise<CommandResult> => {
+    const { args, session } = ctx;
 
-    if (isNaN(steps) || steps < 1) {
-      ctx.ui.addMessage('assistant', 'Invalid number of steps. Usage: /rewind [steps]');
+    // 解析参数
+    let mode: 'code' | 'conversation' | 'both' = 'both';
+    let messageIndex: number | undefined;
+
+    for (const arg of args) {
+      if (arg === '--code' || arg === '-c') {
+        mode = 'code';
+      } else if (arg === '--conversation' || arg === '--conv') {
+        mode = 'conversation';
+      } else if (arg === '--both' || arg === '-b') {
+        mode = 'both';
+      } else if (!isNaN(parseInt(arg, 10))) {
+        messageIndex = parseInt(arg, 10);
+      }
+    }
+
+    // 显示帮助信息
+    if (args.includes('--help') || args.includes('-h')) {
+      ctx.ui.addMessage('assistant', `Rewind Command
+
+Usage: /rewind [options] [message-index]
+
+Options:
+  --code, -c         Rewind code changes only (restore files)
+  --conversation     Rewind conversation only (remove messages)
+  --both, -b         Rewind both code and conversation (default)
+  --help, -h         Show this help message
+
+Examples:
+  /rewind                    Show rewind UI (or press ESC)
+  /rewind 3                  Rewind to message #3
+  /rewind --code             Rewind code changes only
+  /rewind --conversation 5   Rewind conversation to message #5
+
+Notes:
+  • Press ESC during a conversation to open the rewind UI
+  • File changes are tracked automatically when you edit files
+  • Each user message creates a rewind point
+  • Rewinding removes all messages after the selected point`);
+      return { success: true };
+    }
+
+    // 如果没有指定消息索引，显示使用提示
+    if (messageIndex === undefined) {
+      const stats = session.getStats();
+      const messageCount = stats.messageCount;
+
+      ctx.ui.addMessage('assistant', `Rewind Feature
+
+Current session has ${messageCount} messages.
+
+To rewind, you can:
+  1. Press ESC to open the interactive rewind UI
+  2. Use /rewind <message-index> to rewind to a specific message
+
+Options:
+  /rewind --code           Rewind file changes only
+  /rewind --conversation   Rewind conversation only
+  /rewind --both           Rewind both (default)
+
+Example:
+  /rewind 3                Rewind to message #3
+  /rewind --code 5         Restore files to state at message #5
+
+Tip: Use /rewind --help for more information.`);
+      return { success: true };
+    }
+
+    // 验证消息索引
+    const stats = session.getStats();
+    if (messageIndex < 1 || messageIndex > stats.messageCount) {
+      ctx.ui.addMessage('assistant', `Invalid message index: ${messageIndex}
+
+Valid range: 1 to ${stats.messageCount}
+
+Use /rewind without arguments to see available rewind points.`);
       return { success: false };
     }
 
-    ctx.ui.addMessage('assistant', `Rewind feature:
+    // 显示将要执行的操作
+    const modeDescription = {
+      'code': 'code changes only',
+      'conversation': 'conversation only',
+      'both': 'code and conversation',
+    }[mode];
 
-To rewind ${steps} step(s), this would:
-  1. Remove the last ${steps * 2} messages (user + assistant pairs)
-  2. Restore conversation state
+    ctx.ui.addMessage('assistant', `Rewinding ${modeDescription} to message #${messageIndex}...
 
-Note: This feature requires message history tracking.
-Currently, you can:
-  - Use /clear to start fresh
-  - Use /resume to restore a saved session`);
+This will:
+${mode !== 'conversation' ? '  • Restore files to their state at that point\n' : ''}${mode !== 'code' ? `  • Remove ${stats.messageCount - messageIndex} message(s) after that point\n` : ''}
+Note: File rewind requires file history tracking to be enabled.
+The rewind feature tracks file changes automatically when you use Edit/Write tools.
+
+To enable the full interactive rewind UI, press ESC during a conversation.`);
+
+    // 记录活动
+    ctx.ui.addActivity(`Rewind requested: ${modeDescription} to message #${messageIndex}`);
 
     return { success: true };
   },

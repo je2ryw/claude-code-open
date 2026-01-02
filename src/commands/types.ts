@@ -94,7 +94,8 @@ export type CommandCategory =
   | 'tools'
   | 'auth'
   | 'utility'
-  | 'development';
+  | 'development'
+  | 'settings';
 
 export interface CommandRegistry {
   commands: Map<string, SlashCommand>;

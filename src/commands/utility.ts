@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { generateTerminalConfig, detectTerminalType, formatConfigAsMarkdown } from '../utils/terminal-setup.js';
+import React from 'react';
+import { SkillsDialog } from '../ui/components/SkillsDialog.js';
 
 // /cost - 费用统计 (官方风格)
 export const costCommand: SlashCommand = {
@@ -490,7 +492,7 @@ Fun fact: The mascot's name is "Clawd"!`;
   },
 };
 
-// /skills - 技能列表 (官方风格 - 扫描实际可用技能)
+// /skills - 技能列表 (官方风格 - 交互式对话框)
 export const skillsCommand: SlashCommand = {
   name: 'skills',
   description: 'List available skills',
@@ -498,93 +500,20 @@ export const skillsCommand: SlashCommand = {
   execute: (ctx: CommandContext): CommandResult => {
     const { config } = ctx;
 
-    // 扫描技能目录
-    const globalSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-    const projectSkillsDir = path.join(config.cwd, '.claude', 'commands');
+    // 返回 JSX 组件，由 App.tsx 显示为交互式对话框
+    const jsx = React.createElement(SkillsDialog, {
+      cwd: config.cwd,
+      onClose: () => {
+        // onClose 将由 App.tsx 注入
+      },
+    });
 
-    const globalSkills: string[] = [];
-    const projectSkills: string[] = [];
-
-    // 扫描全局技能
-    if (fs.existsSync(globalSkillsDir)) {
-      try {
-        const files = fs.readdirSync(globalSkillsDir);
-        for (const file of files) {
-          if (file.endsWith('.md')) {
-            globalSkills.push(file.replace('.md', ''));
-          }
-        }
-      } catch {
-        // 忽略错误
-      }
-    }
-
-    // 扫描项目技能
-    if (fs.existsSync(projectSkillsDir)) {
-      try {
-        const files = fs.readdirSync(projectSkillsDir);
-        for (const file of files) {
-          if (file.endsWith('.md')) {
-            projectSkills.push(file.replace('.md', ''));
-          }
-        }
-      } catch {
-        // 忽略错误
-      }
-    }
-
-    // 内置技能
-    const builtInSkills = [
-      { name: 'session-start-hook', desc: 'Set up SessionStart hooks for projects' },
-    ];
-
-    let skillsInfo = `Available Skills
-
-`;
-
-    // 内置技能
-    skillsInfo += `Built-in Skills:\n`;
-    for (const skill of builtInSkills) {
-      skillsInfo += `  ${skill.name.padEnd(22)} ${skill.desc}\n`;
-    }
-
-    // 全局技能
-    skillsInfo += `\nGlobal Skills (${globalSkillsDir}):\n`;
-    if (globalSkills.length > 0) {
-      for (const skill of globalSkills) {
-        skillsInfo += `  ${skill}\n`;
-      }
-    } else {
-      skillsInfo += `  (none)\n`;
-    }
-
-    // 项目技能
-    skillsInfo += `\nProject Skills (${projectSkillsDir}):\n`;
-    if (projectSkills.length > 0) {
-      for (const skill of projectSkills) {
-        skillsInfo += `  ${skill}\n`;
-      }
-    } else {
-      skillsInfo += `  (none)\n`;
-    }
-
-    skillsInfo += `
-Creating Skills:
-  Skills are markdown files that expand into prompts.
-
-  Example ~/.claude/skills/my-skill.md:
-    # My Skill
-    This skill helps with...
-
-    ## Instructions
-    When using this skill...
-
-Usage:
-  Ask Claude to use a skill by name, or invoke with:
-    "use the <skill-name> skill"`;
-
-    ctx.ui.addMessage('assistant', skillsInfo);
-    return { success: true };
+    return {
+      success: true,
+      action: 'showJsx',
+      jsx,
+      shouldHidePromptInput: true,
+    };
   },
 };
 
