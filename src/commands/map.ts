@@ -380,6 +380,278 @@ async function handleStatus(
   }
 }
 
+/**
+ * implement 子命令 - 根据蓝图中的计划模块生成代码
+ */
+async function handleImplement(
+  ctx: CommandContext,
+  options: Record<string, string | boolean>
+): Promise<CommandResult> {
+  const { config, ui } = ctx;
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+  const chunksDir = path.join(mapDir, 'chunks');
+
+  // 检查蓝图是否存在
+  if (!fs.existsSync(mapDir)) {
+    ui.addMessage(
+      'assistant',
+      '❌ 未找到蓝图目录。请先运行 `/map generate` 生成蓝图。'
+    );
+    return { success: false, message: 'Blueprint not found' };
+  }
+
+  ui.addMessage('assistant', '正在扫描计划模块...');
+
+  try {
+    // 扫描所有 chunk 文件中的 plannedModules
+    const plannedModules: Array<{
+      id: string;
+      name: string;
+      designNotes: string;
+      priority: string;
+      dependencies: string[];
+      chunkPath: string;
+    }> = [];
+
+    const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.endsWith('.json'));
+
+    for (const chunkFile of chunkFiles) {
+      const chunkPath = path.join(chunksDir, chunkFile);
+      const chunkData = JSON.parse(fs.readFileSync(chunkPath, 'utf8'));
+
+      if (chunkData.plannedModules && Array.isArray(chunkData.plannedModules)) {
+        for (const planned of chunkData.plannedModules) {
+          if (planned.status === 'planned' || planned.status === 'in-progress') {
+            plannedModules.push({
+              ...planned,
+              chunkPath: chunkFile.replace('.json', ''),
+            });
+          }
+        }
+      }
+    }
+
+    if (plannedModules.length === 0) {
+      ui.addMessage(
+        'assistant',
+        '没有找到计划中的模块。\n\n' +
+        '您可以通过以下方式添加计划模块：\n' +
+        '1. 启动可视化服务器：`/map serve`\n' +
+        '2. 在浏览器中点击"添加计划模块"按钮'
+      );
+      return { success: true };
+    }
+
+    // 按优先级排序
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    plannedModules.sort((a, b) =>
+      (priorityOrder[a.priority as keyof typeof priorityOrder] || 1) -
+      (priorityOrder[b.priority as keyof typeof priorityOrder] || 1)
+    );
+
+    // 显示计划模块列表
+    let listMessage = '📋 **发现以下计划模块：**\n\n';
+    plannedModules.forEach((m, i) => {
+      const priorityEmoji = { high: '🔴', medium: '🟡', low: '🟢' }[m.priority] || '⚪';
+      listMessage += `${i + 1}. ${priorityEmoji} **${m.id}**\n`;
+      listMessage += `   ${m.designNotes}\n`;
+      if (m.dependencies.length > 0) {
+        listMessage += `   依赖: ${m.dependencies.join(', ')}\n`;
+      }
+      listMessage += '\n';
+    });
+
+    listMessage += '\n请输入要实现的模块序号（或输入 "all" 实现所有模块）：';
+
+    ui.addMessage('assistant', listMessage);
+
+    // 如果指定了 --all 选项，实现所有模块
+    if (options.all) {
+      return await implementModules(ctx, plannedModules, mapDir);
+    }
+
+    // 如果指定了 --id 选项，实现指定模块
+    const targetId = options.id as string;
+    if (targetId) {
+      const target = plannedModules.find(m => m.id === targetId);
+      if (!target) {
+        ui.addMessage('assistant', `❌ 未找到模块: ${targetId}`);
+        return { success: false, message: 'Module not found' };
+      }
+      return await implementModules(ctx, [target], mapDir);
+    }
+
+    // 交互模式：提示用户选择
+    // 注：由于 CLI 限制，这里只显示列表，用户需要使用 --id 或 --all 参数
+    ui.addMessage(
+      'assistant',
+      '使用方法：\n' +
+      '  `/map implement --id <模块路径>` - 实现指定模块\n' +
+      '  `/map implement --all` - 实现所有计划模块'
+    );
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ui.addMessage('assistant', `❌ 扫描失败: ${message}`);
+    return { success: false, message };
+  }
+}
+
+/**
+ * 实现指定的计划模块
+ */
+async function implementModules(
+  ctx: CommandContext,
+  modules: Array<{
+    id: string;
+    name: string;
+    designNotes: string;
+    priority: string;
+    dependencies: string[];
+    chunkPath: string;
+  }>,
+  mapDir: string
+): Promise<CommandResult> {
+  const { config, ui } = ctx;
+
+  for (const module of modules) {
+    ui.addMessage('assistant', `\n正在生成: **${module.id}**...`);
+
+    // 生成代码骨架
+    const code = generateModuleSkeleton(module);
+
+    // 确保目录存在
+    const targetPath = path.join(config.cwd, module.id);
+    const targetDir = path.dirname(targetPath);
+
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    // 检查文件是否已存在
+    if (fs.existsSync(targetPath)) {
+      ui.addMessage('assistant', `⚠️ 文件已存在，跳过: ${module.id}`);
+      continue;
+    }
+
+    // 写入文件
+    fs.writeFileSync(targetPath, code, 'utf8');
+
+    // 更新 chunk 中的模块状态
+    const chunkPath = path.join(mapDir, 'chunks', `${module.chunkPath}.json`);
+    if (fs.existsSync(chunkPath)) {
+      const chunk = JSON.parse(fs.readFileSync(chunkPath, 'utf8'));
+
+      // 从 plannedModules 中移除
+      if (chunk.plannedModules) {
+        const index = chunk.plannedModules.findIndex((m: any) => m.id === module.id);
+        if (index >= 0) {
+          chunk.plannedModules.splice(index, 1);
+        }
+      }
+
+      // 添加到 moduleDesignMeta
+      if (!chunk.moduleDesignMeta) {
+        chunk.moduleDesignMeta = {};
+      }
+      chunk.moduleDesignMeta[module.id] = {
+        status: 'in-progress',
+        designNotes: module.designNotes,
+        markedAt: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(chunkPath, JSON.stringify(chunk, null, 2), 'utf8');
+    }
+
+    ui.addMessage('assistant', `✓ 已生成: ${module.id}`);
+  }
+
+  ui.addMessage(
+    'assistant',
+    `\n🎉 **完成！** 已生成 ${modules.length} 个模块骨架。\n\n` +
+    '下一步：\n' +
+    '1. 完善生成的代码\n' +
+    '2. 运行 `/map generate` 更新蓝图\n' +
+    '3. 使用 `/map serve` 查看更新后的架构'
+  );
+
+  return { success: true };
+}
+
+/**
+ * 生成模块代码骨架
+ */
+function generateModuleSkeleton(module: {
+  id: string;
+  name: string;
+  designNotes: string;
+  dependencies: string[];
+}): string {
+  const isTypeScript = module.id.endsWith('.ts') || module.id.endsWith('.tsx');
+  const name = module.name.replace(/\.(ts|tsx|js|jsx)$/, '');
+  const className = name.charAt(0).toUpperCase() + name.slice(1).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+  // 生成导入语句
+  let imports = '';
+  for (const dep of module.dependencies) {
+    const depName = path.basename(dep).replace(/\.(ts|tsx|js|jsx)$/, '');
+    const relativePath = getRelativePath(module.id, dep);
+    imports += `import { } from '${relativePath}';\n`;
+  }
+
+  // 生成代码骨架
+  const code = `/**
+ * ${name}
+ *
+ * ${module.designNotes}
+ *
+ * @module ${module.id}
+ * @created ${new Date().toISOString().split('T')[0]}
+ */
+
+${imports}
+/**
+ * TODO: 实现 ${className}
+ *
+ * 设计说明：
+ * ${module.designNotes.split('\n').join('\n * ')}
+ */
+export class ${className} {
+  constructor() {
+    // TODO: 初始化
+  }
+
+  // TODO: 添加方法
+}
+
+/**
+ * 默认导出
+ */
+export default ${className};
+`;
+
+  return code;
+}
+
+/**
+ * 计算相对路径
+ */
+function getRelativePath(from: string, to: string): string {
+  const fromDir = path.dirname(from);
+  let relativePath = path.relative(fromDir, to).replace(/\\/g, '/');
+
+  // 移除 .ts/.js 扩展名
+  relativePath = relativePath.replace(/\.(ts|tsx|js|jsx)$/, '');
+
+  // 确保以 ./ 或 ../ 开头
+  if (!relativePath.startsWith('.')) {
+    relativePath = './' + relativePath;
+  }
+
+  return relativePath;
+}
+
 // ============================================================================
 // 命令定义
 // ============================================================================
@@ -395,11 +667,14 @@ export const mapCommand: SlashCommand = {
   serve       启动可视化服务器
   view        生成并打开可视化
   status      查看当前蓝图状态
+  implement   根据计划模块生成代码
 
 选项:
   --output, -o <path>   输出文件路径 (默认: CODE_MAP.json)
   --skip-semantics, -s  跳过 AI 语义生成
   --port <n>            服务器端口 (默认: 3030)
+  --id <path>           指定要实现的模块路径 (implement)
+  --all                 实现所有计划模块 (implement)
 
 蓝图内容:
   • 层级结构: 目录树视图 + 架构分层视图
@@ -411,7 +686,10 @@ export const mapCommand: SlashCommand = {
   /map -s               生成蓝图（跳过语义，更快）
   /map generate -o blueprint.json
   /map serve --port 8080
-  /map status`,
+  /map status
+  /map implement        列出计划模块
+  /map implement --id src/core/retry.ts
+  /map implement --all`,
   category: 'development',
   execute: async (ctx: CommandContext): Promise<CommandResult> => {
     const { subcommand, options } = parseArgs(ctx.args);
@@ -428,6 +706,9 @@ export const mapCommand: SlashCommand = {
 
       case 'status':
         return handleStatus(ctx, options);
+
+      case 'implement':
+        return handleImplement(ctx, options);
 
       default:
         // 默认行为：生成增强版蓝图

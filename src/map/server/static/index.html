@@ -210,6 +210,126 @@
     </div>
   </div>
 
+  <!-- 添加计划模块对话框 -->
+  <div class="modal" id="add-planned-module-modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>添加计划模块</h3>
+        <button class="modal-close" onclick="closePlannedModuleModal()">×</button>
+      </div>
+      <form id="add-planned-module-form" onsubmit="return submitPlannedModule(event)">
+        <div class="form-group">
+          <label for="planned-module-id">模块路径：</label>
+          <input type="text" id="planned-module-id" name="id" placeholder="src/core/retry.ts" required>
+        </div>
+        <div class="form-group">
+          <label for="planned-module-name">模块名称：</label>
+          <input type="text" id="planned-module-name" name="name" placeholder="retry.ts">
+        </div>
+        <div class="form-group">
+          <label for="planned-module-notes">功能描述：</label>
+          <textarea id="planned-module-notes" name="designNotes" rows="3" placeholder="描述这个模块的功能..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="planned-module-priority">优先级：</label>
+          <select id="planned-module-priority" name="priority">
+            <option value="high">高</option>
+            <option value="medium" selected>中</option>
+            <option value="low">低</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="planned-module-deps">依赖模块（逗号分隔）：</label>
+          <input type="text" id="planned-module-deps" name="dependencies" placeholder="src/core/client.ts, src/utils/index.ts">
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="closePlannedModuleModal()">取消</button>
+          <button type="submit" class="primary">保存到蓝图</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 添加重构任务对话框 -->
+  <div class="modal" id="add-refactoring-modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>标记重构任务</h3>
+        <button class="modal-close" onclick="closeRefactoringModal()">×</button>
+      </div>
+      <form id="add-refactoring-form" onsubmit="return submitRefactoringTask(event)">
+        <input type="hidden" id="refactoring-target" name="target">
+        <div class="form-group">
+          <label for="refactoring-type">重构类型：</label>
+          <select id="refactoring-type" name="type" required>
+            <option value="extract-function">提取函数</option>
+            <option value="extract-class">提取类</option>
+            <option value="rename">重命名</option>
+            <option value="move">移动模块</option>
+            <option value="split">拆分模块</option>
+            <option value="merge">合并模块</option>
+            <option value="inline">内联</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="refactoring-reason">重构原因：</label>
+          <textarea id="refactoring-reason" name="reason" rows="2" placeholder="为什么需要重构..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="refactoring-description">描述：</label>
+          <textarea id="refactoring-description" name="description" rows="3" placeholder="详细描述重构内容..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="refactoring-priority">优先级：</label>
+          <select id="refactoring-priority" name="priority">
+            <option value="high">高</option>
+            <option value="medium" selected>中</option>
+            <option value="low">低</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="closeRefactoringModal()">取消</button>
+          <button type="submit" class="primary">添加任务</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 模块设计编辑对话框 -->
+  <div class="modal" id="edit-design-modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>编辑模块设计</h3>
+        <button class="modal-close" onclick="closeDesignModal()">×</button>
+      </div>
+      <form id="edit-design-form" onsubmit="return submitDesignEdit(event)">
+        <input type="hidden" id="design-module-id" name="moduleId">
+        <div class="form-group">
+          <label>模块路径：</label>
+          <div id="design-module-path" style="color: #4ecdc4; padding: 0.5rem 0;"></div>
+        </div>
+        <div class="form-group">
+          <label for="design-status">状态：</label>
+          <select id="design-status" name="status">
+            <option value="implemented">已实现</option>
+            <option value="in-progress">开发中</option>
+            <option value="needs-refactor">需要重构</option>
+            <option value="deprecated">已废弃</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="design-notes">设计备注：</label>
+          <textarea id="design-notes" name="designNotes" rows="4" placeholder="记录设计决策、待办事项等..."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="closeDesignModal()">取消</button>
+          <button type="submit" class="primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="chunked-loader.js"></script>
   <script src="app.js"></script>
 </body>

@@ -251,13 +251,33 @@
     let html = `<h3>${layerName}</h3>`;
     html += `<div style="color: #888; margin-bottom: 1rem;">共 ${modulesArray.length} 个模块</div>`;
 
+    // 添加"添加计划模块"按钮
+    html += `<button class="add-planned-btn" onclick="openPlannedModuleModal('')">+ 添加计划模块</button>`;
+
     modulesArray.forEach(module => {
-      html += `<div class="module-item" style="cursor: pointer; padding: 0.5rem; margin: 0.3rem 0; background: #16213e; border-radius: 4px;" onclick="showModuleDetailsFromChunk('${module.id}')">`;
-      html += `<div style="color: #4ecdc4; font-weight: bold;">${module.name}</div>`;
-      html += `<div style="color: #888; font-size: 0.85rem;">${module.path}</div>`;
+      const status = module.designMeta?.status || 'implemented';
+      const statusClass = status.replace('-', '');
+      const statusText = {
+        'implemented': '已实现',
+        'planned': '计划中',
+        'in-progress': '开发中',
+        'needs-refactor': '需重构',
+        'deprecated': '已废弃'
+      }[status] || status;
+
+      html += `<div class="module-item" style="padding: 0.75rem; margin: 0.5rem 0; background: #16213e; border-radius: 4px; border-left: 3px solid ${status === 'needs-refactor' ? '#e94560' : '#4ecdc4'};">`;
+      html += `<div style="display: flex; justify-content: space-between; align-items: center;">`;
+      html += `<div style="color: #4ecdc4; font-weight: bold; cursor: pointer;" onclick="showModuleDetailsFromChunk('${module.id}')">${module.name}</div>`;
+      html += `<span class="status-badge ${statusClass}">${statusText}</span>`;
+      html += `</div>`;
+      html += `<div style="color: #888; font-size: 0.85rem; margin-top: 0.25rem;">${module.path}</div>`;
       if (module.lines) {
         html += `<div style="color: #aaa; font-size: 0.8rem;">${module.lines} 行</div>`;
       }
+      html += `<div class="module-actions">`;
+      html += `<button onclick="openDesignModal('${module.id}', '${status}', '')">✏️ 编辑</button>`;
+      html += `<button onclick="openRefactoringModal('${module.id}')">🔧 重构</button>`;
+      html += `</div>`;
       html += '</div>';
     });
 

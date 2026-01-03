@@ -317,4 +317,264 @@ export function setupApiRoutes(app: Express, ontologyPath: string): void {
       res.status(500).json({ error: message });
     }
   });
+
+  // ============ 编辑 API 端点 ============
+
+  // 1. POST /api/module/planned - 添加计划模块
+  app.post('/api/module/planned', async (req: Request, res: Response) => {
+    try {
+      const { dirPath, moduleData } = req.body;
+
+      // 验证必填字段
+      if (!dirPath && dirPath !== '' || !moduleData || !moduleData.id) {
+        res.status(400).json({ error: '缺少必填字段: dirPath, moduleData.id' });
+        return;
+      }
+
+      // 构建 chunk 文件路径
+      const chunkFileName = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+      const chunkFile = path.join(mapDir, 'chunks', `${chunkFileName}.json`);
+
+      // 读取或创建 chunk
+      let chunk: any = {
+        path: dirPath,
+        modules: {},
+        symbols: {},
+        references: { moduleDeps: [], symbolCalls: [], typeRefs: [] }
+      };
+
+      if (fs.existsSync(chunkFile)) {
+        chunk = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+      }
+
+      // 添加到 plannedModules
+      if (!chunk.plannedModules) {
+        chunk.plannedModules = [];
+      }
+
+      // 检查是否已存在
+      const existingIndex = chunk.plannedModules.findIndex((m: any) => m.id === moduleData.id);
+      if (existingIndex >= 0) {
+        chunk.plannedModules[existingIndex] = {
+          ...moduleData,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        chunk.plannedModules.push({
+          ...moduleData,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // 保存 chunk
+      fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+
+      res.json({ success: true, moduleId: moduleData.id });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 2. PUT /api/module-design - 更新模块设计
+  app.put('/api/module-design', async (req: Request, res: Response) => {
+    try {
+      const moduleId = req.query.id as string;
+      const { designNotes, status } = req.body;
+
+      if (!moduleId) {
+        res.status(400).json({ error: '缺少 id 参数' });
+        return;
+      }
+
+      // 从 moduleId 推断 chunk 路径
+      const dirPath = path.dirname(moduleId);
+      const chunkFileName = dirPath === '.' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+      const chunkFile = path.join(mapDir, 'chunks', `${chunkFileName}.json`);
+
+      if (!fs.existsSync(chunkFile)) {
+        res.status(404).json({ error: 'Chunk 不存在' });
+        return;
+      }
+
+      const chunk = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+
+      // 初始化 moduleDesignMeta
+      if (!chunk.moduleDesignMeta) {
+        chunk.moduleDesignMeta = {};
+      }
+
+      // 更新设计元数据
+      chunk.moduleDesignMeta[moduleId] = {
+        ...(chunk.moduleDesignMeta[moduleId] || {}),
+        status,
+        designNotes,
+        markedAt: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 3. POST /api/refactoring-task - 添加重构任务
+  app.post('/api/refactoring-task', async (req: Request, res: Response) => {
+    try {
+      const { dirPath, task } = req.body;
+
+      if (!dirPath && dirPath !== '' || !task || !task.target) {
+        res.status(400).json({ error: '缺少必填字段' });
+        return;
+      }
+
+      // 构建 chunk 文件路径
+      const chunkFileName = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+      const chunkFile = path.join(mapDir, 'chunks', `${chunkFileName}.json`);
+
+      if (!fs.existsSync(chunkFile)) {
+        res.status(404).json({ error: 'Chunk 不存在' });
+        return;
+      }
+
+      const chunk = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+
+      if (!chunk.refactoringTasks) {
+        chunk.refactoringTasks = [];
+      }
+
+      // 生成任务 ID
+      const taskId = `refactor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newTask = {
+        ...task,
+        id: taskId,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      chunk.refactoringTasks.push(newTask);
+
+      fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+
+      res.json({ success: true, taskId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 4. PUT /api/module-status - 更新模块状态
+  app.put('/api/module-status', async (req: Request, res: Response) => {
+    try {
+      const moduleId = req.query.id as string;
+      const { status } = req.body;
+
+      if (!moduleId || !status) {
+        res.status(400).json({ error: '缺少 id 或 status 参数' });
+        return;
+      }
+
+      // 从 moduleId 推断 chunk 路径
+      const dirPath = path.dirname(moduleId);
+      const chunkFileName = dirPath === '.' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+      const chunkFile = path.join(mapDir, 'chunks', `${chunkFileName}.json`);
+
+      if (!fs.existsSync(chunkFile)) {
+        res.status(404).json({ error: 'Chunk 不存在' });
+        return;
+      }
+
+      const chunk = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+
+      // 检查是否是计划模块
+      if (chunk.plannedModules) {
+        const plannedIndex = chunk.plannedModules.findIndex((m: any) => m.id === moduleId);
+        if (plannedIndex >= 0) {
+          if (status === 'implemented') {
+            // 从 planned 移动到实现状态
+            const planned = chunk.plannedModules.splice(plannedIndex, 1)[0];
+            if (!chunk.moduleDesignMeta) {
+              chunk.moduleDesignMeta = {};
+            }
+            chunk.moduleDesignMeta[moduleId] = {
+              status: 'implemented',
+              designNotes: planned.designNotes,
+              markedAt: new Date().toISOString(),
+            };
+          } else {
+            chunk.plannedModules[plannedIndex].status = status;
+            chunk.plannedModules[plannedIndex].updatedAt = new Date().toISOString();
+          }
+          fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+          res.json({ success: true });
+          return;
+        }
+      }
+
+      // 更新现有模块状态
+      if (!chunk.moduleDesignMeta) {
+        chunk.moduleDesignMeta = {};
+      }
+      chunk.moduleDesignMeta[moduleId] = {
+        ...(chunk.moduleDesignMeta[moduleId] || {}),
+        status,
+        markedAt: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 5. DELETE /api/refactoring-task - 删除/完成重构任务
+  app.delete('/api/refactoring-task', async (req: Request, res: Response) => {
+    try {
+      const taskId = req.query.id as string;
+      const dirPath = (req.query.dir as string) || '';
+
+      if (!taskId) {
+        res.status(400).json({ error: '缺少 id 参数' });
+        return;
+      }
+
+      const chunkFileName = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+      const chunkFile = path.join(mapDir, 'chunks', `${chunkFileName}.json`);
+
+      if (!fs.existsSync(chunkFile)) {
+        res.status(404).json({ error: 'Chunk 不存在' });
+        return;
+      }
+
+      const chunk = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+
+      if (!chunk.refactoringTasks) {
+        res.status(404).json({ error: '任务不存在' });
+        return;
+      }
+
+      const taskIndex = chunk.refactoringTasks.findIndex((t: any) => t.id === taskId);
+      if (taskIndex < 0) {
+        res.status(404).json({ error: '任务不存在' });
+        return;
+      }
+
+      // 标记为完成而不是删除
+      chunk.refactoringTasks[taskIndex].status = 'completed';
+      chunk.refactoringTasks[taskIndex].completedAt = new Date().toISOString();
+
+      fs.writeFileSync(chunkFile, JSON.stringify(chunk, null, 2), 'utf8');
+
+      res.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
 }
