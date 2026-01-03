@@ -209,13 +209,25 @@ export class LSPManager extends EventEmitter {
     if (!server) return false;
 
     try {
-      execSync(server.checkCommand, {
+      // Windows: 需要添加 .cmd 后缀
+      let checkCommand = server.checkCommand;
+      if (process.platform === 'win32') {
+        // 将命令中的可执行文件名替换为 .cmd 版本
+        const cmdParts = checkCommand.split(/\s+/);
+        if (cmdParts[0] && !cmdParts[0].endsWith('.cmd')) {
+          cmdParts[0] = `${cmdParts[0]}.cmd`;
+        }
+        checkCommand = cmdParts.join(' ');
+      }
+
+      execSync(checkCommand, {
         stdio: 'pipe',
-        shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
+        shell: process.platform === 'win32',
         timeout: 5000,
-      });
+      } as any);
       return true;
-    } catch {
+    } catch (error) {
+      // 静默失败，返回 false
       return false;
     }
   }
@@ -408,10 +420,16 @@ export class LSPManager extends EventEmitter {
 
     const server = LSP_SERVERS[language]!;
 
+    // Windows: file:///C:/path, Unix: file:///path
+    const normalizedPath = this.workspaceRoot.replace(/\\/g, '/');
+    const rootUri = normalizedPath.startsWith('/')
+      ? `file://${normalizedPath}`  // Unix: file:///path
+      : `file:///${normalizedPath}`; // Windows: file:///C:/path
+
     const config: LSPServerConfig = {
       command: server.command,
       args: server.args,
-      rootUri: `file://${this.workspaceRoot.replace(/\\/g, '/')}`,
+      rootUri,
     };
 
     const client = new LSPClient(language, config);
@@ -426,12 +444,25 @@ export class LSPManager extends EventEmitter {
     });
 
     // 启动客户端
-    const started = await client.start();
-    if (!started) {
+    try {
+      const started = await client.start();
+      if (!started) {
+        throw new LSPServerError(
+          `Failed to start ${server.name}`,
+          language,
+          `The LSP server process failed to start.\n\nPlease check:\n1. ${server.command} is properly installed\n2. You have sufficient permissions\n3. The server is not already running\n\nTry reinstalling: ${server.installCommand}`
+        );
+      }
+    } catch (error) {
+      // 如果是 LSPServerError，直接抛出
+      if (error instanceof LSPServerError) {
+        throw error;
+      }
+      // 其他错误，包装成 LSPServerError
       throw new LSPServerError(
-        `Failed to start ${server.name}`,
+        `Error starting ${server.name}: ${error instanceof Error ? error.message : String(error)}`,
         language,
-        `The LSP server process failed to start.\n\nPlease check:\n1. ${server.command} is properly installed\n2. You have sufficient permissions\n3. The server is not already running\n\nTry reinstalling: ${server.installCommand}`
+        `Failed to initialize ${server.name}.\n\nError: ${error instanceof Error ? error.message : String(error)}\n\nTry reinstalling: ${server.installCommand}`
       );
     }
 

@@ -110,7 +110,7 @@ export class LSPClient extends EventEmitter {
     resolve: (result: any) => void;
     reject: (error: Error) => void;
   }> = new Map();
-  private buffer = '';
+  private buffer = Buffer.alloc(0);  // 改用Buffer而不是string
   private contentLength = -1;
   private capabilities: any = null;
 
@@ -137,9 +137,15 @@ export class LSPClient extends EventEmitter {
     this.emit('stateChange', this.state);
 
     try {
-      this.process = spawn(this.config.command, this.config.args, {
+      // Windows 平台需要使用 .cmd 后缀并确保 shell 模式
+      const command = process.platform === 'win32' && !this.config.command.endsWith('.cmd')
+        ? `${this.config.command}.cmd`
+        : this.config.command;
+
+      this.process = spawn(command, this.config.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: process.platform === 'win32',
+        windowsHide: true, // Windows: 隐藏控制台窗口
       });
 
       this.process.stdout?.on('data', (data: Buffer) => {
@@ -151,20 +157,35 @@ export class LSPClient extends EventEmitter {
         // console.error(`[LSP ${this.language}] ${data.toString()}`);
       });
 
+      // 添加启动超时检测
+      let startupTimeout: NodeJS.Timeout | null = null;
+      let processErrorOccurred = false;
+
       this.process.on('error', (error) => {
+        processErrorOccurred = true;
+        if (startupTimeout) clearTimeout(startupTimeout);
         this.state = 'error';
         this.emit('error', error);
         this.emit('stateChange', this.state);
       });
 
       this.process.on('exit', (code) => {
+        if (startupTimeout) clearTimeout(startupTimeout);
         this.state = 'stopped';
         this.emit('exit', code);
         this.emit('stateChange', this.state);
       });
 
-      // 发送 initialize 请求
-      const initResult = await this.sendRequest('initialize', {
+      // 等待进程稳定 (100ms)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // 检查进程是否启动失败
+      if (processErrorOccurred || !this.process || this.process.exitCode !== null) {
+        throw new Error(`Failed to spawn ${command}: process exited immediately`);
+      }
+
+      // 设置初始化超时 (10 秒)
+      const initPromise = this.sendRequest('initialize', {
         processId: process.pid,
         capabilities: {
           textDocument: {
@@ -182,6 +203,15 @@ export class LSPClient extends EventEmitter {
         rootUri: this.config.rootUri || null,
         initializationOptions: this.config.initializationOptions || {},
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        startupTimeout = setTimeout(() => {
+          reject(new Error(`LSP server initialization timeout after 10 seconds`));
+        }, 10000);
+      });
+
+      const initResult = await Promise.race([initPromise, timeoutPromise]);
+      if (startupTimeout) clearTimeout(startupTimeout);
 
       this.capabilities = initResult?.capabilities;
 
@@ -357,7 +387,13 @@ export class LSPClient extends EventEmitter {
     }
 
     const content = JSON.stringify(message);
-    const header = `Content-Length: ${Buffer.byteLength(content)}\r\n\r\n`;
+    const contentLength = Buffer.byteLength(content);
+    const header = `Content-Length: ${contentLength}\r\n\r\n`;
+
+    // 调试：验证我们发送的消息格式
+    if (process.env.LSP_DEBUG) {
+      console.log(`[LSP ${this.language}] Sending ${message.method || 'response'} (id: ${message.id}, length: ${contentLength})`);
+    }
 
     this.process.stdin.write(header + content);
   }
@@ -366,15 +402,16 @@ export class LSPClient extends EventEmitter {
    * 处理接收到的数据
    */
   private handleData(data: Buffer): void {
-    this.buffer += data.toString();
+    // 追加到buffer（使用Buffer拼接而不是字符串）
+    this.buffer = Buffer.concat([this.buffer, data]);
 
     while (true) {
       if (this.contentLength === -1) {
-        // 解析头部
+        // 解析头部（Header是ASCII，可以安全转换为字符串）
         const headerEnd = this.buffer.indexOf('\r\n\r\n');
         if (headerEnd === -1) break;
 
-        const header = this.buffer.slice(0, headerEnd);
+        const header = this.buffer.slice(0, headerEnd).toString('ascii');
         const match = header.match(/Content-Length:\s*(\d+)/i);
         if (!match) {
           this.buffer = this.buffer.slice(headerEnd + 4);
@@ -385,20 +422,119 @@ export class LSPClient extends EventEmitter {
         this.buffer = this.buffer.slice(headerEnd + 4);
       }
 
+      // 使用Buffer的byteLength而不是string length
       if (this.buffer.length < this.contentLength) break;
 
-      // 解析消息体
-      const content = this.buffer.slice(0, this.contentLength);
-      this.buffer = this.buffer.slice(this.contentLength);
+      // 解析消息体（使用Buffer slice，按字节而不是字符）
+      const messageLength = this.contentLength;
+      const contentBuffer = this.buffer.slice(0, messageLength);
+      this.buffer = this.buffer.slice(messageLength);
       this.contentLength = -1;
+
+      // 将Buffer转换为UTF-8字符串进行JSON解析
+      const content = contentBuffer.toString('utf8');
 
       try {
         const message: LSPMessage = JSON.parse(content);
         this.handleMessage(message);
       } catch (error) {
-        console.error('Failed to parse LSP message:', error);
+        // JSON 解析失败
+        console.error(`[LSP ${this.language}] JSON parse error:`, error instanceof Error ? error.message : String(error));
+
+        if (process.env.LSP_DEBUG) {
+          console.error('Content-Length:', messageLength);
+          console.error('Content preview:', content.slice(0, 200));
+          console.error('Content end:', content.slice(-200));
+        }
+
+        // 尝试找到实际的JSON结束位置
+        let jsonEnd = this.findJsonBoundary(content);
+
+        if (jsonEnd > 0 && jsonEnd < content.length) {
+          // 找到了实际边界，尝试恢复
+          const actualJson = content.slice(0, jsonEnd);
+          const extraBytes = content.length - jsonEnd;
+
+          console.error(`[LSP ${this.language}] Attempting recovery: found JSON boundary at ${jsonEnd}/${content.length}`);
+
+          try {
+            const message: LSPMessage = JSON.parse(actualJson);
+
+            // 计算多余内容的字节长度
+            const extraContent = content.slice(jsonEnd);
+            const extraBuffer = Buffer.from(extraContent, 'utf8');
+
+            // 将多余的Buffer内容放回buffer
+            this.buffer = Buffer.concat([extraBuffer, this.buffer]);
+
+            console.error(`[LSP ${this.language}] Successfully recovered, ${extraBytes} chars (${extraBuffer.length} bytes) returned to buffer`);
+
+            this.handleMessage(message);
+            return; // 成功恢复
+          } catch (retryError) {
+            console.error('Recovery failed:', retryError instanceof Error ? retryError.message : String(retryError));
+          }
+        }
+
+        // 恢复失败 - 重置状态
+        console.error(`[LSP ${this.language}] FATAL: Unable to recover, resetting parser state`);
+        this.buffer = Buffer.alloc(0);
+        this.contentLength = -1;
+
+        this.emit('protocolError', {
+          error,
+          claimedLength: messageLength,
+          actualLength: contentBuffer.length,
+          detectedEnd: jsonEnd
+        });
       }
     }
+  }
+
+  /**
+   * 查找JSON边界（用于错误恢复）
+   * 返回JSON实际结束的位置，失败返回-1
+   */
+  private findJsonBoundary(content: string): number {
+    let braceCount = 0;
+    let bracketCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+
+      // 处理转义字符
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      // 字符串状态切换
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      // 只在非字符串内统计括号
+      if (!inString) {
+        if (char === '{') braceCount++;
+        else if (char === '}') {
+          braceCount--;
+          if (braceCount === 0 && bracketCount === 0) {
+            return i + 1;  // 找到顶层JSON结束
+          }
+        } else if (char === '[') bracketCount++;
+        else if (char === ']') bracketCount--;
+      }
+    }
+
+    return -1;  // 未找到完整的JSON
   }
 
   /**

@@ -283,11 +283,108 @@ export function setupApiRoutes(app: Express, ontologyPath: string): void {
     }
   });
 
-  // TODO: 添加更多 API 路由
-  // - /api/scenarios
-  // - /api/flowchart
-  // - /api/beginner-guide
-  // - /api/story-guide
-  // - /api/reading-guide
-  // - /api/smart-hover
+  // 获取业务场景列表
+  app.get('/api/scenarios', (req: Request, res: Response) => {
+    try {
+      const data = loadBlueprint(ontologyPath);
+
+      if (isEnhancedFormat(data)) {
+        const scenarios = data.views?.scenarios || [];
+        res.json({ scenarios });
+      } else {
+        res.status(400).json({ error: 'Scenarios require enhanced format' });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 获取业务故事导览
+  app.get('/api/story-guide', (req: Request, res: Response) => {
+    try {
+      const data = loadBlueprint(ontologyPath);
+
+      if (isEnhancedFormat(data)) {
+        const storyGuide = data.views?.storyGuide || {
+          projectName: data.project?.name || 'Unknown Project',
+          projectDescription: 'A TypeScript/JavaScript project',
+          stories: []
+        };
+        res.json(storyGuide);
+      } else {
+        res.status(400).json({ error: 'Story guide requires enhanced format' });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 获取新手导览
+  app.get('/api/beginner-guide', (req: Request, res: Response) => {
+    try {
+      const data = loadBlueprint(ontologyPath);
+
+      if (isEnhancedFormat(data)) {
+        const beginnerGuide = data.views?.beginnerGuide || {
+          projectName: data.project?.name || 'Unknown Project',
+          tagline: 'Getting started guide',
+          summary: 'Learn about this project',
+          cards: []
+        };
+        res.json(beginnerGuide);
+      } else {
+        res.status(400).json({ error: 'Beginner guide requires enhanced format' });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 获取阅读路径导览
+  app.get('/api/reading-guide', (req: Request, res: Response) => {
+    try {
+      const data = loadBlueprint(ontologyPath);
+
+      if (isEnhancedFormat(data)) {
+        const readingGuide = data.views?.readingGuide || {
+          projectName: data.project?.name || 'Unknown Project',
+          description: 'Guided reading paths',
+          paths: []
+        };
+        res.json(readingGuide);
+      } else {
+        res.status(400).json({ error: 'Reading guide requires enhanced format' });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 获取流程图数据
+  app.get('/api/flowchart', (req: Request, res: Response) => {
+    try {
+      const scenarioId = req.query.scenario as string || '';
+      const data = loadBlueprint(ontologyPath);
+
+      if (isEnhancedFormat(data)) {
+        const flowcharts = data.views?.flowcharts || {};
+        const flowchart = scenarioId ? flowcharts[scenarioId] : null;
+
+        if (flowchart) {
+          res.json(flowchart);
+        } else {
+          res.status(404).json({ error: 'Flowchart not found for scenario: ' + scenarioId });
+        }
+      } else {
+        res.status(400).json({ error: 'Flowchart requires enhanced format' });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
 }

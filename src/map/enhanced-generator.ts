@@ -154,6 +154,7 @@ export class EnhancedOntologyGenerator {
     );
 
     const blueprint: EnhancedCodeBlueprint = {
+      format: 'enhanced',
       meta: this.buildMeta(),
       project: this.buildProjectInfo(modules, projectSemantic),
       views,

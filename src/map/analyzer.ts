@@ -3,8 +3,8 @@
  * 负责分析代码文件，提取符号和结构信息
  *
  * 符号提取策略：
- * 1. LSP - 语义层面分析（主要方案）
- * 2. 正则表达式 - 处理 re-export 文件（补充方案）
+ * - LSP - 语义层面分析（唯一方案，已修复 Windows 兼容性）
+ * - LSP 失败时直接抛出错误，不使用降级方案
  */
 
 import * as fs from 'fs';
@@ -142,9 +142,9 @@ export class CodeMapAnalyzer {
   /**
    * 分析单个文件
    *
-   * 符号提取优先级：
-   * 1. Tree-sitter - 主要方案，语法层面解析
-   * 2. 正则表达式 - 补充方案，处理 re-export 文件
+   * 符号提取策略：
+   * - 使用 LSP 进行语义分析
+   * - LSP 失败时直接抛出错误
    */
   async analyzeFile(filePath: string): Promise<ModuleNode> {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -153,22 +153,17 @@ export class CodeMapAnalyzer {
     const relativePath = path.relative(this.rootPath, filePath).replace(/\\/g, '/');
     const lines = content.split('\n').length;
 
-    // 使用 Tree-sitter 提取符号
-    let symbols: CodeSymbol[] = [];
-    try {
-      symbols = await codeAnalyzer.analyzeFile(filePath);
-    } catch (error) {
-      // Tree-sitter 解析失败时记录警告但继续
-      console.warn(`Warning: Failed to analyze ${filePath}:`, error);
-    }
+    // 使用 LSP 提取符号（失败时抛出错误）
+    const symbols = await codeAnalyzer.analyzeFile(filePath);
 
-    // 对于 re-export 文件，使用正则表达式补充提取符号
-    // （Tree-sitter 对纯 re-export 文件支持不完整，可能返回匿名 export 符号）
+    // 对于 re-export 文件，补充正则表达式提取的符号
+    // （LSP 对纯 re-export 文件支持不完整，可能返回匿名 export 符号）
     const hasOnlyAnonymousSymbols = symbols.length === 0 ||
       symbols.every(s => s.name.startsWith('<anonymous') || s.name.includes('anonymous'));
 
+    let finalSymbols = symbols;
     if (hasOnlyAnonymousSymbols && this.isReExportFile(content, language)) {
-      symbols = this.extractReExportSymbols(content, relativePath, language);
+      finalSymbols = this.extractReExportSymbols(content, relativePath, language);
     }
 
     // 构建模块节点
@@ -180,13 +175,13 @@ export class CodeMapAnalyzer {
       lines,
       size: stats.size,
       imports: this.extractImports(content, relativePath, language),
-      exports: this.extractExports(symbols, relativePath),
-      classes: this.extractClasses(symbols, relativePath),
-      interfaces: this.extractInterfaces(symbols, relativePath),
-      types: this.extractTypes(symbols, relativePath),
-      enums: this.extractEnums(symbols, relativePath),
-      functions: this.extractFunctions(symbols, relativePath),
-      variables: this.extractVariables(symbols, relativePath),
+      exports: this.extractExports(finalSymbols, relativePath),
+      classes: this.extractClasses(finalSymbols, relativePath),
+      interfaces: this.extractInterfaces(finalSymbols, relativePath),
+      types: this.extractTypes(finalSymbols, relativePath),
+      enums: this.extractEnums(finalSymbols, relativePath),
+      functions: this.extractFunctions(finalSymbols, relativePath),
+      variables: this.extractVariables(finalSymbols, relativePath),
     };
 
     return module;

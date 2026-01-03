@@ -1770,7 +1770,12 @@
 
     // 渲染模块列表
     function renderModuleList() {
-      const html = ontology.modules
+      // 支持新格式：modules 可能是对象而不是数组
+      const modulesArray = Array.isArray(ontology.modules)
+        ? ontology.modules
+        : Object.values(ontology.modules || {});
+
+      const html = modulesArray
         .slice(0, 50)
         .map(m => '<div class="module-item" data-id="' + m.id + '" title="' + m.id + '">' + m.name + '</div>')
         .join('');
@@ -1809,7 +1814,12 @@
       const links = [];
       const nodeMap = new Map();
 
-      const displayModules = ontology.modules.slice(0, 100);
+      // 支持新格式：modules 可能是对象而不是数组
+      const modulesArray = Array.isArray(ontology.modules)
+        ? ontology.modules
+        : Object.values(ontology.modules || {});
+
+      const displayModules = modulesArray.slice(0, 100);
 
       displayModules.forEach(m => {
         const node = { id: m.id, name: m.name, type: 'module', data: m };
@@ -2748,7 +2758,10 @@
 
     // 显示模块详情
     function showModuleDetails(moduleId) {
-      const module = ontology.modules.find(m => m.id === moduleId);
+      // 支持新格式：modules 可能是对象而不是数组
+      const module = Array.isArray(ontology.modules)
+        ? ontology.modules.find(m => m.id === moduleId)
+        : ontology.modules[moduleId];
       if (!module) return;
 
       const panel = document.getElementById('details-panel');
