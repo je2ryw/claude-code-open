@@ -48,6 +48,7 @@ export class VisualizationServer {
       res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
       next();
     });
+// 禁用缓存（开发模式）    this.app.use((req, res, next) => {      res.header('Cache-Control', 'no-store, no-cache, must-revalidate, private');      res.header('Pragma', 'no-cache');      res.header('Expires', '0');      next();    });
   }
 
   /**

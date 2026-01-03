@@ -16,6 +16,7 @@ import {
   EnhancedAnalysisProgress,
   VisualizationServer,
 } from '../map/index.js';
+import { ChunkedBlueprintGenerator } from '../map/chunked-generator.js';
 
 // ============================================================================
 // 辅助函数
@@ -208,44 +209,40 @@ async function handleGenerate(
   options: Record<string, string | boolean>
 ): Promise<CommandResult> {
   const { config, ui } = ctx;
-  const outputPath = (options.output || options.o || 'CODE_MAP.json') as string;
-  const fullOutputPath = path.isAbsolute(outputPath)
-    ? outputPath
-    : path.join(config.cwd, outputPath);
 
   const skipSemantics = options['skip-semantics'] || options.s;
 
+  // 分块模式：输出到 .claude/map/ 目录
   ui.addMessage(
     'assistant',
     skipSemantics
-      ? '正在生成代码蓝图（跳过 AI 语义）...'
-      : '正在生成增强版代码蓝图（包含 AI 语义）...'
+      ? '正在生成代码蓝图（分块模式，跳过 AI 语义）...'
+      : '正在生成增强版代码蓝图（分块模式，包含 AI 语义）...'
   );
 
   try {
-    const generator = new EnhancedOntologyGenerator(config.cwd, {
-      outputPath: fullOutputPath,
-      withSemantics: !skipSemantics,
-      onProgress: (progress) => {
-        const msg = formatEnhancedProgress(progress);
-        // 可以在这里更新进度显示
-        // ui.updateStatus(msg);
+    const generator = new ChunkedBlueprintGenerator(config.cwd, {
+      withGlobalDependencyGraph: true,
+      withChecksum: true,
+      outputDir: path.join(config.cwd, '.claude', 'map'),
+      onProgress: (message) => {
+        // 显示进度消息（可选）
+        // ui.addMessage('assistant', message);
       },
     });
 
-    const blueprint = await generator.generate();
+    await generator.generate();
 
-    // 保存文件
-    const dir = path.dirname(fullOutputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(fullOutputPath, JSON.stringify(blueprint, null, 2), 'utf-8');
+    const mapDir = path.join(config.cwd, '.claude', 'map');
 
-    // 输出摘要
-    const summary = generateEnhancedSummary(blueprint);
-    ui.addMessage('assistant', summary);
-    ui.addMessage('assistant', `\n✅ 蓝图已保存到: ${fullOutputPath}`);
+    ui.addMessage(
+      'assistant',
+      `\n✅ 分块蓝图已生成到: ${mapDir}/\n\n` +
+      `文件结构：\n` +
+      `  • index.json - 轻量级索引文件\n` +
+      `  • chunks/*.json - 按目录分块的数据\n\n` +
+      `使用 /map serve 启动可视化服务器查看`
+    );
 
     return { success: true };
   } catch (error) {
@@ -264,19 +261,22 @@ async function handleServe(
 ): Promise<CommandResult> {
   const { config, ui } = ctx;
   const port = options.port ? parseInt(options.port as string, 10) : 3030;
-  const mapFile = path.join(config.cwd, 'CODE_MAP.json');
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+  const indexFile = path.join(mapDir, 'index.json');
 
-  // 检查图谱文件是否存在
-  if (!fs.existsSync(mapFile)) {
+  // 检查分块蓝图是否存在
+  if (!fs.existsSync(indexFile)) {
     ui.addMessage(
       'assistant',
-      '❌ 未找到 CODE_MAP.json 文件。请先运行 `/map` 生成蓝图。'
+      '❌ 未找到分块蓝图文件。请先运行 `/map generate` 生成蓝图。\n\n' +
+      `期望位置: ${indexFile}`
     );
-    return { success: false, message: 'CODE_MAP.json not found' };
+    return { success: false, message: 'Blueprint index.json not found' };
   }
 
   try {
-    const server = new VisualizationServer({ ontologyPath: mapFile, port });
+    // 传递 map 目录路径给服务器,让服务器自己推断
+    const server = new VisualizationServer({ ontologyPath: mapDir, port });
     await server.start();
     const url = server.getAddress();
 

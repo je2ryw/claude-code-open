@@ -195,6 +195,7 @@ export class LSPManager extends EventEmitter {
   private clients: Map<string, LSPClient> = new Map();
   private installedServers: Set<string> = new Set();
   private workspaceRoot: string;
+  private startingClients: Map<string, Promise<LSPClient>> = new Map(); // 防止并发创建
 
   constructor(workspaceRoot?: string) {
     super();
@@ -407,7 +408,7 @@ export class LSPManager extends EventEmitter {
    * LSP 服务器不可用时抛出错误
    */
   async getClient(language: string): Promise<LSPClient> {
-    // 如果已有客户端，返回
+    // 如果已有客户端且正在运行，直接返回
     if (this.clients.has(language)) {
       const client = this.clients.get(language)!;
       if (client.getState() === 'running') {
@@ -415,6 +416,28 @@ export class LSPManager extends EventEmitter {
       }
     }
 
+    // 如果正在启动中，等待启动完成（防止并发创建）
+    if (this.startingClients.has(language)) {
+      return this.startingClients.get(language)!;
+    }
+
+    // 创建启动 Promise
+    const startPromise = this._startClient(language);
+    this.startingClients.set(language, startPromise);
+
+    try {
+      const client = await startPromise;
+      return client;
+    } finally {
+      // 启动完成后清除锁
+      this.startingClients.delete(language);
+    }
+  }
+
+  /**
+   * 内部方法：启动 LSP 客户端
+   */
+  private async _startClient(language: string): Promise<LSPClient> {
     // 确保服务器已安装（不可用时会抛出错误）
     await this.ensureServer(language);
 

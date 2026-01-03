@@ -119,7 +119,10 @@
       "Bash(git -C f:/claude-code-open diff src/commands/tools.ts)",
       "Bash(git -C f:/claude-code-open diff src/ui/components/SkillsDialog.tsx)",
       "Bash(git -C f:/claude-code-open diff src/map/types-enhanced.ts)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(tee:*)",
+      "Bash(python3:*)",
+      "Bash(git -C f:/claude-code-open diff src/map/view-builder.ts)"
     ]
   }
 }

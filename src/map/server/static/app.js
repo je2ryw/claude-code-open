@@ -1,5 +1,7 @@
     // 状态
     let ontology = null;
+    let index = null;  // 轻量级索引（chunked-v1 格式）
+    let chunkCache = new Map();  // chunk 缓存
     let archData = null;
     let flowchartData = null;
     let scenarios = [];
@@ -81,19 +83,37 @@
     async function loadOntology() {
       try {
         const response = await fetch('/api/ontology');
-        ontology = await response.json();
-        renderStats();
-        renderModuleList();
+        const data = await response.json();
 
-        // 加载入口点和场景
-        if (ontology.isEnhanced) {
-          loadEntryPoints();
-          loadScenarios();
-          // 默认显示业务故事视图
-          renderStoryView();
+        // 检测格式并路由到正确的加载函数
+        if (data.format === 'chunked-v1') {
+          // 新的分块模式
+          index = data;
+          if (typeof window.loadIndexMode === 'function') {
+            await window.loadIndexMode();
+          } else {
+            console.warn('chunked-loader.js 未加载，回退到旧模式');
+            ontology = data;
+            renderStats();
+            renderModuleList();
+          }
         } else {
-          renderGraph();
+          // 旧的单文件模式
+          ontology = data;
+          renderStats();
+          renderModuleList();
+
+          // 加载入口点和场景
+          if (ontology.isEnhanced) {
+            loadEntryPoints();
+            loadScenarios();
+            // 默认显示业务故事视图
+            renderStoryView();
+          } else {
+            renderGraph();
+          }
         }
+
         document.querySelector('.loading').style.display = 'none';
       } catch (error) {
         document.querySelector('.loading').textContent = '加载失败: ' + error.message;

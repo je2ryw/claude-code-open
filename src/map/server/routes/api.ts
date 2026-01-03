@@ -5,6 +5,7 @@
 
 import type { Express, Request, Response } from 'express';
 import * as fs from 'fs';
+import * as path from 'path';
 import { EnhancedCodeBlueprint } from '../../types-enhanced.js';
 import {
   buildArchitectureMap,
@@ -35,24 +36,58 @@ function loadBlueprint(ontologyPath: string): any {
  * 设置 API 路由
  */
 export function setupApiRoutes(app: Express, ontologyPath: string): void {
+  // 推断 mapDir：
+  // 1. 如果 ontologyPath 是文件（CODE_MAP.json），则使用其所在目录的 .claude/map/
+  // 2. 如果 ontologyPath 是目录，则假定它就是 mapDir
+  const isFile = ontologyPath.endsWith('.json');
+  const mapDir = isFile
+    ? path.join(path.dirname(ontologyPath), '.claude', 'map')
+    : ontologyPath;
+
   // 获取本体数据
   app.get('/api/ontology', (req: Request, res: Response) => {
     try {
-      const data = loadBlueprint(ontologyPath);
+      // 读取 chunked 模式的 index.json
+      const indexPath = `${mapDir}/index.json`;
 
-      if (isEnhancedFormat(data)) {
-        res.json({
-          isEnhanced: true,
-          project: data.project,
-          modules: data.modules,
-          references: data.references,
-        });
+      if (fs.existsSync(indexPath)) {
+        // Chunked 模式
+        const indexData = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        res.json(indexData);
       } else {
-        res.json({
-          isEnhanced: false,
-          ...data,
+        res.status(404).json({
+          error: 'Blueprint not found. Please run /map generate first.'
         });
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 获取 chunk 数据（新增端点）
+  app.get('/api/chunk/:path(*)', (req: Request, res: Response) => {
+    try {
+      const chunkPath = req.params.path;
+
+      // 安全性检查：防止路径穿越攻击
+      if (chunkPath.includes('..') || chunkPath.includes('~')) {
+        return res.status(400).json({ error: 'Invalid chunk path' });
+      }
+
+      // 构建 chunk 文件路径
+      const chunkFile = `${mapDir}/chunks/${chunkPath}.json`;
+
+      if (!fs.existsSync(chunkFile)) {
+        return res.status(404).json({
+          error: `Chunk not found: ${chunkPath}`,
+          hint: 'Please ensure the blueprint was generated in chunked mode.'
+        });
+      }
+
+      // 读取并返回 chunk 数据
+      const chunkData = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+      res.json(chunkData);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ error: message });
@@ -277,111 +312,6 @@ export function setupApiRoutes(app: Express, ontologyPath: string): void {
       }
 
       res.json({ results: results.slice(0, 50) });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  // 获取业务场景列表
-  app.get('/api/scenarios', (req: Request, res: Response) => {
-    try {
-      const data = loadBlueprint(ontologyPath);
-
-      if (isEnhancedFormat(data)) {
-        const scenarios = data.views?.scenarios || [];
-        res.json({ scenarios });
-      } else {
-        res.status(400).json({ error: 'Scenarios require enhanced format' });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  // 获取业务故事导览
-  app.get('/api/story-guide', (req: Request, res: Response) => {
-    try {
-      const data = loadBlueprint(ontologyPath);
-
-      if (isEnhancedFormat(data)) {
-        const storyGuide = data.views?.storyGuide || {
-          projectName: data.project?.name || 'Unknown Project',
-          projectDescription: 'A TypeScript/JavaScript project',
-          stories: []
-        };
-        res.json(storyGuide);
-      } else {
-        res.status(400).json({ error: 'Story guide requires enhanced format' });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  // 获取新手导览
-  app.get('/api/beginner-guide', (req: Request, res: Response) => {
-    try {
-      const data = loadBlueprint(ontologyPath);
-
-      if (isEnhancedFormat(data)) {
-        const beginnerGuide = data.views?.beginnerGuide || {
-          projectName: data.project?.name || 'Unknown Project',
-          tagline: 'Getting started guide',
-          summary: 'Learn about this project',
-          cards: []
-        };
-        res.json(beginnerGuide);
-      } else {
-        res.status(400).json({ error: 'Beginner guide requires enhanced format' });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  // 获取阅读路径导览
-  app.get('/api/reading-guide', (req: Request, res: Response) => {
-    try {
-      const data = loadBlueprint(ontologyPath);
-
-      if (isEnhancedFormat(data)) {
-        const readingGuide = data.views?.readingGuide || {
-          projectName: data.project?.name || 'Unknown Project',
-          description: 'Guided reading paths',
-          paths: []
-        };
-        res.json(readingGuide);
-      } else {
-        res.status(400).json({ error: 'Reading guide requires enhanced format' });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  // 获取流程图数据
-  app.get('/api/flowchart', (req: Request, res: Response) => {
-    try {
-      const scenarioId = req.query.scenario as string || '';
-      const data = loadBlueprint(ontologyPath);
-
-      if (isEnhancedFormat(data)) {
-        const flowcharts = data.views?.flowcharts || {};
-        const flowchart = scenarioId ? flowcharts[scenarioId] : null;
-
-        if (flowchart) {
-          res.json(flowchart);
-        } else {
-          res.status(404).json({ error: 'Flowchart not found for scenario: ' + scenarioId });
-        }
-      } else {
-        res.status(400).json({ error: 'Flowchart requires enhanced format' });
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ error: message });

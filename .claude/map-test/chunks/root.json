@@ -1,0 +1,159 @@
+{
+  "path": "",
+  "modules": {
+    "claude-md-parser.ts": {
+      "id": "claude-md-parser.ts",
+      "name": "claude-md-parser.ts",
+      "path": "F:\\claude-code-open\\src\\config\\claude-md-parser.ts",
+      "language": "typescript",
+      "lines": 258,
+      "size": 6280,
+      "exports": [],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "CLAUDE.md 文件解析器，负责读取项目根目录的 CLAUDE.md 文件并将其内容注入到 Claude AI 的系统提示中，实现项目级别的上下文指导。这是 Claude Code CLI 的核心特性，允许开发者通过 CLAUDE.md 文件向 AI 提供项目特定的开发规范和指令。",
+        "responsibility": "解析、监听和管理 CLAUDE.md 文件，将项目指令注入到 AI 系统提示中",
+        "businessDomain": "AI 上下文管理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "配置解析",
+          "文件监听",
+          "系统提示注入",
+          "项目上下文",
+          "Markdown"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-03T14:52:38.785Z"
+      }
+    },
+    "config-command.ts": {
+      "id": "config-command.ts",
+      "name": "config-command.ts",
+      "path": "F:\\claude-code-open\\src\\config\\config-command.ts",
+      "language": "typescript",
+      "lines": 368,
+      "size": 9825,
+      "exports": [],
+      "imports": [
+        {
+          "source": "./claude-md-parser.js",
+          "symbols": [
+            "ClaudeMdParser"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "提供配置展示和管理的命令行接口，支持查看、设置、验证、导入导出配置，以及管理配置备份和 CLAUDE.md 文件状态。",
+        "responsibility": "实现 /config 命令的所有交互功能，包括配置可视化、来源追踪、备份管理和配置验证",
+        "businessDomain": "配置管理",
+        "architectureLayer": "presentation",
+        "tags": [
+          "CLI命令",
+          "配置展示",
+          "备份管理",
+          "配置验证",
+          "CLAUDE.md"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-03T14:52:38.165Z"
+      }
+    },
+    "index.ts": {
+      "id": "index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\config\\index.ts",
+      "language": "typescript",
+      "lines": 1404,
+      "size": 45186,
+      "exports": [],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "zod",
+          "symbols": [
+            "z"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../env/index.js",
+          "symbols": [
+            "envManager",
+            "maskSensitiveFields",
+            "getValidatedEnv"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "Claude Code CLI 的配置管理模块，负责加载、验证、合并和管理用户配置。支持 Zod 模式验证、环境变量解析、配置迁移、热重载等增强功能。",
+        "responsibility": "提供统一的配置管理服务，包括配置加载、验证、默认值处理和环境变量集成",
+        "businessDomain": "配置管理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "配置管理",
+          "Zod验证",
+          "环境变量",
+          "配置合并",
+          "热重载",
+          "MCP服务器",
+          "权限控制"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-03T14:52:38.473Z"
+      }
+    }
+  },
+  "symbols": {},
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "config-command.ts",
+        "target": "claude-md-parser.ts",
+        "type": "import",
+        "symbols": [
+          "ClaudeMdParser"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [],
+    "typeRefs": []
+  }
+}

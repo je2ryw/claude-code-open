@@ -26,7 +26,7 @@ export class ViewBuilder {
   }
 
   /**
-   * 构建两种视图
+   * 构建所有视图
    */
   buildViews(modules: ModuleNode[]): Views {
     return {
@@ -353,3 +353,4 @@ export function buildArchitectureLayers(modules: ModuleNode[]): ArchitectureLaye
   const builder = new ViewBuilder();
   return builder.buildArchitectureLayers(modules);
 }
+

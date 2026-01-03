@@ -19,10 +19,6 @@
       <button id="zoom-out">-</button>
       <button id="reset">重置</button>
       <select id="view-mode">
-        <option value="story">📖 业务故事</option>
-        <option value="reading">📚 代码阅读</option>
-        <option value="beginner">🎯 新手导览</option>
-        <option value="flowchart">流程图</option>
         <option value="architecture">架构概览</option>
         <option value="dependency">依赖图</option>
         <option value="entry-tree">入口树</option>
@@ -39,32 +35,11 @@
         <option value="10">10层</option>
       </select>
     </div>
-    <div class="scenario-selector" id="scenario-selector">
-      <label>场景:</label>
-      <select id="scenario-select"></select>
-    </div>
   </header>
 
   <div class="breadcrumb" id="breadcrumb"></div>
 
   <main>
-    <div class="beginner-view" id="beginner-view">
-      <div class="project-intro" id="beginner-intro"></div>
-      <div class="module-cards" id="module-cards"></div>
-    </div>
-
-    <div class="story-view" id="story-view">
-      <div class="story-header" id="story-header"></div>
-      <div class="story-list" id="story-list"></div>
-      <div class="story-detail" id="story-detail"></div>
-    </div>
-
-    <div class="reading-view" id="reading-view">
-      <div class="reading-header" id="reading-header"></div>
-      <div class="reading-paths" id="reading-paths"></div>
-      <div class="reading-content" id="reading-content"></div>
-    </div>
-
     <aside id="sidebar">
       <h2>统计</h2>
       <div id="stats"></div>
@@ -111,16 +86,6 @@
         <div class="symbol-legend-item"><span class="color-box" style="background:#2d3436;border:1px solid #00cec9"></span>导出 Export</div>
         <p style="margin-top:0.5rem;color:#888;font-size:0.75rem">双击符号查看引用<br>点击查看详情</p>
       </div>
-      <div class="flowchart-legend" id="flowchart-legend">
-        <h3>流程图图例</h3>
-        <div class="flowchart-legend-item"><span class="flow-shape entry"></span>入口点</div>
-        <div class="flowchart-legend-item"><span class="flow-shape process"></span>处理过程</div>
-        <div class="flowchart-legend-item"><span class="flow-shape subprocess"></span>子流程/类</div>
-        <div class="flowchart-legend-item"><span class="flow-shape data"></span>数据/配置</div>
-        <div class="flowchart-legend-item"><span class="flow-shape end"></span>结束</div>
-        <p style="margin-top:0.5rem;color:#888;font-size:0.75rem">点击节点查看详情<br>选择场景切换流程</p>
-      </div>
-      <div class="flowchart-title" id="flowchart-title"></div>
     </section>
 
     <aside id="details-panel">
@@ -245,6 +210,7 @@
     </div>
   </div>
 
+  <script src="chunked-loader.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

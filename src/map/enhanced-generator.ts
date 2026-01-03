@@ -101,6 +101,7 @@ export class EnhancedOntologyGenerator {
     // 3. 构建视图
     this.reportProgress({ phase: 'views', current: 0, total: 2, message: '构建目录树视图' });
     const views = this.viewBuilder.buildViews(modules);
+    console.log("DEBUG: storyGuide stories:", JSON.stringify(views.storyGuide?.stories, null, 2));
     this.reportProgress({ phase: 'views', current: 2, total: 2, message: '视图构建完成' });
 
     // 4. 分析符号引用
