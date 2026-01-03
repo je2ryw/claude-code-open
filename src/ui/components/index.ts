@@ -43,3 +43,5 @@ export { ModelSelector } from './ModelSelector.js';
 export type { ModelSelectorProps } from './ModelSelector.js';
 export { HistorySearch } from './HistorySearch.js';
 export type { HistorySearchProps } from './HistorySearch.js';
+export { ResumeSession } from './ResumeSession.js';
+export { PluginsDialog } from '../PluginsDialog.js';

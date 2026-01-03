@@ -1,6 +1,6 @@
 /**
- * 主应用组件
- * 使用 Ink 渲染 CLI 界面 - 仿官方 Claude Code
+ * 主应用组�?
+ * 使用 Ink 渲染 CLI 界面 - 仿官�?Claude Code
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
@@ -17,6 +17,7 @@ import { LoginSelector, type LoginMethod } from './LoginSelector.js';
 import { RewindUI } from './components/MessageSelector.js';
 import { useRewind } from './hooks/useRewind.js';
 import { ConversationLoop } from '../core/loop.js';
+import { Session } from '../core/session.js';
 import { initializeCommands, executeCommand } from '../commands/index.js';
 import { isPlanModeActive } from '../tools/planmode.js';
 import { updateManager } from '../updater/index.js';
@@ -73,7 +74,7 @@ interface RecentActivity {
 }
 
 /**
- * 流式渲染块 - 用于按时间顺序交织显示文本和工具调用
+ * 流式渲染�?- 用于按时间顺序交织显示文本和工具调用
  * Stream block - Used to interleave text and tool calls in chronological order
  */
 interface StreamBlock {
@@ -81,11 +82,11 @@ interface StreamBlock {
   id: string;
   timestamp: Date;
 
-  // 文本块字段 (type === 'text')
+  // 文本块字�?(type === 'text')
   text?: string;
   isStreaming?: boolean;
 
-  // 工具块字段 (type === 'tool')
+  // 工具块字�?(type === 'tool')
   tool?: {
     name: string;
     status: 'running' | 'success' | 'error';
@@ -121,7 +122,7 @@ export const App: React.FC<AppProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
 
-  // 新增：流式块数组，用于按时间顺序交织显示文本和工具
+  // 新增：流式块数组，用于按时间顺序交织显示文本和工�?
   const [streamBlocks, setStreamBlocks] = useState<StreamBlock[]>([]);
   const [activeTextBlockId, setActiveTextBlockId] = useState<string | null>(null);
 
@@ -132,7 +133,7 @@ export const App: React.FC<AppProps> = ({
     () => DEFAULT_SUGGESTIONS[Math.floor(Math.random() * DEFAULT_SUGGESTIONS.length)]
   );
 
-  // Header 增强状态
+  // Header 增强状�?
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected' | 'error'>('connected');
   const [hasUpdate, setHasUpdate] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | undefined>();
@@ -142,13 +143,13 @@ export const App: React.FC<AppProps> = ({
   const [stashedPrompt, setStashedPrompt] = useState<string>('');
   const [thinkingEnabled, setThinkingEnabled] = useState(thinkingManager.isEnabled());
 
-  // 后台任务相关状态
+  // 后台任务相关状�?
   const [backgroundTasks, setBackgroundTasks] = useState<TaskSummary[]>([]);
   const [showBackgroundPanel, setShowBackgroundPanel] = useState(false);
   const [currentBackgroundTaskId, setCurrentBackgroundTaskId] = useState<string | null>(null);
   const [shouldMoveToBackground, setShouldMoveToBackground] = useState(false);
 
-  // 登录屏幕状态
+  // 登录屏幕状�?
   const [showLoginScreen, setShowLoginScreen] = useState(false);
   const [loginPreselect, setLoginPreselect] = useState<'claudeai' | 'console' | null>(null);
 
@@ -156,7 +157,7 @@ export const App: React.FC<AppProps> = ({
   const [commandJsx, setCommandJsx] = useState<React.ReactElement | null>(null);
   const [hidePromptForJsx, setHidePromptForJsx] = useState(false);
 
-  // Rewind 状态
+  // Rewind 状�?
   const [showRewindUI, setShowRewindUI] = useState(false);
 
   // 会话 ID
@@ -196,7 +197,7 @@ export const App: React.FC<AppProps> = ({
       })
   );
 
-  // 初始化命令系统
+  // 初始化命令系�?
   useEffect(() => {
     initializeCommands();
   }, []);
@@ -216,7 +217,7 @@ export const App: React.FC<AppProps> = ({
     updateManager.on('update-available', handleUpdateAvailable);
     updateManager.on('update-not-available', handleUpdateNotAvailable);
 
-    // 静默检查更新（不影响 UI）
+    // 静默检查更新（不影�?UI�?
     updateManager.checkForUpdates().catch(() => {});
 
     return () => {
@@ -225,22 +226,22 @@ export const App: React.FC<AppProps> = ({
     };
   }, []);
 
-  // 监听 Plan Mode 状态变化（轮询）
+  // 监听 Plan Mode 状态变化（轮询�?
   useEffect(() => {
     const checkPlanMode = () => {
       setPlanMode(isPlanModeActive());
     };
 
-    // 初始检查
+    // 初始检�?
     checkPlanMode();
 
-    // 每秒检查一次
+    // 每秒检查一�?
     const interval = setInterval(checkPlanMode, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // 全局快捷键
+  // 全局快捷�?
   const config = configManager.getAll();
   useGlobalKeybindings({
     config,
@@ -253,7 +254,7 @@ export const App: React.FC<AppProps> = ({
       addActivity(`Todos panel ${!showTodosPanel ? 'shown' : 'hidden'}`);
     },
     onModelSwitch: () => {
-      // 循环切换模型：opus → sonnet → haiku → opus
+      // 循环切换模型：opus �?sonnet �?haiku �?opus
       const currentIndex = modelCycle.indexOf(currentModel);
       const nextIndex = (currentIndex + 1) % modelCycle.length;
       const nextModel = modelCycle[nextIndex];
@@ -261,13 +262,13 @@ export const App: React.FC<AppProps> = ({
       // 更新 ConversationLoop 中的模型
       loop.setModel(nextModel);
 
-      // 更新本地状态
+      // 更新本地状�?
       setCurrentModel(nextModel);
 
-      // 记录活动和显示消息
+      // 记录活动和显示消�?
       const displayName = modelDisplayName[nextModel] || nextModel;
       addActivity(`Switched to ${displayName}`);
-      addMessage('assistant', `✨ Switched to ${displayName}\n\nThe next message will use this model.`);
+      addMessage('assistant', `�?Switched to ${displayName}\n\nThe next message will use this model.`);
     },
     onStashPrompt: (prompt) => {
       setStashedPrompt(prompt);
@@ -307,7 +308,7 @@ export const App: React.FC<AppProps> = ({
       }
     },
     getCurrentInput: () => currentInputRef.current,
-    disabled: false, // 不禁用，即使在处理中也允许 Ctrl+B
+    disabled: false, // 不禁用，即使在处理中也允�?Ctrl+B
   });
 
   // 处理键盘输入
@@ -315,11 +316,11 @@ export const App: React.FC<AppProps> = ({
     if (key.ctrl && input === 'c') {
       exit();
     }
-    // ? 显示快捷键帮助
+    // ? 显示快捷键帮�?
     if (input === '?' && !isProcessing) {
       setShowShortcuts((prev) => !prev);
     }
-    // Escape 键处理
+    // Escape 键处�?
     if (key.escape) {
       // 1. 如果正在处理请求，中断它
       if (isProcessing) {
@@ -360,11 +361,11 @@ export const App: React.FC<AppProps> = ({
         description,
         timestamp: new Date().toISOString(),
       },
-      ...prev.slice(0, 9), // 保留最近10条
+      ...prev.slice(0, 9), // 保留最�?0�?
     ]);
   }, []);
 
-  // 添加消息的辅助函数
+  // 添加消息的辅助函�?
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     setMessages((prev) => [
       ...prev,
@@ -400,18 +401,18 @@ export const App: React.FC<AppProps> = ({
       });
 
       if (result && result.accessToken) {
-        // 重新初始化客户端以使用新的凭据
+        // 重新初始化客户端以使用新的凭�?
         const reinitSuccess = loop.reinitializeClient();
         if (reinitSuccess) {
-          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\nClient has been reinitialized with new credentials. You can now start chatting!`);
+          addMessage('assistant', `�?Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\nClient has been reinitialized with new credentials. You can now start chatting!`);
           addActivity('OAuth login completed and client reinitialized');
         } else {
-          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\n⚠️ Note: Could not reinitialize client. Please restart the application.`);
+          addMessage('assistant', `�?Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\n⚠️ Note: Could not reinitialize client. Please restart the application.`);
           addActivity('OAuth login completed but client reinitialization failed');
         }
       }
     } catch (error) {
-      addMessage('assistant', `❌ Login failed: ${error instanceof Error ? error.message : String(error)}\n\nPlease try again or use /login --api-key to set up an API key.`);
+      addMessage('assistant', `�?Login failed: ${error instanceof Error ? error.message : String(error)}\n\nPlease try again or use /login --api-key to set up an API key.`);
       addActivity('OAuth login failed');
     }
   }, [addActivity, addMessage, loop]);
@@ -459,7 +460,7 @@ export const App: React.FC<AppProps> = ({
       if (result.action === 'exit') {
         exit();
       } else if (result.action === 'clear') {
-        // 清除已在命令中处理
+        // 清除已在命令中处�?
       } else if (result.action === 'login') {
         // 显示登录屏幕
         setShowLoginScreen(true);
@@ -469,10 +470,10 @@ export const App: React.FC<AppProps> = ({
           process.exit(0);
         }, 200);
       } else if (result.action === 'reinitClient') {
-        // 重新初始化客户端（登录成功后）
+        // 重新初始化客户端（登录成功后�?
         const reinitSuccess = loop.reinitializeClient();
         if (reinitSuccess) {
-          addMessage('assistant', '\n✅ Client reinitialized with new credentials. You can now start chatting!');
+          addMessage('assistant', '\n�?Client reinitialized with new credentials. You can now start chatting!');
           addActivity('Client reinitialized');
         } else {
           addMessage('assistant', '\n⚠️ Could not reinitialize client. Please restart the application.');
@@ -531,10 +532,10 @@ export const App: React.FC<AppProps> = ({
             const bgTask = createBackgroundTask(input);
             setCurrentBackgroundTaskId(bgTask.id);
 
-            // 添加消息提示用户任务已转到后台
-            addMessage('assistant', `⏳ Task moved to background (ID: ${bgTask.id.substring(0, 8)})\n\nYou can continue with other tasks. Use /tasks to check status.`);
+            // 添加消息提示用户任务已转到后�?
+            addMessage('assistant', `�?Task moved to background (ID: ${bgTask.id.substring(0, 8)})\n\nYou can continue with other tasks. Use /tasks to check status.`);
 
-            // 重置 UI 状态
+            // 重置 UI 状�?
             setIsProcessing(false);
             setCurrentResponse('');
             setStreamBlocks([]);
@@ -546,7 +547,7 @@ export const App: React.FC<AppProps> = ({
               try {
                 let bgAccumulatedResponse = accumulatedResponse;
 
-                // 继续处理剩余的事件
+                // 继续处理剩余的事�?
                 for await (const bgEvent of loop.processMessageStream(input)) {
                   // 检查任务是否被取消
                   if (isTaskCancelled(bgTask.id)) {
@@ -597,10 +598,10 @@ export const App: React.FC<AppProps> = ({
             accumulatedResponse += (event.content || '');
             setCurrentResponse(accumulatedResponse);
 
-            // 新增：追加或创建文本块
+            // 新增：追加或创建文本�?
             setStreamBlocks((prev) => {
               if (localActiveTextBlockId) {
-                // 更新现有文本块
+                // 更新现有文本�?
                 return prev.map(block =>
                   block.id === localActiveTextBlockId && block.type === 'text'
                     ? { ...block, text: (block.text || '') + (event.content || '') }
@@ -621,7 +622,7 @@ export const App: React.FC<AppProps> = ({
               }
             });
           } else if (event.type === 'tool_start') {
-            // 关闭当前文本块
+            // 关闭当前文本�?
             if (localActiveTextBlockId) {
               setStreamBlocks(prev => prev.map(block =>
                 block.id === localActiveTextBlockId
@@ -697,7 +698,7 @@ export const App: React.FC<AppProps> = ({
           }
         }
 
-        // 关闭最后的文本块
+        // 关闭最后的文本�?
         if (localActiveTextBlockId) {
           setStreamBlocks(prev => prev.map(block =>
             block.id === localActiveTextBlockId
@@ -707,7 +708,7 @@ export const App: React.FC<AppProps> = ({
           setActiveTextBlockId(null);
         }
 
-        // 添加助手消息 - 使用累积的响应而非闭包中的状态
+        // 添加助手消息 - 使用累积的响应而非闭包中的状�?
         if (verbose) {
           console.log('[App] Final response length:', accumulatedResponse.length);
         }
@@ -723,9 +724,9 @@ export const App: React.FC<AppProps> = ({
       }
 
       setIsProcessing(false);
-      setCurrentResponse(''); // 清空当前响应，因为已添加到消息列表
-      // 关键修复：清空 streamBlocks，避免消息重复显示
-      // 消息已经被添加到 messages 数组中，由 Static 组件渲染历史记录
+      setCurrentResponse(''); // 清空当前响应，因为已添加到消息列�?
+      // 关键修复：清�?streamBlocks，避免消息重复显�?
+      // 消息已经被添加到 messages 数组中，�?Static 组件渲染历史记录
       setStreamBlocks([]);
     },
     [loop, showWelcome, addActivity, addMessage, handleSlashCommand, verbose] // 添加 verbose 依赖
@@ -737,11 +738,11 @@ export const App: React.FC<AppProps> = ({
       setShowWelcome(false);
       handleSubmit(initialPrompt);
     }
-  }, [handleSubmit, initialPrompt]); // 添加依赖项
+  }, [handleSubmit, initialPrompt]); // 添加依赖�?
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {/* 欢迎屏幕或头部 */}
+      {/* 欢迎屏幕或头�?*/}
       {showWelcome && messages.length === 0 ? (
         <WelcomeScreen
           version={VERSION}
@@ -769,24 +770,88 @@ export const App: React.FC<AppProps> = ({
         />
       )}
 
-      {/* 快捷键帮助 */}
+      {/* 快捷键帮�?*/}
       <ShortcutHelp
         isVisible={showShortcuts}
         onClose={() => setShowShortcuts(false)}
       />
 
-      {/* 登录选择器 */}
+      {/* 登录选择�?*/}
       {showLoginScreen && (
         <LoginSelector onSelect={handleLoginSelect} />
       )}
 
-      {/* 官方 local-jsx 命令：显示命令返回的 JSX 组件（如 /chrome 设置界面）*/}
+      {/* 官方 local-jsx 命令：显示命令返回的 JSX 组件（如 /chrome 设置界面�?resume 会话选择器）*/}
       {commandJsx && (
         <Box flexDirection="column">
           {React.cloneElement(commandJsx, {
-            onDone: () => {
+            onDone: (message?: string, options?: { display?: string }) => {
+              // 关闭 JSX 组件
               setCommandJsx(null);
               setHidePromptForJsx(false);
+              // 如果有消息且不是 skip，则显示
+              if (message && options?.display !== 'skip') {
+                addMessage('assistant', message);
+              }
+            },
+            // 为 ResumeSession 提供 onResume 回调
+            onResume: async (sessionId: string, sessionData: any, source: string) => {
+              // 关闭 JSX 组件
+              setCommandJsx(null);
+              setHidePromptForJsx(false);
+
+              // 尝试加载会话
+              const loadedSession = Session.load(sessionId);
+              if (loadedSession) {
+                // 成功加载会话
+                const sessionMessages = loadedSession.getMessages();
+
+                // 将历史消息转换为 UI 消息格式
+                const historyMessages: MessageItem[] = sessionMessages
+                  .filter(m => m.role === 'user' || m.role === 'assistant')
+                  .map((m, idx) => {
+                    // 提取文本内容
+                    let content = '';
+                    if (typeof m.content === 'string') {
+                      content = m.content;
+                    } else if (Array.isArray(m.content)) {
+                      content = m.content
+                        .filter((block: any) => block.type === 'text')
+                        .map((block: any) => block.text)
+                        .join('\n');
+                    }
+                    return {
+                      id: `resumed-${idx}-${Date.now()}`,
+                      role: m.role as 'user' | 'assistant',
+                      content: content || '[No text content]',
+                      timestamp: new Date(),
+                    };
+                  });
+
+                // 添加恢复成功消息到历史消息末尾
+                const resumeNotice: MessageItem = {
+                  id: `resume-notice-${Date.now()}`,
+                  role: 'assistant',
+                  content: `✓ Session resumed: ${sessionData.summary || sessionId.slice(0, 8)}\n\n${historyMessages.length} messages loaded. You can continue the conversation.`,
+                  timestamp: new Date(),
+                };
+
+                // 更新 UI 状态 - 一次性设置所有消息
+                setMessages([...historyMessages, resumeNotice]);
+
+                // 更新 ConversationLoop 的会话
+                loop.setSession(loadedSession);
+
+                // 更新会话 ID ref
+                sessionId = loadedSession.sessionId;
+
+                addActivity(`Session resumed: ${sessionId.slice(0, 8)}`);
+                setShowWelcome(false);
+              } else {
+                // 加载失败，显示提示
+                addMessage('assistant', `Could not load session ${sessionId.slice(0, 8)}.\n\nTry restarting with:\n  claude --resume ${sessionId.slice(0, 8)}`);
+                addActivity(`Session load failed: ${sessionId.slice(0, 8)}`);
+              }
             },
           })}
         </Box>
@@ -804,9 +869,9 @@ export const App: React.FC<AppProps> = ({
         )}
       </Static>
 
-      {/* 当前活动区域 - 流式输出和动态内容 */}
+      {/* 当前活动区域 - 流式输出和动态内�?*/}
       <Box flexDirection="column" flexGrow={0} flexShrink={0} marginY={1}>
-        {/* 当前流式块（按时间顺序交织显示文本和工具）*/}
+        {/* 当前流式块（按时间顺序交织显示文本和工具�?/}
         {streamBlocks.map((block) => {
           if (block.type === 'text') {
             return (
@@ -876,7 +941,7 @@ export const App: React.FC<AppProps> = ({
         />
       )}
 
-      {/* Input with suggestion - 当显示 JSX 命令组件时隐藏输入框 */}
+      {/* Input with suggestion - 当显�?JSX 命令组件时隐藏输入框 */}
       {!hidePromptForJsx && !showRewindUI && (
         <Box marginTop={1}>
           <Input

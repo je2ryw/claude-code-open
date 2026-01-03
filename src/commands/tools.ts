@@ -908,20 +908,44 @@ Documentation: https://docs.anthropic.com/claude-code/chrome`;
   },
 };
 
-// /plugin - 插件管理（基于官方源码完善）
+// /plugin - 插件管理（官方 local-jsx 风格 - 交互式界面）
 export const pluginCommand: SlashCommand = {
   name: 'plugin',
   aliases: ['plugins'],
   description: 'Manage Claude Code plugins and marketplaces',
   usage: '/plugin [marketplace|install|list|validate]',
   category: 'tools',
-  execute: (ctx: CommandContext): CommandResult => {
+  execute: async (ctx: CommandContext): Promise<CommandResult> => {
     const { args } = ctx;
-    const action = args[0] || 'list';
+    const action = args[0];
     const subAction = args[1];
 
     const pluginDir = path.join(os.homedir(), '.claude', 'plugins');
     const projectPluginDir = path.join(ctx.config.cwd, '.claude', 'plugins');
+
+    // 如果没有参数，显示交互式 UI（官方 local-jsx 模式）
+    if (!action) {
+      try {
+        // 动态导入 React 和 PluginsDialog 组件
+        const React = await import('react');
+        const { default: PluginsDialog } = await import('../ui/PluginsDialog.js');
+
+        // 返回 JSX 组件，由 App.tsx 在主 UI 中显示
+        return {
+          success: true,
+          action: 'showJsx',
+          jsx: React.createElement(PluginsDialog, {
+            cwd: ctx.config.cwd,
+            onDone: () => {},
+          }),
+          shouldHidePromptInput: true,
+        };
+      } catch (error) {
+        // 如果 JSX 组件加载失败，回退到文本模式
+        console.error('Failed to load Plugins UI:', error);
+        // 继续执行下方的 list 逻辑
+      }
+    }
 
     // /plugin marketplace - 管理插件市场
     if (action === 'marketplace') {

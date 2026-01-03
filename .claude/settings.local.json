@@ -115,7 +115,8 @@
       "Bash(timeout 3 npm run dev:*)",
       "Bash(gh issue list:*)",
       "Bash(timeout:*)",
-      "Bash(git -C f:/claude-code-open checkout:*)"
+      "Bash(git -C f:/claude-code-open checkout:*)",
+      "Bash(git -C f:/claude-code-open diff src/commands/tools.ts)"
     ]
   }
 }

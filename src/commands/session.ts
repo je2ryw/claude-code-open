@@ -2,12 +2,14 @@
  * 会话命令 - resume, context, compact, rewind
  */
 
+import React from 'react';
 import type { SlashCommand, CommandContext, CommandResult } from './types.js';
 import { commandRegistry } from './registry.js';
 import { contextManager, type ContextStats } from '../context/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { ResumeSession } from '../ui/components/ResumeSession.js';
 
 // 获取会话目录
 const getSessionsDir = () => path.join(os.homedir(), '.claude', 'sessions');
@@ -119,7 +121,7 @@ function parseSessionFile(filePath: string): SessionFileData | null {
   }
 }
 
-// /resume - 恢复会话 (增强版 - 支持搜索、编号、预览)
+// /resume - 恢复会话 (官方 local-jsx 类型 - 返回交互式 UI 组件)
 export const resumeCommand: SlashCommand = {
   name: 'resume',
   aliases: ['r'],
@@ -133,6 +135,31 @@ export const resumeCommand: SlashCommand = {
     if (!fs.existsSync(sessionsDir)) {
       ctx.ui.addMessage('assistant', `No previous sessions found.\n\nSessions are saved to: ${sessionsDir}\n\nStart a conversation and it will be automatically saved.`);
       return { success: false };
+    }
+
+    // 官方风格：无参数时返回交互式 JSX 组件
+    if (args.length === 0) {
+      // 检查是否有会话文件
+      const sessionFiles = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+      if (sessionFiles.length === 0) {
+        ctx.ui.addMessage('assistant', `No previous sessions found.\n\nSessions directory: ${sessionsDir}\n\nStart a conversation and it will be automatically saved.`);
+        return { success: false };
+      }
+
+      // 返回 JSX 组件，由 App.tsx 处理显示
+      return {
+        success: true,
+        action: 'showJsx',
+        jsx: React.createElement(ResumeSession, {
+          key: Date.now(),
+          onDone: (message?: string) => {
+            if (message) {
+              ctx.ui.addMessage('assistant', message);
+            }
+          },
+        }),
+        shouldHidePromptInput: true,
+      };
     }
 
     try {
