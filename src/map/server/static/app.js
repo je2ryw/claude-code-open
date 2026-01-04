@@ -2611,4 +2611,196 @@
     });
 
     // 初始化
-    loadOntology();
+    loadOntology();
+
+    // ============ 设计驱动功能 ============
+
+    // 当前操作的目录路径
+    let currentDirPath = '';
+
+    // 打开添加计划模块对话框
+    window.openPlannedModuleModal = function(dirPath) {
+      currentDirPath = dirPath || '';
+      document.getElementById('add-planned-module-modal').style.display = 'flex';
+      document.getElementById('planned-module-id').value = dirPath ? `${dirPath}/` : '';
+      document.getElementById('planned-module-name').value = '';
+      document.getElementById('planned-module-notes').value = '';
+      document.getElementById('planned-module-deps').value = '';
+    };
+
+    window.closePlannedModuleModal = function() {
+      document.getElementById('add-planned-module-modal').style.display = 'none';
+    };
+
+    // 提交计划模块
+    window.submitPlannedModule = async function(event) {
+      event.preventDefault();
+
+      const form = event.target;
+      const formData = new FormData(form);
+
+      const moduleId = formData.get('id');
+      const dirPath = moduleId.includes('/') ? moduleId.substring(0, moduleId.lastIndexOf('/')) : '';
+
+      const moduleData = {
+        id: moduleId,
+        name: formData.get('name') || moduleId.split('/').pop(),
+        status: 'planned',
+        designNotes: formData.get('designNotes'),
+        priority: formData.get('priority'),
+        dependencies: formData.get('dependencies')
+          ? formData.get('dependencies').split(',').map(d => d.trim()).filter(d => d)
+          : [],
+      };
+
+      try {
+        const response = await fetch('/api/module/planned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dirPath, moduleData }),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          window.showToast('✓ 计划模块已添加');
+          window.closePlannedModuleModal();
+          // 清除缓存并刷新视图
+          const chunkPath = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+          window.chunkCache.delete(chunkPath);
+          // 刷新当前视图
+          if (typeof window.drawArchitectureFromIndex === 'function') {
+            window.drawArchitectureFromIndex();
+          }
+        } else {
+          alert('添加失败: ' + result.error);
+        }
+      } catch (error) {
+        alert('请求失败: ' + error.message);
+      }
+
+      return false;
+    };
+
+    // 打开重构任务对话框
+    window.openRefactoringModal = function(moduleId) {
+      document.getElementById('refactoring-target').value = moduleId;
+      document.getElementById('add-refactoring-modal').style.display = 'flex';
+      document.getElementById('refactoring-reason').value = '';
+      document.getElementById('refactoring-description').value = '';
+    };
+
+    window.closeRefactoringModal = function() {
+      document.getElementById('add-refactoring-modal').style.display = 'none';
+    };
+
+    // 提交重构任务
+    window.submitRefactoringTask = async function(event) {
+      event.preventDefault();
+
+      const form = event.target;
+      const formData = new FormData(form);
+
+      const target = formData.get('target');
+      const dirPath = target.includes('/') ? target.substring(0, target.lastIndexOf('/')) : '';
+
+      const task = {
+        target: target,
+        type: formData.get('type'),
+        reason: formData.get('reason'),
+        description: formData.get('description') || formData.get('reason'),
+        priority: formData.get('priority'),
+      };
+
+      try {
+        const response = await fetch('/api/refactoring-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dirPath, task }),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          window.showToast('✓ 重构任务已添加');
+          window.closeRefactoringModal();
+          // 清除缓存
+          const chunkPath = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+          window.chunkCache.delete(chunkPath);
+        } else {
+          alert('添加失败: ' + result.error);
+        }
+      } catch (error) {
+        alert('请求失败: ' + error.message);
+      }
+
+      return false;
+    };
+
+    // 打开设计编辑对话框
+    window.openDesignModal = function(moduleId, currentStatus, currentNotes) {
+      document.getElementById('design-module-id').value = moduleId;
+      document.getElementById('design-module-path').textContent = moduleId;
+      document.getElementById('design-status').value = currentStatus || 'implemented';
+      document.getElementById('design-notes').value = currentNotes || '';
+      document.getElementById('edit-design-modal').style.display = 'flex';
+    };
+
+    window.closeDesignModal = function() {
+      document.getElementById('edit-design-modal').style.display = 'none';
+    };
+
+    // 提交设计编辑
+    window.submitDesignEdit = async function(event) {
+      event.preventDefault();
+
+      const form = event.target;
+      const formData = new FormData(form);
+
+      const moduleId = formData.get('moduleId');
+
+      try {
+        const response = await fetch(`/api/module-design?id=${encodeURIComponent(moduleId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: formData.get('status'),
+            designNotes: formData.get('designNotes'),
+          }),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          window.showToast('✓ 设计已保存');
+          window.closeDesignModal();
+          // 清除缓存
+          const dirPath = moduleId.includes('/') ? moduleId.substring(0, moduleId.lastIndexOf('/')) : '';
+          const chunkPath = dirPath === '' ? 'root' : dirPath.replace(/[/\\]/g, '_');
+          window.chunkCache.delete(chunkPath);
+        } else {
+          alert('保存失败: ' + result.error);
+        }
+      } catch (error) {
+        alert('请求失败: ' + error.message);
+      }
+
+      return false;
+    };
+
+    // 显示 Toast 通知
+    window.showToast = function(message) {
+      const existing = document.querySelector('.toast');
+      if (existing) {
+        existing.remove();
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    };
