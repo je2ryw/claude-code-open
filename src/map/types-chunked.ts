@@ -129,6 +129,15 @@ export interface ChunkData {
 
   /** Chunk 元数据（可选） */
   metadata?: ChunkMetadata;
+
+  /** 计划中的模块（可选，用于设计驱动开发） */
+  plannedModules?: PlannedModule[];
+
+  /** 重构任务（可选，用于设计驱动开发） */
+  refactoringTasks?: RefactoringTask[];
+
+  /** 模块设计元数据（可选，moduleId -> ModuleDesignMeta） */
+  moduleDesignMeta?: Record<string, ModuleDesignMeta>;
 }
 
 export interface ChunkReferences {
@@ -169,4 +178,134 @@ export interface ChunkedGenerateOptions {
 
   /** 进度回调 */
   onProgress?: (message: string) => void;
+}
+
+// ============================================================================
+// 设计驱动开发类型定义
+// ============================================================================
+
+// ============================================================================
+// 模块状态枚举
+// ============================================================================
+
+/** 模块实现状态 */
+export type ModuleStatus =
+  | 'implemented'     // 已实现
+  | 'planned'         // 计划中
+  | 'in-progress'     // 开发中
+  | 'deprecated'      // 已废弃
+  | 'needs-refactor'; // 需要重构
+
+// ============================================================================
+// 计划模块
+// ============================================================================
+
+/** 计划中的模块 */
+export interface PlannedModule {
+  /** 模块 ID（预期路径） */
+  id: string;
+
+  /** 模块名称 */
+  name: string;
+
+  /** 设计状态 */
+  status: 'planned' | 'in-progress';
+
+  /** 设计备注 */
+  designNotes: string;
+
+  /** 优先级 */
+  priority: 'high' | 'medium' | 'low';
+
+  /** 预计代码行数 */
+  estimatedLines?: number;
+
+  /** 依赖的模块列表 */
+  dependencies: string[];
+
+  /** 预期导出的符号 */
+  expectedExports?: string[];
+
+  /** 创建时间 */
+  createdAt: string;
+
+  /** 更新时间 */
+  updatedAt?: string;
+}
+
+// ============================================================================
+// 重构任务
+// ============================================================================
+
+/** 重构任务类型 */
+export type RefactoringType =
+  | 'extract-function'   // 提取函数
+  | 'extract-class'      // 提取类
+  | 'rename'             // 重命名
+  | 'move'               // 移动模块
+  | 'split'              // 拆分模块
+  | 'merge'              // 合并模块
+  | 'inline'             // 内联
+  | 'other';             // 其他
+
+/** 重构任务 */
+export interface RefactoringTask {
+  /** 任务 ID */
+  id: string;
+
+  /** 目标模块 */
+  target: string;
+
+  /** 重构类型 */
+  type: RefactoringType;
+
+  /** 描述 */
+  description: string;
+
+  /** 重构原因 */
+  reason: string;
+
+  /** 任务状态 */
+  status: 'pending' | 'in-progress' | 'completed' | 'cancelled';
+
+  /** 优先级 */
+  priority: 'high' | 'medium' | 'low';
+
+  /** 创建时间 */
+  createdAt: string;
+
+  /** 完成时间 */
+  completedAt?: string;
+}
+
+// ============================================================================
+// 模块设计元数据
+// ============================================================================
+
+/** 模块设计元数据 */
+export interface ModuleDesignMeta {
+  /** 实现状态 */
+  status?: ModuleStatus;
+
+  /** 设计备注 */
+  designNotes?: string;
+
+  /** 标记时间 */
+  markedAt?: string;
+}
+
+// ============================================================================
+// 扩展的 ChunkData（明确包含设计相关字段）
+// ============================================================================
+
+/** 扩展后的 ChunkData（支持计划模块和重构任务） */
+export interface ChunkDataWithDesign extends ChunkData {
+  /** 计划中的模块 */
+  plannedModules: PlannedModule[];
+
+  /** 重构任务 */
+  refactoringTasks: RefactoringTask[];
+
+  /** 模块设计元数据（moduleId -> ModuleDesignMeta） */
+  moduleDesignMeta: Record<string, ModuleDesignMeta>;
 }

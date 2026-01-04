@@ -2069,3 +2069,181 @@
     .symbol-badge.interface { color: #4ec9b0; }
     .symbol-badge.variable { color: #9cdcfe; }
     .symbol-badge.type { color: #4ec9b0; }
+
+    /* ========================================
+       设计驱动开发 - 模态框样式
+       ======================================== */
+    /* 模态框样式 */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: #1a1a2e;
+      border: 1px solid #4ecdc4;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 1px solid #333;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      color: #4ecdc4;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+
+    .modal-close:hover {
+      color: #e94560;
+    }
+
+    .form-group {
+      padding: 0.75rem 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #aaa;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 0.5rem;
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 0.9rem;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 1rem;
+      border-top: 1px solid #333;
+    }
+
+    .form-actions button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .form-actions button.primary {
+      background: #4ecdc4;
+      color: #0a0a0a;
+    }
+
+    .form-actions button:not(.primary) {
+      background: #333;
+      color: #aaa;
+    }
+
+    /* 模块卡片按钮 */
+    .module-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .module-actions button {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+    }
+
+    .module-actions button:hover {
+      border-color: #4ecdc4;
+      color: #4ecdc4;
+    }
+
+    /* 状态徽章 */
+    .status-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      margin-left: 0.5rem;
+    }
+
+    .status-badge.implemented { background: #1b4332; color: #2d6a4f; }
+    .status-badge.planned { background: #343a40; color: #adb5bd; }
+    .status-badge.inprogress { background: #3d405b; color: #81b29a; }
+    .status-badge.needsrefactor { background: #5f0f40; color: #e94560; }
+    .status-badge.deprecated { background: #3d3d3d; color: #888; }
+
+    /* 添加按钮 */
+    .add-planned-btn {
+      display: block;
+      width: 100%;
+      padding: 0.75rem;
+      margin-top: 1rem;
+      background: #16213e;
+      border: 2px dashed #333;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .add-planned-btn:hover {
+      border-color: #4ecdc4;
+      color: #4ecdc4;
+    }
+
+    /* Toast 通知 */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 1rem 1.5rem;
+      background: #1a1a2e;
+      border: 1px solid #4ecdc4;
+      border-radius: 4px;
+      color: #4ecdc4;
+      z-index: 1001;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
