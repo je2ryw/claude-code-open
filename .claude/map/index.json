@@ -1,0 +1,6714 @@
+{
+  "format": "chunked-v1",
+  "meta": {
+    "version": "2.0.0",
+    "generatedAt": "2026-01-04T00:58:01.225Z",
+    "generatorVersion": "1.0.0",
+    "semanticVersion": "1.0",
+    "updatedAt": "2026-01-04T00:58:05.801Z"
+  },
+  "project": {
+    "name": "claude-code-open",
+    "rootPath": "F:\\claude-code-open",
+    "languages": [
+      "typescript",
+      "javascript"
+    ],
+    "semantic": {
+      "description": "这是一个基于 Claude AI 的命令行工具(CLI)项目，提供智能代理系统、任务执行、Chrome浏览器集成和MCP(Model Context Protocol)服务器功能。项目实现了多代理协作、上下文管理、认证授权、检查点恢复等核心能力，支持通过命令行与Claude AI进行交互和自动化任务执行。",
+      "purpose": "为开发者提供一个功能完善的Claude AI命令行界面，支持智能代理编排、浏览器自动化、状态管理和多种工具集成，实现AI驱动的开发工作流自动化。",
+      "domains": [
+        "AI代理系统",
+        "命令行工具",
+        "浏览器自动化",
+        "开发者工具",
+        "API集成",
+        "状态管理"
+      ],
+      "keyConcepts": [
+        {
+          "name": "Agent(智能代理)",
+          "description": "实现多种类型的AI代理(如ExploreAgent、PlanAgent、GuideAgent等)，支持并行执行、依赖管理、状态恢复和跨代理通信",
+          "relatedModules": []
+        },
+        {
+          "name": "Context Management(上下文管理)",
+          "description": "管理代理的执行上下文，包括上下文继承、压缩、隔离、敏感数据过滤和令牌估算，确保高效的信息传递",
+          "relatedModules": []
+        },
+        {
+          "name": "Communication System(通信系统)",
+          "description": "提供代理间消息总线、共享状态管理、锁机制和协调器，支持请求-响应模式、广播和任务协调",
+          "relatedModules": []
+        },
+        {
+          "name": "Checkpoint & Resume(检查点与恢复)",
+          "description": "实现代理状态的持久化、增量差异计算、压缩存储和恢复机制，支持长时间运行任务的中断和续传",
+          "relatedModules": []
+        },
+        {
+          "name": "Chrome MCP Integration(Chrome MCP集成)",
+          "description": "通过MCP协议和Native Host实现与Chrome浏览器的深度集成，支持浏览器自动化和工具调用",
+          "relatedModules": []
+        },
+        {
+          "name": "Authentication & MFA(认证与多因素认证)",
+          "description": "实现OAuth认证流程、密钥链存储、TOTP双因素认证和设备信任管理，保障API访问安全",
+          "relatedModules": []
+        },
+        {
+          "name": "Monitoring & Analytics(监控与分析)",
+          "description": "提供代理执行监控、性能分析、告警管理和指标导出功能，支持仪表盘数据生成和性能报告",
+          "relatedModules": []
+        },
+        {
+          "name": "Tool Management(工具管理)",
+          "description": "管理可用工具集、工具过滤、使用跟踪和配置合并，支持工具的动态启用和权限控制",
+          "relatedModules": []
+        }
+      ]
+    }
+  },
+  "views": {
+    "directoryTree": {
+      "name": "src",
+      "path": "src",
+      "type": "directory",
+      "children": [
+        {
+          "name": "agents",
+          "path": "src/agents",
+          "type": "directory",
+          "children": [
+            {
+              "name": "communication.example.ts",
+              "path": "src/agents/communication.example.ts",
+              "type": "file",
+              "moduleId": "src/agents/communication.example.ts",
+              "children": []
+            },
+            {
+              "name": "communication.test.ts",
+              "path": "src/agents/communication.test.ts",
+              "type": "file",
+              "moduleId": "src/agents/communication.test.ts",
+              "children": []
+            },
+            {
+              "name": "communication.ts",
+              "path": "src/agents/communication.ts",
+              "type": "file",
+              "moduleId": "src/agents/communication.ts",
+              "children": []
+            },
+            {
+              "name": "context.example.ts",
+              "path": "src/agents/context.example.ts",
+              "type": "file",
+              "moduleId": "src/agents/context.example.ts",
+              "children": []
+            },
+            {
+              "name": "context.ts",
+              "path": "src/agents/context.ts",
+              "type": "file",
+              "moduleId": "src/agents/context.ts",
+              "children": []
+            },
+            {
+              "name": "examples.ts",
+              "path": "src/agents/examples.ts",
+              "type": "file",
+              "moduleId": "src/agents/examples.ts",
+              "children": []
+            },
+            {
+              "name": "explore.example.ts",
+              "path": "src/agents/explore.example.ts",
+              "type": "file",
+              "moduleId": "src/agents/explore.example.ts",
+              "children": []
+            },
+            {
+              "name": "explore.ts",
+              "path": "src/agents/explore.ts",
+              "type": "file",
+              "moduleId": "src/agents/explore.ts",
+              "children": []
+            },
+            {
+              "name": "guide.ts",
+              "path": "src/agents/guide.ts",
+              "type": "file",
+              "moduleId": "src/agents/guide.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/agents/index.ts",
+              "type": "file",
+              "moduleId": "src/agents/index.ts",
+              "children": []
+            },
+            {
+              "name": "monitor.example.ts",
+              "path": "src/agents/monitor.example.ts",
+              "type": "file",
+              "moduleId": "src/agents/monitor.example.ts",
+              "children": []
+            },
+            {
+              "name": "monitor.ts",
+              "path": "src/agents/monitor.ts",
+              "type": "file",
+              "moduleId": "src/agents/monitor.ts",
+              "children": []
+            },
+            {
+              "name": "parallel.ts",
+              "path": "src/agents/parallel.ts",
+              "type": "file",
+              "moduleId": "src/agents/parallel.ts",
+              "children": []
+            },
+            {
+              "name": "plan.ts",
+              "path": "src/agents/plan.ts",
+              "type": "file",
+              "moduleId": "src/agents/plan.ts",
+              "children": []
+            },
+            {
+              "name": "resume.ts",
+              "path": "src/agents/resume.ts",
+              "type": "file",
+              "moduleId": "src/agents/resume.ts",
+              "children": []
+            },
+            {
+              "name": "statusline.ts",
+              "path": "src/agents/statusline.ts",
+              "type": "file",
+              "moduleId": "src/agents/statusline.ts",
+              "children": []
+            },
+            {
+              "name": "tools.test.example.ts",
+              "path": "src/agents/tools.test.example.ts",
+              "type": "file",
+              "moduleId": "src/agents/tools.test.example.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/agents/tools.ts",
+              "type": "file",
+              "moduleId": "src/agents/tools.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_agents.json",
+          "moduleCount": 18
+        },
+        {
+          "name": "auth",
+          "path": "src/auth",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/auth/index.ts",
+              "type": "file",
+              "moduleId": "src/auth/index.ts",
+              "children": []
+            },
+            {
+              "name": "keychain.ts",
+              "path": "src/auth/keychain.ts",
+              "type": "file",
+              "moduleId": "src/auth/keychain.ts",
+              "children": []
+            },
+            {
+              "name": "mfa.ts",
+              "path": "src/auth/mfa.ts",
+              "type": "file",
+              "moduleId": "src/auth/mfa.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_auth.json",
+          "moduleCount": 3
+        },
+        {
+          "name": "background",
+          "path": "src/background",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/background/index.ts",
+              "type": "file",
+              "moduleId": "src/background/index.ts",
+              "children": []
+            },
+            {
+              "name": "persistence.ts",
+              "path": "src/background/persistence.ts",
+              "type": "file",
+              "moduleId": "src/background/persistence.ts",
+              "children": []
+            },
+            {
+              "name": "shell-manager.ts",
+              "path": "src/background/shell-manager.ts",
+              "type": "file",
+              "moduleId": "src/background/shell-manager.ts",
+              "children": []
+            },
+            {
+              "name": "task-queue.ts",
+              "path": "src/background/task-queue.ts",
+              "type": "file",
+              "moduleId": "src/background/task-queue.ts",
+              "children": []
+            },
+            {
+              "name": "timeout.ts",
+              "path": "src/background/timeout.ts",
+              "type": "file",
+              "moduleId": "src/background/timeout.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_background.json",
+          "moduleCount": 5
+        },
+        {
+          "name": "checkpoint",
+          "path": "src/checkpoint",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/checkpoint/index.ts",
+              "type": "file",
+              "moduleId": "src/checkpoint/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_checkpoint.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "chrome",
+          "path": "src/chrome",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/chrome/index.ts",
+              "type": "file",
+              "moduleId": "src/chrome/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_chrome.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "chrome-mcp",
+          "path": "src/chrome-mcp",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/chrome-mcp/index.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/index.ts",
+              "children": []
+            },
+            {
+              "name": "mcp-server.ts",
+              "path": "src/chrome-mcp/mcp-server.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/mcp-server.ts",
+              "children": []
+            },
+            {
+              "name": "native-host.ts",
+              "path": "src/chrome-mcp/native-host.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/native-host.ts",
+              "children": []
+            },
+            {
+              "name": "socket-client.ts",
+              "path": "src/chrome-mcp/socket-client.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/socket-client.ts",
+              "children": []
+            },
+            {
+              "name": "socket-server.ts",
+              "path": "src/chrome-mcp/socket-server.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/socket-server.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/chrome-mcp/tools.ts",
+              "type": "file",
+              "moduleId": "src/chrome-mcp/tools.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_chrome-mcp.json",
+          "moduleCount": 6
+        },
+        {
+          "name": "codesign",
+          "path": "src/codesign",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/codesign/index.ts",
+              "type": "file",
+              "moduleId": "src/codesign/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_codesign.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "commands",
+          "path": "src/commands",
+          "type": "directory",
+          "children": [
+            {
+              "name": "api.ts",
+              "path": "src/commands/api.ts",
+              "type": "file",
+              "moduleId": "src/commands/api.ts",
+              "children": []
+            },
+            {
+              "name": "auth.ts",
+              "path": "src/commands/auth.ts",
+              "type": "file",
+              "moduleId": "src/commands/auth.ts",
+              "children": []
+            },
+            {
+              "name": "config-cmd.ts",
+              "path": "src/commands/config-cmd.ts",
+              "type": "file",
+              "moduleId": "src/commands/config-cmd.ts",
+              "children": []
+            },
+            {
+              "name": "config.ts",
+              "path": "src/commands/config.ts",
+              "type": "file",
+              "moduleId": "src/commands/config.ts",
+              "children": []
+            },
+            {
+              "name": "development.ts",
+              "path": "src/commands/development.ts",
+              "type": "file",
+              "moduleId": "src/commands/development.ts",
+              "children": []
+            },
+            {
+              "name": "general.ts",
+              "path": "src/commands/general.ts",
+              "type": "file",
+              "moduleId": "src/commands/general.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/commands/index.ts",
+              "type": "file",
+              "moduleId": "src/commands/index.ts",
+              "children": []
+            },
+            {
+              "name": "map.ts",
+              "path": "src/commands/map.ts",
+              "type": "file",
+              "moduleId": "src/commands/map.ts",
+              "children": []
+            },
+            {
+              "name": "mfa.ts",
+              "path": "src/commands/mfa.ts",
+              "type": "file",
+              "moduleId": "src/commands/mfa.ts",
+              "children": []
+            },
+            {
+              "name": "registry.ts",
+              "path": "src/commands/registry.ts",
+              "type": "file",
+              "moduleId": "src/commands/registry.ts",
+              "children": []
+            },
+            {
+              "name": "session.ts",
+              "path": "src/commands/session.ts",
+              "type": "file",
+              "moduleId": "src/commands/session.ts",
+              "children": []
+            },
+            {
+              "name": "settings.ts",
+              "path": "src/commands/settings.ts",
+              "type": "file",
+              "moduleId": "src/commands/settings.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/commands/tools.ts",
+              "type": "file",
+              "moduleId": "src/commands/tools.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/commands/types.ts",
+              "type": "file",
+              "moduleId": "src/commands/types.ts",
+              "children": []
+            },
+            {
+              "name": "utility.ts",
+              "path": "src/commands/utility.ts",
+              "type": "file",
+              "moduleId": "src/commands/utility.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_commands.json",
+          "moduleCount": 15
+        },
+        {
+          "name": "config",
+          "path": "src/config",
+          "type": "directory",
+          "children": [
+            {
+              "name": "claude-md-parser.ts",
+              "path": "src/config/claude-md-parser.ts",
+              "type": "file",
+              "moduleId": "src/config/claude-md-parser.ts",
+              "children": []
+            },
+            {
+              "name": "config-command.ts",
+              "path": "src/config/config-command.ts",
+              "type": "file",
+              "moduleId": "src/config/config-command.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/config/index.ts",
+              "type": "file",
+              "moduleId": "src/config/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_config.json",
+          "moduleCount": 3
+        },
+        {
+          "name": "context",
+          "path": "src/context",
+          "type": "directory",
+          "children": [
+            {
+              "name": "__tests__",
+              "path": "src/context/__tests__",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "enhanced.test.ts",
+                  "path": "src/context/__tests__/enhanced.test.ts",
+                  "type": "file",
+                  "moduleId": "src/context/__tests__/enhanced.test.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_context___tests__.json",
+              "moduleCount": 1
+            },
+            {
+              "name": "enhanced.ts",
+              "path": "src/context/enhanced.ts",
+              "type": "file",
+              "moduleId": "src/context/enhanced.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/context/index.ts",
+              "type": "file",
+              "moduleId": "src/context/index.ts",
+              "children": []
+            },
+            {
+              "name": "summarizer.ts",
+              "path": "src/context/summarizer.ts",
+              "type": "file",
+              "moduleId": "src/context/summarizer.ts",
+              "children": []
+            },
+            {
+              "name": "window.ts",
+              "path": "src/context/window.ts",
+              "type": "file",
+              "moduleId": "src/context/window.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_context.json",
+          "moduleCount": 4
+        },
+        {
+          "name": "core",
+          "path": "src/core",
+          "type": "directory",
+          "children": [
+            {
+              "name": "backgroundTasks.ts",
+              "path": "src/core/backgroundTasks.ts",
+              "type": "file",
+              "moduleId": "src/core/backgroundTasks.ts",
+              "children": []
+            },
+            {
+              "name": "client.ts",
+              "path": "src/core/client.ts",
+              "type": "file",
+              "moduleId": "src/core/client.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/core/index.ts",
+              "type": "file",
+              "moduleId": "src/core/index.ts",
+              "children": []
+            },
+            {
+              "name": "loop.ts",
+              "path": "src/core/loop.ts",
+              "type": "file",
+              "moduleId": "src/core/loop.ts",
+              "children": []
+            },
+            {
+              "name": "retryLogic.ts",
+              "path": "src/core/retryLogic.ts",
+              "type": "file",
+              "moduleId": "src/core/retryLogic.ts",
+              "children": []
+            },
+            {
+              "name": "session.ts",
+              "path": "src/core/session.ts",
+              "type": "file",
+              "moduleId": "src/core/session.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_core.json",
+          "moduleCount": 6
+        },
+        {
+          "name": "diagnostics",
+          "path": "src/diagnostics",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/diagnostics/index.ts",
+              "type": "file",
+              "moduleId": "src/diagnostics/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_diagnostics.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "env",
+          "path": "src/env",
+          "type": "directory",
+          "children": [
+            {
+              "name": "validators",
+              "path": "src/env/validators",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "builtin.ts",
+                  "path": "src/env/validators/builtin.ts",
+                  "type": "file",
+                  "moduleId": "src/env/validators/builtin.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_env_validators.json",
+              "moduleCount": 1
+            },
+            {
+              "name": "index.ts",
+              "path": "src/env/index.ts",
+              "type": "file",
+              "moduleId": "src/env/index.ts",
+              "children": []
+            },
+            {
+              "name": "manager.ts",
+              "path": "src/env/manager.ts",
+              "type": "file",
+              "moduleId": "src/env/manager.ts",
+              "children": []
+            },
+            {
+              "name": "sensitive.ts",
+              "path": "src/env/sensitive.ts",
+              "type": "file",
+              "moduleId": "src/env/sensitive.ts",
+              "children": []
+            },
+            {
+              "name": "validator.ts",
+              "path": "src/env/validator.ts",
+              "type": "file",
+              "moduleId": "src/env/validator.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_env.json",
+          "moduleCount": 4
+        },
+        {
+          "name": "examples",
+          "path": "src/examples",
+          "type": "directory",
+          "children": [
+            {
+              "name": "retry-usage.ts",
+              "path": "src/examples/retry-usage.ts",
+              "type": "file",
+              "moduleId": "src/examples/retry-usage.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_examples.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "git",
+          "path": "src/git",
+          "type": "directory",
+          "children": [
+            {
+              "name": "analysis.ts",
+              "path": "src/git/analysis.ts",
+              "type": "file",
+              "moduleId": "src/git/analysis.ts",
+              "children": []
+            },
+            {
+              "name": "core.ts",
+              "path": "src/git/core.ts",
+              "type": "file",
+              "moduleId": "src/git/core.ts",
+              "children": []
+            },
+            {
+              "name": "ignore.ts",
+              "path": "src/git/ignore.ts",
+              "type": "file",
+              "moduleId": "src/git/ignore.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/git/index.ts",
+              "type": "file",
+              "moduleId": "src/git/index.ts",
+              "children": []
+            },
+            {
+              "name": "operations.ts",
+              "path": "src/git/operations.ts",
+              "type": "file",
+              "moduleId": "src/git/operations.ts",
+              "children": []
+            },
+            {
+              "name": "safety.ts",
+              "path": "src/git/safety.ts",
+              "type": "file",
+              "moduleId": "src/git/safety.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_git.json",
+          "moduleCount": 6
+        },
+        {
+          "name": "github",
+          "path": "src/github",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/github/index.ts",
+              "type": "file",
+              "moduleId": "src/github/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_github.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "hooks",
+          "path": "src/hooks",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.test.ts",
+              "path": "src/hooks/index.test.ts",
+              "type": "file",
+              "moduleId": "src/hooks/index.test.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/hooks/index.ts",
+              "type": "file",
+              "moduleId": "src/hooks/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_hooks.json",
+          "moduleCount": 2
+        },
+        {
+          "name": "ide",
+          "path": "src/ide",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/ide/index.ts",
+              "type": "file",
+              "moduleId": "src/ide/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_ide.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "lifecycle",
+          "path": "src/lifecycle",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/lifecycle/index.ts",
+              "type": "file",
+              "moduleId": "src/lifecycle/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_lifecycle.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "lsp",
+          "path": "src/lsp",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/lsp/index.ts",
+              "type": "file",
+              "moduleId": "src/lsp/index.ts",
+              "children": []
+            },
+            {
+              "name": "manager.ts",
+              "path": "src/lsp/manager.ts",
+              "type": "file",
+              "moduleId": "src/lsp/manager.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_lsp.json",
+          "moduleCount": 2
+        },
+        {
+          "name": "map",
+          "path": "src/map",
+          "type": "directory",
+          "children": [
+            {
+              "name": "server",
+              "path": "src/map/server",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "routes",
+                  "path": "src/map/server/routes",
+                  "type": "directory",
+                  "children": [
+                    {
+                      "name": "api.ts",
+                      "path": "src/map/server/routes/api.ts",
+                      "type": "file",
+                      "moduleId": "src/map/server/routes/api.ts",
+                      "children": []
+                    }
+                  ],
+                  "chunkFile": "chunks/src_map_server_routes.json",
+                  "moduleCount": 1
+                },
+                {
+                  "name": "services",
+                  "path": "src/map/server/services",
+                  "type": "directory",
+                  "children": [
+                    {
+                      "name": "architecture.ts",
+                      "path": "src/map/server/services/architecture.ts",
+                      "type": "file",
+                      "moduleId": "src/map/server/services/architecture.ts",
+                      "children": []
+                    },
+                    {
+                      "name": "dependency.ts",
+                      "path": "src/map/server/services/dependency.ts",
+                      "type": "file",
+                      "moduleId": "src/map/server/services/dependency.ts",
+                      "children": []
+                    },
+                    {
+                      "name": "index.ts",
+                      "path": "src/map/server/services/index.ts",
+                      "type": "file",
+                      "moduleId": "src/map/server/services/index.ts",
+                      "children": []
+                    }
+                  ],
+                  "chunkFile": "chunks/src_map_server_services.json",
+                  "moduleCount": 3
+                },
+                {
+                  "name": "static",
+                  "path": "src/map/server/static",
+                  "type": "directory",
+                  "children": [
+                    {
+                      "name": "app.js",
+                      "path": "src/map/server/static/app.js",
+                      "type": "file",
+                      "moduleId": "src/map/server/static/app.js",
+                      "children": []
+                    },
+                    {
+                      "name": "chunked-loader.js",
+                      "path": "src/map/server/static/chunked-loader.js",
+                      "type": "file",
+                      "moduleId": "src/map/server/static/chunked-loader.js",
+                      "children": []
+                    }
+                  ],
+                  "chunkFile": "chunks/src_map_server_static.json",
+                  "moduleCount": 2
+                },
+                {
+                  "name": "index.old.ts",
+                  "path": "src/map/server/index.old.ts",
+                  "type": "file",
+                  "moduleId": "src/map/server/index.old.ts",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/map/server/index.ts",
+                  "type": "file",
+                  "moduleId": "src/map/server/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "server.ts",
+                  "path": "src/map/server/server.ts",
+                  "type": "file",
+                  "moduleId": "src/map/server/server.ts",
+                  "children": []
+                },
+                {
+                  "name": "types.ts",
+                  "path": "src/map/server/types.ts",
+                  "type": "file",
+                  "moduleId": "src/map/server/types.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_map_server.json",
+              "moduleCount": 4
+            },
+            {
+              "name": "analyzer.ts",
+              "path": "src/map/analyzer.ts",
+              "type": "file",
+              "moduleId": "src/map/analyzer.ts",
+              "children": []
+            },
+            {
+              "name": "call-graph-builder.ts",
+              "path": "src/map/call-graph-builder.ts",
+              "type": "file",
+              "moduleId": "src/map/call-graph-builder.ts",
+              "children": []
+            },
+            {
+              "name": "chunked-generator.ts",
+              "path": "src/map/chunked-generator.ts",
+              "type": "file",
+              "moduleId": "src/map/chunked-generator.ts",
+              "children": []
+            },
+            {
+              "name": "dependency-analyzer.ts",
+              "path": "src/map/dependency-analyzer.ts",
+              "type": "file",
+              "moduleId": "src/map/dependency-analyzer.ts",
+              "children": []
+            },
+            {
+              "name": "enhanced-generator.ts",
+              "path": "src/map/enhanced-generator.ts",
+              "type": "file",
+              "moduleId": "src/map/enhanced-generator.ts",
+              "children": []
+            },
+            {
+              "name": "incremental-cache.ts",
+              "path": "src/map/incremental-cache.ts",
+              "type": "file",
+              "moduleId": "src/map/incremental-cache.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/map/index.ts",
+              "type": "file",
+              "moduleId": "src/map/index.ts",
+              "children": []
+            },
+            {
+              "name": "layer-classifier.ts",
+              "path": "src/map/layer-classifier.ts",
+              "type": "file",
+              "moduleId": "src/map/layer-classifier.ts",
+              "children": []
+            },
+            {
+              "name": "ontology-generator.ts",
+              "path": "src/map/ontology-generator.ts",
+              "type": "file",
+              "moduleId": "src/map/ontology-generator.ts",
+              "children": []
+            },
+            {
+              "name": "semantic-generator.ts",
+              "path": "src/map/semantic-generator.ts",
+              "type": "file",
+              "moduleId": "src/map/semantic-generator.ts",
+              "children": []
+            },
+            {
+              "name": "symbol-reference-analyzer.ts",
+              "path": "src/map/symbol-reference-analyzer.ts",
+              "type": "file",
+              "moduleId": "src/map/symbol-reference-analyzer.ts",
+              "children": []
+            },
+            {
+              "name": "type-reference-analyzer.ts",
+              "path": "src/map/type-reference-analyzer.ts",
+              "type": "file",
+              "moduleId": "src/map/type-reference-analyzer.ts",
+              "children": []
+            },
+            {
+              "name": "types-chunked.ts",
+              "path": "src/map/types-chunked.ts",
+              "type": "file",
+              "moduleId": "src/map/types-chunked.ts",
+              "children": []
+            },
+            {
+              "name": "types-enhanced.ts",
+              "path": "src/map/types-enhanced.ts",
+              "type": "file",
+              "moduleId": "src/map/types-enhanced.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/map/types.ts",
+              "type": "file",
+              "moduleId": "src/map/types.ts",
+              "children": []
+            },
+            {
+              "name": "view-builder.ts",
+              "path": "src/map/view-builder.ts",
+              "type": "file",
+              "moduleId": "src/map/view-builder.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_map.json",
+          "moduleCount": 16
+        },
+        {
+          "name": "mcp",
+          "path": "src/mcp",
+          "type": "directory",
+          "children": [
+            {
+              "name": "examples",
+              "path": "src/mcp/examples",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "cancellation-usage.ts",
+                  "path": "src/mcp/examples/cancellation-usage.ts",
+                  "type": "file",
+                  "moduleId": "src/mcp/examples/cancellation-usage.ts",
+                  "children": []
+                },
+                {
+                  "name": "connection-usage.ts",
+                  "path": "src/mcp/examples/connection-usage.ts",
+                  "type": "file",
+                  "moduleId": "src/mcp/examples/connection-usage.ts",
+                  "children": []
+                },
+                {
+                  "name": "sampling-usage.ts",
+                  "path": "src/mcp/examples/sampling-usage.ts",
+                  "type": "file",
+                  "moduleId": "src/mcp/examples/sampling-usage.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_mcp_examples.json",
+              "moduleCount": 3
+            },
+            {
+              "name": "adapter.ts",
+              "path": "src/mcp/adapter.ts",
+              "type": "file",
+              "moduleId": "src/mcp/adapter.ts",
+              "children": []
+            },
+            {
+              "name": "auto-discovery.ts",
+              "path": "src/mcp/auto-discovery.ts",
+              "type": "file",
+              "moduleId": "src/mcp/auto-discovery.ts",
+              "children": []
+            },
+            {
+              "name": "cancellation.ts",
+              "path": "src/mcp/cancellation.ts",
+              "type": "file",
+              "moduleId": "src/mcp/cancellation.ts",
+              "children": []
+            },
+            {
+              "name": "config.ts",
+              "path": "src/mcp/config.ts",
+              "type": "file",
+              "moduleId": "src/mcp/config.ts",
+              "children": []
+            },
+            {
+              "name": "connection.ts",
+              "path": "src/mcp/connection.ts",
+              "type": "file",
+              "moduleId": "src/mcp/connection.ts",
+              "children": []
+            },
+            {
+              "name": "debug-example.ts",
+              "path": "src/mcp/debug-example.ts",
+              "type": "file",
+              "moduleId": "src/mcp/debug-example.ts",
+              "children": []
+            },
+            {
+              "name": "debug.ts",
+              "path": "src/mcp/debug.ts",
+              "type": "file",
+              "moduleId": "src/mcp/debug.ts",
+              "children": []
+            },
+            {
+              "name": "discovery.ts",
+              "path": "src/mcp/discovery.ts",
+              "type": "file",
+              "moduleId": "src/mcp/discovery.ts",
+              "children": []
+            },
+            {
+              "name": "errors.example.ts",
+              "path": "src/mcp/errors.example.ts",
+              "type": "file",
+              "moduleId": "src/mcp/errors.example.ts",
+              "children": []
+            },
+            {
+              "name": "errors.ts",
+              "path": "src/mcp/errors.ts",
+              "type": "file",
+              "moduleId": "src/mcp/errors.ts",
+              "children": []
+            },
+            {
+              "name": "example.ts",
+              "path": "src/mcp/example.ts",
+              "type": "file",
+              "moduleId": "src/mcp/example.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/mcp/index.ts",
+              "type": "file",
+              "moduleId": "src/mcp/index.ts",
+              "children": []
+            },
+            {
+              "name": "integration.ts",
+              "path": "src/mcp/integration.ts",
+              "type": "file",
+              "moduleId": "src/mcp/integration.ts",
+              "children": []
+            },
+            {
+              "name": "lifecycle.ts",
+              "path": "src/mcp/lifecycle.ts",
+              "type": "file",
+              "moduleId": "src/mcp/lifecycle.ts",
+              "children": []
+            },
+            {
+              "name": "logging.ts",
+              "path": "src/mcp/logging.ts",
+              "type": "file",
+              "moduleId": "src/mcp/logging.ts",
+              "children": []
+            },
+            {
+              "name": "notifications.ts",
+              "path": "src/mcp/notifications.ts",
+              "type": "file",
+              "moduleId": "src/mcp/notifications.ts",
+              "children": []
+            },
+            {
+              "name": "protocol.ts",
+              "path": "src/mcp/protocol.ts",
+              "type": "file",
+              "moduleId": "src/mcp/protocol.ts",
+              "children": []
+            },
+            {
+              "name": "resources.ts",
+              "path": "src/mcp/resources.ts",
+              "type": "file",
+              "moduleId": "src/mcp/resources.ts",
+              "children": []
+            },
+            {
+              "name": "roots.ts",
+              "path": "src/mcp/roots.ts",
+              "type": "file",
+              "moduleId": "src/mcp/roots.ts",
+              "children": []
+            },
+            {
+              "name": "sampling.ts",
+              "path": "src/mcp/sampling.ts",
+              "type": "file",
+              "moduleId": "src/mcp/sampling.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/mcp/tools.ts",
+              "type": "file",
+              "moduleId": "src/mcp/tools.ts",
+              "children": []
+            },
+            {
+              "name": "websocket-connection.ts",
+              "path": "src/mcp/websocket-connection.ts",
+              "type": "file",
+              "moduleId": "src/mcp/websocket-connection.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_mcp.json",
+          "moduleCount": 22
+        },
+        {
+          "name": "media",
+          "path": "src/media",
+          "type": "directory",
+          "children": [
+            {
+              "name": "image.ts",
+              "path": "src/media/image.ts",
+              "type": "file",
+              "moduleId": "src/media/image.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/media/index.ts",
+              "type": "file",
+              "moduleId": "src/media/index.ts",
+              "children": []
+            },
+            {
+              "name": "mime.ts",
+              "path": "src/media/mime.ts",
+              "type": "file",
+              "moduleId": "src/media/mime.ts",
+              "children": []
+            },
+            {
+              "name": "pdf.ts",
+              "path": "src/media/pdf.ts",
+              "type": "file",
+              "moduleId": "src/media/pdf.ts",
+              "children": []
+            },
+            {
+              "name": "svg.ts",
+              "path": "src/media/svg.ts",
+              "type": "file",
+              "moduleId": "src/media/svg.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_media.json",
+          "moduleCount": 5
+        },
+        {
+          "name": "memory",
+          "path": "src/memory",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/memory/index.ts",
+              "type": "file",
+              "moduleId": "src/memory/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_memory.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "models",
+          "path": "src/models",
+          "type": "directory",
+          "children": [
+            {
+              "name": "config.ts",
+              "path": "src/models/config.ts",
+              "type": "file",
+              "moduleId": "src/models/config.ts",
+              "children": []
+            },
+            {
+              "name": "fallback.ts",
+              "path": "src/models/fallback.ts",
+              "type": "file",
+              "moduleId": "src/models/fallback.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/models/index.ts",
+              "type": "file",
+              "moduleId": "src/models/index.ts",
+              "children": []
+            },
+            {
+              "name": "quota.example.ts",
+              "path": "src/models/quota.example.ts",
+              "type": "file",
+              "moduleId": "src/models/quota.example.ts",
+              "children": []
+            },
+            {
+              "name": "quota.ts",
+              "path": "src/models/quota.ts",
+              "type": "file",
+              "moduleId": "src/models/quota.ts",
+              "children": []
+            },
+            {
+              "name": "stats.ts",
+              "path": "src/models/stats.ts",
+              "type": "file",
+              "moduleId": "src/models/stats.ts",
+              "children": []
+            },
+            {
+              "name": "subagent-config.ts",
+              "path": "src/models/subagent-config.ts",
+              "type": "file",
+              "moduleId": "src/models/subagent-config.ts",
+              "children": []
+            },
+            {
+              "name": "thinking.ts",
+              "path": "src/models/thinking.ts",
+              "type": "file",
+              "moduleId": "src/models/thinking.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/models/types.ts",
+              "type": "file",
+              "moduleId": "src/models/types.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_models.json",
+          "moduleCount": 9
+        },
+        {
+          "name": "network",
+          "path": "src/network",
+          "type": "directory",
+          "children": [
+            {
+              "name": "examples.ts",
+              "path": "src/network/examples.ts",
+              "type": "file",
+              "moduleId": "src/network/examples.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/network/index.ts",
+              "type": "file",
+              "moduleId": "src/network/index.ts",
+              "children": []
+            },
+            {
+              "name": "proxy.ts",
+              "path": "src/network/proxy.ts",
+              "type": "file",
+              "moduleId": "src/network/proxy.ts",
+              "children": []
+            },
+            {
+              "name": "retry.ts",
+              "path": "src/network/retry.ts",
+              "type": "file",
+              "moduleId": "src/network/retry.ts",
+              "children": []
+            },
+            {
+              "name": "timeout.ts",
+              "path": "src/network/timeout.ts",
+              "type": "file",
+              "moduleId": "src/network/timeout.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_network.json",
+          "moduleCount": 5
+        },
+        {
+          "name": "notifications",
+          "path": "src/notifications",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/notifications/index.ts",
+              "type": "file",
+              "moduleId": "src/notifications/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_notifications.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "organization",
+          "path": "src/organization",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/organization/index.ts",
+              "type": "file",
+              "moduleId": "src/organization/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_organization.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "parser",
+          "path": "src/parser",
+          "type": "directory",
+          "children": [
+            {
+              "name": "lsp",
+              "path": "src/parser/lsp",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "index.ts",
+                  "path": "src/parser/lsp/index.ts",
+                  "type": "file",
+                  "moduleId": "src/parser/lsp/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "lsp-client.ts",
+                  "path": "src/parser/lsp/lsp-client.ts",
+                  "type": "file",
+                  "moduleId": "src/parser/lsp/lsp-client.ts",
+                  "children": []
+                },
+                {
+                  "name": "lsp-manager.ts",
+                  "path": "src/parser/lsp/lsp-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/parser/lsp/lsp-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "lsp-symbol-extractor.ts",
+                  "path": "src/parser/lsp/lsp-symbol-extractor.ts",
+                  "type": "file",
+                  "moduleId": "src/parser/lsp/lsp-symbol-extractor.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_parser_lsp.json",
+              "moduleCount": 4
+            },
+            {
+              "name": "index.ts",
+              "path": "src/parser/index.ts",
+              "type": "file",
+              "moduleId": "src/parser/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_parser.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "permissions",
+          "path": "src/permissions",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/permissions/index.ts",
+              "type": "file",
+              "moduleId": "src/permissions/index.ts",
+              "children": []
+            },
+            {
+              "name": "policy.example.ts",
+              "path": "src/permissions/policy.example.ts",
+              "type": "file",
+              "moduleId": "src/permissions/policy.example.ts",
+              "children": []
+            },
+            {
+              "name": "policy.test.ts",
+              "path": "src/permissions/policy.test.ts",
+              "type": "file",
+              "moduleId": "src/permissions/policy.test.ts",
+              "children": []
+            },
+            {
+              "name": "policy.ts",
+              "path": "src/permissions/policy.ts",
+              "type": "file",
+              "moduleId": "src/permissions/policy.ts",
+              "children": []
+            },
+            {
+              "name": "rule-parser.test.ts",
+              "path": "src/permissions/rule-parser.test.ts",
+              "type": "file",
+              "moduleId": "src/permissions/rule-parser.test.ts",
+              "children": []
+            },
+            {
+              "name": "rule-parser.ts",
+              "path": "src/permissions/rule-parser.ts",
+              "type": "file",
+              "moduleId": "src/permissions/rule-parser.ts",
+              "children": []
+            },
+            {
+              "name": "system.test.ts",
+              "path": "src/permissions/system.test.ts",
+              "type": "file",
+              "moduleId": "src/permissions/system.test.ts",
+              "children": []
+            },
+            {
+              "name": "tools.example.ts",
+              "path": "src/permissions/tools.example.ts",
+              "type": "file",
+              "moduleId": "src/permissions/tools.example.ts",
+              "children": []
+            },
+            {
+              "name": "tools.test.ts",
+              "path": "src/permissions/tools.test.ts",
+              "type": "file",
+              "moduleId": "src/permissions/tools.test.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/permissions/tools.ts",
+              "type": "file",
+              "moduleId": "src/permissions/tools.ts",
+              "children": []
+            },
+            {
+              "name": "ui-integration.tsx",
+              "path": "src/permissions/ui-integration.tsx",
+              "type": "file",
+              "moduleId": "src/permissions/ui-integration.tsx",
+              "children": []
+            },
+            {
+              "name": "ui.example.ts",
+              "path": "src/permissions/ui.example.ts",
+              "type": "file",
+              "moduleId": "src/permissions/ui.example.ts",
+              "children": []
+            },
+            {
+              "name": "ui.ts",
+              "path": "src/permissions/ui.ts",
+              "type": "file",
+              "moduleId": "src/permissions/ui.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_permissions.json",
+          "moduleCount": 13
+        },
+        {
+          "name": "plan",
+          "path": "src/plan",
+          "type": "directory",
+          "children": [
+            {
+              "name": "comparison.ts",
+              "path": "src/plan/comparison.ts",
+              "type": "file",
+              "moduleId": "src/plan/comparison.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/plan/index.ts",
+              "type": "file",
+              "moduleId": "src/plan/index.ts",
+              "children": []
+            },
+            {
+              "name": "persistence.ts",
+              "path": "src/plan/persistence.ts",
+              "type": "file",
+              "moduleId": "src/plan/persistence.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/plan/types.ts",
+              "type": "file",
+              "moduleId": "src/plan/types.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_plan.json",
+          "moduleCount": 4
+        },
+        {
+          "name": "plugins",
+          "path": "src/plugins",
+          "type": "directory",
+          "children": [
+            {
+              "name": "cli.ts",
+              "path": "src/plugins/cli.ts",
+              "type": "file",
+              "moduleId": "src/plugins/cli.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/plugins/index.ts",
+              "type": "file",
+              "moduleId": "src/plugins/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_plugins.json",
+          "moduleCount": 2
+        },
+        {
+          "name": "prompt",
+          "path": "src/prompt",
+          "type": "directory",
+          "children": [
+            {
+              "name": "attachments.ts",
+              "path": "src/prompt/attachments.ts",
+              "type": "file",
+              "moduleId": "src/prompt/attachments.ts",
+              "children": []
+            },
+            {
+              "name": "builder.ts",
+              "path": "src/prompt/builder.ts",
+              "type": "file",
+              "moduleId": "src/prompt/builder.ts",
+              "children": []
+            },
+            {
+              "name": "cache.ts",
+              "path": "src/prompt/cache.ts",
+              "type": "file",
+              "moduleId": "src/prompt/cache.ts",
+              "children": []
+            },
+            {
+              "name": "diagnostics.ts",
+              "path": "src/prompt/diagnostics.ts",
+              "type": "file",
+              "moduleId": "src/prompt/diagnostics.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/prompt/index.ts",
+              "type": "file",
+              "moduleId": "src/prompt/index.ts",
+              "children": []
+            },
+            {
+              "name": "preview.ts",
+              "path": "src/prompt/preview.ts",
+              "type": "file",
+              "moduleId": "src/prompt/preview.ts",
+              "children": []
+            },
+            {
+              "name": "suggestions.ts",
+              "path": "src/prompt/suggestions.ts",
+              "type": "file",
+              "moduleId": "src/prompt/suggestions.ts",
+              "children": []
+            },
+            {
+              "name": "templates.ts",
+              "path": "src/prompt/templates.ts",
+              "type": "file",
+              "moduleId": "src/prompt/templates.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/prompt/types.ts",
+              "type": "file",
+              "moduleId": "src/prompt/types.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_prompt.json",
+          "moduleCount": 9
+        },
+        {
+          "name": "providers",
+          "path": "src/providers",
+          "type": "directory",
+          "children": [
+            {
+              "name": "cli.ts",
+              "path": "src/providers/cli.ts",
+              "type": "file",
+              "moduleId": "src/providers/cli.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/providers/index.ts",
+              "type": "file",
+              "moduleId": "src/providers/index.ts",
+              "children": []
+            },
+            {
+              "name": "vertex.ts",
+              "path": "src/providers/vertex.ts",
+              "type": "file",
+              "moduleId": "src/providers/vertex.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_providers.json",
+          "moduleCount": 3
+        },
+        {
+          "name": "ratelimit",
+          "path": "src/ratelimit",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/ratelimit/index.ts",
+              "type": "file",
+              "moduleId": "src/ratelimit/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_ratelimit.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "renderer",
+          "path": "src/renderer",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/renderer/index.ts",
+              "type": "file",
+              "moduleId": "src/renderer/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_renderer.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "rewind",
+          "path": "src/rewind",
+          "type": "directory",
+          "children": [
+            {
+              "name": "fileHistory.ts",
+              "path": "src/rewind/fileHistory.ts",
+              "type": "file",
+              "moduleId": "src/rewind/fileHistory.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/rewind/index.ts",
+              "type": "file",
+              "moduleId": "src/rewind/index.ts",
+              "children": []
+            },
+            {
+              "name": "rewindManager.ts",
+              "path": "src/rewind/rewindManager.ts",
+              "type": "file",
+              "moduleId": "src/rewind/rewindManager.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_rewind.json",
+          "moduleCount": 3
+        },
+        {
+          "name": "rules",
+          "path": "src/rules",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/rules/index.ts",
+              "type": "file",
+              "moduleId": "src/rules/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_rules.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "sandbox",
+          "path": "src/sandbox",
+          "type": "directory",
+          "children": [
+            {
+              "name": "bubblewrap.ts",
+              "path": "src/sandbox/bubblewrap.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/bubblewrap.ts",
+              "children": []
+            },
+            {
+              "name": "config.ts",
+              "path": "src/sandbox/config.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/config.ts",
+              "children": []
+            },
+            {
+              "name": "docker.ts",
+              "path": "src/sandbox/docker.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/docker.ts",
+              "children": []
+            },
+            {
+              "name": "executor.ts",
+              "path": "src/sandbox/executor.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/executor.ts",
+              "children": []
+            },
+            {
+              "name": "filesystem.example.ts",
+              "path": "src/sandbox/filesystem.example.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/filesystem.example.ts",
+              "children": []
+            },
+            {
+              "name": "filesystem.ts",
+              "path": "src/sandbox/filesystem.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/filesystem.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/sandbox/index.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/index.ts",
+              "children": []
+            },
+            {
+              "name": "network.example.ts",
+              "path": "src/sandbox/network.example.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/network.example.ts",
+              "children": []
+            },
+            {
+              "name": "network.ts",
+              "path": "src/sandbox/network.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/network.ts",
+              "children": []
+            },
+            {
+              "name": "resource-limits.ts",
+              "path": "src/sandbox/resource-limits.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/resource-limits.ts",
+              "children": []
+            },
+            {
+              "name": "sandbox.example.ts",
+              "path": "src/sandbox/sandbox.example.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/sandbox.example.ts",
+              "children": []
+            },
+            {
+              "name": "seatbelt.ts",
+              "path": "src/sandbox/seatbelt.ts",
+              "type": "file",
+              "moduleId": "src/sandbox/seatbelt.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_sandbox.json",
+          "moduleCount": 12
+        },
+        {
+          "name": "search",
+          "path": "src/search",
+          "type": "directory",
+          "children": [
+            {
+              "name": "ripgrep.ts",
+              "path": "src/search/ripgrep.ts",
+              "type": "file",
+              "moduleId": "src/search/ripgrep.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_search.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "security",
+          "path": "src/security",
+          "type": "directory",
+          "children": [
+            {
+              "name": "audit.ts",
+              "path": "src/security/audit.ts",
+              "type": "file",
+              "moduleId": "src/security/audit.ts",
+              "children": []
+            },
+            {
+              "name": "command-injection.ts",
+              "path": "src/security/command-injection.ts",
+              "type": "file",
+              "moduleId": "src/security/command-injection.ts",
+              "children": []
+            },
+            {
+              "name": "example.ts",
+              "path": "src/security/example.ts",
+              "type": "file",
+              "moduleId": "src/security/example.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/security/index.ts",
+              "type": "file",
+              "moduleId": "src/security/index.ts",
+              "children": []
+            },
+            {
+              "name": "runtime-monitor.ts",
+              "path": "src/security/runtime-monitor.ts",
+              "type": "file",
+              "moduleId": "src/security/runtime-monitor.ts",
+              "children": []
+            },
+            {
+              "name": "sensitive-enhanced.ts",
+              "path": "src/security/sensitive-enhanced.ts",
+              "type": "file",
+              "moduleId": "src/security/sensitive-enhanced.ts",
+              "children": []
+            },
+            {
+              "name": "sensitive.ts",
+              "path": "src/security/sensitive.ts",
+              "type": "file",
+              "moduleId": "src/security/sensitive.ts",
+              "children": []
+            },
+            {
+              "name": "validate.ts",
+              "path": "src/security/validate.ts",
+              "type": "file",
+              "moduleId": "src/security/validate.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_security.json",
+          "moduleCount": 8
+        },
+        {
+          "name": "session",
+          "path": "src/session",
+          "type": "directory",
+          "children": [
+            {
+              "name": "cleanup.ts",
+              "path": "src/session/cleanup.ts",
+              "type": "file",
+              "moduleId": "src/session/cleanup.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/session/index.ts",
+              "type": "file",
+              "moduleId": "src/session/index.ts",
+              "children": []
+            },
+            {
+              "name": "list.ts",
+              "path": "src/session/list.ts",
+              "type": "file",
+              "moduleId": "src/session/list.ts",
+              "children": []
+            },
+            {
+              "name": "resume.ts",
+              "path": "src/session/resume.ts",
+              "type": "file",
+              "moduleId": "src/session/resume.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_session.json",
+          "moduleCount": 4
+        },
+        {
+          "name": "streaming",
+          "path": "src/streaming",
+          "type": "directory",
+          "children": [
+            {
+              "name": "examples.ts",
+              "path": "src/streaming/examples.ts",
+              "type": "file",
+              "moduleId": "src/streaming/examples.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/streaming/index.ts",
+              "type": "file",
+              "moduleId": "src/streaming/index.ts",
+              "children": []
+            },
+            {
+              "name": "message-stream.ts",
+              "path": "src/streaming/message-stream.ts",
+              "type": "file",
+              "moduleId": "src/streaming/message-stream.ts",
+              "children": []
+            },
+            {
+              "name": "sse.ts",
+              "path": "src/streaming/sse.ts",
+              "type": "file",
+              "moduleId": "src/streaming/sse.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_streaming.json",
+          "moduleCount": 4
+        },
+        {
+          "name": "telemetry",
+          "path": "src/telemetry",
+          "type": "directory",
+          "children": [
+            {
+              "name": "example.ts",
+              "path": "src/telemetry/example.ts",
+              "type": "file",
+              "moduleId": "src/telemetry/example.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/telemetry/index.ts",
+              "type": "file",
+              "moduleId": "src/telemetry/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_telemetry.json",
+          "moduleCount": 2
+        },
+        {
+          "name": "teleport",
+          "path": "src/teleport",
+          "type": "directory",
+          "children": [
+            {
+              "name": "example.ts",
+              "path": "src/teleport/example.ts",
+              "type": "file",
+              "moduleId": "src/teleport/example.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/teleport/index.ts",
+              "type": "file",
+              "moduleId": "src/teleport/index.ts",
+              "children": []
+            },
+            {
+              "name": "session.ts",
+              "path": "src/teleport/session.ts",
+              "type": "file",
+              "moduleId": "src/teleport/session.ts",
+              "children": []
+            },
+            {
+              "name": "types.ts",
+              "path": "src/teleport/types.ts",
+              "type": "file",
+              "moduleId": "src/teleport/types.ts",
+              "children": []
+            },
+            {
+              "name": "validation.ts",
+              "path": "src/teleport/validation.ts",
+              "type": "file",
+              "moduleId": "src/teleport/validation.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_teleport.json",
+          "moduleCount": 5
+        },
+        {
+          "name": "tools",
+          "path": "src/tools",
+          "type": "directory",
+          "children": [
+            {
+              "name": "agent.ts",
+              "path": "src/tools/agent.ts",
+              "type": "file",
+              "moduleId": "src/tools/agent.ts",
+              "children": []
+            },
+            {
+              "name": "ask.ts",
+              "path": "src/tools/ask.ts",
+              "type": "file",
+              "moduleId": "src/tools/ask.ts",
+              "children": []
+            },
+            {
+              "name": "base.ts",
+              "path": "src/tools/base.ts",
+              "type": "file",
+              "moduleId": "src/tools/base.ts",
+              "children": []
+            },
+            {
+              "name": "bash.ts",
+              "path": "src/tools/bash.ts",
+              "type": "file",
+              "moduleId": "src/tools/bash.ts",
+              "children": []
+            },
+            {
+              "name": "chrome.ts",
+              "path": "src/tools/chrome.ts",
+              "type": "file",
+              "moduleId": "src/tools/chrome.ts",
+              "children": []
+            },
+            {
+              "name": "file.ts",
+              "path": "src/tools/file.ts",
+              "type": "file",
+              "moduleId": "src/tools/file.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/tools/index.ts",
+              "type": "file",
+              "moduleId": "src/tools/index.ts",
+              "children": []
+            },
+            {
+              "name": "lsp.ts",
+              "path": "src/tools/lsp.ts",
+              "type": "file",
+              "moduleId": "src/tools/lsp.ts",
+              "children": []
+            },
+            {
+              "name": "mcp.ts",
+              "path": "src/tools/mcp.ts",
+              "type": "file",
+              "moduleId": "src/tools/mcp.ts",
+              "children": []
+            },
+            {
+              "name": "multiedit.ts",
+              "path": "src/tools/multiedit.ts",
+              "type": "file",
+              "moduleId": "src/tools/multiedit.ts",
+              "children": []
+            },
+            {
+              "name": "notebook.ts",
+              "path": "src/tools/notebook.ts",
+              "type": "file",
+              "moduleId": "src/tools/notebook.ts",
+              "children": []
+            },
+            {
+              "name": "planmode.ts",
+              "path": "src/tools/planmode.ts",
+              "type": "file",
+              "moduleId": "src/tools/planmode.ts",
+              "children": []
+            },
+            {
+              "name": "sandbox.ts",
+              "path": "src/tools/sandbox.ts",
+              "type": "file",
+              "moduleId": "src/tools/sandbox.ts",
+              "children": []
+            },
+            {
+              "name": "search.ts",
+              "path": "src/tools/search.ts",
+              "type": "file",
+              "moduleId": "src/tools/search.ts",
+              "children": []
+            },
+            {
+              "name": "skill.ts",
+              "path": "src/tools/skill.ts",
+              "type": "file",
+              "moduleId": "src/tools/skill.ts",
+              "children": []
+            },
+            {
+              "name": "tmux.ts",
+              "path": "src/tools/tmux.ts",
+              "type": "file",
+              "moduleId": "src/tools/tmux.ts",
+              "children": []
+            },
+            {
+              "name": "todo.ts",
+              "path": "src/tools/todo.ts",
+              "type": "file",
+              "moduleId": "src/tools/todo.ts",
+              "children": []
+            },
+            {
+              "name": "web.ts",
+              "path": "src/tools/web.ts",
+              "type": "file",
+              "moduleId": "src/tools/web.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_tools.json",
+          "moduleCount": 18
+        },
+        {
+          "name": "types",
+          "path": "src/types",
+          "type": "directory",
+          "children": [
+            {
+              "name": "config.ts",
+              "path": "src/types/config.ts",
+              "type": "file",
+              "moduleId": "src/types/config.ts",
+              "children": []
+            },
+            {
+              "name": "errors.example.ts",
+              "path": "src/types/errors.example.ts",
+              "type": "file",
+              "moduleId": "src/types/errors.example.ts",
+              "children": []
+            },
+            {
+              "name": "errors.ts",
+              "path": "src/types/errors.ts",
+              "type": "file",
+              "moduleId": "src/types/errors.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/types/index.ts",
+              "type": "file",
+              "moduleId": "src/types/index.ts",
+              "children": []
+            },
+            {
+              "name": "messages.ts",
+              "path": "src/types/messages.ts",
+              "type": "file",
+              "moduleId": "src/types/messages.ts",
+              "children": []
+            },
+            {
+              "name": "results.ts",
+              "path": "src/types/results.ts",
+              "type": "file",
+              "moduleId": "src/types/results.ts",
+              "children": []
+            },
+            {
+              "name": "tools.ts",
+              "path": "src/types/tools.ts",
+              "type": "file",
+              "moduleId": "src/types/tools.ts",
+              "children": []
+            },
+            {
+              "name": "turndown-plugin-gfm.d.ts",
+              "path": "src/types/turndown-plugin-gfm.d.ts",
+              "type": "file",
+              "moduleId": "src/types/turndown-plugin-gfm.d.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_types.json",
+          "moduleCount": 8
+        },
+        {
+          "name": "ui",
+          "path": "src/ui",
+          "type": "directory",
+          "children": [
+            {
+              "name": "autocomplete",
+              "path": "src/ui/autocomplete",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "commands.ts",
+                  "path": "src/ui/autocomplete/commands.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/commands.ts",
+                  "children": []
+                },
+                {
+                  "name": "example.ts",
+                  "path": "src/ui/autocomplete/example.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/example.ts",
+                  "children": []
+                },
+                {
+                  "name": "files.ts",
+                  "path": "src/ui/autocomplete/files.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/files.ts",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/ui/autocomplete/index.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "mentions.ts",
+                  "path": "src/ui/autocomplete/mentions.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/mentions.ts",
+                  "children": []
+                },
+                {
+                  "name": "types.ts",
+                  "path": "src/ui/autocomplete/types.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/autocomplete/types.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_ui_autocomplete.json",
+              "moduleCount": 6
+            },
+            {
+              "name": "components",
+              "path": "src/ui/components",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "BackgroundTasksPanel.tsx",
+                  "path": "src/ui/components/BackgroundTasksPanel.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/BackgroundTasksPanel.tsx",
+                  "children": []
+                },
+                {
+                  "name": "DiffView.example.tsx",
+                  "path": "src/ui/components/DiffView.example.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/DiffView.example.tsx",
+                  "children": []
+                },
+                {
+                  "name": "DiffView.tsx",
+                  "path": "src/ui/components/DiffView.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/DiffView.tsx",
+                  "children": []
+                },
+                {
+                  "name": "Header.tsx",
+                  "path": "src/ui/components/Header.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/Header.tsx",
+                  "children": []
+                },
+                {
+                  "name": "HistorySearch.tsx",
+                  "path": "src/ui/components/HistorySearch.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/HistorySearch.tsx",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/ui/components/index.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/components/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "Input.tsx",
+                  "path": "src/ui/components/Input.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/Input.tsx",
+                  "children": []
+                },
+                {
+                  "name": "LSPInitProgress.tsx",
+                  "path": "src/ui/components/LSPInitProgress.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/LSPInitProgress.tsx",
+                  "children": []
+                },
+                {
+                  "name": "Message.tsx",
+                  "path": "src/ui/components/Message.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/Message.tsx",
+                  "children": []
+                },
+                {
+                  "name": "MessageSelector.tsx",
+                  "path": "src/ui/components/MessageSelector.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/MessageSelector.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ModelSelector.example.tsx",
+                  "path": "src/ui/components/ModelSelector.example.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ModelSelector.example.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ModelSelector.tsx",
+                  "path": "src/ui/components/ModelSelector.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ModelSelector.tsx",
+                  "children": []
+                },
+                {
+                  "name": "PermissionPrompt.example.tsx",
+                  "path": "src/ui/components/PermissionPrompt.example.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/PermissionPrompt.example.tsx",
+                  "children": []
+                },
+                {
+                  "name": "PermissionPrompt.tsx",
+                  "path": "src/ui/components/PermissionPrompt.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/PermissionPrompt.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ProgressBar.example.tsx",
+                  "path": "src/ui/components/ProgressBar.example.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ProgressBar.example.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ProgressBar.tsx",
+                  "path": "src/ui/components/ProgressBar.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ProgressBar.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ResumeSession.tsx",
+                  "path": "src/ui/components/ResumeSession.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ResumeSession.tsx",
+                  "children": []
+                },
+                {
+                  "name": "SelectInput.tsx",
+                  "path": "src/ui/components/SelectInput.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/SelectInput.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ShortcutHelp.tsx",
+                  "path": "src/ui/components/ShortcutHelp.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ShortcutHelp.tsx",
+                  "children": []
+                },
+                {
+                  "name": "SkillsDialog.tsx",
+                  "path": "src/ui/components/SkillsDialog.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/SkillsDialog.tsx",
+                  "children": []
+                },
+                {
+                  "name": "Spinner.tsx",
+                  "path": "src/ui/components/Spinner.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/Spinner.tsx",
+                  "children": []
+                },
+                {
+                  "name": "StatusBar.example.tsx",
+                  "path": "src/ui/components/StatusBar.example.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/StatusBar.example.tsx",
+                  "children": []
+                },
+                {
+                  "name": "StatusBar.test.tsx",
+                  "path": "src/ui/components/StatusBar.test.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/StatusBar.test.tsx",
+                  "children": []
+                },
+                {
+                  "name": "StatusBar.tsx",
+                  "path": "src/ui/components/StatusBar.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/StatusBar.tsx",
+                  "children": []
+                },
+                {
+                  "name": "TodoList.tsx",
+                  "path": "src/ui/components/TodoList.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/TodoList.tsx",
+                  "children": []
+                },
+                {
+                  "name": "ToolCall.tsx",
+                  "path": "src/ui/components/ToolCall.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/ToolCall.tsx",
+                  "children": []
+                },
+                {
+                  "name": "UpdateNotification.tsx",
+                  "path": "src/ui/components/UpdateNotification.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/UpdateNotification.tsx",
+                  "children": []
+                },
+                {
+                  "name": "WelcomeScreen.tsx",
+                  "path": "src/ui/components/WelcomeScreen.tsx",
+                  "type": "file",
+                  "moduleId": "src/ui/components/WelcomeScreen.tsx",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_ui_components.json",
+              "moduleCount": 28
+            },
+            {
+              "name": "hooks",
+              "path": "src/ui/hooks",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "index.ts",
+                  "path": "src/ui/hooks/index.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/hooks/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "useAutoScroll.ts",
+                  "path": "src/ui/hooks/useAutoScroll.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/hooks/useAutoScroll.ts",
+                  "children": []
+                },
+                {
+                  "name": "useGlobalKeybindings.ts",
+                  "path": "src/ui/hooks/useGlobalKeybindings.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+                  "children": []
+                },
+                {
+                  "name": "useRewind.ts",
+                  "path": "src/ui/hooks/useRewind.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/hooks/useRewind.ts",
+                  "children": []
+                },
+                {
+                  "name": "useTerminalSize.ts",
+                  "path": "src/ui/hooks/useTerminalSize.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/hooks/useTerminalSize.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_ui_hooks.json",
+              "moduleCount": 5
+            },
+            {
+              "name": "ink-v2",
+              "path": "src/ui/ink-v2",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "frame.ts",
+                  "path": "src/ui/ink-v2/frame.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/frame.ts",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/ui/ink-v2/index.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "output.ts",
+                  "path": "src/ui/ink-v2/output.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/output.ts",
+                  "children": []
+                },
+                {
+                  "name": "renderer.ts",
+                  "path": "src/ui/ink-v2/renderer.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/renderer.ts",
+                  "children": []
+                },
+                {
+                  "name": "screen.ts",
+                  "path": "src/ui/ink-v2/screen.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/screen.ts",
+                  "children": []
+                },
+                {
+                  "name": "style-pool.ts",
+                  "path": "src/ui/ink-v2/style-pool.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/style-pool.ts",
+                  "children": []
+                },
+                {
+                  "name": "types.ts",
+                  "path": "src/ui/ink-v2/types.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/ink-v2/types.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_ui_ink-v2.json",
+              "moduleCount": 7
+            },
+            {
+              "name": "utils",
+              "path": "src/ui/utils",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "history-manager.ts",
+                  "path": "src/ui/utils/history-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/utils/history-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/ui/utils/index.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/utils/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "syntaxHighlight.example.ts",
+                  "path": "src/ui/utils/syntaxHighlight.example.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/utils/syntaxHighlight.example.ts",
+                  "children": []
+                },
+                {
+                  "name": "syntaxHighlight.ts",
+                  "path": "src/ui/utils/syntaxHighlight.ts",
+                  "type": "file",
+                  "moduleId": "src/ui/utils/syntaxHighlight.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_ui_utils.json",
+              "moduleCount": 4
+            },
+            {
+              "name": "App.tsx",
+              "path": "src/ui/App.tsx",
+              "type": "file",
+              "moduleId": "src/ui/App.tsx",
+              "children": []
+            },
+            {
+              "name": "ChromeSettings.tsx",
+              "path": "src/ui/ChromeSettings.tsx",
+              "type": "file",
+              "moduleId": "src/ui/ChromeSettings.tsx",
+              "children": []
+            },
+            {
+              "name": "index.tsx",
+              "path": "src/ui/index.tsx",
+              "type": "file",
+              "moduleId": "src/ui/index.tsx",
+              "children": []
+            },
+            {
+              "name": "LoginSelector.tsx",
+              "path": "src/ui/LoginSelector.tsx",
+              "type": "file",
+              "moduleId": "src/ui/LoginSelector.tsx",
+              "children": []
+            },
+            {
+              "name": "markdown-renderer.example.ts",
+              "path": "src/ui/markdown-renderer.example.ts",
+              "type": "file",
+              "moduleId": "src/ui/markdown-renderer.example.ts",
+              "children": []
+            },
+            {
+              "name": "markdown-renderer.ts",
+              "path": "src/ui/markdown-renderer.ts",
+              "type": "file",
+              "moduleId": "src/ui/markdown-renderer.ts",
+              "children": []
+            },
+            {
+              "name": "McpSettings.tsx",
+              "path": "src/ui/McpSettings.tsx",
+              "type": "file",
+              "moduleId": "src/ui/McpSettings.tsx",
+              "children": []
+            },
+            {
+              "name": "PluginsDialog.tsx",
+              "path": "src/ui/PluginsDialog.tsx",
+              "type": "file",
+              "moduleId": "src/ui/PluginsDialog.tsx",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_ui.json",
+          "moduleCount": 8
+        },
+        {
+          "name": "updater",
+          "path": "src/updater",
+          "type": "directory",
+          "children": [
+            {
+              "name": "index.ts",
+              "path": "src/updater/index.ts",
+              "type": "file",
+              "moduleId": "src/updater/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_updater.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "utils",
+          "path": "src/utils",
+          "type": "directory",
+          "children": [
+            {
+              "name": "attribution.ts",
+              "path": "src/utils/attribution.ts",
+              "type": "file",
+              "moduleId": "src/utils/attribution.ts",
+              "children": []
+            },
+            {
+              "name": "git-helper.ts",
+              "path": "src/utils/git-helper.ts",
+              "type": "file",
+              "moduleId": "src/utils/git-helper.ts",
+              "children": []
+            },
+            {
+              "name": "index.ts",
+              "path": "src/utils/index.ts",
+              "type": "file",
+              "moduleId": "src/utils/index.ts",
+              "children": []
+            },
+            {
+              "name": "platform.ts",
+              "path": "src/utils/platform.ts",
+              "type": "file",
+              "moduleId": "src/utils/platform.ts",
+              "children": []
+            },
+            {
+              "name": "retry.ts",
+              "path": "src/utils/retry.ts",
+              "type": "file",
+              "moduleId": "src/utils/retry.ts",
+              "children": []
+            },
+            {
+              "name": "terminal-setup.ts",
+              "path": "src/utils/terminal-setup.ts",
+              "type": "file",
+              "moduleId": "src/utils/terminal-setup.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_utils.json",
+          "moduleCount": 6
+        },
+        {
+          "name": "web",
+          "path": "src/web",
+          "type": "directory",
+          "children": [
+            {
+              "name": "server",
+              "path": "src/web/server",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "routes",
+                  "path": "src/web/server/routes",
+                  "type": "directory",
+                  "children": [
+                    {
+                      "name": "api.ts",
+                      "path": "src/web/server/routes/api.ts",
+                      "type": "file",
+                      "moduleId": "src/web/server/routes/api.ts",
+                      "children": []
+                    }
+                  ],
+                  "chunkFile": "chunks/src_web_server_routes.json",
+                  "moduleCount": 1
+                },
+                {
+                  "name": "api-manager.ts",
+                  "path": "src/web/server/api-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/api-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "auth-manager.ts",
+                  "path": "src/web/server/auth-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/auth-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "checkpoint-manager.ts",
+                  "path": "src/web/server/checkpoint-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/checkpoint-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "conversation.ts",
+                  "path": "src/web/server/conversation.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/conversation.ts",
+                  "children": []
+                },
+                {
+                  "name": "doctor.ts",
+                  "path": "src/web/server/doctor.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/doctor.ts",
+                  "children": []
+                },
+                {
+                  "name": "index.ts",
+                  "path": "src/web/server/index.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/index.ts",
+                  "children": []
+                },
+                {
+                  "name": "permission-handler.ts",
+                  "path": "src/web/server/permission-handler.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/permission-handler.ts",
+                  "children": []
+                },
+                {
+                  "name": "session-manager.ts",
+                  "path": "src/web/server/session-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/session-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "slash-commands.ts",
+                  "path": "src/web/server/slash-commands.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/slash-commands.ts",
+                  "children": []
+                },
+                {
+                  "name": "task-manager.ts",
+                  "path": "src/web/server/task-manager.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/task-manager.ts",
+                  "children": []
+                },
+                {
+                  "name": "user-interaction.ts",
+                  "path": "src/web/server/user-interaction.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/user-interaction.ts",
+                  "children": []
+                },
+                {
+                  "name": "websocket.ts",
+                  "path": "src/web/server/websocket.ts",
+                  "type": "file",
+                  "moduleId": "src/web/server/websocket.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_web_server.json",
+              "moduleCount": 12
+            },
+            {
+              "name": "shared",
+              "path": "src/web/shared",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "types.ts",
+                  "path": "src/web/shared/types.ts",
+                  "type": "file",
+                  "moduleId": "src/web/shared/types.ts",
+                  "children": []
+                }
+              ],
+              "chunkFile": "chunks/src_web_shared.json",
+              "moduleCount": 1
+            },
+            {
+              "name": "index.ts",
+              "path": "src/web/index.ts",
+              "type": "file",
+              "moduleId": "src/web/index.ts",
+              "children": []
+            }
+          ],
+          "chunkFile": "chunks/src_web.json",
+          "moduleCount": 1
+        },
+        {
+          "name": "cli.ts",
+          "path": "src/cli.ts",
+          "type": "file",
+          "moduleId": "src/cli.ts",
+          "children": []
+        },
+        {
+          "name": "index.ts",
+          "path": "src/index.ts",
+          "type": "file",
+          "moduleId": "src/index.ts",
+          "children": []
+        },
+        {
+          "name": "web-cli.ts",
+          "path": "src/web-cli.ts",
+          "type": "file",
+          "moduleId": "src/web-cli.ts",
+          "children": []
+        }
+      ],
+      "chunkFile": "chunks/src.json",
+      "moduleCount": 3
+    },
+    "architectureLayers": {
+      "presentation": {
+        "name": "表现层：用户界面、组件、页面、视图渲染",
+        "description": "表现层：用户界面、组件、页面、视图渲染",
+        "chunkFiles": [
+          "chunks/src.json",
+          "chunks/src_permissions.json",
+          "chunks/src_ui.json",
+          "chunks/src_ui_autocomplete.json",
+          "chunks/src_ui_components.json",
+          "chunks/src_ui_ink-v2.json",
+          "chunks/src_ui_utils.json"
+        ],
+        "moduleCount": 55
+      },
+      "business": {
+        "name": "业务层：核心业务逻辑、领域模型、服务实现",
+        "description": "业务层：核心业务逻辑、领域模型、服务实现",
+        "chunkFiles": [
+          "chunks/src_commands.json",
+          "chunks/src_core.json",
+          "chunks/src_map_server_services.json",
+          "chunks/src_tools.json",
+          "chunks/tests_commands.json",
+          "chunks/tests_core.json",
+          "chunks/tests_tools.json"
+        ],
+        "moduleCount": 61
+      },
+      "data": {
+        "name": "数据层：API 调用、数据库访问、存储管理",
+        "description": "数据层：API 调用、数据库访问、存储管理",
+        "chunkFiles": [
+          "chunks/src_map_server.json",
+          "chunks/src_network.json",
+          "chunks/src_providers.json",
+          "chunks/src_sandbox.json",
+          "chunks/src_session.json",
+          "chunks/src_updater.json",
+          "chunks/src_web_server.json",
+          "chunks/tests_e2e.json",
+          "chunks/tests_mcp.json",
+          "chunks/tests_session.json"
+        ],
+        "moduleCount": 14
+      },
+      "infrastructure": {
+        "name": "基础设施层：工具函数、配置管理、类型定义",
+        "description": "基础设施层：工具函数、配置管理、类型定义",
+        "chunkFiles": [
+          "chunks/scripts.json",
+          "chunks/src_agents.json",
+          "chunks/src_background.json",
+          "chunks/src_checkpoint.json",
+          "chunks/src_chrome-mcp.json",
+          "chunks/src_chrome.json",
+          "chunks/src_codesign.json",
+          "chunks/src_config.json",
+          "chunks/src_context___tests__.json",
+          "chunks/src_context.json",
+          "chunks/src_diagnostics.json",
+          "chunks/src_env.json",
+          "chunks/src_env_validators.json",
+          "chunks/src_examples.json",
+          "chunks/src_git.json",
+          "chunks/src_github.json",
+          "chunks/src_ide.json",
+          "chunks/src.json",
+          "chunks/src_lifecycle.json",
+          "chunks/src_lsp.json",
+          "chunks/src_map.json",
+          "chunks/src_map_server.json",
+          "chunks/src_map_server_routes.json",
+          "chunks/src_map_server_static.json",
+          "chunks/src_mcp.json",
+          "chunks/src_mcp_examples.json",
+          "chunks/src_media.json",
+          "chunks/src_memory.json",
+          "chunks/src_models.json",
+          "chunks/src_network.json",
+          "chunks/src_notifications.json",
+          "chunks/src_organization.json",
+          "chunks/src_parser.json",
+          "chunks/src_parser_lsp.json",
+          "chunks/src_permissions.json",
+          "chunks/src_plan.json",
+          "chunks/src_prompt.json",
+          "chunks/src_providers.json",
+          "chunks/src_ratelimit.json",
+          "chunks/src_renderer.json",
+          "chunks/src_rewind.json",
+          "chunks/src_rules.json",
+          "chunks/src_sandbox.json",
+          "chunks/src_search.json",
+          "chunks/src_streaming.json",
+          "chunks/src_teleport.json",
+          "chunks/src_types.json",
+          "chunks/src_utils.json",
+          "chunks/src_web.json",
+          "chunks/src_web_server.json",
+          "chunks/src_web_server_routes.json",
+          "chunks/src_web_shared.json",
+          "chunks/tests.json",
+          "chunks/tests_config.json",
+          "chunks/tests_e2e.json",
+          "chunks/tests_integration.json",
+          "chunks/tests_integration_fixtures.json",
+          "chunks/tests_mcp.json",
+          "chunks/root.json"
+        ],
+        "moduleCount": 238
+      },
+      "crossCutting": {
+        "name": "横切关注点：认证、日志、中间件、插件系统",
+        "description": "横切关注点：认证、日志、中间件、插件系统",
+        "chunkFiles": [
+          "chunks/src_auth.json",
+          "chunks/src_hooks.json",
+          "chunks/src_plugins.json",
+          "chunks/src_security.json",
+          "chunks/src_telemetry.json",
+          "chunks/src_ui_hooks.json",
+          "chunks/tests_hooks.json"
+        ],
+        "moduleCount": 23
+      }
+    }
+  },
+  "statistics": {
+    "totalModules": 391,
+    "totalSymbols": 8144,
+    "totalLines": 203185,
+    "semanticCoverage": {
+      "modulesWithDescription": 391,
+      "symbolsWithDescription": 0,
+      "coveragePercent": 100
+    },
+    "referenceStats": {
+      "totalModuleDeps": 456,
+      "totalSymbolCalls": 33348,
+      "totalTypeRefs": 0
+    },
+    "layerDistribution": {
+      "presentation": 55,
+      "business": 61,
+      "data": 14,
+      "infrastructure": 238,
+      "crossCutting": 23
+    },
+    "languageBreakdown": {
+      "typescript": 389,
+      "javascript": 2
+    },
+    "largestFiles": [
+      {
+        "path": "src/map/server/index.old.ts",
+        "lines": 9067,
+        "size": 294278
+      },
+      {
+        "path": "src/web/server/index.ts",
+        "lines": 3105,
+        "size": 95279
+      },
+      {
+        "path": "src/web/server/slash-commands.ts",
+        "lines": 2780,
+        "size": 91119
+      },
+      {
+        "path": "src/map/server/static/app.js",
+        "lines": 2609,
+        "size": 91816
+      },
+      {
+        "path": "src/commands/config.ts",
+        "lines": 2543,
+        "size": 94635
+      },
+      {
+        "path": "src/cli.ts",
+        "lines": 2291,
+        "size": 88666
+      },
+      {
+        "path": "src/web/server/websocket.ts",
+        "lines": 2263,
+        "size": 55350
+      },
+      {
+        "path": "src/plugins/index.ts",
+        "lines": 2241,
+        "size": 62246
+      },
+      {
+        "path": "src/checkpoint/index.ts",
+        "lines": 1830,
+        "size": 51603
+      },
+      {
+        "path": "src/commands/tools.ts",
+        "lines": 1598,
+        "size": 58239
+      }
+    ],
+    "mostCalledSymbols": [
+      {
+        "id": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "name": "log",
+        "callCount": 2244
+      },
+      {
+        "id": "src/security/audit.ts::AuditLogger::log",
+        "name": "log",
+        "callCount": 2228
+      },
+      {
+        "id": "src/mcp/logging.ts::McpLoggingManager::log",
+        "name": "log",
+        "callCount": 2219
+      },
+      {
+        "id": "src/chrome-mcp/socket-server.ts::log",
+        "name": "log",
+        "callCount": 2210
+      },
+      {
+        "id": "src/context/__tests__/enhanced.test.ts::expect",
+        "name": "expect",
+        "callCount": 1952
+      },
+      {
+        "id": "src/agents/communication.ts::SharedStateManager::get",
+        "name": "get",
+        "callCount": 1238
+      },
+      {
+        "id": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "name": "error",
+        "callCount": 999
+      },
+      {
+        "id": "src/agents/guide.ts::GuideTool::execute",
+        "name": "execute",
+        "callCount": 943
+      },
+      {
+        "id": "src/context/__tests__/enhanced.test.ts::it",
+        "name": "it",
+        "callCount": 882
+      },
+      {
+        "id": "src/agents/context.ts::AgentContextManager::filter",
+        "name": "filter",
+        "callCount": 679
+      }
+    ],
+    "mostImportedModules": [
+      {
+        "id": "src/plan/types.ts",
+        "importCount": 24
+      },
+      {
+        "id": "src/tools/base.ts",
+        "importCount": 21
+      },
+      {
+        "id": "src/plan/persistence.ts",
+        "importCount": 18
+      },
+      {
+        "id": "src/commands/registry.ts",
+        "importCount": 16
+      },
+      {
+        "id": "src/config/index.ts",
+        "importCount": 12
+      },
+      {
+        "id": "src/web/shared/types.ts",
+        "importCount": 10
+      },
+      {
+        "id": "src/tools/mcp.ts",
+        "importCount": 9
+      },
+      {
+        "id": "src/auth/index.ts",
+        "importCount": 8
+      },
+      {
+        "id": "src/core/client.ts",
+        "importCount": 8
+      },
+      {
+        "id": "src/tools/agent.ts",
+        "importCount": 7
+      }
+    ]
+  },
+  "chunkIndex": {
+    "scripts": "chunks/scripts.json",
+    "src/agents": "chunks/src_agents.json",
+    "src/auth": "chunks/src_auth.json",
+    "src/background": "chunks/src_background.json",
+    "src/checkpoint": "chunks/src_checkpoint.json",
+    "src/chrome-mcp": "chunks/src_chrome-mcp.json",
+    "src/chrome": "chunks/src_chrome.json",
+    "src": "chunks/src.json",
+    "src/codesign": "chunks/src_codesign.json",
+    "src/commands": "chunks/src_commands.json",
+    "src/config": "chunks/src_config.json",
+    "src/context/__tests__": "chunks/src_context___tests__.json",
+    "src/context": "chunks/src_context.json",
+    "src/core": "chunks/src_core.json",
+    "src/diagnostics": "chunks/src_diagnostics.json",
+    "src/env": "chunks/src_env.json",
+    "src/env/validators": "chunks/src_env_validators.json",
+    "src/examples": "chunks/src_examples.json",
+    "src/git": "chunks/src_git.json",
+    "src/github": "chunks/src_github.json",
+    "src/hooks": "chunks/src_hooks.json",
+    "src/ide": "chunks/src_ide.json",
+    "src/lifecycle": "chunks/src_lifecycle.json",
+    "src/lsp": "chunks/src_lsp.json",
+    "src/map": "chunks/src_map.json",
+    "src/map/server": "chunks/src_map_server.json",
+    "src/map/server/routes": "chunks/src_map_server_routes.json",
+    "src/map/server/services": "chunks/src_map_server_services.json",
+    "src/map/server/static": "chunks/src_map_server_static.json",
+    "src/mcp": "chunks/src_mcp.json",
+    "src/mcp/examples": "chunks/src_mcp_examples.json",
+    "src/media": "chunks/src_media.json",
+    "src/memory": "chunks/src_memory.json",
+    "src/models": "chunks/src_models.json",
+    "src/network": "chunks/src_network.json",
+    "src/notifications": "chunks/src_notifications.json",
+    "src/organization": "chunks/src_organization.json",
+    "src/parser": "chunks/src_parser.json",
+    "src/parser/lsp": "chunks/src_parser_lsp.json",
+    "src/permissions": "chunks/src_permissions.json",
+    "src/plan": "chunks/src_plan.json",
+    "src/plugins": "chunks/src_plugins.json",
+    "src/prompt": "chunks/src_prompt.json",
+    "src/providers": "chunks/src_providers.json",
+    "src/ratelimit": "chunks/src_ratelimit.json",
+    "src/renderer": "chunks/src_renderer.json",
+    "src/rewind": "chunks/src_rewind.json",
+    "src/rules": "chunks/src_rules.json",
+    "src/sandbox": "chunks/src_sandbox.json",
+    "src/search": "chunks/src_search.json",
+    "src/security": "chunks/src_security.json",
+    "src/session": "chunks/src_session.json",
+    "src/streaming": "chunks/src_streaming.json",
+    "src/telemetry": "chunks/src_telemetry.json",
+    "src/teleport": "chunks/src_teleport.json",
+    "src/tools": "chunks/src_tools.json",
+    "src/types": "chunks/src_types.json",
+    "src/ui": "chunks/src_ui.json",
+    "src/ui/autocomplete": "chunks/src_ui_autocomplete.json",
+    "src/ui/components": "chunks/src_ui_components.json",
+    "src/ui/hooks": "chunks/src_ui_hooks.json",
+    "src/ui/ink-v2": "chunks/src_ui_ink-v2.json",
+    "src/ui/utils": "chunks/src_ui_utils.json",
+    "src/updater": "chunks/src_updater.json",
+    "src/utils": "chunks/src_utils.json",
+    "src/web": "chunks/src_web.json",
+    "src/web/server": "chunks/src_web_server.json",
+    "src/web/server/routes": "chunks/src_web_server_routes.json",
+    "src/web/shared": "chunks/src_web_shared.json",
+    "tests/commands": "chunks/tests_commands.json",
+    "tests": "chunks/tests.json",
+    "tests/config": "chunks/tests_config.json",
+    "tests/core": "chunks/tests_core.json",
+    "tests/e2e": "chunks/tests_e2e.json",
+    "tests/hooks": "chunks/tests_hooks.json",
+    "tests/integration": "chunks/tests_integration.json",
+    "tests/integration/fixtures": "chunks/tests_integration_fixtures.json",
+    "tests/mcp": "chunks/tests_mcp.json",
+    "tests/session": "chunks/tests_session.json",
+    "tests/tools": "chunks/tests_tools.json",
+    "": "chunks/root.json"
+  },
+  "globalDependencyGraph": {
+    "scripts/function-extractor.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "scripts/schema-comparator.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "scripts/sync-analyzer-v2.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "scripts/sync-analyzer.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/communication.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/communication.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/communication.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/context.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/context.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/examples.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/explore.example.ts": {
+      "imports": [
+        "src/agents/explore.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/explore.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/agents/explore.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/agents/guide.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/monitor.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/monitor.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/parallel.ts": {
+      "imports": [
+        "src/tools/agent.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/plan.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/resume.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/statusline.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/tools.test.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/agents/tools.ts": {
+      "imports": [
+        "src/types/index.ts",
+        "src/tools/base.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/auth/index.ts": {
+      "imports": [
+        "src/auth/mfa.ts",
+        "src/auth/keychain.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/core/client.ts",
+        "src/core/loop.ts",
+        "src/ui/App.tsx",
+        "src/web/server/api-manager.ts",
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/auth/keychain.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/auth/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/auth/mfa.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/auth/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/background/index.ts": {
+      "imports": [
+        "src/background/shell-manager.ts",
+        "src/background/task-queue.ts",
+        "src/background/timeout.ts",
+        "src/background/persistence.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/background/persistence.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/background/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/background/shell-manager.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/background/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/background/task-queue.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/background/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/background/timeout.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/background/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/checkpoint/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/index.ts": {
+      "imports": [
+        "src/chrome-mcp/native-host.ts",
+        "src/chrome-mcp/native-host.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/mcp-server.ts": {
+      "imports": [
+        "src/chrome-mcp/tools.ts",
+        "src/chrome-mcp/socket-client.ts",
+        "src/chrome-mcp/native-host.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/native-host.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/chrome-mcp/index.ts",
+        "src/chrome-mcp/index.ts",
+        "src/chrome-mcp/mcp-server.ts",
+        "src/chrome-mcp/socket-client.ts",
+        "src/chrome-mcp/socket-server.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/socket-client.ts": {
+      "imports": [
+        "src/chrome-mcp/native-host.ts"
+      ],
+      "importedBy": [
+        "src/chrome-mcp/mcp-server.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/socket-server.ts": {
+      "imports": [
+        "src/chrome-mcp/native-host.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/chrome-mcp/tools.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/chrome-mcp/mcp-server.ts",
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/chrome/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/cli.ts": {
+      "imports": [
+        "src/core/loop.ts",
+        "src/core/session.ts",
+        "src/tools/index.ts",
+        "src/config/index.ts",
+        "src/session/index.ts",
+        "src/memory/index.ts",
+        "src/lifecycle/index.ts",
+        "src/hooks/index.ts",
+        "src/session/cleanup.ts",
+        "src/plugins/cli.ts",
+        "src/ui/LoginSelector.tsx",
+        "src/chrome-mcp/index.ts",
+        "src/tools/mcp.ts",
+        "src/tools/index.ts",
+        "src/chrome-mcp/tools.ts",
+        "src/lsp/index.ts",
+        "src/teleport/index.ts",
+        "src/ui/App.tsx",
+        "src/diagnostics/index.ts",
+        "src/updater/index.ts",
+        "src/github/index.ts",
+        "src/github/index.ts",
+        "src/providers/index.ts",
+        "src/checkpoint/index.ts",
+        "src/auth/index.ts",
+        "src/auth/index.ts",
+        "src/ui/LoginSelector.tsx",
+        "src/auth/index.ts",
+        "src/tools/mcp.ts",
+        "src/ui/ChromeSettings.tsx",
+        "src/chrome-mcp/index.ts",
+        "src/chrome-mcp/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/codesign/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/commands/api.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/auth.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/config-cmd.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/commands/config.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/development.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/general.ts": {
+      "imports": [
+        "src/commands/registry.ts",
+        "src/memory/index.ts",
+        "src/tools/planmode.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/index.ts": {
+      "imports": [
+        "src/commands/general.ts",
+        "src/commands/session.ts",
+        "src/commands/config.ts",
+        "src/commands/auth.ts",
+        "src/commands/mfa.ts",
+        "src/commands/tools.ts",
+        "src/commands/utility.ts",
+        "src/commands/development.ts",
+        "src/commands/api.ts",
+        "src/commands/map.ts",
+        "src/commands/settings.ts",
+        "src/commands/types.ts",
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/map.ts": {
+      "imports": [
+        "src/commands/types.ts",
+        "src/map/chunked-generator.ts",
+        "src/commands/registry.ts",
+        "src/map/types-chunked.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/mfa.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/registry.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/api.ts",
+        "src/commands/auth.ts",
+        "src/commands/config.ts",
+        "src/commands/development.ts",
+        "src/commands/general.ts",
+        "src/commands/index.ts",
+        "src/commands/map.ts",
+        "src/commands/mfa.ts",
+        "src/commands/session.ts",
+        "src/commands/settings.ts",
+        "src/commands/tools.ts",
+        "src/commands/utility.ts",
+        "tests/commands/auth.test.ts",
+        "tests/commands/config.test.ts",
+        "tests/commands/general.test.ts",
+        "tests/commands/session.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/session.ts": {
+      "imports": [
+        "src/commands/registry.ts",
+        "src/context/index.ts",
+        "src/ui/components/ResumeSession.tsx"
+      ],
+      "importedBy": [
+        "src/commands/index.ts",
+        "tests/commands/transcript.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/settings.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/tools.ts": {
+      "imports": [
+        "src/commands/registry.ts",
+        "src/ui/McpSettings.tsx",
+        "src/tools/mcp.ts",
+        "src/tools/agent.ts",
+        "src/ui/ChromeSettings.tsx",
+        "src/ui/PluginsDialog.tsx"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/commands/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/index.ts",
+        "src/commands/map.ts",
+        "tests/commands/transcript.test.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/commands/utility.ts": {
+      "imports": [
+        "src/commands/registry.ts",
+        "src/utils/terminal-setup.ts",
+        "src/ui/components/SkillsDialog.tsx"
+      ],
+      "importedBy": [
+        "src/commands/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/config/claude-md-parser.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/config/config-command.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/config/config-command.ts": {
+      "imports": [
+        "src/config/claude-md-parser.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/config/index.ts": {
+      "imports": [
+        "src/env/index.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/commands/config-cmd.ts",
+        "src/tools/bash.ts",
+        "src/tools/chrome.ts",
+        "src/ui/App.tsx",
+        "src/utils/attribution.ts",
+        "src/web/server/api-manager.ts",
+        "src/web/server/auth-manager.ts",
+        "tests/config.test.ts",
+        "tests/config/loader.test.ts",
+        "tests/core/config.test.ts",
+        "tests/integration/config-load.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/context/__tests__/enhanced.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/context/enhanced.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/context/window.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/context/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/session.ts",
+        "src/context/summarizer.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/context/summarizer.ts": {
+      "imports": [
+        "src/context/index.ts"
+      ],
+      "importedBy": [
+        "src/session/resume.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/context/window.ts": {
+      "imports": [
+        "src/context/enhanced.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/core/backgroundTasks.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/core/client.ts": {
+      "imports": [
+        "src/network/index.ts",
+        "src/auth/index.ts"
+      ],
+      "importedBy": [
+        "src/core/loop.ts",
+        "src/hooks/index.ts",
+        "src/hooks/index.ts",
+        "src/map/semantic-generator.ts",
+        "src/network/examples.ts",
+        "src/web/server/api-manager.ts",
+        "src/web/server/conversation.ts",
+        "tests/core/loop.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/core/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/core/loop.ts": {
+      "imports": [
+        "src/core/client.ts",
+        "src/core/session.ts",
+        "src/tools/index.ts",
+        "src/models/index.ts",
+        "src/auth/index.ts",
+        "src/hooks/index.ts",
+        "src/tools/agent.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/tools/agent.ts",
+        "src/ui/App.tsx",
+        "src/web/server/task-manager.ts",
+        "tests/core/loop.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/core/retryLogic.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/core/session.ts": {
+      "imports": [
+        "src/git/index.ts",
+        "src/types/index.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/core/loop.ts",
+        "src/ui/App.tsx",
+        "src/web/server/conversation.ts",
+        "tests/core/loop.test.ts",
+        "tests/core/session.test.ts",
+        "tests/session/manager.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/diagnostics/index.ts": {
+      "imports": [
+        "src/providers/index.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/env/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/config/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/env/manager.ts": {
+      "imports": [
+        "src/env/validator.ts",
+        "src/env/validators/builtin.ts",
+        "src/env/sensitive.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/env/sensitive.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/env/manager.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/env/validator.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/env/manager.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/env/validators/builtin.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/env/manager.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/examples/retry-usage.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/types/errors.ts",
+        "src/utils/retry.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/git/analysis.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/git/index.ts",
+        "src/git/operations.ts",
+        "src/git/safety.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/git/core.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/git/index.ts",
+        "src/git/operations.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/git/ignore.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/git/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/git/index.ts": {
+      "imports": [
+        "src/git/core.ts",
+        "src/git/analysis.ts",
+        "src/git/safety.ts",
+        "src/git/operations.ts",
+        "src/git/ignore.ts"
+      ],
+      "importedBy": [
+        "src/core/session.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/git/operations.ts": {
+      "imports": [
+        "src/git/core.ts",
+        "src/git/analysis.ts",
+        "src/git/safety.ts"
+      ],
+      "importedBy": [
+        "src/git/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/git/safety.ts": {
+      "imports": [
+        "src/git/analysis.ts"
+      ],
+      "importedBy": [
+        "src/git/index.ts",
+        "src/git/operations.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/github/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/hooks/index.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/hooks/index.ts": {
+      "imports": [
+        "src/core/client.ts",
+        "src/core/client.ts",
+        "src/tools/mcp.ts",
+        "src/tools/mcp.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/core/loop.ts",
+        "src/tools/bash.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ide/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/lifecycle/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/lsp/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/lsp/manager.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/prompt/diagnostics.ts",
+        "src/tools/lsp.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/analyzer.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/map/enhanced-generator.ts",
+        "src/map/ontology-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/call-graph-builder.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/chunked-generator.ts": {
+      "imports": [
+        "src/map/enhanced-generator.ts"
+      ],
+      "importedBy": [
+        "src/commands/map.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/dependency-analyzer.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/enhanced-generator.ts": {
+      "imports": [
+        "src/map/analyzer.ts",
+        "src/map/types.ts",
+        "src/map/view-builder.ts",
+        "src/map/layer-classifier.ts",
+        "src/map/symbol-reference-analyzer.ts",
+        "src/map/type-reference-analyzer.ts",
+        "src/map/semantic-generator.ts"
+      ],
+      "importedBy": [
+        "src/map/chunked-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/incremental-cache.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/layer-classifier.ts": {
+      "imports": [
+        "src/map/types-enhanced.ts",
+        "src/map/types.ts"
+      ],
+      "importedBy": [
+        "src/map/enhanced-generator.ts",
+        "src/map/view-builder.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/ontology-generator.ts": {
+      "imports": [
+        "src/map/analyzer.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/semantic-generator.ts": {
+      "imports": [
+        "src/map/types.ts",
+        "src/core/client.ts"
+      ],
+      "importedBy": [
+        "src/map/enhanced-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/server/index.old.ts": {
+      "imports": [
+        "src/map/types.ts",
+        "src/map/types-enhanced.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/routes/api.ts": {
+      "imports": [
+        "src/map/types-enhanced.ts"
+      ],
+      "importedBy": [
+        "src/map/server/server.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/server/server.ts": {
+      "imports": [
+        "src/map/server/routes/api.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/services/architecture.ts": {
+      "imports": [
+        "src/map/types-enhanced.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/services/dependency.ts": {
+      "imports": [
+        "src/map/types-enhanced.ts",
+        "src/map/server/types.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/services/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/static/app.js": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/static/chunked-loader.js": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/map/server/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/map/server/services/dependency.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/map/symbol-reference-analyzer.ts": {
+      "imports": [
+        "src/map/types.ts",
+        "src/map/types-enhanced.ts"
+      ],
+      "importedBy": [
+        "src/map/enhanced-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/type-reference-analyzer.ts": {
+      "imports": [
+        "src/map/types.ts",
+        "src/map/types-enhanced.ts"
+      ],
+      "importedBy": [
+        "src/map/enhanced-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/map/types-chunked.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/map.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/map/types-enhanced.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/map/layer-classifier.ts",
+        "src/map/server/index.old.ts",
+        "src/map/server/routes/api.ts",
+        "src/map/server/services/architecture.ts",
+        "src/map/server/services/dependency.ts",
+        "src/map/symbol-reference-analyzer.ts",
+        "src/map/type-reference-analyzer.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/map/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/map/enhanced-generator.ts",
+        "src/map/layer-classifier.ts",
+        "src/map/semantic-generator.ts",
+        "src/map/server/index.old.ts",
+        "src/map/symbol-reference-analyzer.ts",
+        "src/map/type-reference-analyzer.ts",
+        "src/map/view-builder.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/map/view-builder.ts": {
+      "imports": [
+        "src/map/types.ts",
+        "src/map/layer-classifier.ts"
+      ],
+      "importedBy": [
+        "src/map/enhanced-generator.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/adapter.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/mcp/example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/auto-discovery.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/cancellation.ts": {
+      "imports": [
+        "src/mcp/protocol.ts"
+      ],
+      "importedBy": [
+        "src/mcp/examples/cancellation-usage.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/config.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/connection.ts": {
+      "imports": [
+        "src/mcp/websocket-connection.ts"
+      ],
+      "importedBy": [
+        "src/mcp/examples/cancellation-usage.ts",
+        "src/mcp/websocket-connection.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/debug-example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/mcp/debug.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/discovery.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/errors.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/errors.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/example.ts": {
+      "imports": [
+        "src/mcp/adapter.ts",
+        "src/tools/base.ts",
+        "src/tools/mcp.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/examples/cancellation-usage.ts": {
+      "imports": [
+        "src/mcp/cancellation.ts",
+        "src/mcp/connection.ts",
+        "src/mcp/protocol.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/examples/connection-usage.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/examples/sampling-usage.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/integration.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/lifecycle.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/logging.ts": {
+      "imports": [
+        "src/mcp/protocol.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/notifications.ts": {
+      "imports": [
+        "src/mcp/protocol.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/protocol.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/mcp/cancellation.ts",
+        "src/mcp/examples/cancellation-usage.ts",
+        "src/mcp/logging.ts",
+        "src/mcp/notifications.ts",
+        "src/mcp/roots.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/mcp/resources.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/roots.ts": {
+      "imports": [
+        "src/mcp/protocol.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/sampling.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/tools.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/mcp/websocket-connection.ts": {
+      "imports": [
+        "src/mcp/connection.ts"
+      ],
+      "importedBy": [
+        "src/mcp/connection.ts",
+        "src/teleport/session.ts",
+        "tests/mcp/advanced.test.ts",
+        "tests/mcp/integration.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/media/image.ts": {
+      "imports": [
+        "src/media/mime.ts"
+      ],
+      "importedBy": [
+        "src/media/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/media/index.ts": {
+      "imports": [
+        "src/media/image.ts",
+        "src/media/pdf.ts",
+        "src/media/svg.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/media/mime.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/media/image.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/media/pdf.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/media/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/media/svg.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/media/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/memory/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/commands/general.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/config.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/models/fallback.ts",
+        "src/models/quota.ts",
+        "src/models/stats.ts",
+        "src/models/subagent-config.ts",
+        "src/models/thinking.ts",
+        "src/ui/components/ModelSelector.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/fallback.ts": {
+      "imports": [
+        "src/models/types.ts",
+        "src/models/config.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/models/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/core/loop.ts",
+        "src/web/server/api-manager.ts",
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/quota.example.ts": {
+      "imports": [
+        "src/models/quota.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/models/quota.ts": {
+      "imports": [
+        "src/models/stats.ts",
+        "src/models/config.ts"
+      ],
+      "importedBy": [
+        "src/models/quota.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/stats.ts": {
+      "imports": [
+        "src/models/config.ts"
+      ],
+      "importedBy": [
+        "src/models/quota.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/subagent-config.ts": {
+      "imports": [
+        "src/models/config.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/models/thinking.ts": {
+      "imports": [
+        "src/models/types.ts",
+        "src/models/config.ts"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/models/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/models/fallback.ts",
+        "src/models/thinking.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/network/examples.ts": {
+      "imports": [
+        "src/core/client.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/network/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/core/client.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/network/proxy.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/network/retry.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/network/timeout.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/notifications/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/organization/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/parser/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/parser/lsp/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/parser/lsp/lsp-client.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/parser/lsp/lsp-manager.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/parser/lsp/lsp-manager.ts": {
+      "imports": [
+        "src/parser/lsp/lsp-client.ts"
+      ],
+      "importedBy": [
+        "src/parser/lsp/lsp-symbol-extractor.ts",
+        "src/ui/components/LSPInitProgress.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/parser/lsp/lsp-symbol-extractor.ts": {
+      "imports": [
+        "src/parser/lsp/lsp-manager.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/permissions/system.test.ts",
+        "src/permissions/ui.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/permissions/policy.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/policy.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/policy.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/permissions/system.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/permissions/rule-parser.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/rule-parser.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/system.test.ts": {
+      "imports": [
+        "src/permissions/index.ts",
+        "src/permissions/policy.ts",
+        "src/permissions/tools.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/tools.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/tools.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/tools.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/permissions/system.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/permissions/ui-integration.tsx": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/ui.example.ts": {
+      "imports": [
+        "src/permissions/ui.ts",
+        "src/permissions/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/permissions/ui.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/permissions/ui.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/plan/comparison.ts": {
+      "imports": [
+        "src/plan/persistence.ts"
+      ],
+      "importedBy": [
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/plan/index.ts": {
+      "imports": [
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/comparison.ts",
+        "src/plan/types.ts",
+        "src/plan/comparison.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/persistence.ts",
+        "src/plan/persistence.ts",
+        "src/plan/persistence.ts",
+        "src/plan/comparison.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/comparison.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/plan/persistence.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/plan/comparison.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/tools/planmode.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/plan/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/plan/index.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "src/plugins/cli.ts": {
+      "imports": [
+        "src/plugins/index.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/plugins/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/plugins/cli.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/prompt/attachments.ts": {
+      "imports": [
+        "src/rules/index.ts"
+      ],
+      "importedBy": [
+        "src/prompt/builder.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/prompt/builder.ts": {
+      "imports": [
+        "src/prompt/types.ts",
+        "src/prompt/attachments.ts",
+        "src/prompt/cache.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/prompt/cache.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/prompt/builder.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/prompt/diagnostics.ts": {
+      "imports": [
+        "src/lsp/manager.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/prompt/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/prompt/preview.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/prompt/suggestions.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/prompt/templates.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/tools/agent.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/prompt/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/prompt/builder.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/providers/cli.ts": {
+      "imports": [
+        "src/providers/vertex.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/providers/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/diagnostics/index.ts",
+        "src/web/server/doctor.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/providers/vertex.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/providers/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ratelimit/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/renderer/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/rewind/fileHistory.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/rewind/rewindManager.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/rewind/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/hooks/useRewind.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/rewind/rewindManager.ts": {
+      "imports": [
+        "src/rewind/fileHistory.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/rules/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/prompt/attachments.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/bubblewrap.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/sandbox/executor.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/config.ts": {
+      "imports": [
+        "src/sandbox/executor.ts"
+      ],
+      "importedBy": [
+        "src/sandbox/executor.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/docker.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/sandbox/executor.ts",
+        "src/sandbox/sandbox.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/executor.ts": {
+      "imports": [
+        "src/sandbox/config.ts",
+        "src/sandbox/bubblewrap.ts",
+        "src/sandbox/seatbelt.ts",
+        "src/sandbox/docker.ts",
+        "src/sandbox/resource-limits.ts"
+      ],
+      "importedBy": [
+        "src/sandbox/config.ts",
+        "src/sandbox/sandbox.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/filesystem.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/filesystem.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/network.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/network.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/resource-limits.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/sandbox/executor.ts",
+        "src/sandbox/sandbox.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/sandbox/sandbox.example.ts": {
+      "imports": [
+        "src/sandbox/seatbelt.ts",
+        "src/sandbox/docker.ts",
+        "src/sandbox/resource-limits.ts",
+        "src/sandbox/executor.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/sandbox/seatbelt.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/sandbox/executor.ts",
+        "src/sandbox/sandbox.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/search/ripgrep.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/security/audit.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/security/command-injection.ts",
+        "src/security/runtime-monitor.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/security/command-injection.ts": {
+      "imports": [
+        "src/security/audit.ts"
+      ],
+      "importedBy": [
+        "src/security/runtime-monitor.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/security/example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/security/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/security/runtime-monitor.ts": {
+      "imports": [
+        "src/security/audit.ts",
+        "src/security/command-injection.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/security/sensitive-enhanced.ts": {
+      "imports": [
+        "src/security/sensitive.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/security/sensitive.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/security/sensitive-enhanced.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/security/validate.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/session/cleanup.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/session/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/session/list.ts",
+        "src/tools/planmode.ts",
+        "src/tools/planmode.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/session/list.ts": {
+      "imports": [
+        "src/session/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/session/resume.ts": {
+      "imports": [
+        "src/context/summarizer.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/streaming/examples.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/streaming/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/streaming/message-stream.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/streaming/sse.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/telemetry/example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/telemetry/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/teleport/example.ts": {
+      "imports": [
+        "src/teleport/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/teleport/index.ts": {
+      "imports": [
+        "src/teleport/session.ts",
+        "src/teleport/session.ts",
+        "src/teleport/validation.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/teleport/example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/teleport/session.ts": {
+      "imports": [
+        "src/mcp/websocket-connection.ts",
+        "src/teleport/validation.ts"
+      ],
+      "importedBy": [
+        "src/teleport/index.ts",
+        "src/teleport/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/teleport/types.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/teleport/validation.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/teleport/index.ts",
+        "src/teleport/session.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/agent.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/tools/bash.ts",
+        "src/prompt/templates.ts",
+        "src/core/loop.ts"
+      ],
+      "importedBy": [
+        "src/agents/parallel.ts",
+        "src/commands/tools.ts",
+        "src/core/loop.ts",
+        "src/tools/index.ts",
+        "tests/tools/agent.test.ts",
+        "tests/tools/agent.test.ts",
+        "tests/tools/agent.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/ask.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts",
+        "tests/tools/ask-enhanced.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/base.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/agents/guide.ts",
+        "src/agents/tools.ts",
+        "src/examples/retry-usage.ts",
+        "src/mcp/adapter.ts",
+        "src/mcp/example.ts",
+        "src/tools/agent.ts",
+        "src/tools/ask.ts",
+        "src/tools/bash.ts",
+        "src/tools/chrome.ts",
+        "src/tools/file.ts",
+        "src/tools/index.ts",
+        "src/tools/lsp.ts",
+        "src/tools/mcp.ts",
+        "src/tools/multiedit.ts",
+        "src/tools/notebook.ts",
+        "src/tools/planmode.ts",
+        "src/tools/search.ts",
+        "src/tools/skill.ts",
+        "src/tools/tmux.ts",
+        "src/tools/todo.ts",
+        "src/tools/web.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/bash.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/tools/sandbox.ts",
+        "src/hooks/index.ts",
+        "src/utils/git-helper.ts",
+        "src/config/index.ts"
+      ],
+      "importedBy": [
+        "src/tools/agent.ts",
+        "src/tools/index.ts",
+        "tests/tools/bash.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/chrome.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/config/index.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/file.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts",
+        "tests/integration/tool-chain.test.ts",
+        "tests/integration/tool-chain.test.ts",
+        "tests/integration/tool-chain.test.ts",
+        "tests/tools/file.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/index.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/tools/bash.ts",
+        "src/tools/file.ts",
+        "src/tools/search.ts",
+        "src/tools/web.ts",
+        "src/tools/todo.ts",
+        "src/tools/agent.ts",
+        "src/tools/notebook.ts",
+        "src/tools/planmode.ts",
+        "src/tools/mcp.ts",
+        "src/tools/ask.ts",
+        "src/tools/multiedit.ts",
+        "src/tools/tmux.ts",
+        "src/tools/skill.ts",
+        "src/tools/lsp.ts",
+        "src/tools/chrome.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/core/loop.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/routes/api.ts",
+        "tests/core/loop.test.ts",
+        "tests/integration/tool-chain.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/lsp.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/lsp/manager.ts",
+        "src/types/index.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/mcp.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/utils/index.ts"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/commands/tools.ts",
+        "src/hooks/index.ts",
+        "src/hooks/index.ts",
+        "src/mcp/example.ts",
+        "src/tools/index.ts",
+        "src/ui/McpSettings.tsx",
+        "src/ui/McpSettings.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/multiedit.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/notebook.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/planmode.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/plan/persistence.ts",
+        "src/session/index.ts",
+        "src/session/index.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts",
+        "src/plan/types.ts"
+      ],
+      "importedBy": [
+        "src/commands/general.ts",
+        "src/tools/index.ts",
+        "src/tools/sandbox.ts",
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/sandbox.ts": {
+      "imports": [
+        "src/tools/planmode.ts"
+      ],
+      "importedBy": [
+        "src/tools/bash.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/search.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts",
+        "tests/integration/tool-chain.test.ts",
+        "tests/integration/tool-chain.test.ts",
+        "tests/tools/search.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/skill.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/tmux.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/todo.ts": {
+      "imports": [
+        "src/tools/base.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts",
+        "tests/tools/todo.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/tools/web.ts": {
+      "imports": [
+        "src/tools/base.ts",
+        "src/types/errors.ts"
+      ],
+      "importedBy": [
+        "src/tools/index.ts",
+        "tests/tools/web-enhanced.test.ts",
+        "tests/tools/web-tools.test.ts",
+        "tests/tools/web.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/types/config.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/types/errors.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/types/errors.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/examples/retry-usage.ts",
+        "src/tools/web.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/types/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/agents/tools.ts",
+        "src/core/session.ts",
+        "src/tools/lsp.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/types/messages.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/types/results.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/types/tools.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/types/turndown-plugin-gfm.d.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/App.tsx": {
+      "imports": [
+        "src/ui/components/Header.tsx",
+        "src/ui/components/Message.tsx",
+        "src/ui/components/Input.tsx",
+        "src/ui/components/ToolCall.tsx",
+        "src/ui/components/TodoList.tsx",
+        "src/ui/components/Spinner.tsx",
+        "src/ui/components/WelcomeScreen.tsx",
+        "src/ui/components/ShortcutHelp.tsx",
+        "src/ui/LoginSelector.tsx",
+        "src/ui/components/MessageSelector.tsx",
+        "src/ui/hooks/useRewind.ts",
+        "src/core/loop.ts",
+        "src/core/session.ts",
+        "src/commands/index.ts",
+        "src/tools/planmode.ts",
+        "src/updater/index.ts",
+        "src/ui/hooks/useGlobalKeybindings.ts",
+        "src/config/index.ts",
+        "src/auth/index.ts",
+        "src/models/thinking.ts",
+        "src/ui/components/BackgroundTasksPanel.tsx"
+      ],
+      "importedBy": [
+        "src/cli.ts",
+        "src/ui/index.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ChromeSettings.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/commands/tools.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/LoginSelector.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/cli.ts",
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/McpSettings.tsx": {
+      "imports": [
+        "src/tools/mcp.ts",
+        "src/tools/mcp.ts"
+      ],
+      "importedBy": [
+        "src/commands/tools.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/PluginsDialog.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/tools.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/commands.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/example.ts": {
+      "imports": [
+        "src/ui/autocomplete/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/files.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/autocomplete/example.ts",
+        "src/ui/components/Input.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/mentions.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/autocomplete/types.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/components/BackgroundTasksPanel.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/DiffView.example.tsx": {
+      "imports": [
+        "src/ui/components/DiffView.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/components/DiffView.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/DiffView.example.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/Header.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/HistorySearch.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/Input.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/Input.tsx": {
+      "imports": [
+        "src/ui/autocomplete/index.ts",
+        "src/ui/utils/history-manager.ts",
+        "src/ui/components/HistorySearch.tsx"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/LSPInitProgress.tsx": {
+      "imports": [
+        "src/ui/components/ProgressBar.tsx",
+        "src/ui/components/Spinner.tsx",
+        "src/parser/lsp/lsp-manager.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/components/Message.tsx": {
+      "imports": [
+        "src/ui/markdown-renderer.ts"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/MessageSelector.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/ModelSelector.example.tsx": {
+      "imports": [
+        "src/ui/components/ModelSelector.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/components/ModelSelector.tsx": {
+      "imports": [
+        "src/models/config.ts"
+      ],
+      "importedBy": [
+        "src/ui/components/ModelSelector.example.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/PermissionPrompt.example.tsx": {
+      "imports": [
+        "src/ui/components/PermissionPrompt.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/components/PermissionPrompt.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/PermissionPrompt.example.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/ProgressBar.example.tsx": {
+      "imports": [
+        "src/ui/components/ProgressBar.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/components/ProgressBar.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/LSPInitProgress.tsx",
+        "src/ui/components/ProgressBar.example.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/ResumeSession.tsx": {
+      "imports": [
+        "src/ui/components/Spinner.tsx"
+      ],
+      "importedBy": [
+        "src/commands/session.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/SelectInput.tsx": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/components/ShortcutHelp.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/SkillsDialog.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/utility.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/Spinner.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx",
+        "src/ui/components/LSPInitProgress.tsx",
+        "src/ui/components/ResumeSession.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/StatusBar.example.tsx": {
+      "imports": [
+        "src/ui/components/StatusBar.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/components/StatusBar.test.tsx": {
+      "imports": [
+        "src/ui/components/StatusBar.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/components/StatusBar.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/StatusBar.example.tsx",
+        "src/ui/components/StatusBar.test.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/TodoList.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/ToolCall.tsx": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": false
+    },
+    "src/ui/components/UpdateNotification.tsx": {
+      "imports": [
+        "src/updater/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/components/WelcomeScreen.tsx": {
+      "imports": [
+        "src/ui/hooks/useTerminalSize.ts"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/components/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/hooks/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/hooks/useAutoScroll.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/hooks/useRewind.ts": {
+      "imports": [
+        "src/rewind/index.ts"
+      ],
+      "importedBy": [
+        "src/ui/App.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/hooks/useTerminalSize.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/WelcomeScreen.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/index.tsx": {
+      "imports": [
+        "src/ui/App.tsx"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/frame.ts": {
+      "imports": [
+        "src/ui/ink-v2/screen.ts"
+      ],
+      "importedBy": [
+        "src/ui/ink-v2/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/index.ts": {
+      "imports": [
+        "src/ui/ink-v2/style-pool.ts",
+        "src/ui/ink-v2/renderer.ts",
+        "src/ui/ink-v2/frame.ts",
+        "src/ui/ink-v2/output.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/output.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/ink-v2/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/renderer.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/ink-v2/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/screen.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/ink-v2/frame.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/style-pool.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/ink-v2/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/ink-v2/types.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/markdown-renderer.example.ts": {
+      "imports": [
+        "src/ui/markdown-renderer.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "src/ui/markdown-renderer.ts": {
+      "imports": [
+        "src/ui/utils/syntaxHighlight.ts"
+      ],
+      "importedBy": [
+        "src/ui/components/Message.tsx",
+        "src/ui/markdown-renderer.example.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/utils/history-manager.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/components/Input.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/ui/utils/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/utils/syntaxHighlight.example.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/ui/utils/syntaxHighlight.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/ui/markdown-renderer.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/updater/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/cli.ts",
+        "src/ui/App.tsx",
+        "src/ui/components/UpdateNotification.tsx"
+      ],
+      "exportsSymbols": true
+    },
+    "src/utils/attribution.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [
+        "src/utils/git-helper.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/utils/git-helper.ts": {
+      "imports": [
+        "src/utils/attribution.ts"
+      ],
+      "importedBy": [
+        "src/tools/bash.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/utils/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/tools/mcp.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/utils/platform.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/utils/retry.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/examples/retry-usage.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/utils/terminal-setup.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/commands/utility.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web-cli.ts": {
+      "imports": [
+        "src/web/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/web/index.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web-cli.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/api-manager.ts": {
+      "imports": [
+        "src/core/client.ts",
+        "src/config/index.ts",
+        "src/auth/index.ts",
+        "src/models/index.ts"
+      ],
+      "importedBy": [
+        "src/web/server/routes/api.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/auth-manager.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [
+        "src/web/server/routes/api.ts",
+        "src/web/server/slash-commands.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/checkpoint-manager.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/routes/api.ts",
+        "src/web/server/slash-commands.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/conversation.ts": {
+      "imports": [
+        "src/core/client.ts",
+        "src/core/session.ts",
+        "src/tools/index.ts",
+        "src/prompt/index.ts",
+        "src/models/index.ts",
+        "src/auth/index.ts",
+        "src/web/server/user-interaction.ts",
+        "src/web/server/session-manager.ts",
+        "src/web/server/task-manager.ts",
+        "src/mcp/config.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/web/shared/types.ts",
+        "src/plugins/index.ts",
+        "src/web/shared/types.ts",
+        "src/plugins/index.ts",
+        "src/plugins/index.ts",
+        "src/plugins/index.ts",
+        "src/plugins/index.ts"
+      ],
+      "importedBy": [
+        "src/web/server/index.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/doctor.ts": {
+      "imports": [
+        "src/providers/index.ts"
+      ],
+      "importedBy": [
+        "src/web/server/routes/api.ts",
+        "src/web/server/routes/api.ts",
+        "src/web/server/slash-commands.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/index.ts": {
+      "imports": [
+        "src/web/server/conversation.ts",
+        "src/web/server/websocket.ts",
+        "src/web/server/routes/api.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/web/server/permission-handler.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "src/web/server/routes/api.ts": {
+      "imports": [
+        "src/tools/index.ts",
+        "src/web/server/api-manager.ts",
+        "src/web/server/auth-manager.ts",
+        "src/web/server/checkpoint-manager.ts",
+        "src/web/server/doctor.ts",
+        "src/web/server/doctor.ts"
+      ],
+      "importedBy": [
+        "src/web/server/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/session-manager.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/slash-commands.ts": {
+      "imports": [
+        "src/web/server/doctor.ts",
+        "src/web/server/checkpoint-manager.ts",
+        "src/web/server/auth-manager.ts"
+      ],
+      "importedBy": [
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/task-manager.ts": {
+      "imports": [
+        "src/core/loop.ts"
+      ],
+      "importedBy": [
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/user-interaction.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/conversation.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/server/websocket.ts": {
+      "imports": [
+        "src/web/server/conversation.ts",
+        "src/web/server/slash-commands.ts",
+        "src/web/server/api-manager.ts",
+        "src/web/server/auth-manager.ts",
+        "src/web/server/checkpoint-manager.ts",
+        "src/web/shared/types.ts",
+        "src/web/server/doctor.ts"
+      ],
+      "importedBy": [
+        "src/web/server/index.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "src/web/shared/types.ts": {
+      "imports": [],
+      "importedBy": [
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/conversation.ts",
+        "src/web/server/websocket.ts"
+      ],
+      "exportsSymbols": false
+    },
+    "tests/commands/auth.test.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/commands/cli-args.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/commands/config.test.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/commands/general.test.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/commands/session.test.ts": {
+      "imports": [
+        "src/commands/registry.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/commands/transcript.test.ts": {
+      "imports": [
+        "src/commands/session.ts",
+        "src/commands/types.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/config.test.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/config/loader.test.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/core/config.test.ts": {
+      "imports": [
+        "src/config/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/core/context.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/core/loop.test.ts": {
+      "imports": [
+        "src/core/loop.ts",
+        "src/core/session.ts",
+        "src/core/client.ts",
+        "src/tools/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/core/session.test.ts": {
+      "imports": [
+        "src/core/session.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/cli-basic.test.ts": {
+      "imports": [
+        "tests/e2e/cli-runner.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/cli-runner.ts": {
+      "imports": [],
+      "importedBy": [
+        "tests/e2e/cli-basic.test.ts",
+        "tests/e2e/cli-session.test.ts",
+        "tests/e2e/cli-tools.test.ts",
+        "tests/e2e/example.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "tests/e2e/cli-session.test.ts": {
+      "imports": [
+        "tests/e2e/cli-runner.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/cli-tools.test.ts": {
+      "imports": [
+        "tests/e2e/cli-runner.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/example.test.ts": {
+      "imports": [
+        "tests/e2e/cli-runner.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/mock-server.ts": {
+      "imports": [],
+      "importedBy": [
+        "tests/e2e/setup.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "tests/e2e/run-all.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/e2e/setup.ts": {
+      "imports": [
+        "tests/e2e/mock-server.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/hooks/hooks.test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/integration/config-load.test.ts": {
+      "imports": [
+        "tests/integration/setup.ts",
+        "tests/integration/helpers.ts",
+        "src/config/index.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/integration/fixtures/sample-code.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/integration/helpers.ts": {
+      "imports": [],
+      "importedBy": [
+        "tests/integration/config-load.test.ts",
+        "tests/integration/session-flow.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "tests/integration/index.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/integration/session-flow.test.ts": {
+      "imports": [
+        "tests/integration/setup.ts",
+        "tests/integration/helpers.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/integration/setup.ts": {
+      "imports": [],
+      "importedBy": [
+        "tests/integration/config-load.test.ts",
+        "tests/integration/session-flow.test.ts",
+        "tests/integration/tool-chain.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "tests/integration/tool-chain.test.ts": {
+      "imports": [
+        "tests/integration/setup.ts",
+        "src/tools/index.ts",
+        "src/tools/file.ts",
+        "src/tools/file.ts",
+        "src/tools/file.ts",
+        "src/tools/search.ts",
+        "src/tools/search.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/mcp/advanced.test.ts": {
+      "imports": [
+        "src/mcp/websocket-connection.ts",
+        "tests/mcp/mock-server.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/mcp/integration.test.ts": {
+      "imports": [
+        "src/mcp/websocket-connection.ts",
+        "tests/mcp/mock-server.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/mcp/mock-server.ts": {
+      "imports": [],
+      "importedBy": [
+        "tests/mcp/advanced.test.ts",
+        "tests/mcp/integration.test.ts"
+      ],
+      "exportsSymbols": true
+    },
+    "tests/media-test.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    },
+    "tests/session/manager.test.ts": {
+      "imports": [
+        "src/core/session.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/agent.test.ts": {
+      "imports": [
+        "src/tools/agent.ts",
+        "src/tools/agent.ts",
+        "src/tools/agent.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/ask-enhanced.test.ts": {
+      "imports": [
+        "src/tools/ask.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/bash.test.ts": {
+      "imports": [
+        "src/tools/bash.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/file.test.ts": {
+      "imports": [
+        "src/tools/file.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/search.test.ts": {
+      "imports": [
+        "src/tools/search.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/todo.test.ts": {
+      "imports": [
+        "src/tools/todo.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/web-enhanced.test.ts": {
+      "imports": [
+        "src/tools/web.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/web-tools.test.ts": {
+      "imports": [
+        "src/tools/web.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "tests/tools/web.test.ts": {
+      "imports": [
+        "src/tools/web.ts"
+      ],
+      "importedBy": [],
+      "exportsSymbols": true
+    },
+    "vitest.config.ts": {
+      "imports": [],
+      "importedBy": [],
+      "exportsSymbols": false
+    }
+  }
+}

@@ -1,0 +1,4795 @@
+{
+  "path": "src/updater",
+  "modules": {
+    "src/updater/index.ts": {
+      "id": "src/updater/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\updater\\index.ts",
+      "language": "typescript",
+      "lines": 598,
+      "size": 16182,
+      "exports": [
+        "src/updater/index.ts::checkForUpdates",
+        "src/updater/index.ts::checkVersion",
+        "src/updater/index.ts::installVersion",
+        "src/updater/index.ts::listVersions",
+        "src/updater/index.ts::performUpdate",
+        "src/updater/index.ts::rollbackVersion",
+        "src/updater/index.ts::UpdateManager"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "https",
+          "symbols": [
+            "https"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "child_process",
+          "symbols": [
+            "child_process"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "events",
+          "symbols": [
+            "EventEmitter"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "自动更新系统模块，负责检查 NPM 包的新版本、下载和安装更新，支持多个发布渠道（stable/beta/canary）和自动更新策略。",
+        "responsibility": "管理应用的版本检查、更新下载和安装流程",
+        "businessDomain": "版本管理与自动更新",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "自动更新",
+          "版本管理",
+          "NPM",
+          "下载安装",
+          "发布渠道"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:31.803Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/updater/index.ts::checkForUpdates": {
+      "id": "src/updater/index.ts::checkForUpdates",
+      "name": "checkForUpdates",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 486,
+        "startColumn": 0,
+        "endLine": 497,
+        "endColumn": 1
+      },
+      "signature": "checkForUpdates()"
+    },
+    "src/updater/index.ts::checkVersion": {
+      "id": "src/updater/index.ts::checkVersion",
+      "name": "checkVersion",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 569,
+        "startColumn": 0,
+        "endLine": 582,
+        "endColumn": 1
+      },
+      "signature": "checkVersion()"
+    },
+    "src/updater/index.ts::installVersion": {
+      "id": "src/updater/index.ts::installVersion",
+      "name": "installVersion",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 585,
+        "startColumn": 0,
+        "endLine": 594,
+        "endColumn": 1
+      },
+      "signature": "installVersion()"
+    },
+    "src/updater/index.ts::listVersions": {
+      "id": "src/updater/index.ts::listVersions",
+      "name": "listVersions",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 563,
+        "startColumn": 0,
+        "endLine": 566,
+        "endColumn": 1
+      },
+      "signature": "listVersions()"
+    },
+    "src/updater/index.ts::performUpdate": {
+      "id": "src/updater/index.ts::performUpdate",
+      "name": "performUpdate",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 500,
+        "startColumn": 0,
+        "endLine": 540,
+        "endColumn": 1
+      },
+      "signature": "performUpdate()"
+    },
+    "src/updater/index.ts::rollbackVersion": {
+      "id": "src/updater/index.ts::rollbackVersion",
+      "name": "rollbackVersion",
+      "kind": "function",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 543,
+        "startColumn": 0,
+        "endLine": 560,
+        "endColumn": 1
+      },
+      "signature": "rollbackVersion()"
+    },
+    "src/updater/index.ts::UpdateManager": {
+      "id": "src/updater/index.ts::UpdateManager",
+      "name": "UpdateManager",
+      "kind": "class",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 72,
+        "startColumn": 0,
+        "endLine": 483,
+        "endColumn": 1
+      },
+      "children": [
+        "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "src/updater/index.ts::UpdateManager::compareVersions",
+        "src/updater/index.ts::UpdateManager::download",
+        "src/updater/index.ts::UpdateManager::executeNpm",
+        "src/updater/index.ts::UpdateManager::fetchJson",
+        "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "src/updater/index.ts::UpdateManager::getChangelog",
+        "src/updater/index.ts::UpdateManager::getConfig",
+        "src/updater/index.ts::UpdateManager::getCurrentVersion",
+        "src/updater/index.ts::UpdateManager::getStatus",
+        "src/updater/index.ts::UpdateManager::install",
+        "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "src/updater/index.ts::UpdateManager::readCurrentVersion",
+        "src/updater/index.ts::UpdateManager::rollback",
+        "src/updater/index.ts::UpdateManager::startAutoCheck",
+        "src/updater/index.ts::UpdateManager::stopAutoCheck",
+        "src/updater/index.ts::checkTimer",
+        "src/updater/index.ts::config",
+        "src/updater/index.ts::currentVersion",
+        "src/updater/index.ts::lastCheck",
+        "src/updater/index.ts::packageName",
+        "src/updater/index.ts::status"
+      ]
+    },
+    "src/updater/index.ts::UpdateManager::checkForUpdates": {
+      "id": "src/updater/index.ts::UpdateManager::checkForUpdates",
+      "name": "checkForUpdates",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 123,
+        "startColumn": 2,
+        "endLine": 171,
+        "endColumn": 3
+      },
+      "signature": "checkForUpdates()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::compareVersions": {
+      "id": "src/updater/index.ts::UpdateManager::compareVersions",
+      "name": "compareVersions",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 241,
+        "startColumn": 2,
+        "endLine": 253,
+        "endColumn": 3
+      },
+      "signature": "compareVersions()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::download": {
+      "id": "src/updater/index.ts::UpdateManager::download",
+      "name": "download",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 256,
+        "startColumn": 2,
+        "endLine": 294,
+        "endColumn": 3
+      },
+      "signature": "download()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::executeNpm": {
+      "id": "src/updater/index.ts::UpdateManager::executeNpm",
+      "name": "executeNpm",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 392,
+        "startColumn": 2,
+        "endLine": 426,
+        "endColumn": 3
+      },
+      "signature": "executeNpm()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::fetchJson": {
+      "id": "src/updater/index.ts::UpdateManager::fetchJson",
+      "name": "fetchJson",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 468,
+        "startColumn": 2,
+        "endLine": 482,
+        "endColumn": 3
+      },
+      "signature": "fetchJson()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::fetchLatestVersion": {
+      "id": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+      "name": "fetchLatestVersion",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 174,
+        "startColumn": 2,
+        "endLine": 209,
+        "endColumn": 3
+      },
+      "signature": "fetchLatestVersion()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::fetchVersionInfo": {
+      "id": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+      "name": "fetchVersionInfo",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 212,
+        "startColumn": 2,
+        "endLine": 238,
+        "endColumn": 3
+      },
+      "signature": "fetchVersionInfo()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::getChangelog": {
+      "id": "src/updater/index.ts::UpdateManager::getChangelog",
+      "name": "getChangelog",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 451,
+        "startColumn": 2,
+        "endLine": 465,
+        "endColumn": 3
+      },
+      "signature": "getChangelog()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::getConfig": {
+      "id": "src/updater/index.ts::UpdateManager::getConfig",
+      "name": "getConfig",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 118,
+        "startColumn": 2,
+        "endLine": 120,
+        "endColumn": 3
+      },
+      "signature": "getConfig()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::getCurrentVersion": {
+      "id": "src/updater/index.ts::UpdateManager::getCurrentVersion",
+      "name": "getCurrentVersion",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 113,
+        "startColumn": 2,
+        "endLine": 115,
+        "endColumn": 3
+      },
+      "signature": "getCurrentVersion()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::getStatus": {
+      "id": "src/updater/index.ts::UpdateManager::getStatus",
+      "name": "getStatus",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 108,
+        "startColumn": 2,
+        "endLine": 110,
+        "endColumn": 3
+      },
+      "signature": "getStatus()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::install": {
+      "id": "src/updater/index.ts::UpdateManager::install",
+      "name": "install",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 297,
+        "startColumn": 2,
+        "endLine": 340,
+        "endColumn": 3
+      },
+      "signature": "install()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::listAvailableVersions": {
+      "id": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+      "name": "listAvailableVersions",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 371,
+        "startColumn": 2,
+        "endLine": 389,
+        "endColumn": 3
+      },
+      "signature": "listAvailableVersions()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::readCurrentVersion": {
+      "id": "src/updater/index.ts::UpdateManager::readCurrentVersion",
+      "name": "readCurrentVersion",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 97,
+        "startColumn": 2,
+        "endLine": 105,
+        "endColumn": 3
+      },
+      "signature": "readCurrentVersion()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::rollback": {
+      "id": "src/updater/index.ts::UpdateManager::rollback",
+      "name": "rollback",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 343,
+        "startColumn": 2,
+        "endLine": 368,
+        "endColumn": 3
+      },
+      "signature": "rollback()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::startAutoCheck": {
+      "id": "src/updater/index.ts::UpdateManager::startAutoCheck",
+      "name": "startAutoCheck",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 429,
+        "startColumn": 2,
+        "endLine": 440,
+        "endColumn": 3
+      },
+      "signature": "startAutoCheck()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateManager::stopAutoCheck": {
+      "id": "src/updater/index.ts::UpdateManager::stopAutoCheck",
+      "name": "stopAutoCheck",
+      "kind": "method",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 443,
+        "startColumn": 2,
+        "endLine": 448,
+        "endColumn": 3
+      },
+      "signature": "stopAutoCheck()",
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::checkTimer": {
+      "id": "src/updater/index.ts::checkTimer",
+      "name": "checkTimer",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 76,
+        "startColumn": 2,
+        "endLine": 76,
+        "endColumn": 51
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::config": {
+      "id": "src/updater/index.ts::config",
+      "name": "config",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 73,
+        "startColumn": 2,
+        "endLine": 73,
+        "endColumn": 41
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::currentVersion": {
+      "id": "src/updater/index.ts::currentVersion",
+      "name": "currentVersion",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 77,
+        "startColumn": 2,
+        "endLine": 77,
+        "endColumn": 33
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::lastCheck": {
+      "id": "src/updater/index.ts::lastCheck",
+      "name": "lastCheck",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 75,
+        "startColumn": 2,
+        "endLine": 75,
+        "endColumn": 32
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::packageName": {
+      "id": "src/updater/index.ts::packageName",
+      "name": "packageName",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 78,
+        "startColumn": 2,
+        "endLine": 78,
+        "endColumn": 30
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::status": {
+      "id": "src/updater/index.ts::status",
+      "name": "status",
+      "kind": "property",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 74,
+        "startColumn": 2,
+        "endLine": 74,
+        "endColumn": 40
+      },
+      "parent": "src/updater/index.ts::UpdateManager"
+    },
+    "src/updater/index.ts::UpdateCheckResult": {
+      "id": "src/updater/index.ts::UpdateCheckResult",
+      "name": "UpdateCheckResult",
+      "kind": "interface",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 44,
+        "startColumn": 0,
+        "endLine": 50,
+        "endColumn": 1
+      }
+    },
+    "src/updater/index.ts::UpdateConfig": {
+      "id": "src/updater/index.ts::UpdateConfig",
+      "name": "UpdateConfig",
+      "kind": "interface",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 24,
+        "startColumn": 0,
+        "endLine": 31,
+        "endColumn": 1
+      }
+    },
+    "src/updater/index.ts::UpdateInfo": {
+      "id": "src/updater/index.ts::UpdateInfo",
+      "name": "UpdateInfo",
+      "kind": "interface",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 63,
+        "startColumn": 0,
+        "endLine": 69,
+        "endColumn": 1
+      }
+    },
+    "src/updater/index.ts::UpdateOptions": {
+      "id": "src/updater/index.ts::UpdateOptions",
+      "name": "UpdateOptions",
+      "kind": "interface",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 53,
+        "startColumn": 0,
+        "endLine": 60,
+        "endColumn": 1
+      }
+    },
+    "src/updater/index.ts::VersionInfo": {
+      "id": "src/updater/index.ts::VersionInfo",
+      "name": "VersionInfo",
+      "kind": "interface",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 13,
+        "startColumn": 0,
+        "endLine": 21,
+        "endColumn": 1
+      }
+    },
+    "src/updater/index.ts::updateManager": {
+      "id": "src/updater/index.ts::updateManager",
+      "name": "updateManager",
+      "kind": "constant",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 597,
+        "startColumn": 13,
+        "endLine": 597,
+        "endColumn": 48
+      }
+    },
+    "src/updater/index.ts::UpdateStatus": {
+      "id": "src/updater/index.ts::UpdateStatus",
+      "name": "UpdateStatus",
+      "kind": "variable",
+      "moduleId": "src/updater/index.ts",
+      "location": {
+        "file": "src/updater/index.ts",
+        "startLine": 34,
+        "startColumn": 0,
+        "endLine": 41,
+        "endColumn": 12
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/cli.ts",
+        "target": "src/updater/index.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/App.tsx",
+        "target": "src/updater/index.ts",
+        "type": "import",
+        "symbols": [
+          "updateManager"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/components/UpdateNotification.tsx",
+        "target": "src/updater/index.ts",
+        "type": "import",
+        "symbols": [
+          "updateManager"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/agents/statusline.ts::StatuslineAgent::preview",
+        "callee": "src/updater/index.ts::UpdateManager::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/statusline.ts",
+            "startLine": 356,
+            "startColumn": 25,
+            "endLine": 356,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/background/index.ts::BackgroundTaskManager::getStats",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/background/index.ts",
+            "startLine": 109,
+            "startColumn": 18,
+            "endLine": 109,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/updater/index.ts::rollbackVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1040,
+            "startColumn": 30,
+            "endLine": 1040,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1057,
+            "startColumn": 31,
+            "endLine": 1057,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/updater/index.ts::performUpdate",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1119,
+            "startColumn": 28,
+            "endLine": 1119,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/updater/index.ts::status",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 58,
+            "startColumn": 12,
+            "endLine": 58,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 64,
+            "startColumn": 10,
+            "endLine": 64,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 75,
+            "startColumn": 19,
+            "endLine": 75,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 82,
+            "startColumn": 19,
+            "endLine": 82,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 93,
+            "startColumn": 10,
+            "endLine": 93,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 106,
+            "startColumn": 12,
+            "endLine": 106,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 110,
+            "startColumn": 10,
+            "endLine": 110,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 123,
+            "startColumn": 12,
+            "endLine": 123,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 127,
+            "startColumn": 10,
+            "endLine": 127,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 144,
+            "startColumn": 14,
+            "endLine": 144,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 147,
+            "startColumn": 12,
+            "endLine": 147,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 151,
+            "startColumn": 10,
+            "endLine": 151,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 160,
+            "startColumn": 12,
+            "endLine": 160,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 171,
+            "startColumn": 14,
+            "endLine": 171,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 174,
+            "startColumn": 12,
+            "endLine": 174,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 178,
+            "startColumn": 10,
+            "endLine": 178,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 187,
+            "startColumn": 12,
+            "endLine": 187,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 198,
+            "startColumn": 14,
+            "endLine": 198,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 201,
+            "startColumn": 12,
+            "endLine": 201,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 205,
+            "startColumn": 10,
+            "endLine": 205,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 217,
+            "startColumn": 12,
+            "endLine": 217,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 224,
+            "startColumn": 12,
+            "endLine": 224,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 230,
+            "startColumn": 12,
+            "endLine": 230,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 236,
+            "startColumn": 12,
+            "endLine": 236,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 269,
+            "startColumn": 10,
+            "endLine": 269,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 317,
+            "startColumn": 10,
+            "endLine": 317,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/server.ts::VisualizationServer::setupRoutes",
+        "callee": "src/updater/index.ts::status",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/server.ts",
+            "startLine": 78,
+            "startColumn": 10,
+            "endLine": 78,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/plugins/cli.ts::installPlugin",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/plugins/cli.ts",
+            "startLine": 159,
+            "startColumn": 24,
+            "endLine": 159,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/chrome.ts::ChromeTool::execute",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/tools/chrome.ts",
+            "startLine": 88,
+            "startColumn": 23,
+            "endLine": 88,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/lsp.ts::LSPTool::isEnabled",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/tools/lsp.ts",
+            "startLine": 910,
+            "startColumn": 19,
+            "endLine": 910,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkForUpdates",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 486,
+            "startColumn": 22,
+            "endLine": 486,
+            "endColumn": 37
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 488,
+            "startColumn": 31,
+            "endLine": 488,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 486,
+            "startColumn": 22,
+            "endLine": 486,
+            "endColumn": 37
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 488,
+            "startColumn": 31,
+            "endLine": 488,
+            "endColumn": 46
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 488,
+            "startColumn": 23,
+            "endLine": 488,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 487,
+            "startColumn": 22,
+            "endLine": 487,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 487,
+            "startColumn": 18,
+            "endLine": 487,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkVersion",
+        "callee": "src/updater/index.ts::checkVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 569,
+            "startColumn": 22,
+            "endLine": 569,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkVersion",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 574,
+            "startColumn": 22,
+            "endLine": 574,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 574,
+            "startColumn": 18,
+            "endLine": 574,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkVersion",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 575,
+            "startColumn": 31,
+            "endLine": 575,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::checkVersion",
+        "callee": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 575,
+            "startColumn": 31,
+            "endLine": 575,
+            "endColumn": 46
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 575,
+            "startColumn": 23,
+            "endLine": 575,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::installVersion",
+        "callee": "src/updater/index.ts::installVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 585,
+            "startColumn": 22,
+            "endLine": 585,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::installVersion",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 586,
+            "startColumn": 22,
+            "endLine": 586,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 586,
+            "startColumn": 18,
+            "endLine": 586,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::installVersion",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 589,
+            "startColumn": 18,
+            "endLine": 589,
+            "endColumn": 25
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 589,
+            "startColumn": 10,
+            "endLine": 589,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::installVersion",
+        "callee": "src/plugins/index.ts::PluginManager::install",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 589,
+            "startColumn": 10,
+            "endLine": 589,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::listVersions",
+        "callee": "src/updater/index.ts::listVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 563,
+            "startColumn": 22,
+            "endLine": 563,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::listVersions",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 564,
+            "startColumn": 22,
+            "endLine": 564,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 564,
+            "startColumn": 18,
+            "endLine": 564,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::listVersions",
+        "callee": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 565,
+            "startColumn": 17,
+            "endLine": 565,
+            "endColumn": 38
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 565,
+            "startColumn": 9,
+            "endLine": 565,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::performUpdate",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 500,
+            "startColumn": 22,
+            "endLine": 500,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 501,
+            "startColumn": 22,
+            "endLine": 501,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 501,
+            "startColumn": 18,
+            "endLine": 501,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 14,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 6,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 14,
+            "endLine": 515,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 6,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 6,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 6,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 508,
+            "startColumn": 6,
+            "endLine": 508,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 509,
+            "startColumn": 16,
+            "endLine": 509,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 516,
+            "startColumn": 16,
+            "endLine": 516,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 524,
+            "startColumn": 14,
+            "endLine": 524,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 509,
+            "startColumn": 8,
+            "endLine": 509,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 516,
+            "startColumn": 8,
+            "endLine": 516,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 524,
+            "startColumn": 6,
+            "endLine": 524,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 509,
+            "startColumn": 8,
+            "endLine": 509,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 516,
+            "startColumn": 8,
+            "endLine": 516,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 524,
+            "startColumn": 6,
+            "endLine": 524,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 509,
+            "startColumn": 8,
+            "endLine": 509,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 516,
+            "startColumn": 8,
+            "endLine": 516,
+            "endColumn": 19
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 524,
+            "startColumn": 6,
+            "endLine": 524,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 521,
+            "startColumn": 37,
+            "endLine": 521,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 521,
+            "startColumn": 37,
+            "endLine": 521,
+            "endColumn": 52
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 521,
+            "startColumn": 29,
+            "endLine": 521,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::UpdateManager::download",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 529,
+            "startColumn": 18,
+            "endLine": 529,
+            "endColumn": 26
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 529,
+            "startColumn": 10,
+            "endLine": 529,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::UpdateManager::getConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 36,
+            "endLine": 531,
+            "endColumn": 45
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/agents/statusline.ts::StatuslineAgent::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/lsp/manager.ts::LSPServer::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/models/fallback.ts::ModelFallback::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/models/thinking.ts::ThinkingManager::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/notifications/index.ts::NotificationManager::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/sandbox/config.ts::SandboxConfigManager::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/sandbox/executor.ts::SandboxExecutor::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/web/server/permission-handler.ts::PermissionHandler::getConfig",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 531,
+            "startColumn": 28,
+            "endLine": 531,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 532,
+            "startColumn": 20,
+            "endLine": 532,
+            "endColumn": 27
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 532,
+            "startColumn": 12,
+            "endLine": 532,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/plugins/index.ts::PluginManager::install",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 532,
+            "startColumn": 12,
+            "endLine": 532,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 537,
+            "startColumn": 12,
+            "endLine": 537,
+            "endColumn": 17
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 537,
+            "startColumn": 4,
+            "endLine": 537,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 537,
+            "startColumn": 4,
+            "endLine": 537,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 537,
+            "startColumn": 4,
+            "endLine": 537,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::performUpdate",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 537,
+            "startColumn": 4,
+            "endLine": 537,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/updater/index.ts::rollbackVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 543,
+            "startColumn": 22,
+            "endLine": 543,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/updater/index.ts::UpdateManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 544,
+            "startColumn": 22,
+            "endLine": 544,
+            "endColumn": 35
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 544,
+            "startColumn": 18,
+            "endLine": 544,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 14,
+            "endLine": 549,
+            "endColumn": 16
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 6,
+            "endLine": 549,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 6,
+            "endLine": 549,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 6,
+            "endLine": 549,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 6,
+            "endLine": 549,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 549,
+            "startColumn": 6,
+            "endLine": 549,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 550,
+            "startColumn": 16,
+            "endLine": 550,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 550,
+            "startColumn": 8,
+            "endLine": 550,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 550,
+            "startColumn": 8,
+            "endLine": 550,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 550,
+            "startColumn": 8,
+            "endLine": 550,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/updater/index.ts::UpdateManager::rollback",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 554,
+            "startColumn": 18,
+            "endLine": 554,
+            "endColumn": 26
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 554,
+            "startColumn": 10,
+            "endLine": 554,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 557,
+            "startColumn": 12,
+            "endLine": 557,
+            "endColumn": 17
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 557,
+            "startColumn": 4,
+            "endLine": 557,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 557,
+            "startColumn": 4,
+            "endLine": 557,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 557,
+            "startColumn": 4,
+            "endLine": 557,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::rollbackVersion",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 557,
+            "startColumn": 4,
+            "endLine": 557,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 123,
+            "startColumn": 8,
+            "endLine": 123,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 123,
+            "startColumn": 8,
+            "endLine": 123,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 128,
+            "startColumn": 39,
+            "endLine": 128,
+            "endColumn": 57
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 128,
+            "startColumn": 34,
+            "endLine": 128,
+            "endColumn": 57
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::compareVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 129,
+            "startColumn": 29,
+            "endLine": 129,
+            "endColumn": 44
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 129,
+            "startColumn": 24,
+            "endLine": 129,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 138,
+            "startColumn": 33,
+            "endLine": 138,
+            "endColumn": 49
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 138,
+            "startColumn": 28,
+            "endLine": 138,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 141,
+            "startColumn": 31,
+            "endLine": 141,
+            "endColumn": 43
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 141,
+            "startColumn": 26,
+            "endLine": 141,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callee": "src/updater/index.ts::UpdateManager::download",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 152,
+            "startColumn": 15,
+            "endLine": 152,
+            "endColumn": 23
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 152,
+            "startColumn": 10,
+            "endLine": 152,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::compareVersions",
+        "callee": "src/updater/index.ts::UpdateManager::compareVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 241,
+            "startColumn": 10,
+            "endLine": 241,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::download",
+        "callee": "src/updater/index.ts::UpdateManager::download",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 256,
+            "startColumn": 8,
+            "endLine": 256,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::download",
+        "callee": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 261,
+            "startColumn": 50,
+            "endLine": 261,
+            "endColumn": 68
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 261,
+            "startColumn": 45,
+            "endLine": 261,
+            "endColumn": 68
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::download",
+        "callee": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 273,
+            "startColumn": 32,
+            "endLine": 273,
+            "endColumn": 42
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 273,
+            "startColumn": 27,
+            "endLine": 273,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::download",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 284,
+            "startColumn": 21,
+            "endLine": 284,
+            "endColumn": 28
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 284,
+            "startColumn": 16,
+            "endLine": 284,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::download",
+        "callee": "src/plugins/index.ts::PluginManager::install",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 284,
+            "startColumn": 16,
+            "endLine": 284,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 392,
+            "startColumn": 10,
+            "endLine": 392,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 18,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 11,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 18,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 11,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 11,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 6,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 11,
+            "endLine": 419,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 6,
+            "endLine": 419,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 11,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 11,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 6,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 6,
+            "endLine": 419,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 11,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 11,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 6,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 6,
+            "endLine": 419,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 11,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 11,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 6,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 6,
+            "endLine": 419,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 403,
+            "startColumn": 11,
+            "endLine": 403,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 407,
+            "startColumn": 11,
+            "endLine": 407,
+            "endColumn": 20
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 411,
+            "startColumn": 6,
+            "endLine": 411,
+            "endColumn": 13
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 419,
+            "startColumn": 6,
+            "endLine": 419,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 468,
+            "startColumn": 10,
+            "endLine": 468,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 12,
+            "endLine": 470,
+            "endColumn": 15
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 470,
+            "startColumn": 6,
+            "endLine": 470,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 12,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 8,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 12,
+            "endLine": 473,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 8,
+            "endLine": 473,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 480,
+            "startColumn": 9,
+            "endLine": 480,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 8,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 8,
+            "endLine": 473,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 8,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 8,
+            "endLine": 473,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 8,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 8,
+            "endLine": 473,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 472,
+            "startColumn": 8,
+            "endLine": 472,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 473,
+            "startColumn": 8,
+            "endLine": 473,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 475,
+            "startColumn": 25,
+            "endLine": 475,
+            "endColumn": 30
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 475,
+            "startColumn": 20,
+            "endLine": 475,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 475,
+            "startColumn": 20,
+            "endLine": 475,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 174,
+            "startColumn": 16,
+            "endLine": 174,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 12,
+            "endLine": 178,
+            "endColumn": 15
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 12,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 8,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 12,
+            "endLine": 181,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 8,
+            "endLine": 181,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 207,
+            "startColumn": 9,
+            "endLine": 207,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 8,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 8,
+            "endLine": 181,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 8,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 8,
+            "endLine": 181,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 8,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 8,
+            "endLine": 181,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 180,
+            "startColumn": 8,
+            "endLine": 180,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 181,
+            "startColumn": 8,
+            "endLine": 181,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 183,
+            "startColumn": 37,
+            "endLine": 183,
+            "endColumn": 42
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 183,
+            "startColumn": 32,
+            "endLine": 183,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchLatestVersion",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 183,
+            "startColumn": 32,
+            "endLine": 183,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 212,
+            "startColumn": 16,
+            "endLine": 212,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 15
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 216,
+            "startColumn": 6,
+            "endLine": 216,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 12,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 8,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 12,
+            "endLine": 219,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 8,
+            "endLine": 219,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 236,
+            "startColumn": 9,
+            "endLine": 236,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 8,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 8,
+            "endLine": 219,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 8,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 8,
+            "endLine": 219,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 8,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 8,
+            "endLine": 219,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 218,
+            "startColumn": 8,
+            "endLine": 218,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 219,
+            "startColumn": 8,
+            "endLine": 219,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 221,
+            "startColumn": 37,
+            "endLine": 221,
+            "endColumn": 42
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 221,
+            "startColumn": 32,
+            "endLine": 221,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::fetchVersionInfo",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 221,
+            "startColumn": 32,
+            "endLine": 221,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callee": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 451,
+            "startColumn": 8,
+            "endLine": 451,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callee": "src/updater/index.ts::UpdateManager::fetchJson",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 454,
+            "startColumn": 34,
+            "endLine": 454,
+            "endColumn": 43
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 454,
+            "startColumn": 29,
+            "endLine": 454,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 456,
+            "startColumn": 30,
+            "endLine": 456,
+            "endColumn": 34
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 456,
+            "startColumn": 23,
+            "endLine": 456,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getChangelog",
+        "callee": "src/updater/index.ts::UpdateManager::compareVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 458,
+            "startColumn": 39,
+            "endLine": 458,
+            "endColumn": 54
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 458,
+            "startColumn": 34,
+            "endLine": 458,
+            "endColumn": 54
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getConfig",
+        "callee": "src/updater/index.ts::UpdateManager::getConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 118,
+            "startColumn": 2,
+            "endLine": 118,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getCurrentVersion",
+        "callee": "src/updater/index.ts::UpdateManager::getCurrentVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 113,
+            "startColumn": 2,
+            "endLine": 113,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::getStatus",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 108,
+            "startColumn": 2,
+            "endLine": 108,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::install",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 297,
+            "startColumn": 8,
+            "endLine": 297,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::install",
+        "callee": "src/updater/index.ts::UpdateManager::executeNpm",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 323,
+            "startColumn": 32,
+            "endLine": 323,
+            "endColumn": 42
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 323,
+            "startColumn": 27,
+            "endLine": 323,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 371,
+            "startColumn": 8,
+            "endLine": 371,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 12,
+            "endLine": 375,
+            "endColumn": 15
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 375,
+            "startColumn": 6,
+            "endLine": 375,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 12,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 8,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 12,
+            "endLine": 378,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 8,
+            "endLine": 378,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 387,
+            "startColumn": 9,
+            "endLine": 387,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 8,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 8,
+            "endLine": 378,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 8,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 8,
+            "endLine": 378,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 8,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 8,
+            "endLine": 378,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 377,
+            "startColumn": 8,
+            "endLine": 377,
+            "endColumn": 14
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 378,
+            "startColumn": 8,
+            "endLine": 378,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 380,
+            "startColumn": 37,
+            "endLine": 380,
+            "endColumn": 42
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 380,
+            "startColumn": 32,
+            "endLine": 380,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 380,
+            "startColumn": 32,
+            "endLine": 380,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 381,
+            "startColumn": 36,
+            "endLine": 381,
+            "endColumn": 40
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 381,
+            "startColumn": 29,
+            "endLine": 381,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callee": "src/updater/index.ts::UpdateManager::compareVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 382,
+            "startColumn": 49,
+            "endLine": 382,
+            "endColumn": 64
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 382,
+            "startColumn": 44,
+            "endLine": 382,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::readCurrentVersion",
+        "callee": "src/updater/index.ts::UpdateManager::readCurrentVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 97,
+            "startColumn": 10,
+            "endLine": 97,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::readCurrentVersion",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 100,
+            "startColumn": 31,
+            "endLine": 100,
+            "endColumn": 36
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 100,
+            "startColumn": 26,
+            "endLine": 100,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::readCurrentVersion",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 100,
+            "startColumn": 26,
+            "endLine": 100,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::rollback",
+        "callee": "src/updater/index.ts::UpdateManager::rollback",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 343,
+            "startColumn": 8,
+            "endLine": 343,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::rollback",
+        "callee": "src/updater/index.ts::UpdateManager::listAvailableVersions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 354,
+            "startColumn": 43,
+            "endLine": 354,
+            "endColumn": 64
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 354,
+            "startColumn": 38,
+            "endLine": 354,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::rollback",
+        "callee": "src/updater/index.ts::UpdateManager::install",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 360,
+            "startColumn": 17,
+            "endLine": 360,
+            "endColumn": 24
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 360,
+            "startColumn": 12,
+            "endLine": 360,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::rollback",
+        "callee": "src/plugins/index.ts::PluginManager::install",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 360,
+            "startColumn": 12,
+            "endLine": 360,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::startAutoCheck",
+        "callee": "src/updater/index.ts::UpdateManager::startAutoCheck",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 429,
+            "startColumn": 2,
+            "endLine": 429,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::startAutoCheck",
+        "callee": "src/updater/index.ts::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 435,
+            "startColumn": 11,
+            "endLine": 435,
+            "endColumn": 26
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 439,
+            "startColumn": 9,
+            "endLine": 439,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::startAutoCheck",
+        "callee": "src/updater/index.ts::UpdateManager::checkForUpdates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 435,
+            "startColumn": 11,
+            "endLine": 435,
+            "endColumn": 26
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 435,
+            "startColumn": 6,
+            "endLine": 435,
+            "endColumn": 26
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 439,
+            "startColumn": 9,
+            "endLine": 439,
+            "endColumn": 24
+          },
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 439,
+            "startColumn": 4,
+            "endLine": 439,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/updater/index.ts::UpdateManager::stopAutoCheck",
+        "callee": "src/updater/index.ts::UpdateManager::stopAutoCheck",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/updater/index.ts",
+            "startLine": 443,
+            "startColumn": 2,
+            "endLine": 443,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/updater/index.ts::status",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 118,
+            "startColumn": 10,
+            "endLine": 118,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 133,
+            "startColumn": 12,
+            "endLine": 133,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 157,
+            "startColumn": 10,
+            "endLine": 157,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 177,
+            "startColumn": 12,
+            "endLine": 177,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 185,
+            "startColumn": 10,
+            "endLine": 185,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 200,
+            "startColumn": 12,
+            "endLine": 200,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 223,
+            "startColumn": 10,
+            "endLine": 223,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 240,
+            "startColumn": 12,
+            "endLine": 240,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 258,
+            "startColumn": 10,
+            "endLine": 258,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 280,
+            "startColumn": 12,
+            "endLine": 280,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 287,
+            "startColumn": 10,
+            "endLine": 287,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 302,
+            "startColumn": 12,
+            "endLine": 302,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 317,
+            "startColumn": 10,
+            "endLine": 317,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 330,
+            "startColumn": 12,
+            "endLine": 330,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 337,
+            "startColumn": 12,
+            "endLine": 337,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 351,
+            "startColumn": 10,
+            "endLine": 351,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 364,
+            "startColumn": 12,
+            "endLine": 364,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 390,
+            "startColumn": 10,
+            "endLine": 390,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 406,
+            "startColumn": 10,
+            "endLine": 406,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 420,
+            "startColumn": 10,
+            "endLine": 420,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 434,
+            "startColumn": 10,
+            "endLine": 434,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 448,
+            "startColumn": 10,
+            "endLine": 448,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 471,
+            "startColumn": 10,
+            "endLine": 471,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 485,
+            "startColumn": 12,
+            "endLine": 485,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 503,
+            "startColumn": 12,
+            "endLine": 503,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 510,
+            "startColumn": 10,
+            "endLine": 510,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 533,
+            "startColumn": 10,
+            "endLine": 533,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 546,
+            "startColumn": 12,
+            "endLine": 546,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 562,
+            "startColumn": 12,
+            "endLine": 562,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 569,
+            "startColumn": 10,
+            "endLine": 569,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 591,
+            "startColumn": 12,
+            "endLine": 591,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 599,
+            "startColumn": 10,
+            "endLine": 599,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 623,
+            "startColumn": 12,
+            "endLine": 623,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 631,
+            "startColumn": 10,
+            "endLine": 631,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 665,
+            "startColumn": 10,
+            "endLine": 665,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 699,
+            "startColumn": 10,
+            "endLine": 699,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 746,
+            "startColumn": 10,
+            "endLine": 746,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 759,
+            "startColumn": 12,
+            "endLine": 759,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 781,
+            "startColumn": 10,
+            "endLine": 781,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 808,
+            "startColumn": 10,
+            "endLine": 808,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 828,
+            "startColumn": 12,
+            "endLine": 828,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 836,
+            "startColumn": 10,
+            "endLine": 836,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 863,
+            "startColumn": 10,
+            "endLine": 863,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 882,
+            "startColumn": 10,
+            "endLine": 882,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 902,
+            "startColumn": 10,
+            "endLine": 902,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 917,
+            "startColumn": 12,
+            "endLine": 917,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 929,
+            "startColumn": 10,
+            "endLine": 929,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 950,
+            "startColumn": 12,
+            "endLine": 950,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 958,
+            "startColumn": 10,
+            "endLine": 958,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 980,
+            "startColumn": 12,
+            "endLine": 980,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 988,
+            "startColumn": 10,
+            "endLine": 988,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1010,
+            "startColumn": 12,
+            "endLine": 1010,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1018,
+            "startColumn": 10,
+            "endLine": 1018,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1035,
+            "startColumn": 10,
+            "endLine": 1035,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1048,
+            "startColumn": 12,
+            "endLine": 1048,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1065,
+            "startColumn": 12,
+            "endLine": 1065,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1072,
+            "startColumn": 10,
+            "endLine": 1072,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1093,
+            "startColumn": 10,
+            "endLine": 1093,
+            "endColumn": 16
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1107,
+            "startColumn": 12,
+            "endLine": 1107,
+            "endColumn": 18
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 1122,
+            "startColumn": 10,
+            "endLine": 1122,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 402,
+            "startColumn": 27,
+            "endLine": 402,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/websocket.ts::handleApiStatus",
+        "callee": "src/updater/index.ts::UpdateManager::getStatus",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/websocket.ts",
+            "startLine": 1201,
+            "startColumn": 25,
+            "endLine": 1201,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "tests/mcp/integration.test.ts::describe('Transport Types') callback",
+        "callee": "src/updater/index.ts::status",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/mcp/integration.test.ts",
+            "startLine": 336,
+            "startColumn": 14,
+            "endLine": 336,
+            "endColumn": 20
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

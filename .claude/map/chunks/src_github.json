@@ -1,0 +1,1232 @@
+{
+  "path": "src/github",
+  "modules": {
+    "src/github/index.ts": {
+      "id": "src/github/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\github\\index.ts",
+      "language": "typescript",
+      "lines": 292,
+      "size": 7382,
+      "exports": [
+        "src/github/index.ts::addPRComment",
+        "src/github/index.ts::checkGitHubCLI",
+        "src/github/index.ts::createPR",
+        "src/github/index.ts::getPRComments",
+        "src/github/index.ts::getPRInfo",
+        "src/github/index.ts::setupGitHubWorkflow"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "child_process",
+          "symbols": [
+            "spawn"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "提供 GitHub 集成功能，包括检测和使用 GitHub CLI 进行 PR 管理（查看、评论、创建），以及自动设置 GitHub Actions 工作流用于 Claude 代码审查。",
+        "responsibility": "封装 GitHub CLI 调用，实现 Pull Request 管理和 CI/CD 工作流配置",
+        "businessDomain": "版本控制集成",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "GitHub CLI",
+          "Pull Request",
+          "GitHub Actions",
+          "代码审查",
+          "CI/CD"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:15.581Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/github/index.ts::addPRComment": {
+      "id": "src/github/index.ts::addPRComment",
+      "name": "addPRComment",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 230,
+        "startColumn": 0,
+        "endLine": 244,
+        "endColumn": 1
+      },
+      "signature": "addPRComment()"
+    },
+    "src/github/index.ts::checkGitHubCLI": {
+      "id": "src/github/index.ts::checkGitHubCLI",
+      "name": "checkGitHubCLI",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 63,
+        "startColumn": 0,
+        "endLine": 87,
+        "endColumn": 1
+      },
+      "signature": "checkGitHubCLI()"
+    },
+    "src/github/index.ts::createPR": {
+      "id": "src/github/index.ts::createPR",
+      "name": "createPR",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 249,
+        "startColumn": 0,
+        "endLine": 291,
+        "endColumn": 1
+      },
+      "signature": "createPR()"
+    },
+    "src/github/index.ts::getPRComments": {
+      "id": "src/github/index.ts::getPRComments",
+      "name": "getPRComments",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 186,
+        "startColumn": 0,
+        "endLine": 225,
+        "endColumn": 1
+      },
+      "signature": "getPRComments()"
+    },
+    "src/github/index.ts::getPRInfo": {
+      "id": "src/github/index.ts::getPRInfo",
+      "name": "getPRInfo",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 136,
+        "startColumn": 0,
+        "endLine": 181,
+        "endColumn": 1
+      },
+      "signature": "getPRInfo()"
+    },
+    "src/github/index.ts::setupGitHubWorkflow": {
+      "id": "src/github/index.ts::setupGitHubWorkflow",
+      "name": "setupGitHubWorkflow",
+      "kind": "function",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 92,
+        "startColumn": 0,
+        "endLine": 131,
+        "endColumn": 1
+      },
+      "signature": "setupGitHubWorkflow()"
+    },
+    "src/github/index.ts::CLAUDE_CODE_WORKFLOW": {
+      "id": "src/github/index.ts::CLAUDE_CODE_WORKFLOW",
+      "name": "CLAUDE_CODE_WORKFLOW",
+      "kind": "constant",
+      "moduleId": "src/github/index.ts",
+      "location": {
+        "file": "src/github/index.ts",
+        "startLine": 13,
+        "startColumn": 6,
+        "endLine": 58,
+        "endColumn": 1
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/cli.ts",
+        "target": "src/github/index.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/cli.ts",
+        "target": "src/github/index.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/github/index.ts::checkGitHubCLI",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1163,
+            "startColumn": 27,
+            "endLine": 1163,
+            "endColumn": 41
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 1202,
+            "startColumn": 27,
+            "endLine": 1202,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/github/index.ts::setupGitHubWorkflow",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1174,
+            "startColumn": 25,
+            "endLine": 1174,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/github/index.ts::getPRInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1208,
+            "startColumn": 25,
+            "endLine": 1208,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "src/github/index.ts::addPRComment",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 230,
+            "startColumn": 22,
+            "endLine": 230,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 7,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 4,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 7,
+            "endLine": 240,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 4,
+            "endLine": 240,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 4,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 4,
+            "endLine": 240,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 4,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 4,
+            "endLine": 240,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 4,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 4,
+            "endLine": 240,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::addPRComment",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 236,
+            "startColumn": 4,
+            "endLine": 236,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 240,
+            "startColumn": 4,
+            "endLine": 240,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "src/github/index.ts::checkGitHubCLI",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 63,
+            "startColumn": 22,
+            "endLine": 63,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 14,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 7,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 14,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 7,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 7,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 4,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 7,
+            "endLine": 77,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 4,
+            "endLine": 77,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 7,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 7,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 4,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 4,
+            "endLine": 77,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 7,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 7,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 4,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 4,
+            "endLine": 77,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 7,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 7,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 4,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 4,
+            "endLine": 77,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::checkGitHubCLI",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 70,
+            "startColumn": 7,
+            "endLine": 70,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 71,
+            "startColumn": 7,
+            "endLine": 71,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 73,
+            "startColumn": 4,
+            "endLine": 73,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 77,
+            "startColumn": 4,
+            "endLine": 77,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "src/github/index.ts::createPR",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 249,
+            "startColumn": 22,
+            "endLine": 249,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 14,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 7,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 14,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 7,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 7,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 4,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 7,
+            "endLine": 282,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 4,
+            "endLine": 282,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 7,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 7,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 4,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 4,
+            "endLine": 282,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 7,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 7,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 4,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 4,
+            "endLine": 282,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 7,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 7,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 4,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 4,
+            "endLine": 282,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::createPR",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 275,
+            "startColumn": 7,
+            "endLine": 275,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 276,
+            "startColumn": 7,
+            "endLine": 276,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 278,
+            "startColumn": 4,
+            "endLine": 278,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 282,
+            "startColumn": 4,
+            "endLine": 282,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/github/index.ts::getPRComments",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 186,
+            "startColumn": 22,
+            "endLine": 186,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 14,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 7,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 7,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 4,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 7,
+            "endLine": 206,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 4,
+            "endLine": 206,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 7,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 4,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 4,
+            "endLine": 206,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 7,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 4,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 4,
+            "endLine": 206,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 7,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 4,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 4,
+            "endLine": 206,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 200,
+            "startColumn": 7,
+            "endLine": 200,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 202,
+            "startColumn": 4,
+            "endLine": 202,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 206,
+            "startColumn": 4,
+            "endLine": 206,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 209,
+            "startColumn": 28,
+            "endLine": 209,
+            "endColumn": 33
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 209,
+            "startColumn": 23,
+            "endLine": 209,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRComments",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 209,
+            "startColumn": 23,
+            "endLine": 209,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/github/index.ts::getPRInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 136,
+            "startColumn": 22,
+            "endLine": 136,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 14,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 7,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 7,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 4,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 7,
+            "endLine": 160,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 4,
+            "endLine": 160,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 7,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 4,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 4,
+            "endLine": 160,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 7,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 4,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 4,
+            "endLine": 160,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 7,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 4,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 4,
+            "endLine": 160,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 154,
+            "startColumn": 7,
+            "endLine": 154,
+            "endColumn": 16
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 156,
+            "startColumn": 4,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 160,
+            "startColumn": 4,
+            "endLine": 160,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 163,
+            "startColumn": 28,
+            "endLine": 163,
+            "endColumn": 33
+          },
+          {
+            "file": "src/github/index.ts",
+            "startLine": 163,
+            "startColumn": 23,
+            "endLine": 163,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::getPRInfo",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 163,
+            "startColumn": 23,
+            "endLine": 163,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/github/index.ts::setupGitHubWorkflow",
+        "callee": "src/github/index.ts::setupGitHubWorkflow",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/github/index.ts",
+            "startLine": 92,
+            "startColumn": 22,
+            "endLine": 92,
+            "endColumn": 41
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

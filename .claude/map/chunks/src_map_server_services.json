@@ -1,0 +1,1822 @@
+{
+  "path": "src/map/server/services",
+  "modules": {
+    "src/map/server/services/architecture.ts": {
+      "id": "src/map/server/services/architecture.ts",
+      "name": "architecture.ts",
+      "path": "F:\\claude-code-open\\src\\map\\server\\services\\architecture.ts",
+      "language": "typescript",
+      "lines": 350,
+      "size": 10020,
+      "exports": [
+        "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "src/map/server/services/architecture.ts::getDir",
+        "src/map/server/services/architecture.ts::getModuleDetail",
+        "src/map/server/services/architecture.ts::getSymbolRefs"
+      ],
+      "imports": [
+        {
+          "source": "../../types-enhanced.js",
+          "symbols": [
+            "EnhancedCodeBlueprint",
+            "EnhancedModule"
+          ],
+          "isExternal": false,
+          "isTypeOnly": true
+        }
+      ],
+      "semantic": {
+        "description": "负责分析代码蓝图并构建项目的逻辑架构图，将文件按目录结构和语义聚合成不同类型的逻辑块（入口、核心、功能、UI等），建立模块间的依赖关系，并提供模块详情和符号引用的查询功能。",
+        "responsibility": "构建和管理代码的逻辑架构视图，提供模块详情和符号引用分析",
+        "businessDomain": "代码地图与架构分析",
+        "architectureLayer": "business",
+        "tags": [
+          "架构分析",
+          "模块聚合",
+          "依赖关系",
+          "符号引用",
+          "代码地图"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:46.962Z"
+      }
+    },
+    "src/map/server/services/dependency.ts": {
+      "id": "src/map/server/services/dependency.ts",
+      "name": "dependency.ts",
+      "path": "F:\\claude-code-open\\src\\map\\server\\services\\dependency.ts",
+      "language": "typescript",
+      "lines": 131,
+      "size": 3216,
+      "exports": [
+        "src/map/server/services/dependency.ts::buildDependencyTree",
+        "src/map/server/services/dependency.ts::detectEntryPoints"
+      ],
+      "imports": [
+        {
+          "source": "../../types-enhanced.js",
+          "symbols": [
+            "EnhancedCodeBlueprint",
+            "ModuleDependency"
+          ],
+          "isExternal": false,
+          "isTypeOnly": true
+        },
+        {
+          "source": "../types.js",
+          "symbols": [
+            "DependencyTreeNode"
+          ],
+          "isExternal": false,
+          "isTypeOnly": true
+        }
+      ],
+      "semantic": {
+        "description": "负责代码项目的依赖关系分析，通过启发式算法检测项目入口点文件，并从入口点递归构建完整的模块依赖树结构。",
+        "responsibility": "检测项目入口点并构建模块依赖关系树",
+        "businessDomain": "代码分析",
+        "architectureLayer": "business",
+        "tags": [
+          "依赖分析",
+          "入口点检测",
+          "依赖树构建",
+          "模块关系",
+          "循环依赖检测"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:51.741Z"
+      }
+    },
+    "src/map/server/services/index.ts": {
+      "id": "src/map/server/services/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\map\\server\\services\\index.ts",
+      "language": "typescript",
+      "lines": 8,
+      "size": 127,
+      "exports": [
+        "src/map/server/services/index.ts::* from ./architecture.js",
+        "src/map/server/services/index.ts::* from ./dependency.js"
+      ],
+      "imports": [],
+      "semantic": {
+        "description": "服务层统一导出模块，聚合并暴露所有可视化相关的服务模块（架构服务和依赖分析服务）。",
+        "responsibility": "作为服务层的统一入口，导出架构服务和依赖分析服务",
+        "businessDomain": "代码可视化",
+        "architectureLayer": "business",
+        "tags": [
+          "服务导出",
+          "模块聚合",
+          "可视化服务",
+          "索引文件"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:51.981Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/map/server/services/architecture.ts::buildArchitectureMap": {
+      "id": "src/map/server/services/architecture.ts::buildArchitectureMap",
+      "name": "buildArchitectureMap",
+      "kind": "function",
+      "moduleId": "src/map/server/services/architecture.ts",
+      "location": {
+        "file": "src/map/server/services/architecture.ts",
+        "startLine": 19,
+        "startColumn": 0,
+        "endLine": 171,
+        "endColumn": 1
+      },
+      "signature": "buildArchitectureMap()"
+    },
+    "src/map/server/services/architecture.ts::getDir": {
+      "id": "src/map/server/services/architecture.ts::getDir",
+      "name": "getDir",
+      "kind": "function",
+      "moduleId": "src/map/server/services/architecture.ts",
+      "location": {
+        "file": "src/map/server/services/architecture.ts",
+        "startLine": 173,
+        "startColumn": 0,
+        "endLine": 178,
+        "endColumn": 1
+      },
+      "signature": "getDir()"
+    },
+    "src/map/server/services/architecture.ts::getModuleDetail": {
+      "id": "src/map/server/services/architecture.ts::getModuleDetail",
+      "name": "getModuleDetail",
+      "kind": "function",
+      "moduleId": "src/map/server/services/architecture.ts",
+      "location": {
+        "file": "src/map/server/services/architecture.ts",
+        "startLine": 183,
+        "startColumn": 0,
+        "endLine": 282,
+        "endColumn": 1
+      },
+      "signature": "getModuleDetail()"
+    },
+    "src/map/server/services/architecture.ts::getSymbolRefs": {
+      "id": "src/map/server/services/architecture.ts::getSymbolRefs",
+      "name": "getSymbolRefs",
+      "kind": "function",
+      "moduleId": "src/map/server/services/architecture.ts",
+      "location": {
+        "file": "src/map/server/services/architecture.ts",
+        "startLine": 287,
+        "startColumn": 0,
+        "endLine": 349,
+        "endColumn": 1
+      },
+      "signature": "getSymbolRefs()"
+    },
+    "src/map/server/services/dependency.ts::buildDependencyTree": {
+      "id": "src/map/server/services/dependency.ts::buildDependencyTree",
+      "name": "buildDependencyTree",
+      "kind": "function",
+      "moduleId": "src/map/server/services/dependency.ts",
+      "location": {
+        "file": "src/map/server/services/dependency.ts",
+        "startLine": 70,
+        "startColumn": 0,
+        "endLine": 130,
+        "endColumn": 1
+      },
+      "signature": "buildDependencyTree()"
+    },
+    "src/map/server/services/dependency.ts::detectEntryPoints": {
+      "id": "src/map/server/services/dependency.ts::detectEntryPoints",
+      "name": "detectEntryPoints",
+      "kind": "function",
+      "moduleId": "src/map/server/services/dependency.ts",
+      "location": {
+        "file": "src/map/server/services/dependency.ts",
+        "startLine": 12,
+        "startColumn": 0,
+        "endLine": 65,
+        "endColumn": 1
+      },
+      "signature": "detectEntryPoints()"
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/map/server/services/architecture.ts",
+        "target": "src/map/types-enhanced.ts",
+        "type": "import",
+        "symbols": [
+          "EnhancedCodeBlueprint",
+          "EnhancedModule"
+        ],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/map/server/services/dependency.ts",
+        "target": "src/map/types-enhanced.ts",
+        "type": "import",
+        "symbols": [
+          "EnhancedCodeBlueprint",
+          "ModuleDependency"
+        ],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/map/server/services/dependency.ts",
+        "target": "src/map/server/types.ts",
+        "type": "import",
+        "symbols": [
+          "DependencyTreeNode"
+        ],
+        "isTypeOnly": true
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 19,
+            "startColumn": 16,
+            "endLine": 19,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 28,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 35,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 35,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 35,
+            "endLine": 137,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 35,
+            "startColumn": 18,
+            "endLine": 35,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 111,
+            "startColumn": 26,
+            "endLine": 111,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 112,
+            "startColumn": 26,
+            "endLine": 112,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 137,
+            "startColumn": 26,
+            "endLine": 137,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 14,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 4,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 13,
+            "endLine": 102,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 4,
+            "endLine": 102,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/config/config-command.ts::ConfigCommand::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 4,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 4,
+            "endLine": 102,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/config/index.ts::ConfigManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 4,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 4,
+            "endLine": 102,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/memory/index.ts::MemoryManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 4,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 4,
+            "endLine": 102,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/prompt/cache.ts::PromptCache::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 37,
+            "startColumn": 4,
+            "endLine": 37,
+            "endColumn": 17
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 102,
+            "startColumn": 4,
+            "endLine": 102,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 71,
+            "startColumn": 18,
+            "endLine": 71,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 79,
+            "startColumn": 7,
+            "endLine": 79,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/map/server/services/architecture.ts::getDir",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 107,
+            "startColumn": 22,
+            "endLine": 107,
+            "endColumn": 28
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 108,
+            "startColumn": 22,
+            "endLine": 108,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/mcp/websocket-connection.ts::CircularBuffer::add",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 134,
+            "startColumn": 20,
+            "endLine": 134,
+            "endColumn": 23
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 134,
+            "startColumn": 6,
+            "endLine": 134,
+            "endColumn": 23
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 140,
+            "startColumn": 22,
+            "endLine": 140,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 140,
+            "startColumn": 8,
+            "endLine": 140,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 143,
+            "startColumn": 22,
+            "endLine": 143,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 143,
+            "startColumn": 8,
+            "endLine": 143,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::add",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 134,
+            "startColumn": 6,
+            "endLine": 134,
+            "endColumn": 23
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 140,
+            "startColumn": 8,
+            "endLine": 140,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 143,
+            "startColumn": 8,
+            "endLine": 143,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::getDir",
+        "callee": "src/map/server/services/architecture.ts::getDir",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 173,
+            "startColumn": 16,
+            "endLine": 173,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::getModuleDetail",
+        "callee": "src/map/server/services/architecture.ts::getModuleDetail",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 183,
+            "startColumn": 16,
+            "endLine": 183,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::getModuleDetail",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 231,
+            "startColumn": 9,
+            "endLine": 231,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::getSymbolRefs",
+        "callee": "src/map/server/services/architecture.ts::getSymbolRefs",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 287,
+            "startColumn": 16,
+            "endLine": 287,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 70,
+            "startColumn": 16,
+            "endLine": 70,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 30,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 30,
+            "endLine": 112,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 81,
+            "startColumn": 17,
+            "endLine": 81,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 112,
+            "startColumn": 17,
+            "endLine": 112,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 17,
+            "endLine": 83,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 4,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/config/config-command.ts::ConfigCommand::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 4,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/config/index.ts::ConfigManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 4,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/memory/index.ts::MemoryManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 4,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/prompt/cache.ts::PromptCache::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 83,
+            "startColumn": 4,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 92,
+            "startColumn": 31,
+            "endLine": 92,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 92,
+            "startColumn": 23,
+            "endLine": 92,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 92,
+            "startColumn": 23,
+            "endLine": 92,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 92,
+            "startColumn": 23,
+            "endLine": 92,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/mcp/websocket-connection.ts::CircularBuffer::add",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 110,
+            "startColumn": 12,
+            "endLine": 110,
+            "endColumn": 15
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 110,
+            "startColumn": 4,
+            "endLine": 110,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::buildDependencyTree",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::add",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 110,
+            "startColumn": 4,
+            "endLine": 110,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 12,
+            "startColumn": 16,
+            "endLine": 12,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 31,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 37,
+            "endLine": 48,
+            "endColumn": 40
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 27,
+            "startColumn": 18,
+            "endLine": 27,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 48,
+            "startColumn": 24,
+            "endLine": 48,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 17,
+            "endLine": 28,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 4,
+            "endLine": 28,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/config/config-command.ts::ConfigCommand::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 4,
+            "endLine": 28,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/config/index.ts::ConfigManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 4,
+            "endLine": 28,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/memory/index.ts::MemoryManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 4,
+            "endLine": 28,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "src/prompt/cache.ts::PromptCache::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 28,
+            "startColumn": 4,
+            "endLine": 28,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 36,
+            "startColumn": 27,
+            "endLine": 36,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 43,
+            "startColumn": 35,
+            "endLine": 43,
+            "endColumn": 39
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

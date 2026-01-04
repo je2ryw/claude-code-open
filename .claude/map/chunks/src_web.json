@@ -1,0 +1,134 @@
+{
+  "path": "src/web",
+  "modules": {
+    "src/web/index.ts": {
+      "id": "src/web/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\web\\index.ts",
+      "language": "typescript",
+      "lines": 8,
+      "size": 234,
+      "exports": [
+        "src/web/index.ts::startWebServer",
+        "src/web/index.ts::type WebServerOptions",
+        "src/web/index.ts::ConversationManager",
+        "src/web/index.ts::type StreamCallbacks",
+        "src/web/index.ts::* from ./shared/types.js"
+      ],
+      "imports": [],
+      "semantic": {
+        "description": "WebUI 模块的统一导出入口，负责聚合并导出 Web 服务器、会话管理和共享类型定义，为外部提供完整的 Web 界面功能接口。",
+        "responsibility": "作为 WebUI 模块的门面，统一导出 Web 服务器启动、会话管理和类型定义",
+        "businessDomain": "Web 界面",
+        "architectureLayer": "presentation",
+        "tags": [
+          "模块导出",
+          "Web服务器",
+          "会话管理",
+          "类型定义",
+          "门面模式"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:39.276Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/web/index.ts::startWebServer": {
+      "id": "src/web/index.ts::startWebServer",
+      "name": "startWebServer",
+      "kind": "variable",
+      "moduleId": "src/web/index.ts",
+      "location": {
+        "file": "src/web/index.ts",
+        "startLine": 6,
+        "startColumn": 0,
+        "endLine": 6,
+        "endColumn": 100
+      }
+    },
+    "src/web/index.ts::type WebServerOptions": {
+      "id": "src/web/index.ts::type WebServerOptions",
+      "name": "type WebServerOptions",
+      "kind": "variable",
+      "moduleId": "src/web/index.ts",
+      "location": {
+        "file": "src/web/index.ts",
+        "startLine": 6,
+        "startColumn": 0,
+        "endLine": 6,
+        "endColumn": 100
+      }
+    },
+    "src/web/index.ts::ConversationManager": {
+      "id": "src/web/index.ts::ConversationManager",
+      "name": "ConversationManager",
+      "kind": "type",
+      "moduleId": "src/web/index.ts",
+      "location": {
+        "file": "src/web/index.ts",
+        "startLine": 7,
+        "startColumn": 0,
+        "endLine": 7,
+        "endColumn": 100
+      }
+    },
+    "src/web/index.ts::type StreamCallbacks": {
+      "id": "src/web/index.ts::type StreamCallbacks",
+      "name": "type StreamCallbacks",
+      "kind": "variable",
+      "moduleId": "src/web/index.ts",
+      "location": {
+        "file": "src/web/index.ts",
+        "startLine": 7,
+        "startColumn": 0,
+        "endLine": 7,
+        "endColumn": 100
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/web-cli.ts",
+        "target": "src/web/index.ts",
+        "type": "import",
+        "symbols": [
+          "startWebServer"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/web-cli.ts::action() callback",
+        "callee": "src/web/index.ts::startWebServer",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web-cli.ts",
+            "startLine": 59,
+            "startColumn": 12,
+            "endLine": 59,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::startWebServer",
+        "callee": "src/web/index.ts::ConversationManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 41,
+            "startColumn": 34,
+            "endLine": 41,
+            "endColumn": 53
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

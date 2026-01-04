@@ -66,9 +66,10 @@ export function setupApiRoutes(app: Express, ontologyPath: string): void {
   });
 
   // 获取 chunk 数据（新增端点）
-  app.get('/api/chunk/:path(*)', (req: Request, res: Response) => {
+  // Express 5.x 语法：使用 *chunkPath 捕获多级路径
+  app.get('/api/chunk/*chunkPath', (req: Request, res: Response) => {
     try {
-      const chunkPath = req.params.path;
+      const chunkPath = req.params.chunkPath;
 
       // 安全性检查：防止路径穿越攻击
       if (chunkPath.includes('..') || chunkPath.includes('~')) {

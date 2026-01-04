@@ -1,13 +1,13 @@
-    // 状态
-    let ontology = null;
+    // 状态 (分块模式 chunked-v1)
+    let ontology = null;  // 兼容旧代码，实际使用 index
     let index = null;  // 轻量级索引（chunked-v1 格式）
     let chunkCache = new Map();  // chunk 缓存
+    window.chunkCache = chunkCache;  // 暴露给 chunked-loader.js
     let archData = null;
     let flowchartData = null;
-    let scenarios = [];
     let simulation = null;
     let svg, g, zoom;
-    let currentView = 'story'; // 默认使用业务故事视图
+    let currentView = 'architecture'; // 默认使用架构视图（分块模式主视图）
     let entryPoints = [];
 
     // 下钻导航状态
@@ -79,39 +79,23 @@
       }
     }
 
-    // 加载数据
+    // 加载数据 (仅支持 chunked-v1 分块模式)
     async function loadOntology() {
       try {
         const response = await fetch('/api/ontology');
         const data = await response.json();
 
-        // 检测格式并路由到正确的加载函数
-        if (data.format === 'chunked-v1') {
-          // 新的分块模式
-          index = data;
-          if (typeof window.loadIndexMode === 'function') {
-            await window.loadIndexMode();
-          } else {
-            console.warn('chunked-loader.js 未加载，回退到旧模式');
-            ontology = data;
-            renderStats();
-            renderModuleList();
-          }
-        } else {
-          // 旧的单文件模式
-          ontology = data;
-          renderStats();
-          renderModuleList();
+        // 只支持 chunked-v1 分块模式
+        if (data.format !== 'chunked-v1') {
+          throw new Error('不支持的格式: ' + (data.format || '旧版单文件模式') + '。请使用 chunked-v1 分块模式。');
+        }
 
-          // 加载入口点和场景
-          if (ontology.isEnhanced) {
-            loadEntryPoints();
-            loadScenarios();
-            // 默认显示业务故事视图
-            renderStoryView();
-          } else {
-            renderGraph();
-          }
+        index = data;
+        window.index = data;  // 暴露给 chunked-loader.js
+        if (typeof window.loadIndexMode === 'function') {
+          await window.loadIndexMode();
+        } else {
+          throw new Error('chunked-loader.js 未加载，无法使用分块模式');
         }
 
         document.querySelector('.loading').style.display = 'none';
@@ -136,199 +120,10 @@
       }
     }
 
-    // 加载场景列表
-    async function loadScenarios() {
-      try {
-        const response = await fetch('/api/scenarios');
-        const data = await response.json();
-        scenarios = data.scenarios || [];
-
-        const select = document.getElementById('scenario-select');
-        select.innerHTML = scenarios.map(s =>
-          '<option value="' + s.id + '" data-entry="' + (s.entryPoints[0] || '') + '">' + s.name + '</option>'
-        ).join('');
-
-        // 场景切换时重新渲染流程图
-        select.addEventListener('change', () => {
-          renderFlowchart();
-        });
-      } catch (error) {
-        console.error('Failed to load scenarios:', error);
-      }
-    }
-
-    // 渲染新手导览
-    async function renderBeginnerGuide() {
-      hideAllIndicators();
-      hideAllViews();
-      document.getElementById('beginner-view').classList.add('active');
-
-      try {
-        const response = await fetch('/api/beginner-guide');
-        const guide = await response.json();
-
-        // 渲染项目介绍
-        const introHtml = `
-          <h1>${guide.projectName}</h1>
-          <div class="tagline">${guide.tagline}</div>
-          <div class="summary">${guide.summary}</div>
-        `;
-        document.getElementById('beginner-intro').innerHTML = introHtml;
-
-        // 渲染卡片
-        const cardsHtml = guide.cards.map(card => `
-          <div class="module-card" data-id="${card.id}" onclick="toggleCard(this)">
-            <span class="card-badge ${card.badge}">${getBadgeLabel(card.badge)}</span>
-            <div class="card-icon">${card.icon}</div>
-            <div class="card-title">${card.title}</div>
-            <div class="card-subtitle">${card.subtitle}</div>
-            <div class="card-explain">${card.explain}</div>
-            <div class="card-analogy">💡 ${card.analogy}</div>
-            <div class="card-files">
-              ${card.files.map(f => '<span>' + f + '</span>').join('')}
-            </div>
-            <div class="expand-details">
-              <h4>📌 关键函数</h4>
-              ${card.keyFunctions.length > 0 ? card.keyFunctions.map(fn => `
-                <div class="key-function">
-                  <div class="func-name">${fn.name}()</div>
-                  <div class="func-desc">${truncateText(fn.desc, 80)}</div>
-                </div>
-              `).join('') : '<div style="color:#888;font-size:0.85rem">点击其他视图查看详细函数</div>'}
-            </div>
-          </div>
-        `).join('');
-
-        document.getElementById('module-cards').innerHTML = cardsHtml;
-      } catch (error) {
-        console.error('Failed to load beginner guide:', error);
-        document.getElementById('beginner-intro').innerHTML = '<h1>加载失败</h1><p>' + error.message + '</p>';
-      }
-    }
-
-    function getBadgeLabel(badge) {
-      const labels = {
-        core: '核心',
-        tool: '工具',
-        util: '辅助',
-        ui: '界面'
-      };
-      return labels[badge] || badge;
-    }
-
-    function truncateText(text, maxLen) {
-      if (!text) return '';
-      return text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
-    }
-
-    function toggleCard(card) {
-      card.classList.toggle('expanded');
-    }
 
     function hideAllViews() {
-      document.getElementById('beginner-view').classList.remove('active');
-      document.getElementById('story-view').classList.remove('active');
-      document.getElementById('reading-view').classList.remove('active');
       document.getElementById('sidebar').style.display = 'none';
       document.getElementById('graph-container').style.display = 'none';
-    }
-
-    // ========================================
-    // 业务故事视图
-    // ========================================
-    let storyData = null;
-    let currentStory = null;
-
-    async function renderStoryView() {
-      hideAllIndicators();
-      hideAllViews();
-      document.getElementById('story-view').classList.add('active');
-
-      try {
-        const response = await fetch('/api/story-guide');
-        storyData = await response.json();
-
-        // 渲染头部
-        const headerHtml = `
-          <h1>📖 ${storyData.projectName}</h1>
-          <p>${storyData.projectDescription}</p>
-        `;
-        document.getElementById('story-header').innerHTML = headerHtml;
-
-        // 渲染故事卡片列表
-        const listHtml = storyData.stories.map((story, index) => `
-          <div class="story-card ${index === 0 ? 'active' : ''}" data-id="${story.id}" onclick="selectStory('${story.id}')">
-            <div class="story-icon">${story.icon}</div>
-            <h3>${story.title}</h3>
-            <p>${story.description}</p>
-          </div>
-        `).join('');
-        document.getElementById('story-list').innerHTML = listHtml;
-
-        // 默认显示第一个故事
-        if (storyData.stories.length > 0) {
-          showStoryDetail(storyData.stories[0]);
-        }
-      } catch (error) {
-        console.error('Failed to load story guide:', error);
-        document.getElementById('story-header').innerHTML = '<h1>加载失败</h1><p>' + error.message + '</p>';
-      }
-    }
-
-    function selectStory(storyId) {
-      // 更新卡片样式
-      document.querySelectorAll('.story-card').forEach(card => {
-        card.classList.toggle('active', card.dataset.id === storyId);
-      });
-
-      // 找到并显示故事
-      const story = storyData.stories.find(s => s.id === storyId);
-      if (story) {
-        showStoryDetail(story);
-      }
-    }
-
-    function showStoryDetail(story) {
-      currentStory = story;
-
-      const stepsHtml = story.steps.map((step, index) => `
-        <div class="story-step" data-module="${step.moduleId}" onclick="jumpToCode('${step.moduleId}', ${step.lineRange ? step.lineRange.start : 1}, ${step.lineRange ? step.lineRange.end : 50})">
-          <h4>${index + 1}. ${step.title}</h4>
-          <div class="step-story">${step.story}</div>
-          <div class="step-technical">${step.technical}</div>
-          <div class="step-code-link">📄 查看代码: ${step.moduleId}</div>
-        </div>
-      `).join('');
-
-      const takeawaysHtml = story.keyTakeaways.length > 0 ? `
-        <div class="story-takeaways">
-          <h4>💡 核心要点</h4>
-          <ul>
-            ${story.keyTakeaways.map(t => '<li>' + t + '</li>').join('')}
-          </ul>
-        </div>
-      ` : '';
-
-      const relatedHtml = story.relatedStories.length > 0 ? `
-        <div style="margin-top:1.5rem; color:#888;">
-          相关故事: ${story.relatedStories.map(id => {
-            const related = storyData.stories.find(s => s.id === id);
-            return related ? '<a href="javascript:selectStory(\'' + id + '\')" style="color:#4ecdc4">' + related.title + '</a>' : '';
-          }).filter(Boolean).join(' | ')}
-        </div>
-      ` : '';
-
-      const detailHtml = `
-        <h2>${story.icon} ${story.title}</h2>
-        <div class="story-steps">
-          ${stepsHtml}
-        </div>
-        ${takeawaysHtml}
-        ${relatedHtml}
-      `;
-
-      document.getElementById('story-detail').innerHTML = detailHtml;
-      document.getElementById('story-detail').classList.remove('hidden');
     }
 
     // ========================================
@@ -1383,135 +1178,6 @@
         closeCodeModal();
       }
     });
-
-    // ========================================
-    // 代码阅读引擎视图
-    // ========================================
-    let readingData = null;
-    let currentPath = null;
-    let currentStepIndex = 0;
-
-    async function renderReadingView() {
-      hideAllIndicators();
-      hideAllViews();
-      document.getElementById('reading-view').classList.add('active');
-
-      try {
-        const response = await fetch('/api/reading-guide');
-        readingData = await response.json();
-
-        // 渲染头部
-        const headerHtml = `
-          <h1>📚 代码阅读引擎</h1>
-          <p>选择一条学习路径，跟随引导理解代码</p>
-        `;
-        document.getElementById('reading-header').innerHTML = headerHtml;
-
-        // 渲染学习路径
-        const pathsHtml = readingData.paths.map((path, index) => `
-          <div class="reading-path ${index === 0 ? 'active' : ''}" data-id="${path.id}" onclick="selectReadingPath('${path.id}')">
-            <h3>${path.title}</h3>
-            <p>${path.description}</p>
-            <div class="path-meta">
-              <span class="difficulty ${path.difficulty}">${getDifficultyLabel(path.difficulty)}</span>
-              <span class="time">⏱ ${path.estimatedTime}</span>
-            </div>
-          </div>
-        `).join('');
-        document.getElementById('reading-paths').innerHTML = pathsHtml;
-
-        // 默认显示第一个路径
-        if (readingData.paths.length > 0) {
-          showReadingPath(readingData.paths[0]);
-        }
-      } catch (error) {
-        console.error('Failed to load reading guide:', error);
-        document.getElementById('reading-header').innerHTML = '<h1>加载失败</h1><p>' + error.message + '</p>';
-      }
-    }
-
-    function getDifficultyLabel(difficulty) {
-      const labels = {
-        beginner: '入门',
-        intermediate: '进阶',
-        advanced: '高级'
-      };
-      return labels[difficulty] || difficulty;
-    }
-
-    function selectReadingPath(pathId) {
-      // 更新路径样式
-      document.querySelectorAll('.reading-path').forEach(p => {
-        p.classList.toggle('active', p.dataset.id === pathId);
-      });
-
-      // 找到并显示路径
-      const path = readingData.paths.find(p => p.id === pathId);
-      if (path) {
-        showReadingPath(path);
-      }
-    }
-
-    function showReadingPath(path) {
-      currentPath = path;
-      currentStepIndex = 0;
-      showReadingStep();
-    }
-
-    function showReadingStep() {
-      if (!currentPath || !currentPath.steps.length) {
-        document.getElementById('reading-content').innerHTML = '<p style="color:#888">这个路径暂无内容</p>';
-        return;
-      }
-
-      const step = currentPath.steps[currentStepIndex];
-      const totalSteps = currentPath.steps.length;
-      const progress = ((currentStepIndex + 1) / totalSteps) * 100;
-
-      const contentHtml = `
-        <div class="reading-question">
-          <h3>❓ ${step.question}</h3>
-          <div class="hint">💡 提示: ${step.hint}</div>
-          <div class="code-preview">
-            📄 ${step.codeLocation.moduleId} (行 ${step.codeLocation.lineStart}-${step.codeLocation.lineEnd})
-            <br><br>
-            <a href="javascript:jumpToCode('${step.codeLocation.moduleId}', ${step.codeLocation.lineStart}, ${step.codeLocation.lineEnd})" style="color:#e94560">点击查看代码 →</a>
-          </div>
-          <div class="explanation">${step.explanation}</div>
-          <div class="key-points">
-            ${step.keyPoints.map(p => '<span class="key-point">' + p + '</span>').join('')}
-          </div>
-          ${step.nextQuestion ? '<p style="margin-top:1rem;color:#4ecdc4">下一步: ' + step.nextQuestion + '</p>' : ''}
-        </div>
-        <div class="reading-progress">
-          <div class="reading-progress-bar" style="width: ${progress}%"></div>
-        </div>
-        <div style="text-align:center;color:#888;margin-top:0.5rem">
-          步骤 ${currentStepIndex + 1} / ${totalSteps}
-        </div>
-        <div class="reading-nav">
-          <button class="prev-btn" onclick="prevReadingStep()" ${currentStepIndex === 0 ? 'disabled' : ''}>← 上一步</button>
-          <button class="next-btn" onclick="nextReadingStep()" ${currentStepIndex >= totalSteps - 1 ? 'disabled' : ''}>下一步 →</button>
-        </div>
-      `;
-
-      document.getElementById('reading-content').innerHTML = contentHtml;
-      document.getElementById('reading-content').classList.remove('hidden');
-    }
-
-    function prevReadingStep() {
-      if (currentStepIndex > 0) {
-        currentStepIndex--;
-        showReadingStep();
-      }
-    }
-
-    function nextReadingStep() {
-      if (currentPath && currentStepIndex < currentPath.steps.length - 1) {
-        currentStepIndex++;
-        showReadingStep();
-      }
-    }
 
     // 渲染流程图
     async function renderFlowchart() {
@@ -2870,20 +2536,24 @@
 
     // 隐藏所有视图指示器
     function hideAllIndicators() {
-      document.getElementById('entry-selector').classList.remove('active');
-      document.getElementById('depth-indicator').classList.remove('active');
-      document.getElementById('arch-legend').classList.remove('active');
-      document.getElementById('project-header').classList.remove('active');
-      document.getElementById('symbol-legend').classList.remove('active');
-      document.getElementById('flowchart-legend').classList.remove('active');
-      document.getElementById('flowchart-title').classList.remove('active');
-      document.getElementById('scenario-selector').classList.remove('active');
+      // 仅处理存在的 DOM 元素（旧版 flowchart/scenario 已移除）
+      const ids = [
+        'entry-selector',
+        'depth-indicator',
+        'arch-legend',
+        'project-header',
+        'symbol-legend'
+      ];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active');
+      });
     }
 
     // 返回按钮事件
     document.getElementById('back-btn').addEventListener('click', goBack);
 
-    // 视图切换
+    // 视图切换 (分块模式只支持 architecture 视图，由 chunked-loader.js 实现)
     document.getElementById('view-mode').addEventListener('change', (e) => {
       currentView = e.target.value;
       hideAllIndicators();
@@ -2896,41 +2566,15 @@
 
       if (simulation) simulation.stop();
 
-      if (currentView === 'story') {
-        if (ontology.isEnhanced) {
-          renderStoryView();
+      // 分块模式：只支持架构图视图
+      if (currentView === 'architecture') {
+        if (typeof window.drawArchitectureFromIndex === 'function') {
+          window.drawArchitectureFromIndex();
         } else {
-          alert('业务故事需要增强版格式的 CODE_MAP.json');
-          renderGraph();
-        }
-      } else if (currentView === 'reading') {
-        if (ontology.isEnhanced) {
-          renderReadingView();
-        } else {
-          alert('代码阅读引擎需要增强版格式的 CODE_MAP.json');
-          renderGraph();
-        }
-      } else if (currentView === 'beginner') {
-        if (ontology.isEnhanced) {
-          renderBeginnerGuide();
-        } else {
-          alert('新手导览需要增强版格式的 CODE_MAP.json');
-          renderGraph();
+          alert('架构图功能未加载');
         }
       } else if (currentView === 'flowchart') {
-        if (ontology.isEnhanced) {
-          renderFlowchart();
-        } else {
-          alert('流程图需要增强版格式的 CODE_MAP.json');
-          renderGraph();
-        }
-      } else if (currentView === 'architecture') {
-        if (ontology.isEnhanced) {
-          renderArchitecture();
-        } else {
-          alert('架构图需要增强版格式的 CODE_MAP.json');
-          renderGraph();
-        }
+        renderFlowchart();
       } else if (currentView === 'entry-tree') {
         document.getElementById('entry-selector').classList.add('active');
         if (entryPoints.length > 0) {

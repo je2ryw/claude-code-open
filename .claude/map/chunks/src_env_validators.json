@@ -1,0 +1,213 @@
+{
+  "path": "src/env/validators",
+  "modules": {
+    "src/env/validators/builtin.ts": {
+      "id": "src/env/validators/builtin.ts",
+      "name": "builtin.ts",
+      "path": "F:\\claude-code-open\\src\\env\\validators\\builtin.ts",
+      "language": "typescript",
+      "lines": 353,
+      "size": 8405,
+      "exports": [
+        "src/env/validators/builtin.ts::createBooleanValidator",
+        "src/env/validators/builtin.ts::createEnumValidator",
+        "src/env/validators/builtin.ts::createNumberRangeValidator"
+      ],
+      "imports": [],
+      "semantic": {
+        "description": "提供 Claude Code CLI 的内置环境变量验证器集合，包含 BASH 输出长度、API Token 限制、超时时间等配置项的验证规则。同时提供布尔型、数值范围、枚举型验证器的工厂函数，支持参数校验、默认值设定和边界限制。",
+        "responsibility": "定义和管理 Claude Code CLI 的环境变量验证规则及验证器工厂",
+        "businessDomain": "配置管理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "环境变量验证",
+          "配置校验",
+          "参数验证",
+          "验证器工厂",
+          "边界检查"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:03.126Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/env/validators/builtin.ts::createBooleanValidator": {
+      "id": "src/env/validators/builtin.ts::createBooleanValidator",
+      "name": "createBooleanValidator",
+      "kind": "function",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 221,
+        "startColumn": 0,
+        "endLine": 254,
+        "endColumn": 1
+      },
+      "signature": "createBooleanValidator()"
+    },
+    "src/env/validators/builtin.ts::createEnumValidator": {
+      "id": "src/env/validators/builtin.ts::createEnumValidator",
+      "name": "createEnumValidator",
+      "kind": "function",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 309,
+        "startColumn": 0,
+        "endLine": 337,
+        "endColumn": 1
+      },
+      "signature": "createEnumValidator()"
+    },
+    "src/env/validators/builtin.ts::createNumberRangeValidator": {
+      "id": "src/env/validators/builtin.ts::createNumberRangeValidator",
+      "name": "createNumberRangeValidator",
+      "kind": "function",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 259,
+        "startColumn": 0,
+        "endLine": 304,
+        "endColumn": 1
+      },
+      "signature": "createNumberRangeValidator()"
+    },
+    "src/env/validators/builtin.ts::ANTHROPIC_API_KEY": {
+      "id": "src/env/validators/builtin.ts::ANTHROPIC_API_KEY",
+      "name": "ANTHROPIC_API_KEY",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 88,
+        "startColumn": 13,
+        "endLine": 104,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::BASH_MAX_OUTPUT_LENGTH": {
+      "id": "src/env/validators/builtin.ts::BASH_MAX_OUTPUT_LENGTH",
+      "name": "BASH_MAX_OUTPUT_LENGTH",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 15,
+        "startColumn": 13,
+        "endLine": 44,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::BUILTIN_VALIDATORS": {
+      "id": "src/env/validators/builtin.ts::BUILTIN_VALIDATORS",
+      "name": "BUILTIN_VALIDATORS",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 342,
+        "startColumn": 13,
+        "endLine": 352,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_CONCURRENT_TASKS": {
+      "id": "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_CONCURRENT_TASKS",
+      "name": "CLAUDE_CODE_MAX_CONCURRENT_TASKS",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 187,
+        "startColumn": 13,
+        "endLine": 216,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_OUTPUT_TOKENS": {
+      "id": "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+      "name": "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 52,
+        "startColumn": 13,
+        "endLine": 81,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_RETRIES": {
+      "id": "src/env/validators/builtin.ts::CLAUDE_CODE_MAX_RETRIES",
+      "name": "CLAUDE_CODE_MAX_RETRIES",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 112,
+        "startColumn": 13,
+        "endLine": 141,
+        "endColumn": 1
+      }
+    },
+    "src/env/validators/builtin.ts::CLAUDE_CODE_REQUEST_TIMEOUT": {
+      "id": "src/env/validators/builtin.ts::CLAUDE_CODE_REQUEST_TIMEOUT",
+      "name": "CLAUDE_CODE_REQUEST_TIMEOUT",
+      "kind": "constant",
+      "moduleId": "src/env/validators/builtin.ts",
+      "location": {
+        "file": "src/env/validators/builtin.ts",
+        "startLine": 150,
+        "startColumn": 13,
+        "endLine": 179,
+        "endColumn": 1
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/env/manager.ts",
+        "target": "src/env/validators/builtin.ts",
+        "type": "import",
+        "symbols": [
+          "BUILTIN_VALIDATORS"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/env/validators/builtin.ts::createBooleanValidator",
+        "callee": "src/env/validators/builtin.ts::createBooleanValidator",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/env/validators/builtin.ts",
+            "startLine": 221,
+            "startColumn": 16,
+            "endLine": 221,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/env/validators/builtin.ts::createNumberRangeValidator",
+        "callee": "src/env/validators/builtin.ts::createNumberRangeValidator",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/env/validators/builtin.ts",
+            "startLine": 259,
+            "startColumn": 16,
+            "endLine": 259,
+            "endColumn": 42
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

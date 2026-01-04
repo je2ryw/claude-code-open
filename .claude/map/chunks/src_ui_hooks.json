@@ -1,0 +1,1320 @@
+{
+  "path": "src/ui/hooks",
+  "modules": {
+    "src/ui/hooks/index.ts": {
+      "id": "src/ui/hooks/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\ui\\hooks\\index.ts",
+      "language": "typescript",
+      "lines": 13,
+      "size": 470,
+      "exports": [
+        "src/ui/hooks/index.ts::useGlobalKeybindings",
+        "src/ui/hooks/index.ts::useAutoScroll",
+        "src/ui/hooks/index.ts::useMessageAutoScroll",
+        "src/ui/hooks/index.ts::useTerminalSize",
+        "src/ui/hooks/index.ts::useTerminalWidth",
+        "src/ui/hooks/index.ts::useTerminalHeight",
+        "src/ui/hooks/index.ts::useRewind",
+        "src/ui/hooks/index.ts::GlobalKeybinding",
+        "src/ui/hooks/index.ts::UseGlobalKeybindingsOptions",
+        "src/ui/hooks/index.ts::TerminalSize"
+      ],
+      "imports": [],
+      "semantic": {
+        "description": "UI Hooks 统一导出模块，集中导出全局快捷键绑定、自动滚动、终端尺寸和时间回溯等 UI 交互相关的 React Hooks。",
+        "responsibility": "统一管理和导出 UI 层的自定义 Hooks 及其类型定义",
+        "businessDomain": "UI 交互",
+        "architectureLayer": "presentation",
+        "tags": [
+          "hooks导出",
+          "UI交互",
+          "React Hooks",
+          "模块入口"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:07.705Z"
+      }
+    },
+    "src/ui/hooks/useAutoScroll.ts": {
+      "id": "src/ui/hooks/useAutoScroll.ts",
+      "name": "useAutoScroll.ts",
+      "path": "F:\\claude-code-open\\src\\ui\\hooks\\useAutoScroll.ts",
+      "language": "typescript",
+      "lines": 53,
+      "size": 1767,
+      "exports": [
+        "src/ui/hooks/useAutoScroll.ts::useAutoScroll",
+        "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll"
+      ],
+      "imports": [
+        {
+          "source": "react",
+          "symbols": [
+            "useEffect",
+            "useRef"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "ink",
+          "symbols": [
+            "useStdout"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "提供终端界面自动滚动功能的 React Hook，当消息内容更新时确保新内容自动滚动到可视区域内。",
+        "responsibility": "监听依赖变化（如消息数量）并触发 Ink 终端界面的自动滚动行为",
+        "businessDomain": "终端界面交互",
+        "architectureLayer": "presentation",
+        "tags": [
+          "自动滚动",
+          "终端UI",
+          "React Hook",
+          "消息展示",
+          "视图更新"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:08.187Z"
+      }
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts",
+      "name": "useGlobalKeybindings.ts",
+      "path": "F:\\claude-code-open\\src\\ui\\hooks\\useGlobalKeybindings.ts",
+      "language": "typescript",
+      "lines": 230,
+      "size": 6005,
+      "exports": [
+        "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString",
+        "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings"
+      ],
+      "imports": [
+        {
+          "source": "ink",
+          "symbols": [
+            "useInput"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "react",
+          "symbols": [
+            "useCallback",
+            "useRef",
+            "useState"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "提供全局快捷键管理功能的React Hook模块。支持内置快捷键（如Ctrl+O切换详细输出、Ctrl+T显示待办、Ctrl+M切换模型等）和自定义快捷键配置，通过Ink的useInput监听键盘事件并分发到对应的处理器。",
+        "responsibility": "管理和分发全局快捷键事件到各业务功能处理器",
+        "businessDomain": "交互控制",
+        "architectureLayer": "presentation",
+        "tags": [
+          "快捷键",
+          "键盘事件",
+          "Hook",
+          "终端交互",
+          "用户输入"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:09.050Z"
+      }
+    },
+    "src/ui/hooks/useRewind.ts": {
+      "id": "src/ui/hooks/useRewind.ts",
+      "name": "useRewind.ts",
+      "path": "F:\\claude-code-open\\src\\ui\\hooks\\useRewind.ts",
+      "language": "typescript",
+      "lines": 124,
+      "size": 3410,
+      "exports": [
+        "src/ui/hooks/useRewind.ts::useRewind"
+      ],
+      "imports": [
+        {
+          "source": "react",
+          "symbols": [
+            "useState",
+            "useCallback",
+            "useEffect"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../../rewind/index.js",
+          "symbols": [
+            "getRewindManager",
+            "type",
+            "RewindableMessage",
+            "type",
+            "RewindOption",
+            "type",
+            "RewindOperationResult"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "React Hook,管理对话历史回退功能的UI状态和操作。提供回退预览、执行回退、记录快照等能力,支持将对话和文件状态恢复到历史某个时间点。",
+        "responsibility": "封装Rewind功能的UI交互逻辑,连接RewindManager与React组件层",
+        "businessDomain": "对话历史管理",
+        "architectureLayer": "presentation",
+        "tags": [
+          "React Hook",
+          "状态管理",
+          "历史回退",
+          "时间旅行",
+          "快照管理"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:08.290Z"
+      }
+    },
+    "src/ui/hooks/useTerminalSize.ts": {
+      "id": "src/ui/hooks/useTerminalSize.ts",
+      "name": "useTerminalSize.ts",
+      "path": "F:\\claude-code-open\\src\\ui\\hooks\\useTerminalSize.ts",
+      "language": "typescript",
+      "lines": 86,
+      "size": 2010,
+      "exports": [
+        "src/ui/hooks/useTerminalSize.ts::useTerminalHeight",
+        "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "src/ui/hooks/useTerminalSize.ts::useTerminalWidth"
+      ],
+      "imports": [
+        {
+          "source": "react",
+          "symbols": [
+            "useState",
+            "useEffect",
+            "useCallback"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "ink",
+          "symbols": [
+            "useStdout"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "提供终端尺寸监听的 React Hooks，实时响应终端窗口大小变化，返回当前终端的列数和行数信息。",
+        "responsibility": "监听终端 resize 事件并提供实时的终端尺寸数据（columns/rows）",
+        "businessDomain": "终端界面渲染",
+        "architectureLayer": "presentation",
+        "tags": [
+          "终端尺寸",
+          "React Hooks",
+          "响应式布局",
+          "窗口监听",
+          "TTY"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:13.333Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/ui/hooks/index.ts::GlobalKeybinding": {
+      "id": "src/ui/hooks/index.ts::GlobalKeybinding",
+      "name": "GlobalKeybinding",
+      "kind": "type",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 6,
+        "startColumn": 0,
+        "endLine": 6,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::UseGlobalKeybindingsOptions": {
+      "id": "src/ui/hooks/index.ts::UseGlobalKeybindingsOptions",
+      "name": "UseGlobalKeybindingsOptions",
+      "kind": "type",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 6,
+        "startColumn": 0,
+        "endLine": 6,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::TerminalSize": {
+      "id": "src/ui/hooks/index.ts::TerminalSize",
+      "name": "TerminalSize",
+      "kind": "type",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 10,
+        "startColumn": 0,
+        "endLine": 10,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useGlobalKeybindings": {
+      "id": "src/ui/hooks/index.ts::useGlobalKeybindings",
+      "name": "useGlobalKeybindings",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 5,
+        "startColumn": 0,
+        "endLine": 5,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useAutoScroll": {
+      "id": "src/ui/hooks/index.ts::useAutoScroll",
+      "name": "useAutoScroll",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 8,
+        "startColumn": 0,
+        "endLine": 8,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useMessageAutoScroll": {
+      "id": "src/ui/hooks/index.ts::useMessageAutoScroll",
+      "name": "useMessageAutoScroll",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 8,
+        "startColumn": 0,
+        "endLine": 8,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useTerminalSize": {
+      "id": "src/ui/hooks/index.ts::useTerminalSize",
+      "name": "useTerminalSize",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 9,
+        "startColumn": 0,
+        "endLine": 9,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useTerminalWidth": {
+      "id": "src/ui/hooks/index.ts::useTerminalWidth",
+      "name": "useTerminalWidth",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 9,
+        "startColumn": 0,
+        "endLine": 9,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useTerminalHeight": {
+      "id": "src/ui/hooks/index.ts::useTerminalHeight",
+      "name": "useTerminalHeight",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 9,
+        "startColumn": 0,
+        "endLine": 9,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/index.ts::useRewind": {
+      "id": "src/ui/hooks/index.ts::useRewind",
+      "name": "useRewind",
+      "kind": "variable",
+      "moduleId": "src/ui/hooks/index.ts",
+      "location": {
+        "file": "src/ui/hooks/index.ts",
+        "startLine": 12,
+        "startColumn": 0,
+        "endLine": 12,
+        "endColumn": 100
+      }
+    },
+    "src/ui/hooks/useAutoScroll.ts::useAutoScroll": {
+      "id": "src/ui/hooks/useAutoScroll.ts::useAutoScroll",
+      "name": "useAutoScroll",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useAutoScroll.ts",
+      "location": {
+        "file": "src/ui/hooks/useAutoScroll.ts",
+        "startLine": 20,
+        "startColumn": 0,
+        "endLine": 44,
+        "endColumn": 1
+      },
+      "signature": "useAutoScroll()"
+    },
+    "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll": {
+      "id": "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll",
+      "name": "useMessageAutoScroll",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useAutoScroll.ts",
+      "location": {
+        "file": "src/ui/hooks/useAutoScroll.ts",
+        "startLine": 50,
+        "startColumn": 0,
+        "endLine": 52,
+        "endColumn": 1
+      },
+      "signature": "useMessageAutoScroll()"
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+      "name": "createActionHandler",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 224,
+        "startColumn": 0,
+        "endLine": 229,
+        "endColumn": 1
+      },
+      "signature": "createActionHandler()"
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+      "name": "parseCustomKeybindings",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 181,
+        "startColumn": 0,
+        "endLine": 199,
+        "endColumn": 1
+      },
+      "signature": "parseCustomKeybindings()"
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString",
+      "name": "parseKeyString",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 202,
+        "startColumn": 0,
+        "endLine": 221,
+        "endColumn": 1
+      },
+      "signature": "parseKeyString()"
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+      "name": "useGlobalKeybindings",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 35,
+        "startColumn": 0,
+        "endLine": 178,
+        "endColumn": 1
+      },
+      "signature": "useGlobalKeybindings()"
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::GlobalKeybinding": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::GlobalKeybinding",
+      "name": "GlobalKeybinding",
+      "kind": "interface",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 10,
+        "startColumn": 0,
+        "endLine": 20,
+        "endColumn": 1
+      }
+    },
+    "src/ui/hooks/useGlobalKeybindings.ts::UseGlobalKeybindingsOptions": {
+      "id": "src/ui/hooks/useGlobalKeybindings.ts::UseGlobalKeybindingsOptions",
+      "name": "UseGlobalKeybindingsOptions",
+      "kind": "interface",
+      "moduleId": "src/ui/hooks/useGlobalKeybindings.ts",
+      "location": {
+        "file": "src/ui/hooks/useGlobalKeybindings.ts",
+        "startLine": 22,
+        "startColumn": 0,
+        "endLine": 33,
+        "endColumn": 1
+      }
+    },
+    "src/ui/hooks/useRewind.ts::useRewind": {
+      "id": "src/ui/hooks/useRewind.ts::useRewind",
+      "name": "useRewind",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useRewind.ts",
+      "location": {
+        "file": "src/ui/hooks/useRewind.ts",
+        "startLine": 47,
+        "startColumn": 0,
+        "endLine": 121,
+        "endColumn": 1
+      },
+      "signature": "useRewind()"
+    },
+    "src/ui/hooks/useRewind.ts::UseRewindOptions": {
+      "id": "src/ui/hooks/useRewind.ts::UseRewindOptions",
+      "name": "UseRewindOptions",
+      "kind": "interface",
+      "moduleId": "src/ui/hooks/useRewind.ts",
+      "location": {
+        "file": "src/ui/hooks/useRewind.ts",
+        "startLine": 9,
+        "startColumn": 0,
+        "endLine": 14,
+        "endColumn": 1
+      }
+    },
+    "src/ui/hooks/useRewind.ts::UseRewindReturn": {
+      "id": "src/ui/hooks/useRewind.ts::UseRewindReturn",
+      "name": "UseRewindReturn",
+      "kind": "interface",
+      "moduleId": "src/ui/hooks/useRewind.ts",
+      "location": {
+        "file": "src/ui/hooks/useRewind.ts",
+        "startLine": 16,
+        "startColumn": 0,
+        "endLine": 42,
+        "endColumn": 1
+      }
+    },
+    "src/ui/hooks/useRewind.ts::default": {
+      "id": "src/ui/hooks/useRewind.ts::default",
+      "name": "default",
+      "kind": "constant",
+      "moduleId": "src/ui/hooks/useRewind.ts",
+      "location": {
+        "file": "src/ui/hooks/useRewind.ts",
+        "startLine": 123,
+        "startColumn": 0,
+        "endLine": 123,
+        "endColumn": 25
+      }
+    },
+    "src/ui/hooks/useTerminalSize.ts::useTerminalHeight": {
+      "id": "src/ui/hooks/useTerminalSize.ts::useTerminalHeight",
+      "name": "useTerminalHeight",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useTerminalSize.ts",
+      "location": {
+        "file": "src/ui/hooks/useTerminalSize.ts",
+        "startLine": 82,
+        "startColumn": 0,
+        "endLine": 85,
+        "endColumn": 1
+      },
+      "signature": "useTerminalHeight()"
+    },
+    "src/ui/hooks/useTerminalSize.ts::useTerminalSize": {
+      "id": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+      "name": "useTerminalSize",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useTerminalSize.ts",
+      "location": {
+        "file": "src/ui/hooks/useTerminalSize.ts",
+        "startLine": 28,
+        "startColumn": 0,
+        "endLine": 69,
+        "endColumn": 1
+      },
+      "signature": "useTerminalSize()"
+    },
+    "src/ui/hooks/useTerminalSize.ts::useTerminalWidth": {
+      "id": "src/ui/hooks/useTerminalSize.ts::useTerminalWidth",
+      "name": "useTerminalWidth",
+      "kind": "function",
+      "moduleId": "src/ui/hooks/useTerminalSize.ts",
+      "location": {
+        "file": "src/ui/hooks/useTerminalSize.ts",
+        "startLine": 74,
+        "startColumn": 0,
+        "endLine": 77,
+        "endColumn": 1
+      },
+      "signature": "useTerminalWidth()"
+    },
+    "src/ui/hooks/useTerminalSize.ts::TerminalSize": {
+      "id": "src/ui/hooks/useTerminalSize.ts::TerminalSize",
+      "name": "TerminalSize",
+      "kind": "interface",
+      "moduleId": "src/ui/hooks/useTerminalSize.ts",
+      "location": {
+        "file": "src/ui/hooks/useTerminalSize.ts",
+        "startLine": 15,
+        "startColumn": 0,
+        "endLine": 18,
+        "endColumn": 1
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/ui/App.tsx",
+        "target": "src/ui/hooks/useRewind.ts",
+        "type": "import",
+        "symbols": [
+          "useRewind"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/App.tsx",
+        "target": "src/ui/hooks/useGlobalKeybindings.ts",
+        "type": "import",
+        "symbols": [
+          "useGlobalKeybindings"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/components/WelcomeScreen.tsx",
+        "target": "src/ui/hooks/useTerminalSize.ts",
+        "type": "import",
+        "symbols": [
+          "useTerminalWidth"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/hooks/useRewind.ts",
+        "target": "src/rewind/index.ts",
+        "type": "import",
+        "symbols": [
+          "getRewindManager",
+          "type",
+          "RewindableMessage",
+          "type",
+          "RewindOption",
+          "type",
+          "RewindOperationResult"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/ui/hooks/useAutoScroll.ts::useAutoScroll",
+        "callee": "src/ui/hooks/useAutoScroll.ts::useAutoScroll",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useAutoScroll.ts",
+            "startLine": 20,
+            "startColumn": 16,
+            "endLine": 20,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll",
+        "callee": "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useAutoScroll.ts",
+            "startLine": 50,
+            "startColumn": 16,
+            "endLine": 50,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useAutoScroll.ts::useMessageAutoScroll",
+        "callee": "src/ui/hooks/useAutoScroll.ts::useAutoScroll",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useAutoScroll.ts",
+            "startLine": 51,
+            "startColumn": 2,
+            "endLine": 51,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 224,
+            "startColumn": 9,
+            "endLine": 224,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 226,
+            "startColumn": 12,
+            "endLine": 226,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 181,
+            "startColumn": 9,
+            "endLine": 181,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callee": "src/mcp/logging.ts::entries",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 186,
+            "startColumn": 43,
+            "endLine": 186,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 187,
+            "startColumn": 19,
+            "endLine": 187,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::createActionHandler",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 191,
+            "startColumn": 17,
+            "endLine": 191,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::parseKeyString",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 202,
+            "startColumn": 9,
+            "endLine": 202,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 35,
+            "startColumn": 16,
+            "endLine": 35,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/core/client.ts::model",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 110,
+            "startColumn": 27,
+            "endLine": 110,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/ui/hooks/useGlobalKeybindings.ts::parseCustomKeybindings",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 130,
+            "startColumn": 28,
+            "endLine": 130,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/models/quota.ts::enabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 140,
+            "startColumn": 30,
+            "endLine": 140,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 164,
+            "startColumn": 20,
+            "endLine": 164,
+            "endColumn": 25
+          },
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 164,
+            "startColumn": 12,
+            "endLine": 164,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 164,
+            "startColumn": 12,
+            "endLine": 164,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 164,
+            "startColumn": 12,
+            "endLine": 164,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useGlobalKeybindings.ts::useGlobalKeybindings",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useGlobalKeybindings.ts",
+            "startLine": 164,
+            "startColumn": 12,
+            "endLine": 164,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/ui/hooks/useRewind.ts::useRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 47,
+            "startColumn": 16,
+            "endLine": 47,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::getRewindManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 54,
+            "startColumn": 41,
+            "endLine": 54,
+            "endColumn": 57
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 58,
+            "startColumn": 18,
+            "endLine": 58,
+            "endColumn": 29
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 58,
+            "startColumn": 4,
+            "endLine": 58,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 62,
+            "startColumn": 43,
+            "endLine": 62,
+            "endColumn": 64
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 62,
+            "startColumn": 29,
+            "endLine": 62,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 65,
+            "startColumn": 34,
+            "endLine": 65,
+            "endColumn": 43
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 65,
+            "startColumn": 20,
+            "endLine": 65,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 81,
+            "startColumn": 25,
+            "endLine": 81,
+            "endColumn": 38
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 81,
+            "startColumn": 11,
+            "endLine": 81,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 86,
+            "startColumn": 39,
+            "endLine": 86,
+            "endColumn": 45
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 86,
+            "startColumn": 25,
+            "endLine": 86,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 101,
+            "startColumn": 18,
+            "endLine": 101,
+            "endColumn": 35
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 101,
+            "startColumn": 4,
+            "endLine": 101,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 106,
+            "startColumn": 18,
+            "endLine": 106,
+            "endColumn": 34
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 106,
+            "startColumn": 4,
+            "endLine": 106,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalHeight",
+        "callee": "src/ui/hooks/useTerminalSize.ts::useTerminalHeight",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 82,
+            "startColumn": 16,
+            "endLine": 82,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalHeight",
+        "callee": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 83,
+            "startColumn": 19,
+            "endLine": 83,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 28,
+            "startColumn": 16,
+            "endLine": 28,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 19,
+            "endLine": 57,
+            "endColumn": 21
+          },
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 6,
+            "endLine": 57,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 6,
+            "endLine": 57,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 6,
+            "endLine": 57,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 6,
+            "endLine": 57,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 57,
+            "startColumn": 6,
+            "endLine": 57,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::off",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 63,
+            "startColumn": 21,
+            "endLine": 63,
+            "endColumn": 24
+          },
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 63,
+            "startColumn": 8,
+            "endLine": 63,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::off",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 63,
+            "startColumn": 8,
+            "endLine": 63,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::off",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 63,
+            "startColumn": 8,
+            "endLine": 63,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::off",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 63,
+            "startColumn": 8,
+            "endLine": 63,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalWidth",
+        "callee": "src/ui/hooks/useTerminalSize.ts::useTerminalWidth",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 74,
+            "startColumn": 16,
+            "endLine": 74,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useTerminalSize.ts::useTerminalWidth",
+        "callee": "src/ui/hooks/useTerminalSize.ts::useTerminalSize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useTerminalSize.ts",
+            "startLine": 75,
+            "startColumn": 22,
+            "endLine": 75,
+            "endColumn": 37
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

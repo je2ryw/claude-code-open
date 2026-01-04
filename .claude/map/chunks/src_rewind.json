@@ -1,0 +1,4033 @@
+{
+  "path": "src/rewind",
+  "modules": {
+    "src/rewind/fileHistory.ts": {
+      "id": "src/rewind/fileHistory.ts",
+      "name": "fileHistory.ts",
+      "path": "F:\\claude-code-open\\src\\rewind\\fileHistory.ts",
+      "language": "typescript",
+      "lines": 419,
+      "size": 10688,
+      "exports": [
+        "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "src/rewind/fileHistory.ts::FileHistoryManager"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "os",
+          "symbols": [
+            "os"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "crypto",
+          "symbols": [
+            "crypto"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "文件历史跟踪系统，为 Claude CLI 提供 Rewind 功能，通过创建快照和备份实现文件修改的跟踪与回退。",
+        "responsibility": "管理文件版本快照，支持跟踪文件变更、创建备份并回退到历史状态。",
+        "businessDomain": "版本控制",
+        "architectureLayer": "business",
+        "tags": [
+          "文件历史",
+          "快照管理",
+          "版本回退",
+          "备份恢复",
+          "Rewind"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:53:52.581Z"
+      }
+    },
+    "src/rewind/index.ts": {
+      "id": "src/rewind/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\rewind\\index.ts",
+      "language": "typescript",
+      "lines": 9,
+      "size": 151,
+      "exports": [
+        "src/rewind/index.ts::* from ./fileHistory.js",
+        "src/rewind/index.ts::* from ./rewindManager.js"
+      ],
+      "imports": [],
+      "semantic": {
+        "description": "Rewind 功能模块的入口文件，负责统一导出对话和文件状态回退相关的功能组件。作为模块的门面，整合文件历史记录和回退管理器的能力。",
+        "responsibility": "聚合并导出对话和文件状态回退功能的所有公开接口",
+        "businessDomain": "状态管理",
+        "architectureLayer": "business",
+        "tags": [
+          "回退",
+          "历史记录",
+          "状态恢复",
+          "模块入口"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:53:52.644Z"
+      }
+    },
+    "src/rewind/rewindManager.ts": {
+      "id": "src/rewind/rewindManager.ts",
+      "name": "rewindManager.ts",
+      "path": "F:\\claude-code-open\\src\\rewind\\rewindManager.ts",
+      "language": "typescript",
+      "lines": 263,
+      "size": 6824,
+      "exports": [
+        "src/rewind/rewindManager.ts::cleanupRewindManager",
+        "src/rewind/rewindManager.ts::getRewindManager",
+        "src/rewind/rewindManager.ts::RewindManager"
+      ],
+      "imports": [
+        {
+          "source": "./fileHistory.js",
+          "symbols": [
+            "FileHistoryManager",
+            "getFileHistoryManager",
+            "type",
+            "RewindResult"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "管理对话历史和代码文件的回退功能，支持将会话状态恢复到历史消息节点。提供代码、对话或同时回退的选项，并可预览回退影响。",
+        "responsibility": "协调文件历史和对话状态的时光倒流（Rewind）操作",
+        "businessDomain": "会话管理",
+        "architectureLayer": "business",
+        "tags": [
+          "回退管理",
+          "会话状态",
+          "文件历史",
+          "快照管理",
+          "时光倒流"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:53:52.988Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/rewind/fileHistory.ts::cleanupFileHistoryManager": {
+      "id": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+      "name": "cleanupFileHistoryManager",
+      "kind": "function",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 412,
+        "startColumn": 0,
+        "endLine": 418,
+        "endColumn": 1
+      },
+      "signature": "cleanupFileHistoryManager()"
+    },
+    "src/rewind/fileHistory.ts::getFileHistoryManager": {
+      "id": "src/rewind/fileHistory.ts::getFileHistoryManager",
+      "name": "getFileHistoryManager",
+      "kind": "function",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 402,
+        "startColumn": 0,
+        "endLine": 407,
+        "endColumn": 1
+      },
+      "signature": "getFileHistoryManager()"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager",
+      "name": "FileHistoryManager",
+      "kind": "class",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 65,
+        "startColumn": 0,
+        "endLine": 394,
+        "endColumn": 1
+      },
+      "children": [
+        "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff",
+        "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+        "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName",
+        "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshots",
+        "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshotsCount",
+        "src/rewind/fileHistory.ts::FileHistoryManager::getTrackedFilesCount",
+        "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot",
+        "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled",
+        "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+        "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "src/rewind/fileHistory.ts::FileHistoryManager::serialize",
+        "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "src/rewind/fileHistory.ts::backupDir",
+        "src/rewind/fileHistory.ts::enabled",
+        "src/rewind/fileHistory.ts::sessionId",
+        "src/rewind/fileHistory.ts::state"
+      ]
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+      "name": "applySnapshot",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 228,
+        "startColumn": 2,
+        "endLine": 295,
+        "endColumn": 3
+      },
+      "signature": "applySnapshot()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+      "name": "backupFileBeforeChange",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 123,
+        "startColumn": 2,
+        "endLine": 167,
+        "endColumn": 3
+      },
+      "signature": "backupFileBeforeChange()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff",
+      "name": "calculateDiff",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 300,
+        "startColumn": 2,
+        "endLine": 318,
+        "endColumn": 3
+      },
+      "signature": "calculateDiff()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::cleanup": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+      "name": "cleanup",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 371,
+        "startColumn": 2,
+        "endLine": 379,
+        "endColumn": 3
+      },
+      "signature": "cleanup()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::computeHash": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+      "name": "computeHash",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 333,
+        "startColumn": 2,
+        "endLine": 335,
+        "endColumn": 3
+      },
+      "signature": "computeHash()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+      "name": "createSnapshot",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 172,
+        "startColumn": 2,
+        "endLine": 192,
+        "endColumn": 3
+      },
+      "signature": "createSnapshot()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName",
+      "name": "generateBackupFileName",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 323,
+        "startColumn": 2,
+        "endLine": 328,
+        "endColumn": 3
+      },
+      "signature": "generateBackupFileName()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshots": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshots",
+      "name": "getSnapshots",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 204,
+        "startColumn": 2,
+        "endLine": 206,
+        "endColumn": 3
+      },
+      "signature": "getSnapshots()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshotsCount": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshotsCount",
+      "name": "getSnapshotsCount",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 391,
+        "startColumn": 2,
+        "endLine": 393,
+        "endColumn": 3
+      },
+      "signature": "getSnapshotsCount()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::getTrackedFilesCount": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::getTrackedFilesCount",
+      "name": "getTrackedFilesCount",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 384,
+        "startColumn": 2,
+        "endLine": 386,
+        "endColumn": 3
+      },
+      "signature": "getTrackedFilesCount()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot",
+      "name": "hasSnapshot",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 197,
+        "startColumn": 2,
+        "endLine": 199,
+        "endColumn": 3
+      },
+      "signature": "hasSnapshot()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled",
+      "name": "isEnabled",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 91,
+        "startColumn": 2,
+        "endLine": 93,
+        "endColumn": 3
+      },
+      "signature": "isEnabled()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::isTracked": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+      "name": "isTracked",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 115,
+        "startColumn": 2,
+        "endLine": 118,
+        "endColumn": 3
+      },
+      "signature": "isTracked()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+      "name": "normalizePath",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 340,
+        "startColumn": 2,
+        "endLine": 346,
+        "endColumn": 3
+      },
+      "signature": "normalizePath()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::restore": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+      "name": "restore",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 361,
+        "startColumn": 2,
+        "endLine": 366,
+        "endColumn": 3
+      },
+      "signature": "restore()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+      "name": "rewindToMessage",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 211,
+        "startColumn": 2,
+        "endLine": 223,
+        "endColumn": 3
+      },
+      "signature": "rewindToMessage()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::serialize": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::serialize",
+      "name": "serialize",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 351,
+        "startColumn": 2,
+        "endLine": 356,
+        "endColumn": 3
+      },
+      "signature": "serialize()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+      "name": "setEnabled",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 98,
+        "startColumn": 2,
+        "endLine": 100,
+        "endColumn": 3
+      },
+      "signature": "setEnabled()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileHistoryManager::trackFile": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+      "name": "trackFile",
+      "kind": "method",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 105,
+        "startColumn": 2,
+        "endLine": 110,
+        "endColumn": 3
+      },
+      "signature": "trackFile()",
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::backupDir": {
+      "id": "src/rewind/fileHistory.ts::backupDir",
+      "name": "backupDir",
+      "kind": "property",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 67,
+        "startColumn": 2,
+        "endLine": 67,
+        "endColumn": 28
+      },
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::enabled": {
+      "id": "src/rewind/fileHistory.ts::enabled",
+      "name": "enabled",
+      "kind": "property",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 68,
+        "startColumn": 2,
+        "endLine": 68,
+        "endColumn": 34
+      },
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::sessionId": {
+      "id": "src/rewind/fileHistory.ts::sessionId",
+      "name": "sessionId",
+      "kind": "property",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 69,
+        "startColumn": 2,
+        "endLine": 69,
+        "endColumn": 28
+      },
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::state": {
+      "id": "src/rewind/fileHistory.ts::state",
+      "name": "state",
+      "kind": "property",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 66,
+        "startColumn": 2,
+        "endLine": 66,
+        "endColumn": 34
+      },
+      "parent": "src/rewind/fileHistory.ts::FileHistoryManager"
+    },
+    "src/rewind/fileHistory.ts::FileBackup": {
+      "id": "src/rewind/fileHistory.ts::FileBackup",
+      "name": "FileBackup",
+      "kind": "interface",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 16,
+        "startColumn": 0,
+        "endLine": 27,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/fileHistory.ts::FileHistoryState": {
+      "id": "src/rewind/fileHistory.ts::FileHistoryState",
+      "name": "FileHistoryState",
+      "kind": "interface",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 40,
+        "startColumn": 0,
+        "endLine": 45,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/fileHistory.ts::FileSnapshot": {
+      "id": "src/rewind/fileHistory.ts::FileSnapshot",
+      "name": "FileSnapshot",
+      "kind": "interface",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 30,
+        "startColumn": 0,
+        "endLine": 37,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/fileHistory.ts::RewindResult": {
+      "id": "src/rewind/fileHistory.ts::RewindResult",
+      "name": "RewindResult",
+      "kind": "interface",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 54,
+        "startColumn": 0,
+        "endLine": 60,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/fileHistory.ts::SerializedFileHistoryState": {
+      "id": "src/rewind/fileHistory.ts::SerializedFileHistoryState",
+      "name": "SerializedFileHistoryState",
+      "kind": "interface",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 48,
+        "startColumn": 0,
+        "endLine": 51,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/fileHistory.ts::managers": {
+      "id": "src/rewind/fileHistory.ts::managers",
+      "name": "managers",
+      "kind": "constant",
+      "moduleId": "src/rewind/fileHistory.ts",
+      "location": {
+        "file": "src/rewind/fileHistory.ts",
+        "startLine": 397,
+        "startColumn": 6,
+        "endLine": 397,
+        "endColumn": 54
+      }
+    },
+    "src/rewind/rewindManager.ts::cleanupRewindManager": {
+      "id": "src/rewind/rewindManager.ts::cleanupRewindManager",
+      "name": "cleanupRewindManager",
+      "kind": "function",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 260,
+        "startColumn": 0,
+        "endLine": 262,
+        "endColumn": 1
+      },
+      "signature": "cleanupRewindManager()"
+    },
+    "src/rewind/rewindManager.ts::getRewindManager": {
+      "id": "src/rewind/rewindManager.ts::getRewindManager",
+      "name": "getRewindManager",
+      "kind": "function",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 250,
+        "startColumn": 0,
+        "endLine": 255,
+        "endColumn": 1
+      },
+      "signature": "getRewindManager()"
+    },
+    "src/rewind/rewindManager.ts::RewindManager": {
+      "id": "src/rewind/rewindManager.ts::RewindManager",
+      "name": "RewindManager",
+      "kind": "class",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 38,
+        "startColumn": 0,
+        "endLine": 242,
+        "endColumn": 1
+      },
+      "children": [
+        "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "src/rewind/rewindManager.ts::RewindManager::getFileHistoryManager",
+        "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint",
+        "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+        "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+        "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+        "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "src/rewind/rewindManager.ts::fileHistoryManager",
+        "src/rewind/rewindManager.ts::messages",
+        "src/rewind/rewindManager.ts::onMessagesChange"
+      ]
+    },
+    "src/rewind/rewindManager.ts::RewindManager::canRewind": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+      "name": "canRewind",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 231,
+        "startColumn": 2,
+        "endLine": 233,
+        "endColumn": 3
+      },
+      "signature": "canRewind()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::getFileHistoryManager": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::getFileHistoryManager",
+      "name": "getFileHistoryManager",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 58,
+        "startColumn": 2,
+        "endLine": 60,
+        "endColumn": 3
+      },
+      "signature": "getFileHistoryManager()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint",
+      "name": "getLastRewindPoint",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 238,
+        "startColumn": 2,
+        "endLine": 241,
+        "endColumn": 3
+      },
+      "signature": "getLastRewindPoint()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::getMessagePreview": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+      "name": "getMessagePreview",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 212,
+        "startColumn": 2,
+        "endLine": 226,
+        "endColumn": 3
+      },
+      "signature": "getMessagePreview()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+      "name": "getRewindableMessages",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 80,
+        "startColumn": 2,
+        "endLine": 105,
+        "endColumn": 3
+      },
+      "signature": "getRewindableMessages()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::previewRewind": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+      "name": "previewRewind",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 179,
+        "startColumn": 2,
+        "endLine": 207,
+        "endColumn": 3
+      },
+      "signature": "previewRewind()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::recordFileChange": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+      "name": "recordFileChange",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 72,
+        "startColumn": 2,
+        "endLine": 75,
+        "endColumn": 3
+      },
+      "signature": "recordFileChange()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::recordUserMessage": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+      "name": "recordUserMessage",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 65,
+        "startColumn": 2,
+        "endLine": 67,
+        "endColumn": 3
+      },
+      "signature": "recordUserMessage()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::rewind": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::rewind",
+      "name": "rewind",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 110,
+        "startColumn": 2,
+        "endLine": 138,
+        "endColumn": 3
+      },
+      "signature": "rewind()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::rewindCode": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+      "name": "rewindCode",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 143,
+        "startColumn": 2,
+        "endLine": 145,
+        "endColumn": 3
+      },
+      "signature": "rewindCode()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::rewindConversation": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+      "name": "rewindConversation",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 150,
+        "startColumn": 2,
+        "endLine": 174,
+        "endColumn": 3
+      },
+      "signature": "rewindConversation()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindManager::setMessages": {
+      "id": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+      "name": "setMessages",
+      "kind": "method",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 50,
+        "startColumn": 2,
+        "endLine": 53,
+        "endColumn": 3
+      },
+      "signature": "setMessages()",
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::fileHistoryManager": {
+      "id": "src/rewind/rewindManager.ts::fileHistoryManager",
+      "name": "fileHistoryManager",
+      "kind": "property",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 39,
+        "startColumn": 2,
+        "endLine": 39,
+        "endColumn": 49
+      },
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::messages": {
+      "id": "src/rewind/rewindManager.ts::messages",
+      "name": "messages",
+      "kind": "property",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 40,
+        "startColumn": 2,
+        "endLine": 40,
+        "endColumn": 35
+      },
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::onMessagesChange": {
+      "id": "src/rewind/rewindManager.ts::onMessagesChange",
+      "name": "onMessagesChange",
+      "kind": "property",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 41,
+        "startColumn": 2,
+        "endLine": 41,
+        "endColumn": 59
+      },
+      "parent": "src/rewind/rewindManager.ts::RewindManager"
+    },
+    "src/rewind/rewindManager.ts::RewindableMessage": {
+      "id": "src/rewind/rewindManager.ts::RewindableMessage",
+      "name": "RewindableMessage",
+      "kind": "interface",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 14,
+        "startColumn": 0,
+        "endLine": 21,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/rewindManager.ts::RewindOperationResult": {
+      "id": "src/rewind/rewindManager.ts::RewindOperationResult",
+      "name": "RewindOperationResult",
+      "kind": "interface",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 24,
+        "startColumn": 0,
+        "endLine": 33,
+        "endColumn": 1
+      }
+    },
+    "src/rewind/rewindManager.ts::managers": {
+      "id": "src/rewind/rewindManager.ts::managers",
+      "name": "managers",
+      "kind": "constant",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 245,
+        "startColumn": 6,
+        "endLine": 245,
+        "endColumn": 49
+      }
+    },
+    "src/rewind/rewindManager.ts::RewindOption": {
+      "id": "src/rewind/rewindManager.ts::RewindOption",
+      "name": "RewindOption",
+      "kind": "variable",
+      "moduleId": "src/rewind/rewindManager.ts",
+      "location": {
+        "file": "src/rewind/rewindManager.ts",
+        "startLine": 11,
+        "startColumn": 0,
+        "endLine": 11,
+        "endColumn": 74
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/rewind/rewindManager.ts",
+        "target": "src/rewind/fileHistory.ts",
+        "type": "import",
+        "symbols": [
+          "FileHistoryManager",
+          "getFileHistoryManager",
+          "type",
+          "RewindResult"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/ui/hooks/useRewind.ts",
+        "target": "src/rewind/index.ts",
+        "type": "import",
+        "symbols": [
+          "getRewindManager",
+          "type",
+          "RewindableMessage",
+          "type",
+          "RewindOption",
+          "type",
+          "RewindOperationResult"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/agents/context.example.ts::example5_ContextIsolation",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/context.example.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/context.ts::ContextIsolation::cleanupAgent",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/context.ts",
+            "startLine": 1089,
+            "startColumn": 6,
+            "endLine": 1089,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/context.ts::ContextIsolation::cleanupExpired",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/context.ts",
+            "startLine": 1102,
+            "startColumn": 8,
+            "endLine": 1102,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/chrome-mcp/socket-client.ts::SocketClient::disconnect",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/chrome-mcp/socket-client.ts",
+            "startLine": 378,
+            "startColumn": 4,
+            "endLine": 378,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/chrome-mcp/socket-client.ts::SocketClient::scheduleReconnect",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/chrome-mcp/socket-client.ts",
+            "startLine": 186,
+            "startColumn": 6,
+            "endLine": 186,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/map/dependency-analyzer.ts::DependencyAnalyzer::resolveImportTarget",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/dependency-analyzer.ts",
+            "startLine": 133,
+            "startColumn": 17,
+            "endLine": 133,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/notifications/index.ts::NotificationManager::notify",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 114,
+            "startColumn": 9,
+            "endLine": 114,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/plugins/cli.ts::disablePlugin",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/plugins/cli.ts",
+            "startLine": 231,
+            "startColumn": 26,
+            "endLine": 231,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/plugins/cli.ts::enablePlugin",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/plugins/cli.ts",
+            "startLine": 209,
+            "startColumn": 26,
+            "endLine": 209,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/builder.ts::SystemPromptBuilder::build",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/prompt/builder.ts",
+            "startLine": 194,
+            "startColumn": 26,
+            "endLine": 194,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/cache.ts::PromptCache::set",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/prompt/cache.ts",
+            "startLine": 95,
+            "startColumn": 4,
+            "endLine": 95,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/cache.ts::PromptCache::set",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/prompt/cache.ts",
+            "startLine": 107,
+            "startColumn": 41,
+            "endLine": 107,
+            "endColumn": 57
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 412,
+            "startColumn": 16,
+            "endLine": 412,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 27,
+            "endLine": 413,
+            "endColumn": 30
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 413,
+            "startColumn": 18,
+            "endLine": 413,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 12,
+            "endLine": 415,
+            "endColumn": 19
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/agents/context.ts::ContextIsolation::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/background/index.ts::BackgroundTaskManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/chrome-mcp/socket-client.ts::SocketClient::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/mcp/cancellation.ts::McpCancellationManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/mcp/lifecycle.ts::McpLifecycleManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/mcp/protocol.ts::McpProtocol::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/mcp/sampling.ts::McpSamplingManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/plugins/index.ts::PluginManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/prompt/cache.ts::PromptCache::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/providers/vertex.ts::VertexAIClient::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/sandbox/resource-limits.ts::ResourceLimiter::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/security/audit.ts::AuditLogger::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/streaming/message-stream.ts::EnhancedMessageStream::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/tools/chrome.ts::ChromeTool::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::cleanupFileHistoryManager",
+        "callee": "src/web/server/user-interaction.ts::UserInteractionHandler::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 415,
+            "startColumn": 4,
+            "endLine": 415,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 402,
+            "startColumn": 16,
+            "endLine": 402,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 403,
+            "startColumn": 16,
+            "endLine": 403,
+            "endColumn": 19
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 403,
+            "startColumn": 7,
+            "endLine": 403,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 403,
+            "startColumn": 7,
+            "endLine": 403,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 403,
+            "startColumn": 7,
+            "endLine": 403,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 13,
+            "endLine": 404,
+            "endColumn": 16
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 4,
+            "endLine": 404,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 32,
+            "endLine": 404,
+            "endColumn": 50
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 28,
+            "endLine": 404,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/config/config-command.ts::ConfigCommand::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 4,
+            "endLine": 404,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/config/index.ts::ConfigManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 4,
+            "endLine": 404,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/memory/index.ts::MemoryManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 4,
+            "endLine": 404,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/prompt/cache.ts::PromptCache::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 404,
+            "startColumn": 4,
+            "endLine": 404,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 18,
+            "endLine": 406,
+            "endColumn": 21
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::getFileHistoryManager",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 406,
+            "startColumn": 9,
+            "endLine": 406,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 228,
+            "startColumn": 10,
+            "endLine": 228,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 245,
+            "startColumn": 30,
+            "endLine": 245,
+            "endColumn": 43
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 245,
+            "startColumn": 25,
+            "endLine": 245,
+            "endColumn": 43
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 263,
+            "startColumn": 28,
+            "endLine": 263,
+            "endColumn": 41
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 263,
+            "startColumn": 23,
+            "endLine": 263,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 258,
+            "startColumn": 20,
+            "endLine": 258,
+            "endColumn": 25
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 258,
+            "startColumn": 12,
+            "endLine": 258,
+            "endColumn": 25
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 285,
+            "startColumn": 16,
+            "endLine": 285,
+            "endColumn": 21
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 285,
+            "startColumn": 8,
+            "endLine": 285,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 258,
+            "startColumn": 12,
+            "endLine": 258,
+            "endColumn": 25
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 285,
+            "startColumn": 8,
+            "endLine": 285,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 258,
+            "startColumn": 12,
+            "endLine": 258,
+            "endColumn": 25
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 285,
+            "startColumn": 8,
+            "endLine": 285,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 258,
+            "startColumn": 12,
+            "endLine": 258,
+            "endColumn": 25
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 285,
+            "startColumn": 8,
+            "endLine": 285,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 123,
+            "startColumn": 2,
+            "endLine": 123,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 126,
+            "startColumn": 32,
+            "endLine": 126,
+            "endColumn": 45
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 126,
+            "startColumn": 27,
+            "endLine": 126,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/map/dependency-analyzer.ts::DependencyAnalyzer::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 126,
+            "startColumn": 27,
+            "endLine": 126,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/sandbox/filesystem.ts::FilesystemSandbox::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 126,
+            "startColumn": 27,
+            "endLine": 126,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 141,
+            "startColumn": 24,
+            "endLine": 141,
+            "endColumn": 35
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 141,
+            "startColumn": 19,
+            "endLine": 141,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/prompt/cache.ts::PromptCache::computeHash",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 141,
+            "startColumn": 19,
+            "endLine": 141,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 144,
+            "startColumn": 34,
+            "endLine": 144,
+            "endColumn": 56
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 144,
+            "startColumn": 29,
+            "endLine": 144,
+            "endColumn": 56
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 154,
+            "startColumn": 11,
+            "endLine": 154,
+            "endColumn": 20
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 154,
+            "startColumn": 6,
+            "endLine": 154,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 164,
+            "startColumn": 14,
+            "endLine": 164,
+            "endColumn": 19
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 164,
+            "startColumn": 6,
+            "endLine": 164,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 164,
+            "startColumn": 6,
+            "endLine": 164,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 164,
+            "startColumn": 6,
+            "endLine": 164,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 164,
+            "startColumn": 6,
+            "endLine": 164,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::calculateDiff",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 300,
+            "startColumn": 10,
+            "endLine": 300,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 371,
+            "startColumn": 2,
+            "endLine": 371,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 377,
+            "startColumn": 14,
+            "endLine": 377,
+            "endColumn": 19
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 377,
+            "startColumn": 6,
+            "endLine": 377,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 377,
+            "startColumn": 6,
+            "endLine": 377,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 377,
+            "startColumn": 6,
+            "endLine": 377,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 377,
+            "startColumn": 6,
+            "endLine": 377,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 333,
+            "startColumn": 10,
+            "endLine": 333,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::computeHash",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::update",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 334,
+            "startColumn": 39,
+            "endLine": 334,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 172,
+            "startColumn": 2,
+            "endLine": 172,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 179,
+            "startColumn": 26,
+            "endLine": 179,
+            "endColumn": 48
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 179,
+            "startColumn": 21,
+            "endLine": 179,
+            "endColumn": 48
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::generateBackupFileName",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 323,
+            "startColumn": 10,
+            "endLine": 323,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshots",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshots",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 204,
+            "startColumn": 2,
+            "endLine": 204,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshotsCount",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::getSnapshotsCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 391,
+            "startColumn": 2,
+            "endLine": 391,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::getTrackedFilesCount",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::getTrackedFilesCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 384,
+            "startColumn": 2,
+            "endLine": 384,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 197,
+            "startColumn": 2,
+            "endLine": 197,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::isEnabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 91,
+            "startColumn": 2,
+            "endLine": 91,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 116,
+            "startColumn": 32,
+            "endLine": 116,
+            "endColumn": 45
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 116,
+            "startColumn": 27,
+            "endLine": 116,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/map/dependency-analyzer.ts::DependencyAnalyzer::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 116,
+            "startColumn": 27,
+            "endLine": 116,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/sandbox/filesystem.ts::FilesystemSandbox::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 116,
+            "startColumn": 27,
+            "endLine": 116,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 117,
+            "startColumn": 35,
+            "endLine": 117,
+            "endColumn": 38
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 117,
+            "startColumn": 22,
+            "endLine": 117,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 117,
+            "startColumn": 22,
+            "endLine": 117,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::isTracked",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 117,
+            "startColumn": 22,
+            "endLine": 117,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 340,
+            "startColumn": 10,
+            "endLine": 340,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 343,
+            "startColumn": 34,
+            "endLine": 343,
+            "endColumn": 37
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 343,
+            "startColumn": 26,
+            "endLine": 343,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 361,
+            "startColumn": 2,
+            "endLine": 361,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 211,
+            "startColumn": 2,
+            "endLine": 211,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::applySnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 222,
+            "startColumn": 16,
+            "endLine": 222,
+            "endColumn": 29
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 222,
+            "startColumn": 11,
+            "endLine": 222,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::serialize",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::serialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 351,
+            "startColumn": 2,
+            "endLine": 351,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 105,
+            "startColumn": 2,
+            "endLine": 105,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 108,
+            "startColumn": 32,
+            "endLine": 108,
+            "endColumn": 45
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 108,
+            "startColumn": 27,
+            "endLine": 108,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/map/dependency-analyzer.ts::DependencyAnalyzer::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 108,
+            "startColumn": 27,
+            "endLine": 108,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/sandbox/filesystem.ts::FilesystemSandbox::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 108,
+            "startColumn": 27,
+            "endLine": 108,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/mcp/websocket-connection.ts::CircularBuffer::add",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 109,
+            "startColumn": 28,
+            "endLine": 109,
+            "endColumn": 31
+          },
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 109,
+            "startColumn": 15,
+            "endLine": 109,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::add",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/fileHistory.ts",
+            "startLine": 109,
+            "startColumn": 15,
+            "endLine": 109,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::cleanupRewindManager",
+        "callee": "src/rewind/rewindManager.ts::cleanupRewindManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 260,
+            "startColumn": 16,
+            "endLine": 260,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/rewind/rewindManager.ts::getRewindManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 250,
+            "startColumn": 16,
+            "endLine": 250,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 251,
+            "startColumn": 16,
+            "endLine": 251,
+            "endColumn": 19
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 251,
+            "startColumn": 7,
+            "endLine": 251,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 251,
+            "startColumn": 7,
+            "endLine": 251,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 251,
+            "startColumn": 7,
+            "endLine": 251,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 13,
+            "endLine": 252,
+            "endColumn": 16
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 4,
+            "endLine": 252,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/rewind/rewindManager.ts::RewindManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 32,
+            "endLine": 252,
+            "endColumn": 45
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 28,
+            "endLine": 252,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/config/config-command.ts::ConfigCommand::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 4,
+            "endLine": 252,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/config/index.ts::ConfigManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 4,
+            "endLine": 252,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/memory/index.ts::MemoryManager::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 4,
+            "endLine": 252,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/prompt/cache.ts::PromptCache::set",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 252,
+            "startColumn": 4,
+            "endLine": 252,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 18,
+            "endLine": 254,
+            "endColumn": 21
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::getRewindManager",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 254,
+            "startColumn": 9,
+            "endLine": 254,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 231,
+            "startColumn": 2,
+            "endLine": 231,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 232,
+            "startColumn": 44,
+            "endLine": 232,
+            "endColumn": 65
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 232,
+            "startColumn": 39,
+            "endLine": 232,
+            "endColumn": 65
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getFileHistoryManager",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getFileHistoryManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 58,
+            "startColumn": 2,
+            "endLine": 58,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 238,
+            "startColumn": 2,
+            "endLine": 238,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getLastRewindPoint",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 239,
+            "startColumn": 28,
+            "endLine": 239,
+            "endColumn": 49
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 239,
+            "startColumn": 23,
+            "endLine": 239,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 212,
+            "startColumn": 10,
+            "endLine": 212,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 80,
+            "startColumn": 2,
+            "endLine": 80,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 88,
+            "startColumn": 27,
+            "endLine": 88,
+            "endColumn": 44
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 88,
+            "startColumn": 22,
+            "endLine": 88,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::hasSnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 92,
+            "startColumn": 53,
+            "endLine": 92,
+            "endColumn": 64
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 92,
+            "startColumn": 34,
+            "endLine": 92,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 179,
+            "startColumn": 2,
+            "endLine": 179,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 192,
+            "startColumn": 49,
+            "endLine": 192,
+            "endColumn": 64
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 192,
+            "startColumn": 30,
+            "endLine": 192,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 72,
+            "startColumn": 2,
+            "endLine": 72,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::backupFileBeforeChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 73,
+            "startColumn": 28,
+            "endLine": 73,
+            "endColumn": 50
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 73,
+            "startColumn": 9,
+            "endLine": 73,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::trackFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 74,
+            "startColumn": 28,
+            "endLine": 74,
+            "endColumn": 37
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 74,
+            "startColumn": 9,
+            "endLine": 74,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 65,
+            "startColumn": 2,
+            "endLine": 65,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::createSnapshot",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 66,
+            "startColumn": 28,
+            "endLine": 66,
+            "endColumn": 42
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 66,
+            "startColumn": 9,
+            "endLine": 66,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 110,
+            "startColumn": 8,
+            "endLine": 110,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 119,
+            "startColumn": 30,
+            "endLine": 119,
+            "endColumn": 40
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 119,
+            "startColumn": 25,
+            "endLine": 119,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 129,
+            "startColumn": 30,
+            "endLine": 129,
+            "endColumn": 48
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 129,
+            "startColumn": 25,
+            "endLine": 129,
+            "endColumn": 48
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 143,
+            "startColumn": 10,
+            "endLine": 143,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewindCode",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::rewindToMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 144,
+            "startColumn": 35,
+            "endLine": 144,
+            "endColumn": 50
+          },
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 144,
+            "startColumn": 16,
+            "endLine": 144,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 150,
+            "startColumn": 10,
+            "endLine": 150,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::rewindConversation",
+        "callee": "src/rewind/rewindManager.ts::onMessagesChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 167,
+            "startColumn": 11,
+            "endLine": 167,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rewind/rewindManager.ts",
+            "startLine": 50,
+            "startColumn": 2,
+            "endLine": 50,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/sandbox/filesystem.ts::FilesystemSandbox::isPathAllowed",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/sandbox/filesystem.ts",
+            "startLine": 86,
+            "startColumn": 25,
+            "endLine": 86,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/sandbox/filesystem.ts::FilesystemSandbox::matchesRule",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/sandbox/filesystem.ts",
+            "startLine": 291,
+            "startColumn": 20,
+            "endLine": 291,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/sandbox/filesystem.ts::FilesystemSandbox::resolvePath",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::normalizePath",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/sandbox/filesystem.ts",
+            "startLine": 135,
+            "startColumn": 11,
+            "endLine": 135,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/session/list.ts::getSessionDetails",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getMessagePreview",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/session/list.ts",
+            "startLine": 429,
+            "startColumn": 25,
+            "endLine": 429,
+            "endColumn": 42
+          },
+          {
+            "file": "src/session/list.ts",
+            "startLine": 430,
+            "startColumn": 24,
+            "endLine": 430,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/streaming/message-stream.ts::EnhancedMessageStream::abort",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/streaming/message-stream.ts",
+            "startLine": 301,
+            "startColumn": 4,
+            "endLine": 301,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/streaming/message-stream.ts::EnhancedMessageStream::handleError",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/streaming/message-stream.ts",
+            "startLine": 318,
+            "startColumn": 4,
+            "endLine": 318,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/streaming/message-stream.ts::EnhancedMessageStream::handleMessageStop",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/streaming/message-stream.ts",
+            "startLine": 649,
+            "startColumn": 4,
+            "endLine": 649,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::EditTool::execute",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 1027,
+            "startColumn": 13,
+            "endLine": 1027,
+            "endColumn": 31
+          },
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 1036,
+            "startColumn": 13,
+            "endLine": 1036,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::EditTool::writeEntireFile",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::restore",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 1120,
+            "startColumn": 11,
+            "endLine": 1120,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::getRewindManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 54,
+            "startColumn": 41,
+            "endLine": 54,
+            "endColumn": 57
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 58,
+            "startColumn": 18,
+            "endLine": 58,
+            "endColumn": 29
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 58,
+            "startColumn": 4,
+            "endLine": 58,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::getRewindableMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 62,
+            "startColumn": 43,
+            "endLine": 62,
+            "endColumn": 64
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 62,
+            "startColumn": 29,
+            "endLine": 62,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::canRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 65,
+            "startColumn": 34,
+            "endLine": 65,
+            "endColumn": 43
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 65,
+            "startColumn": 20,
+            "endLine": 65,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::previewRewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 81,
+            "startColumn": 25,
+            "endLine": 81,
+            "endColumn": 38
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 81,
+            "startColumn": 11,
+            "endLine": 81,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 86,
+            "startColumn": 39,
+            "endLine": 86,
+            "endColumn": 45
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 86,
+            "startColumn": 25,
+            "endLine": 86,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordUserMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 101,
+            "startColumn": 18,
+            "endLine": 101,
+            "endColumn": 35
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 101,
+            "startColumn": 4,
+            "endLine": 101,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/hooks/useRewind.ts::useRewind",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::recordFileChange",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 106,
+            "startColumn": 18,
+            "endLine": 106,
+            "endColumn": 34
+          },
+          {
+            "file": "src/ui/hooks/useRewind.ts",
+            "startLine": 106,
+            "startColumn": 4,
+            "endLine": 106,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/conversation.ts::ConversationManager::disablePlugin",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/conversation.ts",
+            "startLine": 1525,
+            "startColumn": 28,
+            "endLine": 1525,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/conversation.ts::ConversationManager::enablePlugin",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::setEnabled",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/conversation.ts",
+            "startLine": 1507,
+            "startColumn": 28,
+            "endLine": 1507,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::getInlineReactApp",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::setMessages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2314,
+            "startColumn": 16,
+            "endLine": 2314,
+            "endColumn": 27
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2334,
+            "startColumn": 18,
+            "endLine": 2334,
+            "endColumn": 29
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2352,
+            "startColumn": 16,
+            "endLine": 2352,
+            "endColumn": 27
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2373,
+            "startColumn": 18,
+            "endLine": 2373,
+            "endColumn": 29
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2385,
+            "startColumn": 16,
+            "endLine": 2385,
+            "endColumn": 27
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2422,
+            "startColumn": 14,
+            "endLine": 2422,
+            "endColumn": 25
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2480,
+            "startColumn": 8,
+            "endLine": 2480,
+            "endColumn": 19
+          },
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2621,
+            "startColumn": 8,
+            "endLine": 2621,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/user-interaction.ts::UserInteractionHandler::askQuestion",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/user-interaction.ts",
+            "startLine": 88,
+            "startColumn": 8,
+            "endLine": 88,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/user-interaction.ts::UserInteractionHandler::handleAnswer",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/user-interaction.ts",
+            "startLine": 108,
+            "startColumn": 4,
+            "endLine": 108,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/user-interaction.ts::UserInteractionHandler::handleTimeout",
+        "callee": "src/rewind/fileHistory.ts::FileHistoryManager::cleanup",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/user-interaction.ts",
+            "startLine": 127,
+            "startColumn": 4,
+            "endLine": 127,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "tests/commands/session.test.ts::describe('Rewind Command') callback",
+        "callee": "src/rewind/rewindManager.ts::RewindManager::rewind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/commands/session.test.ts",
+            "startLine": 273,
+            "startColumn": 28,
+            "endLine": 273,
+            "endColumn": 34
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

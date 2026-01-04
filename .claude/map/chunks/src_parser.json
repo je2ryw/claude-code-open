@@ -1,0 +1,2430 @@
+{
+  "path": "src/parser",
+  "modules": {
+    "src/parser/index.ts": {
+      "id": "src/parser/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\parser\\index.ts",
+      "language": "typescript",
+      "lines": 314,
+      "size": 8408,
+      "exports": [
+        "src/parser/index.ts::getLanguageConfig",
+        "src/parser/index.ts::getSupportedLanguages",
+        "src/parser/index.ts::CodeAnalyzer",
+        "src/parser/index.ts::CodeParser"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "基于 LSP (Language Server Protocol) 的代码解析与分析模块,支持多语言代码的符号提取、引用查找、定义跳转等语义分析功能。提供代码解析器和分析器两个核心类,自动管理 LSP 服务器的初始化和生命周期。",
+        "responsibility": "提供统一的代码语义分析能力,包括符号提取、引用查找、定义跳转、语法检测和代码折叠识别",
+        "businessDomain": "代码分析",
+        "architectureLayer": "business",
+        "tags": [
+          "LSP",
+          "代码解析",
+          "符号提取",
+          "语义分析",
+          "多语言支持"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:53:02.365Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/parser/index.ts::getLanguageConfig": {
+      "id": "src/parser/index.ts::getLanguageConfig",
+      "name": "getLanguageConfig",
+      "kind": "function",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 304,
+        "startColumn": 0,
+        "endLine": 306,
+        "endColumn": 1
+      },
+      "signature": "getLanguageConfig()"
+    },
+    "src/parser/index.ts::getSupportedLanguages": {
+      "id": "src/parser/index.ts::getSupportedLanguages",
+      "name": "getSupportedLanguages",
+      "kind": "function",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 299,
+        "startColumn": 0,
+        "endLine": 301,
+        "endColumn": 1
+      },
+      "signature": "getSupportedLanguages()"
+    },
+    "src/parser/index.ts::CodeAnalyzer": {
+      "id": "src/parser/index.ts::CodeAnalyzer",
+      "name": "CodeAnalyzer",
+      "kind": "class",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 124,
+        "startColumn": 0,
+        "endLine": 296,
+        "endColumn": 1
+      },
+      "children": [
+        "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges",
+        "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent",
+        "src/parser/index.ts::CodeAnalyzer::detectSyntaxErrors",
+        "src/parser/index.ts::CodeAnalyzer::findByKind",
+        "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "src/parser/index.ts::CodeAnalyzer::findSymbol",
+        "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "src/parser/index.ts::CodeAnalyzer::getManager",
+        "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "src/parser/index.ts::CodeAnalyzer::initialize",
+        "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "src/parser/index.ts::parser"
+      ]
+    },
+    "src/parser/index.ts::CodeAnalyzer::analyzeDirectory": {
+      "id": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+      "name": "analyzeDirectory",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 150,
+        "startColumn": 2,
+        "endLine": 178,
+        "endColumn": 3
+      },
+      "signature": "analyzeDirectory()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::analyzeFile": {
+      "id": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+      "name": "analyzeFile",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 143,
+        "startColumn": 2,
+        "endLine": 148,
+        "endColumn": 3
+      },
+      "signature": "analyzeFile()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges": {
+      "id": "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges",
+      "name": "detectFoldingRanges",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 233,
+        "startColumn": 2,
+        "endLine": 236,
+        "endColumn": 3
+      },
+      "signature": "detectFoldingRanges()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent": {
+      "id": "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent",
+      "name": "detectFoldingRangesByIndent",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 238,
+        "startColumn": 2,
+        "endLine": 281,
+        "endColumn": 3
+      },
+      "signature": "detectFoldingRangesByIndent()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::detectSyntaxErrors": {
+      "id": "src/parser/index.ts::CodeAnalyzer::detectSyntaxErrors",
+      "name": "detectSyntaxErrors",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 224,
+        "startColumn": 2,
+        "endLine": 228,
+        "endColumn": 3
+      },
+      "signature": "detectSyntaxErrors()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::findByKind": {
+      "id": "src/parser/index.ts::CodeAnalyzer::findByKind",
+      "name": "findByKind",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 185,
+        "startColumn": 2,
+        "endLine": 187,
+        "endColumn": 3
+      },
+      "signature": "findByKind()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::findReferencesInFile": {
+      "id": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+      "name": "findReferencesInFile",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 196,
+        "startColumn": 2,
+        "endLine": 205,
+        "endColumn": 3
+      },
+      "signature": "findReferencesInFile()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::findSymbol": {
+      "id": "src/parser/index.ts::CodeAnalyzer::findSymbol",
+      "name": "findSymbol",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 180,
+        "startColumn": 2,
+        "endLine": 183,
+        "endColumn": 3
+      },
+      "signature": "findSymbol()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::getDefinition": {
+      "id": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+      "name": "getDefinition",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 210,
+        "startColumn": 2,
+        "endLine": 219,
+        "endColumn": 3
+      },
+      "signature": "getDefinition()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::getManager": {
+      "id": "src/parser/index.ts::CodeAnalyzer::getManager",
+      "name": "getManager",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 293,
+        "startColumn": 2,
+        "endLine": 295,
+        "endColumn": 3
+      },
+      "signature": "getManager()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::getOutline": {
+      "id": "src/parser/index.ts::CodeAnalyzer::getOutline",
+      "name": "getOutline",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 189,
+        "startColumn": 2,
+        "endLine": 191,
+        "endColumn": 3
+      },
+      "signature": "getOutline()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::initialize": {
+      "id": "src/parser/index.ts::CodeAnalyzer::initialize",
+      "name": "initialize",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 137,
+        "startColumn": 2,
+        "endLine": 141,
+        "endColumn": 3
+      },
+      "signature": "initialize()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeAnalyzer::shutdown": {
+      "id": "src/parser/index.ts::CodeAnalyzer::shutdown",
+      "name": "shutdown",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 286,
+        "startColumn": 2,
+        "endLine": 288,
+        "endColumn": 3
+      },
+      "signature": "shutdown()",
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::extractor": {
+      "id": "src/parser/index.ts::extractor",
+      "name": "extractor",
+      "kind": "property",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 64,
+        "startColumn": 2,
+        "endLine": 64,
+        "endColumn": 40
+      },
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::initialized": {
+      "id": "src/parser/index.ts::initialized",
+      "name": "initialized",
+      "kind": "property",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 66,
+        "startColumn": 2,
+        "endLine": 66,
+        "endColumn": 39
+      },
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::parser": {
+      "id": "src/parser/index.ts::parser",
+      "name": "parser",
+      "kind": "property",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 125,
+        "startColumn": 2,
+        "endLine": 125,
+        "endColumn": 29
+      },
+      "parent": "src/parser/index.ts::CodeAnalyzer"
+    },
+    "src/parser/index.ts::CodeParser": {
+      "id": "src/parser/index.ts::CodeParser",
+      "name": "CodeParser",
+      "kind": "class",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 63,
+        "startColumn": 0,
+        "endLine": 119,
+        "endColumn": 1
+      },
+      "children": [
+        "src/parser/index.ts::extractor",
+        "src/parser/index.ts::initialized",
+        "src/parser/index.ts::CodeParser::detectLanguage",
+        "src/parser/index.ts::CodeParser::getManager",
+        "src/parser/index.ts::CodeParser::initialize",
+        "src/parser/index.ts::CodeParser::parseFile",
+        "src/parser/index.ts::manager"
+      ]
+    },
+    "src/parser/index.ts::CodeParser::detectLanguage": {
+      "id": "src/parser/index.ts::CodeParser::detectLanguage",
+      "name": "detectLanguage",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 106,
+        "startColumn": 2,
+        "endLine": 111,
+        "endColumn": 3
+      },
+      "signature": "detectLanguage()",
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::CodeParser::getManager": {
+      "id": "src/parser/index.ts::CodeParser::getManager",
+      "name": "getManager",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 116,
+        "startColumn": 2,
+        "endLine": 118,
+        "endColumn": 3
+      },
+      "signature": "getManager()",
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::CodeParser::initialize": {
+      "id": "src/parser/index.ts::CodeParser::initialize",
+      "name": "initialize",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 77,
+        "startColumn": 2,
+        "endLine": 86,
+        "endColumn": 3
+      },
+      "signature": "initialize()",
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::CodeParser::parseFile": {
+      "id": "src/parser/index.ts::CodeParser::parseFile",
+      "name": "parseFile",
+      "kind": "method",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 91,
+        "startColumn": 2,
+        "endLine": 101,
+        "endColumn": 3
+      },
+      "signature": "parseFile()",
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::manager": {
+      "id": "src/parser/index.ts::manager",
+      "name": "manager",
+      "kind": "property",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 65,
+        "startColumn": 2,
+        "endLine": 65,
+        "endColumn": 30
+      },
+      "parent": "src/parser/index.ts::CodeParser"
+    },
+    "src/parser/index.ts::FoldingRange": {
+      "id": "src/parser/index.ts::FoldingRange",
+      "name": "FoldingRange",
+      "kind": "interface",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 39,
+        "startColumn": 0,
+        "endLine": 43,
+        "endColumn": 1
+      }
+    },
+    "src/parser/index.ts::LanguageConfig": {
+      "id": "src/parser/index.ts::LanguageConfig",
+      "name": "LanguageConfig",
+      "kind": "interface",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 46,
+        "startColumn": 0,
+        "endLine": 49,
+        "endColumn": 1
+      }
+    },
+    "src/parser/index.ts::SyntaxError": {
+      "id": "src/parser/index.ts::SyntaxError",
+      "name": "SyntaxError",
+      "kind": "interface",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 31,
+        "startColumn": 0,
+        "endLine": 36,
+        "endColumn": 1
+      }
+    },
+    "src/parser/index.ts::codeAnalyzer": {
+      "id": "src/parser/index.ts::codeAnalyzer",
+      "name": "codeAnalyzer",
+      "kind": "constant",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 310,
+        "startColumn": 13,
+        "endLine": 310,
+        "endColumn": 46
+      }
+    },
+    "src/parser/index.ts::codeParser": {
+      "id": "src/parser/index.ts::codeParser",
+      "name": "codeParser",
+      "kind": "constant",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 309,
+        "startColumn": 13,
+        "endLine": 309,
+        "endColumn": 42
+      }
+    },
+    "src/parser/index.ts::lang": {
+      "id": "src/parser/index.ts::lang",
+      "name": "lang",
+      "kind": "constant",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 53,
+        "startColumn": 12,
+        "endLine": 53,
+        "endColumn": 16
+      }
+    },
+    "src/parser/index.ts::LANGUAGE_CONFIGS": {
+      "id": "src/parser/index.ts::LANGUAGE_CONFIGS",
+      "name": "LANGUAGE_CONFIGS",
+      "kind": "constant",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 52,
+        "startColumn": 6,
+        "endLine": 52,
+        "endColumn": 59
+      }
+    },
+    "src/parser/index.ts::server": {
+      "id": "src/parser/index.ts::server",
+      "name": "server",
+      "kind": "constant",
+      "moduleId": "src/parser/index.ts",
+      "location": {
+        "file": "src/parser/index.ts",
+        "startLine": 53,
+        "startColumn": 18,
+        "endLine": 53,
+        "endColumn": 24
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [],
+    "symbolCalls": [
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::analyzeDirectory",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 492,
+            "startColumn": 26,
+            "endLine": 492,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::analyzeFile",
+        "callee": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 438,
+            "startColumn": 21,
+            "endLine": 438,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::analyzeStructure",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 426,
+            "startColumn": 13,
+            "endLine": 426,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::analyzeStructure",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 428,
+            "startColumn": 13,
+            "endLine": 428,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/parallel.ts::ParallelAgentExecutor::execute",
+        "callee": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/parallel.ts",
+            "startLine": 266,
+            "startColumn": 19,
+            "endLine": 266,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/parallel.ts::ParallelAgentExecutor::executeWithDependencies",
+        "callee": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/agents/parallel.ts",
+            "startLine": 315,
+            "startColumn": 19,
+            "endLine": 315,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/tools.ts::AgentToolFilter::getAvailableTools",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/tools.ts",
+            "startLine": 283,
+            "startColumn": 26,
+            "endLine": 283,
+            "endColumn": 39
+          },
+          {
+            "file": "src/agents/tools.ts",
+            "startLine": 283,
+            "startColumn": 21,
+            "endLine": 283,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/lsp/manager.ts::initializeLSPManager",
+        "callee": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/lsp/manager.ts",
+            "startLine": 1180,
+            "startColumn": 10,
+            "endLine": 1180,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/lsp/manager.ts::initializeLSPManager",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/lsp/manager.ts",
+            "startLine": 1208,
+            "startColumn": 8,
+            "endLine": 1208,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/lsp/manager.ts::initializeLSPManager",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/lsp/manager.ts",
+            "startLine": 1208,
+            "startColumn": 8,
+            "endLine": 1208,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/map/analyzer.ts::CodeMapAnalyzer::analyzeFile",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 157,
+            "startColumn": 26,
+            "endLine": 157,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/map/analyzer.ts::CodeMapAnalyzer::analyzeFiles",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 363,
+            "startColumn": 25,
+            "endLine": 363,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/mcp/auto-discovery.ts::initializeAutoDiscovery",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/mcp/auto-discovery.ts",
+            "startLine": 1345,
+            "startColumn": 8,
+            "endLine": 1345,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/mcp/auto-discovery.ts::initializeAutoDiscovery",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/mcp/auto-discovery.ts",
+            "startLine": 1345,
+            "startColumn": 8,
+            "endLine": 1345,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::getLanguageConfig",
+        "callee": "src/parser/index.ts::getLanguageConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 304,
+            "startColumn": 16,
+            "endLine": 304,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::getSupportedLanguages",
+        "callee": "src/parser/index.ts::getSupportedLanguages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 299,
+            "startColumn": 16,
+            "endLine": 299,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::getSupportedLanguages",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 300,
+            "startColumn": 16,
+            "endLine": 300,
+            "endColumn": 20
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 300,
+            "startColumn": 9,
+            "endLine": 300,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 150,
+            "startColumn": 8,
+            "endLine": 150,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 17,
+            "endLine": 152,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 17,
+            "endLine": 152,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/env/manager.ts::EnvManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/lsp/manager.ts::LSPServerManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/mcp/auto-discovery.ts::McpAutoDiscovery::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/mcp/protocol.ts::McpProtocol::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/renderer/index.ts::SvgRenderer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/web/server/conversation.ts::ConversationManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 152,
+            "startColumn": 12,
+            "endLine": 152,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeDirectory",
+        "callee": "src/parser/index.ts::CodeParser::parseFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 169,
+            "startColumn": 50,
+            "endLine": 169,
+            "endColumn": 59
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 169,
+            "startColumn": 43,
+            "endLine": 169,
+            "endColumn": 59
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 143,
+            "startColumn": 8,
+            "endLine": 143,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 17,
+            "endLine": 145,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 17,
+            "endLine": 145,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/env/manager.ts::EnvManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/lsp/manager.ts::LSPServerManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/mcp/auto-discovery.ts::McpAutoDiscovery::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/mcp/protocol.ts::McpProtocol::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/renderer/index.ts::SvgRenderer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/web/server/conversation.ts::ConversationManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 145,
+            "startColumn": 12,
+            "endLine": 145,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callee": "src/parser/index.ts::CodeParser::parseFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 147,
+            "startColumn": 23,
+            "endLine": 147,
+            "endColumn": 32
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 147,
+            "startColumn": 16,
+            "endLine": 147,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges",
+        "callee": "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 233,
+            "startColumn": 8,
+            "endLine": 233,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::detectFoldingRanges",
+        "callee": "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 235,
+            "startColumn": 16,
+            "endLine": 235,
+            "endColumn": 43
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 235,
+            "startColumn": 11,
+            "endLine": 235,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent",
+        "callee": "src/parser/index.ts::CodeAnalyzer::detectFoldingRangesByIndent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 238,
+            "startColumn": 10,
+            "endLine": 238,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::detectSyntaxErrors",
+        "callee": "src/parser/index.ts::CodeAnalyzer::detectSyntaxErrors",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 224,
+            "startColumn": 8,
+            "endLine": 224,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findByKind",
+        "callee": "src/parser/index.ts::CodeAnalyzer::findByKind",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 185,
+            "startColumn": 2,
+            "endLine": 185,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findByKind",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 186,
+            "startColumn": 19,
+            "endLine": 186,
+            "endColumn": 25
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 186,
+            "startColumn": 11,
+            "endLine": 186,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 196,
+            "startColumn": 8,
+            "endLine": 196,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 17,
+            "endLine": 202,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 17,
+            "endLine": 202,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/env/manager.ts::EnvManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/lsp/manager.ts::LSPServerManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/mcp/auto-discovery.ts::McpAutoDiscovery::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/mcp/protocol.ts::McpProtocol::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/renderer/index.ts::SvgRenderer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/web/server/conversation.ts::ConversationManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 202,
+            "startColumn": 12,
+            "endLine": 202,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/map/server/static/app.js::findReferences",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 204,
+            "startColumn": 26,
+            "endLine": 204,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/parser/lsp/lsp-client.ts::LSPClient::findReferences",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 204,
+            "startColumn": 16,
+            "endLine": 204,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findReferencesInFile",
+        "callee": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::findReferences",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 204,
+            "startColumn": 16,
+            "endLine": 204,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findSymbol",
+        "callee": "src/parser/index.ts::CodeAnalyzer::findSymbol",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 180,
+            "startColumn": 2,
+            "endLine": 180,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::findSymbol",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 182,
+            "startColumn": 19,
+            "endLine": 182,
+            "endColumn": 25
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 182,
+            "startColumn": 11,
+            "endLine": 182,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 210,
+            "startColumn": 8,
+            "endLine": 210,
+            "endColumn": 21
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 218,
+            "startColumn": 26,
+            "endLine": 218,
+            "endColumn": 39
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 218,
+            "startColumn": 16,
+            "endLine": 218,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 17,
+            "endLine": 216,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 17,
+            "endLine": 216,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/env/manager.ts::EnvManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/lsp/manager.ts::LSPServerManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/mcp/auto-discovery.ts::McpAutoDiscovery::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/mcp/protocol.ts::McpProtocol::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/renderer/index.ts::SvgRenderer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/web/server/conversation.ts::ConversationManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 216,
+            "startColumn": 12,
+            "endLine": 216,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/parser/lsp/lsp-client.ts::LSPClient::getDefinition",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 218,
+            "startColumn": 16,
+            "endLine": 218,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::getDefinition",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 218,
+            "startColumn": 16,
+            "endLine": 218,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callee": "src/tools/base.ts::BaseTool::getDefinition",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 218,
+            "startColumn": 16,
+            "endLine": 218,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getManager",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 293,
+            "startColumn": 2,
+            "endLine": 293,
+            "endColumn": 12
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 294,
+            "startColumn": 23,
+            "endLine": 294,
+            "endColumn": 33
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 294,
+            "startColumn": 16,
+            "endLine": 294,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getManager",
+        "callee": "src/parser/index.ts::CodeParser::getManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 293,
+            "startColumn": 2,
+            "endLine": 293,
+            "endColumn": 12
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 294,
+            "startColumn": 23,
+            "endLine": 294,
+            "endColumn": 33
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 294,
+            "startColumn": 16,
+            "endLine": 294,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 189,
+            "startColumn": 8,
+            "endLine": 189,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "callee": "src/parser/index.ts::CodeAnalyzer::analyzeFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 190,
+            "startColumn": 16,
+            "endLine": 190,
+            "endColumn": 27
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 190,
+            "startColumn": 11,
+            "endLine": 190,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "callee": "src/agents/explore.ts::ExploreAgent::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 190,
+            "startColumn": 11,
+            "endLine": 190,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::getOutline",
+        "callee": "src/map/analyzer.ts::CodeMapAnalyzer::analyzeFile",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 190,
+            "startColumn": 11,
+            "endLine": 190,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 137,
+            "startColumn": 8,
+            "endLine": 137,
+            "endColumn": 18
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 22,
+            "endLine": 139,
+            "endColumn": 32
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 137,
+            "startColumn": 8,
+            "endLine": 137,
+            "endColumn": 18
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 22,
+            "endLine": 139,
+            "endColumn": 32
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/env/manager.ts::EnvManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/lsp/manager.ts::LSPServerManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/mcp/auto-discovery.ts::McpAutoDiscovery::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/mcp/protocol.ts::McpProtocol::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/renderer/index.ts::SvgRenderer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callee": "src/web/server/conversation.ts::ConversationManager::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 139,
+            "startColumn": 15,
+            "endLine": 139,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callee": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 286,
+            "startColumn": 8,
+            "endLine": 286,
+            "endColumn": 16
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 25,
+            "endLine": 287,
+            "endColumn": 33
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 15,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callee": "src/agents/parallel.ts::AgentPool::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 15,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callee": "src/lsp/manager.ts::LSPServerManager::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 15,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callee": "src/mcp/protocol.ts::McpProtocol::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 15,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeAnalyzer::shutdown",
+        "callee": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::shutdown",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 287,
+            "startColumn": 15,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callee": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 106,
+            "startColumn": 2,
+            "endLine": 106,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callee": "src/mcp/logging.ts::entries",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 107,
+            "startColumn": 40,
+            "endLine": 107,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::getManager",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 116,
+            "startColumn": 2,
+            "endLine": 116,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::getManager",
+        "callee": "src/parser/index.ts::CodeParser::getManager",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 116,
+            "startColumn": 2,
+            "endLine": 116,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::initialize",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 77,
+            "startColumn": 8,
+            "endLine": 77,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::initialize",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 77,
+            "startColumn": 8,
+            "endLine": 77,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::initialize",
+        "callee": "src/parser/lsp/lsp-manager.ts::LSPManager::initializeServers",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 84,
+            "startColumn": 23,
+            "endLine": 84,
+            "endColumn": 40
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 84,
+            "startColumn": 15,
+            "endLine": 84,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/parser/index.ts::CodeParser::parseFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 91,
+            "startColumn": 8,
+            "endLine": 91,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 94,
+            "startColumn": 26,
+            "endLine": 94,
+            "endColumn": 40
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 94,
+            "startColumn": 21,
+            "endLine": 94,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/agents/explore.ts::ExploreAgent::detectLanguage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 94,
+            "startColumn": 21,
+            "endLine": 94,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/web/server/conversation.ts::ConversationManager::detectLanguage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 94,
+            "startColumn": 21,
+            "endLine": 94,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/parser/lsp/lsp-manager.ts::LSPManager::ensureServer",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 97,
+            "startColumn": 25,
+            "endLine": 97,
+            "endColumn": 37
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 97,
+            "startColumn": 17,
+            "endLine": 97,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/index.ts::CodeParser::parseFile",
+        "callee": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::extractSymbols",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 100,
+            "startColumn": 26,
+            "endLine": 100,
+            "endColumn": 40
+          },
+          {
+            "file": "src/parser/index.ts",
+            "startLine": 100,
+            "startColumn": 16,
+            "endLine": 100,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::extractSymbols",
+        "callee": "src/parser/index.ts::getSupportedLanguages",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/parser/lsp/lsp-symbol-extractor.ts",
+            "startLine": 178,
+            "startColumn": 91,
+            "endLine": 178,
+            "endColumn": 112
+          }
+        ]
+      },
+      {
+        "caller": "src/parser/lsp/lsp-symbol-extractor.ts::LSPSymbolExtractor::getDefinition",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/parser/lsp/lsp-symbol-extractor.ts",
+            "startLine": 324,
+            "startColumn": 27,
+            "endLine": 324,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 280,
+            "startColumn": 16,
+            "endLine": 280,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::ImageProcessor::initialize",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 280,
+            "startColumn": 16,
+            "endLine": 280,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::SvgRenderer::getSvgInfo",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 217,
+            "startColumn": 28,
+            "endLine": 217,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::SvgRenderer::getSvgInfo",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 217,
+            "startColumn": 28,
+            "endLine": 217,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::SvgRenderer::render",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 156,
+            "startColumn": 28,
+            "endLine": 156,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/renderer/index.ts::SvgRenderer::render",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/renderer/index.ts",
+            "startLine": 156,
+            "startColumn": 28,
+            "endLine": 156,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/base.ts::ToolRegistry::getDefinitions",
+        "callee": "src/parser/index.ts::CodeAnalyzer::getDefinition",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/tools/base.ts",
+            "startLine": 217,
+            "startColumn": 37,
+            "endLine": 217,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/conversation.ts::ConversationManager::buildToolResultData",
+        "callee": "src/parser/index.ts::CodeParser::detectLanguage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/conversation.ts",
+            "startLine": 820,
+            "startColumn": 20,
+            "endLine": 820,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::startWebServer",
+        "callee": "src/parser/index.ts::CodeAnalyzer::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 42,
+            "startColumn": 8,
+            "endLine": 42,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::startWebServer",
+        "callee": "src/parser/index.ts::CodeParser::initialize",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 42,
+            "startColumn": 8,
+            "endLine": 42,
+            "endColumn": 38
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

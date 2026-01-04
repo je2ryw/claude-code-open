@@ -1,0 +1,1606 @@
+{
+  "path": "src/map/server/routes",
+  "modules": {
+    "src/map/server/routes/api.ts": {
+      "id": "src/map/server/routes/api.ts",
+      "name": "api.ts",
+      "path": "F:\\claude-code-open\\src\\map\\server\\routes\\api.ts",
+      "language": "typescript",
+      "lines": 321,
+      "size": 10115,
+      "exports": [
+        "src/map/server/routes/api.ts::isEnhancedFormat",
+        "src/map/server/routes/api.ts::loadBlueprint",
+        "src/map/server/routes/api.ts::setupApiRoutes"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../../types-enhanced.js",
+          "symbols": [
+            "EnhancedCodeBlueprint"
+          ],
+          "isExternal": false,
+          "isTypeOnly": true
+        }
+      ],
+      "semantic": {
+        "description": "提供代码蓝图可视化服务的 RESTful API 路由模块，处理架构图、依赖树、模块详情、符号引用、代码预览等数据请求，支持增强格式和分块加载模式。",
+        "responsibility": "为前端提供代码架构分析数据的 HTTP 接口服务",
+        "businessDomain": "代码架构可视化",
+        "architectureLayer": "presentation",
+        "tags": [
+          "API路由",
+          "代码蓝图",
+          "架构分析",
+          "依赖关系",
+          "代码预览",
+          "RESTful"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:46.708Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/map/server/routes/api.ts::isEnhancedFormat": {
+      "id": "src/map/server/routes/api.ts::isEnhancedFormat",
+      "name": "isEnhancedFormat",
+      "kind": "function",
+      "moduleId": "src/map/server/routes/api.ts",
+      "location": {
+        "file": "src/map/server/routes/api.ts",
+        "startLine": 23,
+        "startColumn": 0,
+        "endLine": 25,
+        "endColumn": 1
+      },
+      "signature": "isEnhancedFormat()"
+    },
+    "src/map/server/routes/api.ts::loadBlueprint": {
+      "id": "src/map/server/routes/api.ts::loadBlueprint",
+      "name": "loadBlueprint",
+      "kind": "function",
+      "moduleId": "src/map/server/routes/api.ts",
+      "location": {
+        "file": "src/map/server/routes/api.ts",
+        "startLine": 30,
+        "startColumn": 0,
+        "endLine": 33,
+        "endColumn": 1
+      },
+      "signature": "loadBlueprint()"
+    },
+    "src/map/server/routes/api.ts::setupApiRoutes": {
+      "id": "src/map/server/routes/api.ts::setupApiRoutes",
+      "name": "setupApiRoutes",
+      "kind": "function",
+      "moduleId": "src/map/server/routes/api.ts",
+      "location": {
+        "file": "src/map/server/routes/api.ts",
+        "startLine": 38,
+        "startColumn": 0,
+        "endLine": 320,
+        "endColumn": 1
+      },
+      "signature": "setupApiRoutes()"
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/map/server/routes/api.ts",
+        "target": "src/map/types-enhanced.ts",
+        "type": "import",
+        "symbols": [
+          "EnhancedCodeBlueprint"
+        ],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/map/server/server.ts",
+        "target": "src/map/server/routes/api.ts",
+        "type": "import",
+        "symbols": [
+          "setupApiRoutes"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/map/server/routes/api.ts::isEnhancedFormat",
+        "callee": "src/map/server/routes/api.ts::isEnhancedFormat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 23,
+            "startColumn": 9,
+            "endLine": 23,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::loadBlueprint",
+        "callee": "src/map/server/routes/api.ts::loadBlueprint",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 30,
+            "startColumn": 9,
+            "endLine": 30,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::loadBlueprint",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 32,
+            "startColumn": 14,
+            "endLine": 32,
+            "endColumn": 19
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 32,
+            "startColumn": 9,
+            "endLine": 32,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::loadBlueprint",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 32,
+            "startColumn": 9,
+            "endLine": 32,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 38,
+            "startColumn": 16,
+            "endLine": 38,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 6,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 6,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 6,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 6,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 6,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 6,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 6,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 6,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 6,
+            "endLine": 274,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 48,
+            "startColumn": 2,
+            "endLine": 48,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 2,
+            "endLine": 69,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 98,
+            "startColumn": 2,
+            "endLine": 98,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 115,
+            "startColumn": 2,
+            "endLine": 115,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 132,
+            "startColumn": 2,
+            "endLine": 132,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 156,
+            "startColumn": 2,
+            "endLine": 156,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 183,
+            "startColumn": 2,
+            "endLine": 183,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 9
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 274,
+            "startColumn": 2,
+            "endLine": 274,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 55,
+            "startColumn": 31,
+            "endLine": 55,
+            "endColumn": 36
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 55,
+            "startColumn": 26,
+            "endLine": 55,
+            "endColumn": 36
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 89,
+            "startColumn": 29,
+            "endLine": 89,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 89,
+            "startColumn": 24,
+            "endLine": 89,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 55,
+            "startColumn": 26,
+            "endLine": 55,
+            "endColumn": 36
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 89,
+            "startColumn": 24,
+            "endLine": 89,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/updater/index.ts::status",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 58,
+            "startColumn": 12,
+            "endLine": 58,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 64,
+            "startColumn": 10,
+            "endLine": 64,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 75,
+            "startColumn": 19,
+            "endLine": 75,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 82,
+            "startColumn": 19,
+            "endLine": 82,
+            "endColumn": 25
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 93,
+            "startColumn": 10,
+            "endLine": 93,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 106,
+            "startColumn": 12,
+            "endLine": 106,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 110,
+            "startColumn": 10,
+            "endLine": 110,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 123,
+            "startColumn": 12,
+            "endLine": 123,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 127,
+            "startColumn": 10,
+            "endLine": 127,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 144,
+            "startColumn": 14,
+            "endLine": 144,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 147,
+            "startColumn": 12,
+            "endLine": 147,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 151,
+            "startColumn": 10,
+            "endLine": 151,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 160,
+            "startColumn": 12,
+            "endLine": 160,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 171,
+            "startColumn": 14,
+            "endLine": 171,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 174,
+            "startColumn": 12,
+            "endLine": 174,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 178,
+            "startColumn": 10,
+            "endLine": 178,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 187,
+            "startColumn": 12,
+            "endLine": 187,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 198,
+            "startColumn": 14,
+            "endLine": 198,
+            "endColumn": 20
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 201,
+            "startColumn": 12,
+            "endLine": 201,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 205,
+            "startColumn": 10,
+            "endLine": 205,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 217,
+            "startColumn": 12,
+            "endLine": 217,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 224,
+            "startColumn": 12,
+            "endLine": 224,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 230,
+            "startColumn": 12,
+            "endLine": 230,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 236,
+            "startColumn": 12,
+            "endLine": 236,
+            "endColumn": 18
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 269,
+            "startColumn": 10,
+            "endLine": 269,
+            "endColumn": 16
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 317,
+            "startColumn": 10,
+            "endLine": 317,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/permissions/policy.ts::RuleBuilder::path",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 23,
+            "endLine": 69,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/renderer/index.ts::SvgBuilder::path",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 69,
+            "startColumn": 23,
+            "endLine": 69,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/routes/api.ts::loadBlueprint",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 100,
+            "startColumn": 19,
+            "endLine": 100,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 117,
+            "startColumn": 19,
+            "endLine": 117,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 137,
+            "startColumn": 19,
+            "endLine": 137,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 164,
+            "startColumn": 19,
+            "endLine": 164,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 191,
+            "startColumn": 19,
+            "endLine": 191,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 221,
+            "startColumn": 19,
+            "endLine": 221,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 283,
+            "startColumn": 19,
+            "endLine": 283,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/routes/api.ts::isEnhancedFormat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 102,
+            "startColumn": 10,
+            "endLine": 102,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 119,
+            "startColumn": 10,
+            "endLine": 119,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 139,
+            "startColumn": 10,
+            "endLine": 139,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 166,
+            "startColumn": 10,
+            "endLine": 166,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 193,
+            "startColumn": 10,
+            "endLine": 193,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 223,
+            "startColumn": 11,
+            "endLine": 223,
+            "endColumn": 27
+          },
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 286,
+            "startColumn": 10,
+            "endLine": 286,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/index.old.ts::buildArchitectureMap",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 103,
+            "startColumn": 24,
+            "endLine": 103,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/index.old.ts::detectEntryPoints",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 120,
+            "startColumn": 24,
+            "endLine": 120,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/index.old.ts::buildDependencyTree",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 140,
+            "startColumn": 21,
+            "endLine": 140,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/index.old.ts::getModuleDetail",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 167,
+            "startColumn": 23,
+            "endLine": 167,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/map/server/index.old.ts::getSymbolRefs",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 194,
+            "startColumn": 21,
+            "endLine": 194,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/routes/api.ts",
+            "startLine": 253,
+            "startColumn": 9,
+            "endLine": 253,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/server.ts::VisualizationServer::setupRoutes",
+        "callee": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/server.ts",
+            "startLine": 63,
+            "startColumn": 4,
+            "endLine": 63,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::startWebServer",
+        "callee": "src/map/server/routes/api.ts::setupApiRoutes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 60,
+            "startColumn": 2,
+            "endLine": 60,
+            "endColumn": 16
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

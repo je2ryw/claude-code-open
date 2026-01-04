@@ -1,0 +1,2520 @@
+{
+  "path": "src/diagnostics",
+  "modules": {
+    "src/diagnostics/index.ts": {
+      "id": "src/diagnostics/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\diagnostics\\index.ts",
+      "language": "typescript",
+      "lines": 1090,
+      "size": 29789,
+      "exports": [
+        "src/diagnostics/index.ts::autoFixIssues",
+        "src/diagnostics/index.ts::checkApiConnectivity",
+        "src/diagnostics/index.ts::checkAuthConfiguration",
+        "src/diagnostics/index.ts::checkCacheDirectory",
+        "src/diagnostics/index.ts::checkConfigurationFiles",
+        "src/diagnostics/index.ts::checkCPULoad",
+        "src/diagnostics/index.ts::checkDiskSpace",
+        "src/diagnostics/index.ts::checkEnvironmentVariables",
+        "src/diagnostics/index.ts::checkFilePermissions",
+        "src/diagnostics/index.ts::checkGitAvailability",
+        "src/diagnostics/index.ts::checkLSPAvailability",
+        "src/diagnostics/index.ts::checkMCPServers",
+        "src/diagnostics/index.ts::checkMemoryUsage",
+        "src/diagnostics/index.ts::checkNetworkConnectivity",
+        "src/diagnostics/index.ts::checkNodeVersion",
+        "src/diagnostics/index.ts::checkNpmVersion",
+        "src/diagnostics/index.ts::checkPermissionSettings",
+        "src/diagnostics/index.ts::checkProxyConfiguration",
+        "src/diagnostics/index.ts::checkRipgrepAvailability",
+        "src/diagnostics/index.ts::checkSessionDirectory",
+        "src/diagnostics/index.ts::checkSSLCertificates",
+        "src/diagnostics/index.ts::checkYarnVersion",
+        "src/diagnostics/index.ts::formatDiagnosticReport",
+        "src/diagnostics/index.ts::getCPUInfo",
+        "src/diagnostics/index.ts::getMemoryInfo",
+        "src/diagnostics/index.ts::getSystemHealthSummary",
+        "src/diagnostics/index.ts::quickHealthCheck",
+        "src/diagnostics/index.ts::runDiagnostics"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "os",
+          "symbols": [
+            "os"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "child_process",
+          "symbols": [
+            "child_process"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../providers/index.js",
+          "symbols": [
+            "detectProvider",
+            "validateProviderConfig"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "诊断和健康检查系统，用于 /doctor 命令和故障排查。通过运行一系列检查项（环境、配置、网络、文件系统、性能等）来诊断系统状态，并提供修复建议和系统信息报告。",
+        "responsibility": "执行全面的系统诊断检查，生成健康报告并提供问题修复建议",
+        "businessDomain": "系统诊断与健康检查",
+        "architectureLayer": "crossCutting",
+        "tags": [
+          "诊断",
+          "健康检查",
+          "故障排查",
+          "系统监控",
+          "自动修复",
+          "环境验证",
+          "性能检测",
+          "配置验证"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:50:57.019Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/diagnostics/index.ts::autoFixIssues": {
+      "id": "src/diagnostics/index.ts::autoFixIssues",
+      "name": "autoFixIssues",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 975,
+        "startColumn": 0,
+        "endLine": 1016,
+        "endColumn": 1
+      },
+      "signature": "autoFixIssues()"
+    },
+    "src/diagnostics/index.ts::checkApiConnectivity": {
+      "id": "src/diagnostics/index.ts::checkApiConnectivity",
+      "name": "checkApiConnectivity",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 283,
+        "startColumn": 0,
+        "endLine": 311,
+        "endColumn": 1
+      },
+      "signature": "checkApiConnectivity()"
+    },
+    "src/diagnostics/index.ts::checkAuthConfiguration": {
+      "id": "src/diagnostics/index.ts::checkAuthConfiguration",
+      "name": "checkAuthConfiguration",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 260,
+        "startColumn": 0,
+        "endLine": 278,
+        "endColumn": 1
+      },
+      "signature": "checkAuthConfiguration()"
+    },
+    "src/diagnostics/index.ts::checkCacheDirectory": {
+      "id": "src/diagnostics/index.ts::checkCacheDirectory",
+      "name": "checkCacheDirectory",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 807,
+        "startColumn": 0,
+        "endLine": 863,
+        "endColumn": 1
+      },
+      "signature": "checkCacheDirectory()"
+    },
+    "src/diagnostics/index.ts::checkConfigurationFiles": {
+      "id": "src/diagnostics/index.ts::checkConfigurationFiles",
+      "name": "checkConfigurationFiles",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 424,
+        "startColumn": 0,
+        "endLine": 469,
+        "endColumn": 1
+      },
+      "signature": "checkConfigurationFiles()"
+    },
+    "src/diagnostics/index.ts::checkCPULoad": {
+      "id": "src/diagnostics/index.ts::checkCPULoad",
+      "name": "checkCPULoad",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 899,
+        "startColumn": 0,
+        "endLine": 927,
+        "endColumn": 1
+      },
+      "signature": "checkCPULoad()"
+    },
+    "src/diagnostics/index.ts::checkDiskSpace": {
+      "id": "src/diagnostics/index.ts::checkDiskSpace",
+      "name": "checkDiskSpace",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 385,
+        "startColumn": 0,
+        "endLine": 419,
+        "endColumn": 1
+      },
+      "signature": "checkDiskSpace()"
+    },
+    "src/diagnostics/index.ts::checkEnvironmentVariables": {
+      "id": "src/diagnostics/index.ts::checkEnvironmentVariables",
+      "name": "checkEnvironmentVariables",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 560,
+        "startColumn": 0,
+        "endLine": 585,
+        "endColumn": 1
+      },
+      "signature": "checkEnvironmentVariables()"
+    },
+    "src/diagnostics/index.ts::checkFilePermissions": {
+      "id": "src/diagnostics/index.ts::checkFilePermissions",
+      "name": "checkFilePermissions",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 316,
+        "startColumn": 0,
+        "endLine": 356,
+        "endColumn": 1
+      },
+      "signature": "checkFilePermissions()"
+    },
+    "src/diagnostics/index.ts::checkGitAvailability": {
+      "id": "src/diagnostics/index.ts::checkGitAvailability",
+      "name": "checkGitAvailability",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 361,
+        "startColumn": 0,
+        "endLine": 380,
+        "endColumn": 1
+      },
+      "signature": "checkGitAvailability()"
+    },
+    "src/diagnostics/index.ts::checkLSPAvailability": {
+      "id": "src/diagnostics/index.ts::checkLSPAvailability",
+      "name": "checkLSPAvailability",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 235,
+        "startColumn": 0,
+        "endLine": 255,
+        "endColumn": 1
+      },
+      "signature": "checkLSPAvailability()"
+    },
+    "src/diagnostics/index.ts::checkMCPServers": {
+      "id": "src/diagnostics/index.ts::checkMCPServers",
+      "name": "checkMCPServers",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 474,
+        "startColumn": 0,
+        "endLine": 510,
+        "endColumn": 1
+      },
+      "signature": "checkMCPServers()"
+    },
+    "src/diagnostics/index.ts::checkMemoryUsage": {
+      "id": "src/diagnostics/index.ts::checkMemoryUsage",
+      "name": "checkMemoryUsage",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 868,
+        "startColumn": 0,
+        "endLine": 894,
+        "endColumn": 1
+      },
+      "signature": "checkMemoryUsage()"
+    },
+    "src/diagnostics/index.ts::checkNetworkConnectivity": {
+      "id": "src/diagnostics/index.ts::checkNetworkConnectivity",
+      "name": "checkNetworkConnectivity",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 515,
+        "startColumn": 0,
+        "endLine": 555,
+        "endColumn": 1
+      },
+      "signature": "checkNetworkConnectivity()"
+    },
+    "src/diagnostics/index.ts::checkNodeVersion": {
+      "id": "src/diagnostics/index.ts::checkNodeVersion",
+      "name": "checkNodeVersion",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 127,
+        "startColumn": 0,
+        "endLine": 153,
+        "endColumn": 1
+      },
+      "signature": "checkNodeVersion()"
+    },
+    "src/diagnostics/index.ts::checkNpmVersion": {
+      "id": "src/diagnostics/index.ts::checkNpmVersion",
+      "name": "checkNpmVersion",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 158,
+        "startColumn": 0,
+        "endLine": 179,
+        "endColumn": 1
+      },
+      "signature": "checkNpmVersion()"
+    },
+    "src/diagnostics/index.ts::checkPermissionSettings": {
+      "id": "src/diagnostics/index.ts::checkPermissionSettings",
+      "name": "checkPermissionSettings",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 650,
+        "startColumn": 0,
+        "endLine": 686,
+        "endColumn": 1
+      },
+      "signature": "checkPermissionSettings()"
+    },
+    "src/diagnostics/index.ts::checkProxyConfiguration": {
+      "id": "src/diagnostics/index.ts::checkProxyConfiguration",
+      "name": "checkProxyConfiguration",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 691,
+        "startColumn": 0,
+        "endLine": 718,
+        "endColumn": 1
+      },
+      "signature": "checkProxyConfiguration()"
+    },
+    "src/diagnostics/index.ts::checkRipgrepAvailability": {
+      "id": "src/diagnostics/index.ts::checkRipgrepAvailability",
+      "name": "checkRipgrepAvailability",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 209,
+        "startColumn": 0,
+        "endLine": 230,
+        "endColumn": 1
+      },
+      "signature": "checkRipgrepAvailability()"
+    },
+    "src/diagnostics/index.ts::checkSessionDirectory": {
+      "id": "src/diagnostics/index.ts::checkSessionDirectory",
+      "name": "checkSessionDirectory",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 766,
+        "startColumn": 0,
+        "endLine": 802,
+        "endColumn": 1
+      },
+      "signature": "checkSessionDirectory()"
+    },
+    "src/diagnostics/index.ts::checkSSLCertificates": {
+      "id": "src/diagnostics/index.ts::checkSSLCertificates",
+      "name": "checkSSLCertificates",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 723,
+        "startColumn": 0,
+        "endLine": 761,
+        "endColumn": 1
+      },
+      "signature": "checkSSLCertificates()"
+    },
+    "src/diagnostics/index.ts::checkYarnVersion": {
+      "id": "src/diagnostics/index.ts::checkYarnVersion",
+      "name": "checkYarnVersion",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 184,
+        "startColumn": 0,
+        "endLine": 204,
+        "endColumn": 1
+      },
+      "signature": "checkYarnVersion()"
+    },
+    "src/diagnostics/index.ts::formatDiagnosticReport": {
+      "id": "src/diagnostics/index.ts::formatDiagnosticReport",
+      "name": "formatDiagnosticReport",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 590,
+        "startColumn": 0,
+        "endLine": 645,
+        "endColumn": 1
+      },
+      "signature": "formatDiagnosticReport()"
+    },
+    "src/diagnostics/index.ts::getCPUInfo": {
+      "id": "src/diagnostics/index.ts::getCPUInfo",
+      "name": "getCPUInfo",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 959,
+        "startColumn": 0,
+        "endLine": 970,
+        "endColumn": 1
+      },
+      "signature": "getCPUInfo()"
+    },
+    "src/diagnostics/index.ts::getMemoryInfo": {
+      "id": "src/diagnostics/index.ts::getMemoryInfo",
+      "name": "getMemoryInfo",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 932,
+        "startColumn": 0,
+        "endLine": 954,
+        "endColumn": 1
+      },
+      "signature": "getMemoryInfo()"
+    },
+    "src/diagnostics/index.ts::getSystemHealthSummary": {
+      "id": "src/diagnostics/index.ts::getSystemHealthSummary",
+      "name": "getSystemHealthSummary",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 1053,
+        "startColumn": 0,
+        "endLine": 1089,
+        "endColumn": 1
+      },
+      "signature": "getSystemHealthSummary()"
+    },
+    "src/diagnostics/index.ts::quickHealthCheck": {
+      "id": "src/diagnostics/index.ts::quickHealthCheck",
+      "name": "quickHealthCheck",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 1021,
+        "startColumn": 0,
+        "endLine": 1048,
+        "endColumn": 1
+      },
+      "signature": "quickHealthCheck()"
+    },
+    "src/diagnostics/index.ts::runDiagnostics": {
+      "id": "src/diagnostics/index.ts::runDiagnostics",
+      "name": "runDiagnostics",
+      "kind": "function",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 56,
+        "startColumn": 0,
+        "endLine": 122,
+        "endColumn": 1
+      },
+      "signature": "runDiagnostics()"
+    },
+    "src/diagnostics/index.ts::DiagnosticCheck": {
+      "id": "src/diagnostics/index.ts::DiagnosticCheck",
+      "name": "DiagnosticCheck",
+      "kind": "interface",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 13,
+        "startColumn": 0,
+        "endLine": 19,
+        "endColumn": 1
+      }
+    },
+    "src/diagnostics/index.ts::DiagnosticOptions": {
+      "id": "src/diagnostics/index.ts::DiagnosticOptions",
+      "name": "DiagnosticOptions",
+      "kind": "interface",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 47,
+        "startColumn": 0,
+        "endLine": 51,
+        "endColumn": 1
+      }
+    },
+    "src/diagnostics/index.ts::DiagnosticReport": {
+      "id": "src/diagnostics/index.ts::DiagnosticReport",
+      "name": "DiagnosticReport",
+      "kind": "interface",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 21,
+        "startColumn": 0,
+        "endLine": 45,
+        "endColumn": 1
+      }
+    },
+    "src/diagnostics/index.ts::exec": {
+      "id": "src/diagnostics/index.ts::exec",
+      "name": "exec",
+      "kind": "constant",
+      "moduleId": "src/diagnostics/index.ts",
+      "location": {
+        "file": "src/diagnostics/index.ts",
+        "startLine": 10,
+        "startColumn": 8,
+        "endLine": 10,
+        "endColumn": 12
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/cli.ts",
+        "target": "src/diagnostics/index.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/diagnostics/index.ts",
+        "target": "src/providers/index.ts",
+        "type": "import",
+        "symbols": [
+          "detectProvider",
+          "validateProviderConfig"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "scripts/function-extractor.ts::FunctionExtractor::extractArrowFunctions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/function-extractor.ts",
+            "startLine": 90,
+            "startColumn": 26,
+            "endLine": 90,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "scripts/function-extractor.ts::FunctionExtractor::extractAsyncFunctions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/function-extractor.ts",
+            "startLine": 110,
+            "startColumn": 26,
+            "endLine": 110,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "scripts/function-extractor.ts::FunctionExtractor::extractClassMethods",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/function-extractor.ts",
+            "startLine": 128,
+            "startColumn": 36,
+            "endLine": 128,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "scripts/function-extractor.ts::FunctionExtractor::extractNamedFunctions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/function-extractor.ts",
+            "startLine": 72,
+            "startColumn": 26,
+            "endLine": 72,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "scripts/schema-comparator.ts::SchemaComparator::extractInputSchema",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/schema-comparator.ts",
+            "startLine": 238,
+            "startColumn": 38,
+            "endLine": 238,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "scripts/schema-comparator.ts::SchemaComparator::parseOfficialSchemas",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/schema-comparator.ts",
+            "startLine": 89,
+            "startColumn": 37,
+            "endLine": 89,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "scripts/schema-comparator.ts::SchemaComparator::parseZodFields",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/schema-comparator.ts",
+            "startLine": 213,
+            "startColumn": 33,
+            "endLine": 213,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "scripts/sync-analyzer.ts::DeepAnalyzer::extractExportedFunctions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/sync-analyzer.ts",
+            "startLine": 365,
+            "startColumn": 30,
+            "endLine": 365,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::extractClasses",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 714,
+            "startColumn": 31,
+            "endLine": 714,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::extractExports",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 688,
+            "startColumn": 32,
+            "endLine": 688,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::extractFunctions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 727,
+            "startColumn": 34,
+            "endLine": 727,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::extractImports",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 701,
+            "startColumn": 32,
+            "endLine": 701,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::extractInterfaces",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 740,
+            "startColumn": 35,
+            "endLine": 740,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/diagnostics/index.ts::runDiagnostics",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 949,
+            "startColumn": 27,
+            "endLine": 949,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/diagnostics/index.ts::formatDiagnosticReport",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 950,
+            "startColumn": 18,
+            "endLine": 950,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/context/enhanced.ts::extractFileReferences",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/enhanced.ts",
+            "startLine": 501,
+            "startColumn": 28,
+            "endLine": 501,
+            "endColumn": 32
+          },
+          {
+            "file": "src/context/enhanced.ts",
+            "startLine": 518,
+            "startColumn": 33,
+            "endLine": 518,
+            "endColumn": 37
+          },
+          {
+            "file": "src/context/enhanced.ts",
+            "startLine": 523,
+            "startColumn": 34,
+            "endLine": 523,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/context/enhanced.ts::parseAtMentions",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/enhanced.ts",
+            "startLine": 589,
+            "startColumn": 24,
+            "endLine": 589,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/context/index.ts::extractCodeBlocks",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/index.ts",
+            "startLine": 158,
+            "startColumn": 24,
+            "endLine": 158,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::autoFixIssues",
+        "callee": "src/diagnostics/index.ts::autoFixIssues",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 975,
+            "startColumn": 22,
+            "endLine": 975,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkApiConnectivity",
+        "callee": "src/diagnostics/index.ts::checkApiConnectivity",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 283,
+            "startColumn": 15,
+            "endLine": 283,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkApiConnectivity",
+        "callee": "src/background/timeout.ts::timeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 287,
+            "startColumn": 26,
+            "endLine": 287,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkAuthConfiguration",
+        "callee": "src/diagnostics/index.ts::checkAuthConfiguration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 260,
+            "startColumn": 15,
+            "endLine": 260,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkAuthConfiguration",
+        "callee": "src/providers/index.ts::detectProvider",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 261,
+            "startColumn": 19,
+            "endLine": 261,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkAuthConfiguration",
+        "callee": "src/providers/index.ts::validateProviderConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 262,
+            "startColumn": 21,
+            "endLine": 262,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkCacheDirectory",
+        "callee": "src/diagnostics/index.ts::checkCacheDirectory",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 807,
+            "startColumn": 15,
+            "endLine": 807,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callee": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 424,
+            "startColumn": 15,
+            "endLine": 424,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 427,
+            "startColumn": 30,
+            "endLine": 427,
+            "endColumn": 33
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 427,
+            "startColumn": 22,
+            "endLine": 427,
+            "endColumn": 33
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 428,
+            "startColumn": 30,
+            "endLine": 428,
+            "endColumn": 33
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 428,
+            "startColumn": 22,
+            "endLine": 428,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 438,
+            "startColumn": 15,
+            "endLine": 438,
+            "endColumn": 20
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 438,
+            "startColumn": 10,
+            "endLine": 438,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 438,
+            "startColumn": 10,
+            "endLine": 438,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkCPULoad",
+        "callee": "src/diagnostics/index.ts::checkCPULoad",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 899,
+            "startColumn": 15,
+            "endLine": 899,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkCPULoad",
+        "callee": "src/diagnostics/index.ts::getCPUInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 900,
+            "startColumn": 18,
+            "endLine": 900,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkDiskSpace",
+        "callee": "src/diagnostics/index.ts::checkDiskSpace",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 385,
+            "startColumn": 15,
+            "endLine": 385,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkEnvironmentVariables",
+        "callee": "src/diagnostics/index.ts::checkEnvironmentVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 560,
+            "startColumn": 15,
+            "endLine": 560,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkEnvironmentVariables",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 570,
+            "startColumn": 27,
+            "endLine": 570,
+            "endColumn": 33
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 570,
+            "startColumn": 14,
+            "endLine": 570,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkFilePermissions",
+        "callee": "src/diagnostics/index.ts::checkFilePermissions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 316,
+            "startColumn": 15,
+            "endLine": 316,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkFilePermissions",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 336,
+            "startColumn": 24,
+            "endLine": 336,
+            "endColumn": 27
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 336,
+            "startColumn": 16,
+            "endLine": 336,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkGitAvailability",
+        "callee": "src/diagnostics/index.ts::checkGitAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 361,
+            "startColumn": 15,
+            "endLine": 361,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkGitAvailability",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 363,
+            "startColumn": 18,
+            "endLine": 363,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkLSPAvailability",
+        "callee": "src/diagnostics/index.ts::checkLSPAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 235,
+            "startColumn": 15,
+            "endLine": 235,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkLSPAvailability",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 237,
+            "startColumn": 4,
+            "endLine": 237,
+            "endColumn": 8
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMCPServers",
+        "callee": "src/diagnostics/index.ts::checkMCPServers",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 474,
+            "startColumn": 15,
+            "endLine": 474,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMCPServers",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 486,
+            "startColumn": 24,
+            "endLine": 486,
+            "endColumn": 29
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 486,
+            "startColumn": 19,
+            "endLine": 486,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMCPServers",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 486,
+            "startColumn": 19,
+            "endLine": 486,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMCPServers",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 487,
+            "startColumn": 27,
+            "endLine": 487,
+            "endColumn": 31
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 487,
+            "startColumn": 20,
+            "endLine": 487,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMCPServers",
+        "callee": "src/chrome-mcp/socket-server.ts::server",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 500,
+            "startColumn": 34,
+            "endLine": 500,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMemoryUsage",
+        "callee": "src/diagnostics/index.ts::checkMemoryUsage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 868,
+            "startColumn": 15,
+            "endLine": 868,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkMemoryUsage",
+        "callee": "src/diagnostics/index.ts::getMemoryInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 869,
+            "startColumn": 18,
+            "endLine": 869,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkNetworkConnectivity",
+        "callee": "src/diagnostics/index.ts::checkNetworkConnectivity",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 515,
+            "startColumn": 15,
+            "endLine": 515,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkNetworkConnectivity",
+        "callee": "src/background/timeout.ts::timeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 528,
+            "startColumn": 28,
+            "endLine": 528,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkNodeVersion",
+        "callee": "src/diagnostics/index.ts::checkNodeVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 127,
+            "startColumn": 15,
+            "endLine": 127,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkNpmVersion",
+        "callee": "src/diagnostics/index.ts::checkNpmVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 158,
+            "startColumn": 15,
+            "endLine": 158,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkNpmVersion",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 160,
+            "startColumn": 18,
+            "endLine": 160,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkPermissionSettings",
+        "callee": "src/diagnostics/index.ts::checkPermissionSettings",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 650,
+            "startColumn": 15,
+            "endLine": 650,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkPermissionSettings",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 661,
+            "startColumn": 26,
+            "endLine": 661,
+            "endColumn": 31
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 661,
+            "startColumn": 21,
+            "endLine": 661,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkPermissionSettings",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 661,
+            "startColumn": 21,
+            "endLine": 661,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkProxyConfiguration",
+        "callee": "src/diagnostics/index.ts::checkProxyConfiguration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 691,
+            "startColumn": 15,
+            "endLine": 691,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkProxyConfiguration",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 693,
+            "startColumn": 31,
+            "endLine": 693,
+            "endColumn": 37
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 693,
+            "startColumn": 21,
+            "endLine": 693,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkRipgrepAvailability",
+        "callee": "src/diagnostics/index.ts::checkRipgrepAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 209,
+            "startColumn": 15,
+            "endLine": 209,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkRipgrepAvailability",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 211,
+            "startColumn": 18,
+            "endLine": 211,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkSessionDirectory",
+        "callee": "src/diagnostics/index.ts::checkSessionDirectory",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 766,
+            "startColumn": 15,
+            "endLine": 766,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkSessionDirectory",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 776,
+            "startColumn": 31,
+            "endLine": 776,
+            "endColumn": 37
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 776,
+            "startColumn": 25,
+            "endLine": 776,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkSessionDirectory",
+        "callee": "src/core/loop.ts::session",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 790,
+            "startColumn": 39,
+            "endLine": 790,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkSSLCertificates",
+        "callee": "src/diagnostics/index.ts::checkSSLCertificates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 723,
+            "startColumn": 15,
+            "endLine": 723,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkSSLCertificates",
+        "callee": "src/agents/communication.ts::SharedStateManager::set",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 730,
+            "startColumn": 50,
+            "endLine": 730,
+            "endColumn": 53
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkYarnVersion",
+        "callee": "src/diagnostics/index.ts::checkYarnVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 184,
+            "startColumn": 15,
+            "endLine": 184,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::checkYarnVersion",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 186,
+            "startColumn": 18,
+            "endLine": 186,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::formatDiagnosticReport",
+        "callee": "src/diagnostics/index.ts::formatDiagnosticReport",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 590,
+            "startColumn": 16,
+            "endLine": 590,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::getCPUInfo",
+        "callee": "src/diagnostics/index.ts::getCPUInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 959,
+            "startColumn": 9,
+            "endLine": 959,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::getMemoryInfo",
+        "callee": "src/diagnostics/index.ts::getMemoryInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 932,
+            "startColumn": 9,
+            "endLine": 932,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::getMemoryInfo",
+        "callee": "src/commands/session.ts::formatBytes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 949,
+            "startColumn": 11,
+            "endLine": 949,
+            "endColumn": 22
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 950,
+            "startColumn": 10,
+            "endLine": 950,
+            "endColumn": 21
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 951,
+            "startColumn": 10,
+            "endLine": 951,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::getSystemHealthSummary",
+        "callee": "src/diagnostics/index.ts::getSystemHealthSummary",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1053,
+            "startColumn": 22,
+            "endLine": 1053,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::getSystemHealthSummary",
+        "callee": "src/diagnostics/index.ts::runDiagnostics",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1058,
+            "startColumn": 23,
+            "endLine": 1058,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::quickHealthCheck",
+        "callee": "src/diagnostics/index.ts::quickHealthCheck",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1021,
+            "startColumn": 22,
+            "endLine": 1021,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::quickHealthCheck",
+        "callee": "src/providers/index.ts::detectProvider",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1028,
+            "startColumn": 19,
+            "endLine": 1028,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::quickHealthCheck",
+        "callee": "src/providers/index.ts::validateProviderConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1029,
+            "startColumn": 21,
+            "endLine": 1029,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::quickHealthCheck",
+        "callee": "src/background/timeout.ts::timeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 1038,
+            "startColumn": 26,
+            "endLine": 1038,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::runDiagnostics",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 56,
+            "startColumn": 22,
+            "endLine": 56,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 63,
+            "startColumn": 29,
+            "endLine": 63,
+            "endColumn": 34
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 63,
+            "startColumn": 24,
+            "endLine": 63,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 63,
+            "startColumn": 24,
+            "endLine": 63,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkNodeVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 70,
+            "startColumn": 20,
+            "endLine": 70,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkNpmVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 71,
+            "startColumn": 20,
+            "endLine": 71,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkYarnVersion",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 72,
+            "startColumn": 20,
+            "endLine": 72,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkGitAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 73,
+            "startColumn": 20,
+            "endLine": 73,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkRipgrepAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 74,
+            "startColumn": 20,
+            "endLine": 74,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkLSPAvailability",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 75,
+            "startColumn": 20,
+            "endLine": 75,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkAuthConfiguration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 78,
+            "startColumn": 20,
+            "endLine": 78,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkConfigurationFiles",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 79,
+            "startColumn": 20,
+            "endLine": 79,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkMCPServers",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 80,
+            "startColumn": 20,
+            "endLine": 80,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkEnvironmentVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 81,
+            "startColumn": 20,
+            "endLine": 81,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkPermissionSettings",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 82,
+            "startColumn": 20,
+            "endLine": 82,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkApiConnectivity",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 85,
+            "startColumn": 20,
+            "endLine": 85,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkNetworkConnectivity",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 86,
+            "startColumn": 20,
+            "endLine": 86,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkProxyConfiguration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 87,
+            "startColumn": 20,
+            "endLine": 87,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkSSLCertificates",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 88,
+            "startColumn": 20,
+            "endLine": 88,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkFilePermissions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 91,
+            "startColumn": 20,
+            "endLine": 91,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkDiskSpace",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 92,
+            "startColumn": 20,
+            "endLine": 92,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkSessionDirectory",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 93,
+            "startColumn": 20,
+            "endLine": 93,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkCacheDirectory",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 94,
+            "startColumn": 20,
+            "endLine": 94,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkMemoryUsage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 97,
+            "startColumn": 20,
+            "endLine": 97,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::checkCPULoad",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 98,
+            "startColumn": 20,
+            "endLine": 98,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 102,
+            "startColumn": 19,
+            "endLine": 102,
+            "endColumn": 25
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 102,
+            "startColumn": 12,
+            "endLine": 102,
+            "endColumn": 25
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 103,
+            "startColumn": 21,
+            "endLine": 103,
+            "endColumn": 27
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 103,
+            "startColumn": 14,
+            "endLine": 103,
+            "endColumn": 27
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 104,
+            "startColumn": 19,
+            "endLine": 104,
+            "endColumn": 25
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 104,
+            "startColumn": 12,
+            "endLine": 104,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::getMemoryInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 109,
+            "startColumn": 12,
+            "endLine": 109,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/diagnostics/index.ts::getCPUInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 110,
+            "startColumn": 9,
+            "endLine": 110,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/sandbox/resource-limits.ts::platform",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 116,
+            "startColumn": 20,
+            "endLine": 116,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/diagnostics/index.ts::runDiagnostics",
+        "callee": "src/agents/parallel.ts::AgentPool::release",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 116,
+            "startColumn": 37,
+            "endLine": 116,
+            "endColumn": 44
+          },
+          {
+            "file": "src/diagnostics/index.ts",
+            "startLine": 116,
+            "startColumn": 34,
+            "endLine": 116,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/map/analyzer.ts::CodeMapAnalyzer::extractImports",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 401,
+            "startColumn": 28,
+            "endLine": 401,
+            "endColumn": 32
+          },
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 457,
+            "startColumn": 43,
+            "endLine": 457,
+            "endColumn": 47
+          },
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 483,
+            "startColumn": 34,
+            "endLine": 483,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/map/analyzer.ts::CodeMapAnalyzer::extractReExportSymbols",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 238,
+            "startColumn": 37,
+            "endLine": 238,
+            "endColumn": 41
+          },
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 277,
+            "startColumn": 36,
+            "endLine": 277,
+            "endColumn": 40
+          },
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 313,
+            "startColumn": 36,
+            "endLine": 313,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/call-graph-builder.ts::CallGraphBuilder::analyzeFunctionCalls",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/call-graph-builder.ts",
+            "startLine": 228,
+            "startColumn": 32,
+            "endLine": 228,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::VisualizationServer::analyzeImports",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2508,
+            "startColumn": 32,
+            "endLine": 2508,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/map/symbol-reference-analyzer.ts::SymbolReferenceAnalyzer::analyzeCallsInFunction",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/symbol-reference-analyzer.ts",
+            "startLine": 311,
+            "startColumn": 31,
+            "endLine": 311,
+            "endColumn": 35
+          },
+          {
+            "file": "src/map/symbol-reference-analyzer.ts",
+            "startLine": 339,
+            "startColumn": 31,
+            "endLine": 339,
+            "endColumn": 35
+          },
+          {
+            "file": "src/map/symbol-reference-analyzer.ts",
+            "startLine": 388,
+            "startColumn": 31,
+            "endLine": 388,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/map/type-reference-analyzer.ts::TypeReferenceAnalyzer::parseTypeRelationsFromSource",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/type-reference-analyzer.ts",
+            "startLine": 222,
+            "startColumn": 33,
+            "endLine": 222,
+            "endColumn": 37
+          },
+          {
+            "file": "src/map/type-reference-analyzer.ts",
+            "startLine": 259,
+            "startColumn": 33,
+            "endLine": 259,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/notifications/index.ts::NotificationManager::playSound",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 195,
+            "startColumn": 22,
+            "endLine": 195,
+            "endColumn": 26
+          },
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 197,
+            "startColumn": 22,
+            "endLine": 197,
+            "endColumn": 26
+          },
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 199,
+            "startColumn": 22,
+            "endLine": 199,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/notifications/index.ts::NotificationManager::sendDesktopNotification",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 170,
+            "startColumn": 22,
+            "endLine": 170,
+            "endColumn": 26
+          },
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 175,
+            "startColumn": 22,
+            "endLine": 175,
+            "endColumn": 26
+          },
+          {
+            "file": "src/notifications/index.ts",
+            "startLine": 179,
+            "startColumn": 22,
+            "endLine": 179,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::PermissionRuleParser::createMatcher",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 271,
+            "startColumn": 52,
+            "endLine": 271,
+            "endColumn": 56
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 181,
+            "startColumn": 36,
+            "endLine": 181,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/attachments.ts::AttachmentManager::generateMemoryAttachment",
+        "callee": "src/diagnostics/index.ts::getMemoryInfo",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/attachments.ts",
+            "startLine": 307,
+            "startColumn": 20,
+            "endLine": 307,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/security/sensitive.ts::SensitiveDataDetector::detect",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/security/sensitive.ts",
+            "startLine": 285,
+            "startColumn": 38,
+            "endLine": 285,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/planmode.ts::ExitPlanModeTool::extractSteps",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/planmode.ts",
+            "startLine": 533,
+            "startColumn": 30,
+            "endLine": 533,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/doctor.ts::checkGitAvailability",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/doctor.ts",
+            "startLine": 184,
+            "startColumn": 18,
+            "endLine": 184,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/doctor.ts::checkNpmVersion",
+        "callee": "src/diagnostics/index.ts::exec",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/doctor.ts",
+            "startLine": 156,
+            "startColumn": 18,
+            "endLine": 156,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/routes/api.ts::setupApiRoutes",
+        "callee": "src/diagnostics/index.ts::runDiagnostics",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 652,
+            "startColumn": 27,
+            "endLine": 652,
+            "endColumn": 41
+          },
+          {
+            "file": "src/web/server/routes/api.ts",
+            "startLine": 686,
+            "startColumn": 27,
+            "endLine": 686,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/websocket.ts::handleDoctorRun",
+        "callee": "src/diagnostics/index.ts::runDiagnostics",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/websocket.ts",
+            "startLine": 1544,
+            "startColumn": 25,
+            "endLine": 1544,
+            "endColumn": 39
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

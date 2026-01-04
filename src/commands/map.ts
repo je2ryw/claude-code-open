@@ -325,48 +325,98 @@ async function handleStatus(
   _options: Record<string, string | boolean>
 ): Promise<CommandResult> {
   const { config, ui } = ctx;
-  const mapFile = path.join(config.cwd, 'CODE_MAP.json');
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+  const indexFile = path.join(mapDir, 'index.json');
 
-  if (!fs.existsSync(mapFile)) {
+  if (!fs.existsSync(indexFile)) {
     ui.addMessage(
       'assistant',
-      '❌ 未找到 CODE_MAP.json 文件。\n\n' +
-      '运行 `/map` 来生成增强版代码蓝图。'
+      '❌ 未找到分块蓝图索引文件。\n\n' +
+      '运行 `/map generate` 来生成代码蓝图。\n\n' +
+      `期望位置: ${indexFile}`
     );
     return { success: true };
   }
 
   try {
-    const content = fs.readFileSync(mapFile, 'utf-8');
-    const blueprint: EnhancedCodeBlueprint = JSON.parse(content);
-    const stats = fs.statSync(mapFile);
+    const content = fs.readFileSync(indexFile, 'utf-8');
+    const index = JSON.parse(content) as import('../map/types-chunked.js').ChunkedIndex;
+    const stats = fs.statSync(indexFile);
+
+    // 计算 chunks 目录大小
+    const chunksDir = path.join(mapDir, 'chunks');
+    let totalChunksSize = 0;
+    let chunkCount = 0;
+    if (fs.existsSync(chunksDir)) {
+      const chunkFiles = fs.readdirSync(chunksDir);
+      for (const file of chunkFiles) {
+        if (file.endsWith('.json')) {
+          const chunkPath = path.join(chunksDir, file);
+          totalChunksSize += fs.statSync(chunkPath).size;
+          chunkCount++;
+        }
+      }
+    }
 
     const lines: string[] = [];
     lines.push('');
-    lines.push('📁 **CODE_MAP.json 状态**');
+    lines.push('📁 **分块蓝图状态**');
     lines.push('');
-    lines.push(`版本: ${blueprint.meta.version}`);
-    lines.push(`生成时间: ${new Date(blueprint.meta.generatedAt).toLocaleString()}`);
-    lines.push(`文件大小: ${formatSize(stats.size)}`);
+    lines.push(`格式: ${index.format}`);
+    lines.push(`版本: ${index.meta.version}`);
+    lines.push(`生成时间: ${new Date(index.meta.generatedAt).toLocaleString()}`);
+    if (index.meta.updatedAt) {
+      lines.push(`更新时间: ${new Date(index.meta.updatedAt).toLocaleString()}`);
+    }
     lines.push('');
-    lines.push(`项目: ${blueprint.project.name}`);
-    lines.push(`模块数: ${blueprint.statistics.totalModules}`);
-    lines.push(`符号数: ${blueprint.statistics.totalSymbols}`);
-    lines.push(`代码行数: ${blueprint.statistics.totalLines.toLocaleString()}`);
+    lines.push('**存储信息:**');
+    lines.push(`  • 索引文件: ${formatSize(stats.size)}`);
+    lines.push(`  • 分块数量: ${chunkCount} 个`);
+    lines.push(`  • 分块总大小: ${formatSize(totalChunksSize)}`);
+    lines.push(`  • 总大小: ${formatSize(stats.size + totalChunksSize)}`);
+    lines.push('');
+    lines.push(`项目: ${index.project.name}`);
+    lines.push(`路径: ${index.project.rootPath}`);
+    lines.push(`语言: ${index.project.languages.join(', ')}`);
+    lines.push('');
+    lines.push('**统计信息:**');
+    lines.push(`  • 模块数: ${index.statistics.totalModules}`);
+    lines.push(`  • 符号数: ${index.statistics.totalSymbols}`);
+    lines.push(`  • 代码行数: ${index.statistics.totalLines.toLocaleString()}`);
+    lines.push(`  • 模块依赖: ${index.statistics.referenceStats.totalModuleDeps}`);
+    lines.push(`  • 符号调用: ${index.statistics.referenceStats.totalSymbolCalls}`);
+    lines.push(`  • 类型引用: ${index.statistics.referenceStats.totalTypeRefs}`);
 
     // 显示语义覆盖率
-    if (blueprint.meta.semanticVersion) {
+    if (index.meta.semanticVersion) {
       lines.push('');
       lines.push('**语义信息:**');
-      lines.push(`  • 语义版本: ${blueprint.meta.semanticVersion}`);
-      lines.push(`  • 覆盖率: ${blueprint.statistics.semanticCoverage.coveragePercent}%`);
+      lines.push(`  • 语义版本: ${index.meta.semanticVersion}`);
+      lines.push(`  • 覆盖率: ${index.statistics.semanticCoverage.coveragePercent}%`);
     }
 
     // 显示项目描述
-    if (blueprint.project.semantic?.description) {
+    if (index.project.semantic?.description) {
       lines.push('');
       lines.push('**项目描述:**');
-      lines.push(`  ${blueprint.project.semantic.description}`);
+      lines.push(`  ${index.project.semantic.description}`);
+    }
+
+    // 显示架构层分布
+    lines.push('');
+    lines.push('**架构层分布:**');
+    const layerNames: Record<string, string> = {
+      presentation: '表现层',
+      business: '业务层',
+      data: '数据层',
+      infrastructure: '基础设施',
+      crossCutting: '横切关注点',
+    };
+    for (const [layer, count] of Object.entries(index.statistics.layerDistribution)) {
+      if (count > 0) {
+        const name = layerNames[layer] || layer;
+        lines.push(`  • ${name}: ${count} 模块`);
+      }
     }
 
     lines.push('');
@@ -375,7 +425,7 @@ async function handleStatus(
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    ui.addMessage('assistant', `❌ 读取蓝图失败: ${message}`);
+    ui.addMessage('assistant', `❌ 读取分块蓝图索引失败: ${message}`);
     return { success: false, message };
   }
 }
@@ -391,15 +441,18 @@ export const mapCommand: SlashCommand = {
   usage: `/map [subcommand] [options]
 
 子命令:
-  generate    生成增强版代码蓝图 (默认)
+  generate    生成分块代码蓝图 (默认)
   serve       启动可视化服务器
   view        生成并打开可视化
   status      查看当前蓝图状态
 
 选项:
-  --output, -o <path>   输出文件路径 (默认: CODE_MAP.json)
   --skip-semantics, -s  跳过 AI 语义生成
   --port <n>            服务器端口 (默认: 3030)
+
+输出目录: .claude/map/
+  • index.json          轻量级索引文件
+  • chunks/*.json       按目录分块的数据
 
 蓝图内容:
   • 层级结构: 目录树视图 + 架构分层视图
@@ -407,11 +460,12 @@ export const mapCommand: SlashCommand = {
   • 语义描述: AI 生成的业务含义描述
 
 示例:
-  /map                  生成增强版蓝图（含 AI 语义）
+  /map                  生成分块蓝图到 .claude/map/
   /map -s               生成蓝图（跳过语义，更快）
-  /map generate -o blueprint.json
+  /map serve            启动可视化服务器
   /map serve --port 8080
-  /map status`,
+  /map view             生成并启动可视化
+  /map status           查看当前蓝图状态`,
   category: 'development',
   execute: async (ctx: CommandContext): Promise<CommandResult> => {
     const { subcommand, options } = parseArgs(ctx.args);

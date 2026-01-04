@@ -1,0 +1,847 @@
+{
+  "path": "src/rules",
+  "modules": {
+    "src/rules/index.ts": {
+      "id": "src/rules/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\rules\\index.ts",
+      "language": "typescript",
+      "lines": 442,
+      "size": 11520,
+      "exports": [
+        "src/rules/index.ts::applyRules",
+        "src/rules/index.ts::createClaudeMdTemplate",
+        "src/rules/index.ts::extractRules",
+        "src/rules/index.ts::findClaudeMd",
+        "src/rules/index.ts::findSettingsFiles",
+        "src/rules/index.ts::generateSystemPromptAddition",
+        "src/rules/index.ts::initClaudeMd",
+        "src/rules/index.ts::loadProjectRules",
+        "src/rules/index.ts::mergeRules",
+        "src/rules/index.ts::parseClaudeMd",
+        "src/rules/index.ts::parseCustomRules",
+        "src/rules/index.ts::parseListFromContent",
+        "src/rules/index.ts::parseMemoryFromContent"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "os",
+          "symbols": [
+            "os"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "该模块负责解析和管理 Claude 项目配置文件（CLAUDE.md 和 settings.json），提取项目指令、工具权限、自定义规则等配置信息，并将多层级配置合并应用到系统中。",
+        "responsibility": "解析项目配置文件并提取规则配置",
+        "businessDomain": "配置管理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "配置解析",
+          "规则引擎",
+          "文件系统",
+          "Markdown解析",
+          "项目配置"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:53:52.932Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/rules/index.ts::applyRules": {
+      "id": "src/rules/index.ts::applyRules",
+      "name": "applyRules",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 315,
+        "startColumn": 0,
+        "endLine": 357,
+        "endColumn": 1
+      },
+      "signature": "applyRules()"
+    },
+    "src/rules/index.ts::createClaudeMdTemplate": {
+      "id": "src/rules/index.ts::createClaudeMdTemplate",
+      "name": "createClaudeMdTemplate",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 393,
+        "startColumn": 0,
+        "endLine": 424,
+        "endColumn": 1
+      },
+      "signature": "createClaudeMdTemplate()"
+    },
+    "src/rules/index.ts::extractRules": {
+      "id": "src/rules/index.ts::extractRules",
+      "name": "extractRules",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 158,
+        "startColumn": 0,
+        "endLine": 187,
+        "endColumn": 1
+      },
+      "signature": "extractRules()"
+    },
+    "src/rules/index.ts::findClaudeMd": {
+      "id": "src/rules/index.ts::findClaudeMd",
+      "name": "findClaudeMd",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 52,
+        "startColumn": 0,
+        "endLine": 73,
+        "endColumn": 1
+      },
+      "signature": "findClaudeMd()"
+    },
+    "src/rules/index.ts::findSettingsFiles": {
+      "id": "src/rules/index.ts::findSettingsFiles",
+      "name": "findSettingsFiles",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 78,
+        "startColumn": 0,
+        "endLine": 97,
+        "endColumn": 1
+      },
+      "signature": "findSettingsFiles()"
+    },
+    "src/rules/index.ts::generateSystemPromptAddition": {
+      "id": "src/rules/index.ts::generateSystemPromptAddition",
+      "name": "generateSystemPromptAddition",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 362,
+        "startColumn": 0,
+        "endLine": 388,
+        "endColumn": 1
+      },
+      "signature": "generateSystemPromptAddition()"
+    },
+    "src/rules/index.ts::initClaudeMd": {
+      "id": "src/rules/index.ts::initClaudeMd",
+      "name": "initClaudeMd",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 429,
+        "startColumn": 0,
+        "endLine": 441,
+        "endColumn": 1
+      },
+      "signature": "initClaudeMd()"
+    },
+    "src/rules/index.ts::loadProjectRules": {
+      "id": "src/rules/index.ts::loadProjectRules",
+      "name": "loadProjectRules",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 268,
+        "startColumn": 0,
+        "endLine": 291,
+        "endColumn": 1
+      },
+      "signature": "loadProjectRules()"
+    },
+    "src/rules/index.ts::mergeRules": {
+      "id": "src/rules/index.ts::mergeRules",
+      "name": "mergeRules",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 296,
+        "startColumn": 0,
+        "endLine": 310,
+        "endColumn": 1
+      },
+      "signature": "mergeRules()"
+    },
+    "src/rules/index.ts::parseClaudeMd": {
+      "id": "src/rules/index.ts::parseClaudeMd",
+      "name": "parseClaudeMd",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 102,
+        "startColumn": 0,
+        "endLine": 153,
+        "endColumn": 1
+      },
+      "signature": "parseClaudeMd()"
+    },
+    "src/rules/index.ts::parseCustomRules": {
+      "id": "src/rules/index.ts::parseCustomRules",
+      "name": "parseCustomRules",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 209,
+        "startColumn": 0,
+        "endLine": 246,
+        "endColumn": 1
+      },
+      "signature": "parseCustomRules()"
+    },
+    "src/rules/index.ts::parseListFromContent": {
+      "id": "src/rules/index.ts::parseListFromContent",
+      "name": "parseListFromContent",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 192,
+        "startColumn": 0,
+        "endLine": 204,
+        "endColumn": 1
+      },
+      "signature": "parseListFromContent()"
+    },
+    "src/rules/index.ts::parseMemoryFromContent": {
+      "id": "src/rules/index.ts::parseMemoryFromContent",
+      "name": "parseMemoryFromContent",
+      "kind": "function",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 251,
+        "startColumn": 0,
+        "endLine": 263,
+        "endColumn": 1
+      },
+      "signature": "parseMemoryFromContent()"
+    },
+    "src/rules/index.ts::ClaudeMdSection": {
+      "id": "src/rules/index.ts::ClaudeMdSection",
+      "name": "ClaudeMdSection",
+      "kind": "interface",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 29,
+        "startColumn": 0,
+        "endLine": 33,
+        "endColumn": 1
+      }
+    },
+    "src/rules/index.ts::CustomRule": {
+      "id": "src/rules/index.ts::CustomRule",
+      "name": "CustomRule",
+      "kind": "interface",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 21,
+        "startColumn": 0,
+        "endLine": 27,
+        "endColumn": 1
+      }
+    },
+    "src/rules/index.ts::ProjectRules": {
+      "id": "src/rules/index.ts::ProjectRules",
+      "name": "ProjectRules",
+      "kind": "interface",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 10,
+        "startColumn": 0,
+        "endLine": 19,
+        "endColumn": 1
+      }
+    },
+    "src/rules/index.ts::CLAUDE_MD_FILES": {
+      "id": "src/rules/index.ts::CLAUDE_MD_FILES",
+      "name": "CLAUDE_MD_FILES",
+      "kind": "constant",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 36,
+        "startColumn": 6,
+        "endLine": 42,
+        "endColumn": 1
+      }
+    },
+    "src/rules/index.ts::SETTINGS_FILES": {
+      "id": "src/rules/index.ts::SETTINGS_FILES",
+      "name": "SETTINGS_FILES",
+      "kind": "constant",
+      "moduleId": "src/rules/index.ts",
+      "location": {
+        "file": "src/rules/index.ts",
+        "startLine": 44,
+        "startColumn": 6,
+        "endLine": 47,
+        "endColumn": 1
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/prompt/attachments.ts",
+        "target": "src/rules/index.ts",
+        "type": "import",
+        "symbols": [
+          "findClaudeMd",
+          "parseClaudeMd",
+          "generateSystemPromptAddition"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/prompt/attachments.ts::AttachmentManager::generateClaudeMdAttachment",
+        "callee": "src/rules/index.ts::findClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/attachments.ts",
+            "startLine": 199,
+            "startColumn": 25,
+            "endLine": 199,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/attachments.ts::AttachmentManager::generateClaudeMdAttachment",
+        "callee": "src/rules/index.ts::parseClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/attachments.ts",
+            "startLine": 205,
+            "startColumn": 23,
+            "endLine": 205,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::applyRules",
+        "callee": "src/rules/index.ts::applyRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 315,
+            "startColumn": 16,
+            "endLine": 315,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::applyRules",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 329,
+            "startColumn": 16,
+            "endLine": 329,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::createClaudeMdTemplate",
+        "callee": "src/rules/index.ts::createClaudeMdTemplate",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 393,
+            "startColumn": 16,
+            "endLine": 393,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::extractRules",
+        "callee": "src/rules/index.ts::extractRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 158,
+            "startColumn": 16,
+            "endLine": 158,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::extractRules",
+        "callee": "src/rules/index.ts::parseListFromContent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 167,
+            "startColumn": 27,
+            "endLine": 167,
+            "endColumn": 47
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 169,
+            "startColumn": 30,
+            "endLine": 169,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::extractRules",
+        "callee": "src/rules/index.ts::parseCustomRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 180,
+            "startColumn": 26,
+            "endLine": 180,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::extractRules",
+        "callee": "src/rules/index.ts::parseMemoryFromContent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 182,
+            "startColumn": 21,
+            "endLine": 182,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::findClaudeMd",
+        "callee": "src/rules/index.ts::findClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 52,
+            "startColumn": 16,
+            "endLine": 52,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::findClaudeMd",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 53,
+            "startColumn": 32,
+            "endLine": 53,
+            "endColumn": 35
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 53,
+            "startColumn": 24,
+            "endLine": 53,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::findSettingsFiles",
+        "callee": "src/rules/index.ts::findSettingsFiles",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 78,
+            "startColumn": 16,
+            "endLine": 78,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::findSettingsFiles",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 79,
+            "startColumn": 34,
+            "endLine": 79,
+            "endColumn": 37
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 79,
+            "startColumn": 26,
+            "endLine": 79,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::generateSystemPromptAddition",
+        "callee": "src/rules/index.ts::generateSystemPromptAddition",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 362,
+            "startColumn": 16,
+            "endLine": 362,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::generateSystemPromptAddition",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 371,
+            "startColumn": 29,
+            "endLine": 371,
+            "endColumn": 33
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 371,
+            "startColumn": 22,
+            "endLine": 371,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::generateSystemPromptAddition",
+        "callee": "src/mcp/logging.ts::entries",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 373,
+            "startColumn": 38,
+            "endLine": 373,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::initClaudeMd",
+        "callee": "src/rules/index.ts::initClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 429,
+            "startColumn": 16,
+            "endLine": 429,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::initClaudeMd",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 430,
+            "startColumn": 35,
+            "endLine": 430,
+            "endColumn": 38
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 430,
+            "startColumn": 27,
+            "endLine": 430,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::initClaudeMd",
+        "callee": "src/rules/index.ts::createClaudeMdTemplate",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 437,
+            "startColumn": 19,
+            "endLine": 437,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::loadProjectRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 268,
+            "startColumn": 16,
+            "endLine": 268,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/core/session.ts::Session::cwd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 269,
+            "startColumn": 36,
+            "endLine": 269,
+            "endColumn": 39
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 269,
+            "startColumn": 28,
+            "endLine": 269,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::findClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 273,
+            "startColumn": 23,
+            "endLine": 273,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::parseClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 275,
+            "startColumn": 21,
+            "endLine": 275,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::extractRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 276,
+            "startColumn": 27,
+            "endLine": 276,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::findSettingsFiles",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 280,
+            "startColumn": 24,
+            "endLine": 280,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 283,
+            "startColumn": 28,
+            "endLine": 283,
+            "endColumn": 33
+          },
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 283,
+            "startColumn": 23,
+            "endLine": 283,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 283,
+            "startColumn": 23,
+            "endLine": 283,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::loadProjectRules",
+        "callee": "src/rules/index.ts::mergeRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 284,
+            "startColumn": 14,
+            "endLine": 284,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::mergeRules",
+        "callee": "src/rules/index.ts::mergeRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 296,
+            "startColumn": 9,
+            "endLine": 296,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::parseClaudeMd",
+        "callee": "src/rules/index.ts::parseClaudeMd",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 102,
+            "startColumn": 16,
+            "endLine": 102,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::parseCustomRules",
+        "callee": "src/rules/index.ts::parseCustomRules",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 209,
+            "startColumn": 9,
+            "endLine": 209,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::parseListFromContent",
+        "callee": "src/rules/index.ts::parseListFromContent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 192,
+            "startColumn": 9,
+            "endLine": 192,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::parseMemoryFromContent",
+        "callee": "src/rules/index.ts::parseMemoryFromContent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 251,
+            "startColumn": 9,
+            "endLine": 251,
+            "endColumn": 31
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

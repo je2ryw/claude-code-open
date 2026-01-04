@@ -1,0 +1,2672 @@
+{
+  "path": "tests",
+  "modules": {
+    "tests/config.test.ts": {
+      "id": "tests/config.test.ts",
+      "name": "config.test.ts",
+      "path": "F:\\claude-code-open\\tests\\config.test.ts",
+      "language": "typescript",
+      "lines": 396,
+      "size": 11944,
+      "exports": [
+        "tests/config.test.ts::assert",
+        "tests/config.test.ts::assertEqual",
+        "tests/config.test.ts::catch() callback",
+        "tests/config.test.ts::cleanup",
+        "tests/config.test.ts::runTests",
+        "tests/config.test.ts::setup",
+        "tests/config.test.ts::test"
+      ],
+      "imports": [
+        {
+          "source": "../src/config/index.js",
+          "symbols": [
+            "ConfigManager",
+            "type",
+            "UserConfig"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "os",
+          "symbols": [
+            "os"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "这是 Claude Code CLI 工具的配置系统测试模块，验证配置管理器的加载、合并、验证、迁移、导出导入等功能，确保多层级配置（默认/全局/项目/环境变量）的优先级正确，以及敏感信息的安全处理。",
+        "responsibility": "测试配置管理器的完整功能，包括配置验证、多层级合并、版本迁移、敏感信息掩码和 MCP 服务器配置",
+        "businessDomain": "配置管理测试",
+        "architectureLayer": "crossCutting",
+        "tags": [
+          "单元测试",
+          "配置管理",
+          "数据验证",
+          "配置迁移",
+          "敏感信息处理",
+          "MCP服务器",
+          "多层级配置"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:57:04.559Z"
+      }
+    },
+    "tests/media-test.ts": {
+      "id": "tests/media-test.ts",
+      "name": "media-test.ts",
+      "path": "F:\\claude-code-open\\tests\\media-test.ts",
+      "language": "typescript",
+      "lines": 60,
+      "size": 2236,
+      "exports": [],
+      "imports": [],
+      "semantic": {
+        "description": "媒体处理模块的单元测试脚本，验证文件类型检测、MIME类型识别、黑名单过滤等核心功能。通过模拟不同文件扩展名和文件头字节来测试媒体文件的识别和分类能力。",
+        "responsibility": "验证媒体文件处理模块的类型检测、格式支持判断和黑名单过滤功能",
+        "businessDomain": "媒体文件处理",
+        "architectureLayer": "crossCutting",
+        "tags": [
+          "单元测试",
+          "媒体类型检测",
+          "文件格式验证",
+          "MIME类型",
+          "黑名单过滤"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:57:39.789Z"
+      }
+    }
+  },
+  "symbols": {
+    "tests/config.test.ts::assert": {
+      "id": "tests/config.test.ts::assert",
+      "name": "assert",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 52,
+        "startColumn": 0,
+        "endLine": 56,
+        "endColumn": 1
+      },
+      "signature": "assert()"
+    },
+    "tests/config.test.ts::assertEqual": {
+      "id": "tests/config.test.ts::assertEqual",
+      "name": "assertEqual",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 58,
+        "startColumn": 0,
+        "endLine": 62,
+        "endColumn": 1
+      },
+      "signature": "assertEqual()"
+    },
+    "tests/config.test.ts::catch() callback": {
+      "id": "tests/config.test.ts::catch() callback",
+      "name": "catch() callback",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 391,
+        "startColumn": 17,
+        "endLine": 395,
+        "endColumn": 1
+      },
+      "signature": "catch() callback()"
+    },
+    "tests/config.test.ts::cleanup": {
+      "id": "tests/config.test.ts::cleanup",
+      "name": "cleanup",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 18,
+        "startColumn": 0,
+        "endLine": 25,
+        "endColumn": 1
+      },
+      "signature": "cleanup()"
+    },
+    "tests/config.test.ts::runTests": {
+      "id": "tests/config.test.ts::runTests",
+      "name": "runTests",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 375,
+        "startColumn": 0,
+        "endLine": 389,
+        "endColumn": 1
+      },
+      "signature": "runTests()"
+    },
+    "tests/config.test.ts::setup": {
+      "id": "tests/config.test.ts::setup",
+      "name": "setup",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 28,
+        "startColumn": 0,
+        "endLine": 32,
+        "endColumn": 1
+      },
+      "signature": "setup()"
+    },
+    "tests/config.test.ts::test": {
+      "id": "tests/config.test.ts::test",
+      "name": "test",
+      "kind": "function",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 38,
+        "startColumn": 0,
+        "endLine": 50,
+        "endColumn": 1
+      },
+      "signature": "test()"
+    },
+    "tests/config.test.ts::failed": {
+      "id": "tests/config.test.ts::failed",
+      "name": "failed",
+      "kind": "variable",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 36,
+        "startColumn": 4,
+        "endLine": 36,
+        "endColumn": 14
+      }
+    },
+    "tests/config.test.ts::passed": {
+      "id": "tests/config.test.ts::passed",
+      "name": "passed",
+      "kind": "variable",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 35,
+        "startColumn": 4,
+        "endLine": 35,
+        "endColumn": 14
+      }
+    },
+    "tests/config.test.ts::TEST_CONFIG_DIR": {
+      "id": "tests/config.test.ts::TEST_CONFIG_DIR",
+      "name": "TEST_CONFIG_DIR",
+      "kind": "constant",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 12,
+        "startColumn": 6,
+        "endLine": 12,
+        "endColumn": 68
+      }
+    },
+    "tests/config.test.ts::TEST_GLOBAL_CONFIG": {
+      "id": "tests/config.test.ts::TEST_GLOBAL_CONFIG",
+      "name": "TEST_GLOBAL_CONFIG",
+      "kind": "constant",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 13,
+        "startColumn": 6,
+        "endLine": 13,
+        "endColumn": 70
+      }
+    },
+    "tests/config.test.ts::TEST_PROJECT_CONFIG": {
+      "id": "tests/config.test.ts::TEST_PROJECT_CONFIG",
+      "name": "TEST_PROJECT_CONFIG",
+      "kind": "constant",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 15,
+        "startColumn": 6,
+        "endLine": 15,
+        "endColumn": 83
+      }
+    },
+    "tests/config.test.ts::TEST_PROJECT_DIR": {
+      "id": "tests/config.test.ts::TEST_PROJECT_DIR",
+      "name": "TEST_PROJECT_DIR",
+      "kind": "constant",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 14,
+        "startColumn": 6,
+        "endLine": 14,
+        "endColumn": 70
+      }
+    },
+    "tests/config.test.ts::tests": {
+      "id": "tests/config.test.ts::tests",
+      "name": "tests",
+      "kind": "constant",
+      "moduleId": "tests/config.test.ts",
+      "location": {
+        "file": "tests/config.test.ts",
+        "startLine": 66,
+        "startColumn": 6,
+        "endLine": 371,
+        "endColumn": 1
+      }
+    },
+    "tests/media-test.ts::jpegHeader": {
+      "id": "tests/media-test.ts::jpegHeader",
+      "name": "jpegHeader",
+      "kind": "constant",
+      "moduleId": "tests/media-test.ts",
+      "location": {
+        "file": "tests/media-test.ts",
+        "startLine": 43,
+        "startColumn": 6,
+        "endLine": 43,
+        "endColumn": 50
+      }
+    },
+    "tests/media-test.ts::pdfHeader": {
+      "id": "tests/media-test.ts::pdfHeader",
+      "name": "pdfHeader",
+      "kind": "constant",
+      "moduleId": "tests/media-test.ts",
+      "location": {
+        "file": "tests/media-test.ts",
+        "startLine": 44,
+        "startColumn": 6,
+        "endLine": 44,
+        "endColumn": 61
+      }
+    },
+    "tests/media-test.ts::pngHeader": {
+      "id": "tests/media-test.ts::pngHeader",
+      "name": "pngHeader",
+      "kind": "constant",
+      "moduleId": "tests/media-test.ts",
+      "location": {
+        "file": "tests/media-test.ts",
+        "startLine": 42,
+        "startColumn": 6,
+        "endLine": 42,
+        "endColumn": 79
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "tests/config.test.ts",
+        "target": "src/config/index.ts",
+        "type": "import",
+        "symbols": [
+          "ConfigManager",
+          "type",
+          "UserConfig"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "scripts/sync-analyzer-v2.ts::SyncAnalyzerV2::analyzeTools",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/sync-analyzer-v2.ts",
+            "startLine": 243,
+            "startColumn": 60,
+            "endLine": 243,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "scripts/sync-analyzer.ts::SyncAnalyzer::analyzeModules",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "scripts/sync-analyzer.ts",
+            "startLine": 195,
+            "startColumn": 18,
+            "endLine": 195,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/context.ts::containsSensitiveData",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/context.ts",
+            "startLine": 241,
+            "startColumn": 42,
+            "endLine": 241,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::analyzeFiles",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 524,
+            "startColumn": 61,
+            "endLine": 524,
+            "endColumn": 65
+          },
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 525,
+            "startColumn": 26,
+            "endLine": 525,
+            "endColumn": 30
+          },
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 526,
+            "startColumn": 29,
+            "endLine": 526,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/explore.ts::ExploreAgent::detectQueryType",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 210,
+            "startColumn": 20,
+            "endLine": 210,
+            "endColumn": 24
+          },
+          {
+            "file": "src/agents/explore.ts",
+            "startLine": 215,
+            "startColumn": 51,
+            "endLine": 215,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/statusline.ts::StatuslineAgent::validateCommand",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/statusline.ts",
+            "startLine": 483,
+            "startColumn": 18,
+            "endLine": 483,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/tools.ts::AgentToolFilter::checkCustomRestrictions",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/tools.ts",
+            "startLine": 419,
+            "startColumn": 22,
+            "endLine": 419,
+            "endColumn": 26
+          },
+          {
+            "file": "src/agents/tools.ts",
+            "startLine": 431,
+            "startColumn": 22,
+            "endLine": 431,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/agents/tools.ts::AgentToolFilter::checkPermissionLevel",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/agents/tools.ts",
+            "startLine": 362,
+            "startColumn": 22,
+            "endLine": 362,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/background/shell-manager.ts::ShellManager::getOutput",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/background/shell-manager.ts",
+            "startLine": 229,
+            "startColumn": 42,
+            "endLine": 229,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/checkpoint/index.ts::searchCheckpoints",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/checkpoint/index.ts",
+            "startLine": 943,
+            "startColumn": 19,
+            "endLine": 943,
+            "endColumn": 23
+          },
+          {
+            "file": "src/checkpoint/index.ts",
+            "startLine": 974,
+            "startColumn": 21,
+            "endLine": 974,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "tests/config.test.ts::setup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 1384,
+            "startColumn": 32,
+            "endLine": 1384,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/context/index.ts::compressToolOutput",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/index.ts",
+            "startLine": 221,
+            "startColumn": 48,
+            "endLine": 221,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "src/context/index.ts::estimateTokens",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/index.ts",
+            "startLine": 88,
+            "startColumn": 63,
+            "endLine": 88,
+            "endColumn": 67
+          },
+          {
+            "file": "src/context/index.ts",
+            "startLine": 89,
+            "startColumn": 75,
+            "endLine": 89,
+            "endColumn": 79
+          }
+        ]
+      },
+      {
+        "caller": "src/context/index.ts::extractContextKeyInfo",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/context/index.ts",
+            "startLine": 1101,
+            "startColumn": 49,
+            "endLine": 1101,
+            "endColumn": 53
+          }
+        ]
+      },
+      {
+        "caller": "src/env/sensitive.ts::looksLikeSensitiveValue",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/env/sensitive.ts",
+            "startLine": 189,
+            "startColumn": 34,
+            "endLine": 189,
+            "endColumn": 38
+          },
+          {
+            "file": "src/env/sensitive.ts",
+            "startLine": 194,
+            "startColumn": 57,
+            "endLine": 194,
+            "endColumn": 61
+          },
+          {
+            "file": "src/env/sensitive.ts",
+            "startLine": 199,
+            "startColumn": 72,
+            "endLine": 199,
+            "endColumn": 76
+          },
+          {
+            "file": "src/env/sensitive.ts",
+            "startLine": 204,
+            "startColumn": 50,
+            "endLine": 204,
+            "endColumn": 54
+          }
+        ]
+      },
+      {
+        "caller": "src/git/ignore.ts::GitIgnore::matchPattern",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/git/ignore.ts",
+            "startLine": 165,
+            "startColumn": 17,
+            "endLine": 165,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/git/safety.ts::GitSafety::checkConfigChange",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/git/safety.ts",
+            "startLine": 286,
+            "startColumn": 23,
+            "endLine": 286,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/git/safety.ts::GitSafety::checkForcePushToMainBranch",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/git/safety.ts",
+            "startLine": 138,
+            "startColumn": 51,
+            "endLine": 138,
+            "endColumn": 55
+          },
+          {
+            "file": "src/git/safety.ts",
+            "startLine": 139,
+            "startColumn": 43,
+            "endLine": 139,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/git/safety.ts::GitSafety::checkSensitiveFiles",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/git/safety.ts",
+            "startLine": 240,
+            "startColumn": 20,
+            "endLine": 240,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/git/safety.ts::GitSafety::validateGitCommand",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/git/safety.ts",
+            "startLine": 109,
+            "startColumn": 18,
+            "endLine": 109,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getMatchingHooks",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 383,
+            "startColumn": 21,
+            "endLine": 383,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/map/analyzer.ts::CodeMapAnalyzer::isReExportFile",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 217,
+            "startColumn": 36,
+            "endLine": 217,
+            "endColumn": 40
+          },
+          {
+            "file": "src/map/analyzer.ts",
+            "startLine": 217,
+            "startColumn": 70,
+            "endLine": 217,
+            "endColumn": 74
+          }
+        ]
+      },
+      {
+        "caller": "src/map/layer-classifier.ts::LayerClassifier::classify",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/layer-classifier.ts",
+            "startLine": 317,
+            "startColumn": 20,
+            "endLine": 317,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::buildArchitectureMap",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 184,
+            "startColumn": 18,
+            "endLine": 184,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::categorizeModules",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1201,
+            "startColumn": 37,
+            "endLine": 1201,
+            "endColumn": 41
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1205,
+            "startColumn": 36,
+            "endLine": 1205,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::detectEntryPoints",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 505,
+            "startColumn": 27,
+            "endLine": 505,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 513,
+            "startColumn": 35,
+            "endLine": 513,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::detectProjectType",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1558,
+            "startColumn": 41,
+            "endLine": 1558,
+            "endColumn": 45
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1559,
+            "startColumn": 40,
+            "endLine": 1559,
+            "endColumn": 44
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1560,
+            "startColumn": 36,
+            "endLine": 1560,
+            "endColumn": 40
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1561,
+            "startColumn": 47,
+            "endLine": 1561,
+            "endColumn": 51
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::detectScenarios",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 738,
+            "startColumn": 18,
+            "endLine": 738,
+            "endColumn": 22
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 738,
+            "startColumn": 40,
+            "endLine": 738,
+            "endColumn": 44
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 748,
+            "startColumn": 18,
+            "endLine": 748,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateCliStory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1576,
+            "startColumn": 64,
+            "endLine": 1576,
+            "endColumn": 68
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1590,
+            "startColumn": 75,
+            "endLine": 1590,
+            "endColumn": 79
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1602,
+            "startColumn": 91,
+            "endLine": 1602,
+            "endColumn": 95
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateConfigStory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1756,
+            "startColumn": 39,
+            "endLine": 1756,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateConversationStory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1633,
+            "startColumn": 22,
+            "endLine": 1633,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1646,
+            "startColumn": 27,
+            "endLine": 1646,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1659,
+            "startColumn": 22,
+            "endLine": 1659,
+            "endColumn": 26
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1672,
+            "startColumn": 15,
+            "endLine": 1672,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateCoreFlowSteps",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1964,
+            "startColumn": 71,
+            "endLine": 1964,
+            "endColumn": 75
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateSessionStory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1786,
+            "startColumn": 47,
+            "endLine": 1786,
+            "endColumn": 51
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::generateToolStory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1703,
+            "startColumn": 28,
+            "endLine": 1703,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::hasModule",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 1567,
+            "startColumn": 59,
+            "endLine": 1567,
+            "endColumn": 63
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::VisualizationServer::analyzeCodeFeatures",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2445,
+            "startColumn": 47,
+            "endLine": 2445,
+            "endColumn": 51
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2446,
+            "startColumn": 71,
+            "endLine": 2446,
+            "endColumn": 75
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2447,
+            "startColumn": 59,
+            "endLine": 2447,
+            "endColumn": 63
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2448,
+            "startColumn": 30,
+            "endLine": 2448,
+            "endColumn": 34
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2449,
+            "startColumn": 60,
+            "endLine": 2449,
+            "endColumn": 64
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2450,
+            "startColumn": 42,
+            "endLine": 2450,
+            "endColumn": 46
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2451,
+            "startColumn": 29,
+            "endLine": 2451,
+            "endColumn": 33
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2452,
+            "startColumn": 56,
+            "endLine": 2452,
+            "endColumn": 60
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2453,
+            "startColumn": 57,
+            "endLine": 2453,
+            "endColumn": 61
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2454,
+            "startColumn": 78,
+            "endLine": 2454,
+            "endColumn": 82
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2455,
+            "startColumn": 38,
+            "endLine": 2455,
+            "endColumn": 42
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2456,
+            "startColumn": 27,
+            "endLine": 2456,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2457,
+            "startColumn": 35,
+            "endLine": 2457,
+            "endColumn": 39
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2458,
+            "startColumn": 36,
+            "endLine": 2458,
+            "endColumn": 40
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2459,
+            "startColumn": 64,
+            "endLine": 2459,
+            "endColumn": 68
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2460,
+            "startColumn": 61,
+            "endLine": 2460,
+            "endColumn": 65
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2461,
+            "startColumn": 55,
+            "endLine": 2461,
+            "endColumn": 59
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::VisualizationServer::generateAIExplanation",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2142,
+            "startColumn": 57,
+            "endLine": 2142,
+            "endColumn": 61
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2143,
+            "startColumn": 35,
+            "endLine": 2143,
+            "endColumn": 39
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2144,
+            "startColumn": 34,
+            "endLine": 2144,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2145,
+            "startColumn": 34,
+            "endLine": 2145,
+            "endColumn": 38
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2146,
+            "startColumn": 67,
+            "endLine": 2146,
+            "endColumn": 71
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2147,
+            "startColumn": 56,
+            "endLine": 2147,
+            "endColumn": 60
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2148,
+            "startColumn": 52,
+            "endLine": 2148,
+            "endColumn": 56
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2149,
+            "startColumn": 51,
+            "endLine": 2149,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/index.old.ts::VisualizationServer::generateCodeSuggestions",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2266,
+            "startColumn": 31,
+            "endLine": 2266,
+            "endColumn": 35
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2267,
+            "startColumn": 41,
+            "endLine": 2267,
+            "endColumn": 45
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2268,
+            "startColumn": 47,
+            "endLine": 2268,
+            "endColumn": 51
+          },
+          {
+            "file": "src/map/server/index.old.ts",
+            "startLine": 2270,
+            "startColumn": 79,
+            "endLine": 2270,
+            "endColumn": 83
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/architecture.ts::buildArchitectureMap",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/architecture.ts",
+            "startLine": 71,
+            "startColumn": 18,
+            "endLine": 71,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/map/server/services/dependency.ts::detectEntryPoints",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 36,
+            "startColumn": 27,
+            "endLine": 36,
+            "endColumn": 31
+          },
+          {
+            "file": "src/map/server/services/dependency.ts",
+            "startLine": 43,
+            "startColumn": 35,
+            "endLine": 43,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/map/symbol-reference-analyzer.ts::SymbolReferenceAnalyzer::buildSymbolIndex",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/map/symbol-reference-analyzer.ts",
+            "startLine": 188,
+            "startColumn": 45,
+            "endLine": 188,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/mcp/debug.ts::maskSecrets",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/mcp/debug.ts",
+            "startLine": 152,
+            "startColumn": 18,
+            "endLine": 152,
+            "endColumn": 22
+          },
+          {
+            "file": "src/mcp/debug.ts",
+            "startLine": 167,
+            "startColumn": 65,
+            "endLine": 167,
+            "endColumn": 69
+          }
+        ]
+      },
+      {
+        "caller": "src/mcp/examples/sampling-usage.ts::containsSuspiciousContent",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/mcp/examples/sampling-usage.ts",
+            "startLine": 268,
+            "startColumn": 52,
+            "endLine": 268,
+            "endColumn": 56
+          }
+        ]
+      },
+      {
+        "caller": "src/models/config.ts::ModelConfig::isValidModelFormat",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/models/config.ts",
+            "startLine": 412,
+            "startColumn": 38,
+            "endLine": 412,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/index.ts::PermissionManager::ruleMatches",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/index.ts",
+            "startLine": 349,
+            "startColumn": 24,
+            "endLine": 349,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/policy.ts::PolicyEngine::matchesEnvironment",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 459,
+            "startColumn": 19,
+            "endLine": 459,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/policy.ts::PolicyEngine::matchesStringOrRegex",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 359,
+            "startColumn": 21,
+            "endLine": 359,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/policy.ts::PolicyEngine::validateCondition",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 868,
+            "startColumn": 56,
+            "endLine": 868,
+            "endColumn": 60
+          },
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 871,
+            "startColumn": 54,
+            "endLine": 871,
+            "endColumn": 58
+          },
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 878,
+            "startColumn": 62,
+            "endLine": 878,
+            "endColumn": 66
+          },
+          {
+            "file": "src/permissions/policy.ts",
+            "startLine": 881,
+            "startColumn": 60,
+            "endLine": 881,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.test.ts::runAllTests",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.test.ts",
+            "startLine": 623,
+            "startColumn": 6,
+            "endLine": 623,
+            "endColumn": 10
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::PermissionRuleParser::createMatcher",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 282,
+            "startColumn": 24,
+            "endLine": 282,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::RuleMatcher::matchBashCommand",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 433,
+            "startColumn": 30,
+            "endLine": 433,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::RuleMatcher::matchFilePath",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 478,
+            "startColumn": 30,
+            "endLine": 478,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::RuleMatcher::matchGeneric",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 561,
+            "startColumn": 37,
+            "endLine": 561,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/rule-parser.ts::RuleMatcher::matchUrl",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/rule-parser.ts",
+            "startLine": 526,
+            "startColumn": 30,
+            "endLine": 526,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/tools.test.ts::runAllTests",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/tools.test.ts",
+            "startLine": 657,
+            "startColumn": 6,
+            "endLine": 657,
+            "endColumn": 10
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/tools.ts::ToolPermissionManager::evaluateCondition",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/tools.ts",
+            "startLine": 594,
+            "startColumn": 25,
+            "endLine": 594,
+            "endColumn": 29
+          },
+          {
+            "file": "src/permissions/tools.ts",
+            "startLine": 603,
+            "startColumn": 26,
+            "endLine": 603,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/permissions/tools.ts::ToolPermissionManager::validateParameterRestriction",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/permissions/tools.ts",
+            "startLine": 706,
+            "startColumn": 25,
+            "endLine": 706,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/plugins/index.ts::PluginManager::enableHotReload",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/plugins/index.ts",
+            "startLine": 994,
+            "startColumn": 36,
+            "endLine": 994,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/plugins/index.ts::PluginRecommender::recommend",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/plugins/index.ts",
+            "startLine": 2030,
+            "startColumn": 33,
+            "endLine": 2030,
+            "endColumn": 37
+          },
+          {
+            "file": "src/plugins/index.ts",
+            "startLine": 2031,
+            "startColumn": 33,
+            "endLine": 2031,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/builder.ts::estimateTokens",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/builder.ts",
+            "startLine": 33,
+            "startColumn": 63,
+            "endLine": 33,
+            "endColumn": 67
+          },
+          {
+            "file": "src/prompt/builder.ts",
+            "startLine": 34,
+            "startColumn": 75,
+            "endLine": 34,
+            "endColumn": 79
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/cache.ts::estimateTokens",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/cache.ts",
+            "startLine": 15,
+            "startColumn": 63,
+            "endLine": 15,
+            "endColumn": 67
+          },
+          {
+            "file": "src/prompt/cache.ts",
+            "startLine": 16,
+            "startColumn": 75,
+            "endLine": 16,
+            "endColumn": 79
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/preview.ts::estimateTokens",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/preview.ts",
+            "startLine": 102,
+            "startColumn": 63,
+            "endLine": 102,
+            "endColumn": 67
+          },
+          {
+            "file": "src/prompt/preview.ts",
+            "startLine": 103,
+            "startColumn": 75,
+            "endLine": 103,
+            "endColumn": 79
+          }
+        ]
+      },
+      {
+        "caller": "src/prompt/preview.ts::PromptPreview::extractSections",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/prompt/preview.ts",
+            "startLine": 517,
+            "startColumn": 28,
+            "endLine": 517,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/providers/index.ts::validateProviderConfig",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/providers/index.ts",
+            "startLine": 520,
+            "startColumn": 32,
+            "endLine": 520,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/rules/index.ts::applyRules",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/rules/index.ts",
+            "startLine": 329,
+            "startColumn": 16,
+            "endLine": 329,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/sandbox/filesystem.ts::matchPathPattern",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/sandbox/filesystem.ts",
+            "startLine": 365,
+            "startColumn": 17,
+            "endLine": 365,
+            "endColumn": 21
+          },
+          {
+            "file": "src/sandbox/filesystem.ts",
+            "startLine": 371,
+            "startColumn": 17,
+            "endLine": 371,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/sandbox/network.ts::matchDomainPattern",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/sandbox/network.ts",
+            "startLine": 607,
+            "startColumn": 17,
+            "endLine": 607,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/security/audit.ts::AuditLogger::applyFilter",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/security/audit.ts",
+            "startLine": 829,
+            "startColumn": 60,
+            "endLine": 829,
+            "endColumn": 64
+          }
+        ]
+      },
+      {
+        "caller": "src/security/command-injection.ts::CommandInjectionDetector::detect",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/security/command-injection.ts",
+            "startLine": 217,
+            "startColumn": 32,
+            "endLine": 217,
+            "endColumn": 36
+          },
+          {
+            "file": "src/security/command-injection.ts",
+            "startLine": 229,
+            "startColumn": 18,
+            "endLine": 229,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "src/security/command-injection.ts::CommandInjectionDetector::detectPathTraversal",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/security/command-injection.ts",
+            "startLine": 307,
+            "startColumn": 24,
+            "endLine": 307,
+            "endColumn": 28
+          },
+          {
+            "file": "src/security/command-injection.ts",
+            "startLine": 307,
+            "startColumn": 58,
+            "endLine": 307,
+            "endColumn": 62
+          }
+        ]
+      },
+      {
+        "caller": "src/security/sensitive.ts::shouldExcludeFile",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/security/sensitive.ts",
+            "startLine": 581,
+            "startColumn": 49,
+            "endLine": 581,
+            "endColumn": 53
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/ask.ts::AskUserQuestionTool::interactiveSelect",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/ask.ts",
+            "startLine": 455,
+            "startColumn": 36,
+            "endLine": 455,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/bash.ts::checkCommandSafety",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 282,
+            "startColumn": 16,
+            "endLine": 282,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/bash.ts::isTaskId",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 194,
+            "startColumn": 75,
+            "endLine": 194,
+            "endColumn": 79
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/bash.ts::BashOutputTool::execute",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 921,
+            "startColumn": 34,
+            "endLine": 921,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::hasLineNumberPrefixes",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 212,
+            "startColumn": 35,
+            "endLine": 212,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/sandbox.ts::isSandboxError",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/sandbox.ts",
+            "startLine": 913,
+            "startColumn": 54,
+            "endLine": 913,
+            "endColumn": 58
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/tmux.ts::TmuxTool::validateSessionName",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/tmux.ts",
+            "startLine": 176,
+            "startColumn": 31,
+            "endLine": 176,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/autocomplete/files.ts::isTypingFilePath",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/autocomplete/files.ts",
+            "startLine": 112,
+            "startColumn": 20,
+            "endLine": 112,
+            "endColumn": 24
+          },
+          {
+            "file": "src/ui/autocomplete/files.ts",
+            "startLine": 123,
+            "startColumn": 46,
+            "endLine": 123,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/utils/syntaxHighlight.ts::detectLanguageFromContent",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 433,
+            "startColumn": 54,
+            "endLine": 433,
+            "endColumn": 58
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 438,
+            "startColumn": 57,
+            "endLine": 438,
+            "endColumn": 61
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 439,
+            "startColumn": 63,
+            "endLine": 439,
+            "endColumn": 67
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 446,
+            "startColumn": 59,
+            "endLine": 446,
+            "endColumn": 63
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 451,
+            "startColumn": 56,
+            "endLine": 451,
+            "endColumn": 60
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 456,
+            "startColumn": 27,
+            "endLine": 456,
+            "endColumn": 31
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 456,
+            "startColumn": 54,
+            "endLine": 456,
+            "endColumn": 58
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 461,
+            "startColumn": 27,
+            "endLine": 461,
+            "endColumn": 31
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 466,
+            "startColumn": 43,
+            "endLine": 466,
+            "endColumn": 47
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 466,
+            "startColumn": 81,
+            "endLine": 466,
+            "endColumn": 85
+          },
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 471,
+            "startColumn": 62,
+            "endLine": 471,
+            "endColumn": 66
+          }
+        ]
+      },
+      {
+        "caller": "src/ui/utils/syntaxHighlight.ts::hasAnsiColors",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/ui/utils/syntaxHighlight.ts",
+            "startLine": 367,
+            "startColumn": 22,
+            "endLine": 367,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/utils/git-helper.ts::addCommitAttribution",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/utils/git-helper.ts",
+            "startLine": 41,
+            "startColumn": 37,
+            "endLine": 41,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/utils/git-helper.ts::isGitCommitCommand",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/utils/git-helper.ts",
+            "startLine": 79,
+            "startColumn": 32,
+            "endLine": 79,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/utils/index.ts::getAllFiles",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/utils/index.ts",
+            "startLine": 96,
+            "startColumn": 32,
+            "endLine": 96,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/utils/index.ts::parseDuration",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/utils/index.ts",
+            "startLine": 230,
+            "startColumn": 14,
+            "endLine": 230,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/index.ts::getInlineReactApp",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/index.ts",
+            "startLine": 2494,
+            "startColumn": 112,
+            "endLine": 2494,
+            "endColumn": 116
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/permission-handler.ts::PermissionHandler::assessRiskLevel",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/permission-handler.ts",
+            "startLine": 238,
+            "startColumn": 54,
+            "endLine": 238,
+            "endColumn": 58
+          },
+          {
+            "file": "src/web/server/permission-handler.ts",
+            "startLine": 243,
+            "startColumn": 46,
+            "endLine": 243,
+            "endColumn": 50
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/permission-handler.ts::PermissionHandler::isBashCommandDangerous",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/permission-handler.ts",
+            "startLine": 161,
+            "startColumn": 18,
+            "endLine": 161,
+            "endColumn": 22
+          }
+        ]
+      },
+      {
+        "caller": "tests/commands/transcript.test.ts::describe('/transcript command') callback",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 118,
+            "startColumn": 2,
+            "endLine": 118,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 136,
+            "startColumn": 2,
+            "endLine": 136,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 161,
+            "startColumn": 2,
+            "endLine": 161,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 176,
+            "startColumn": 2,
+            "endLine": 176,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 210,
+            "startColumn": 2,
+            "endLine": 210,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 221,
+            "startColumn": 2,
+            "endLine": 221,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 238,
+            "startColumn": 2,
+            "endLine": 238,
+            "endColumn": 6
+          },
+          {
+            "file": "tests/commands/transcript.test.ts",
+            "startLine": 260,
+            "startColumn": 2,
+            "endLine": 260,
+            "endColumn": 6
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::assert",
+        "callee": "tests/config.test.ts::assert",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 52,
+            "startColumn": 9,
+            "endLine": 52,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "tests/config.test.ts::runTests",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 391,
+            "startColumn": 0,
+            "endLine": 391,
+            "endColumn": 8
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 392,
+            "startColumn": 10,
+            "endLine": 392,
+            "endColumn": 15
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 392,
+            "startColumn": 2,
+            "endLine": 392,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 392,
+            "startColumn": 2,
+            "endLine": 392,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 392,
+            "startColumn": 2,
+            "endLine": 392,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 392,
+            "startColumn": 2,
+            "endLine": 392,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::catch() callback",
+        "callee": "tests/config.test.ts::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 393,
+            "startColumn": 2,
+            "endLine": 393,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::cleanup",
+        "callee": "tests/config.test.ts::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 18,
+            "startColumn": 9,
+            "endLine": 18,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "tests/config.test.ts::runTests",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 375,
+            "startColumn": 15,
+            "endLine": 375,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 376,
+            "startColumn": 10,
+            "endLine": 376,
+            "endColumn": 13
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 382,
+            "startColumn": 10,
+            "endLine": 382,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 376,
+            "startColumn": 2,
+            "endLine": 376,
+            "endColumn": 13
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 382,
+            "startColumn": 2,
+            "endLine": 382,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 376,
+            "startColumn": 2,
+            "endLine": 376,
+            "endColumn": 13
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 382,
+            "startColumn": 2,
+            "endLine": 382,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 376,
+            "startColumn": 2,
+            "endLine": 376,
+            "endColumn": 13
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 382,
+            "startColumn": 2,
+            "endLine": 382,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::runTests",
+        "callee": "tests/config.test.ts::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 384,
+            "startColumn": 2,
+            "endLine": 384,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::setup",
+        "callee": "tests/config.test.ts::setup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 28,
+            "startColumn": 9,
+            "endLine": 28,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::setup",
+        "callee": "tests/config.test.ts::cleanup",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 29,
+            "startColumn": 2,
+            "endLine": 29,
+            "endColumn": 9
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 38,
+            "startColumn": 9,
+            "endLine": 38,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 42,
+            "startColumn": 14,
+            "endLine": 42,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 42,
+            "startColumn": 6,
+            "endLine": 42,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 42,
+            "startColumn": 6,
+            "endLine": 42,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 42,
+            "startColumn": 6,
+            "endLine": 42,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 45,
+            "startColumn": 14,
+            "endLine": 45,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 45,
+            "startColumn": 6,
+            "endLine": 45,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 46,
+            "startColumn": 14,
+            "endLine": 46,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 46,
+            "startColumn": 6,
+            "endLine": 46,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 45,
+            "startColumn": 6,
+            "endLine": 45,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 46,
+            "startColumn": 6,
+            "endLine": 46,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 45,
+            "startColumn": 6,
+            "endLine": 45,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 46,
+            "startColumn": 6,
+            "endLine": 46,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "tests/config.test.ts::test",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 45,
+            "startColumn": 6,
+            "endLine": 45,
+            "endColumn": 19
+          },
+          {
+            "file": "tests/config.test.ts",
+            "startLine": 46,
+            "startColumn": 6,
+            "endLine": 46,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "tests/e2e/cli-runner.ts::InteractiveCLISession::waitForPattern",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/e2e/cli-runner.ts",
+            "startLine": 231,
+            "startColumn": 18,
+            "endLine": 231,
+            "endColumn": 22
+          },
+          {
+            "file": "tests/e2e/cli-runner.ts",
+            "startLine": 231,
+            "startColumn": 47,
+            "endLine": 231,
+            "endColumn": 51
+          }
+        ]
+      },
+      {
+        "caller": "tests/e2e/setup.ts::assertMatch",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/e2e/setup.ts",
+            "startLine": 209,
+            "startColumn": 15,
+            "endLine": 209,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "tests/integration/helpers.ts::countFilesInDirectory",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/integration/helpers.ts",
+            "startLine": 177,
+            "startColumn": 38,
+            "endLine": 177,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "tests/tools/ask-enhanced.test.ts::describe('AskUserQuestion Enhanced Features') callback",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/tools/ask-enhanced.test.ts",
+            "startLine": 238,
+            "startColumn": 24,
+            "endLine": 238,
+            "endColumn": 28
+          },
+          {
+            "file": "tests/tools/ask-enhanced.test.ts",
+            "startLine": 267,
+            "startColumn": 28,
+            "endLine": 267,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "tests/tools/search.test.ts::describe('GrepTool') callback",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/tools/search.test.ts",
+            "startLine": 240,
+            "startColumn": 62,
+            "endLine": 240,
+            "endColumn": 66
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

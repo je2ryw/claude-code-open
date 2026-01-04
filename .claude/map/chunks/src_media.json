@@ -1,0 +1,2342 @@
+{
+  "path": "src/media",
+  "modules": {
+    "src/media/image.ts": {
+      "id": "src/media/image.ts",
+      "name": "image.ts",
+      "path": "F:\\claude-code-open\\src\\media\\image.ts",
+      "language": "typescript",
+      "lines": 276,
+      "size": 7139,
+      "exports": [
+        "src/media/image.ts::compressImage",
+        "src/media/image.ts::createImageResult",
+        "src/media/image.ts::estimateImageTokens",
+        "src/media/image.ts::extractImageDimensions",
+        "src/media/image.ts::isSupportedImageFormat",
+        "src/media/image.ts::processImage",
+        "src/media/image.ts::readImageFile",
+        "src/media/image.ts::readImageFileSync",
+        "src/media/image.ts::validateImageFile"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "sharp",
+          "symbols": [
+            "sharp"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "./mime.js",
+          "symbols": [
+            "getMimeTypeSync"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "图片处理模块，负责读取、验证、压缩图片文件，并将其转换为 base64 格式供 Claude API 使用。支持自动压缩超过 token 限制的图片，并提取图片尺寸元数据。",
+        "responsibility": "处理图片文件的读取、格式验证、智能压缩和 token 估算",
+        "businessDomain": "媒体处理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "图片处理",
+          "base64转换",
+          "图片压缩",
+          "sharp",
+          "token估算"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:52:36.418Z"
+      }
+    },
+    "src/media/index.ts": {
+      "id": "src/media/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\media\\index.ts",
+      "language": "typescript",
+      "lines": 206,
+      "size": 4875,
+      "exports": [
+        "src/media/index.ts::detectMediaType",
+        "src/media/index.ts::getMediaStats",
+        "src/media/index.ts::isBlacklistedFile",
+        "src/media/index.ts::isSupportedMediaFile",
+        "src/media/index.ts::readMediaFile"
+      ],
+      "imports": [
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "./image.js",
+          "symbols": [
+            "readImageFile",
+            "isSupportedImageFormat",
+            "type",
+            "ImageResult"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "./pdf.js",
+          "symbols": [
+            "readPdfFile",
+            "isPdfExtension",
+            "isPdfSupported",
+            "type",
+            "PdfReadResult"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "./svg.js",
+          "symbols": [
+            "renderSvgToPng",
+            "isSvgRenderEnabled"
+          ],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "媒体文件处理模块的统一入口，提供图片、PDF、SVG 等多种媒体文件的自动识别、读取和处理功能，支持文件类型检测、格式验证和黑名单过滤。",
+        "responsibility": "统一管理和协调各类媒体文件的识别、读取和处理流程",
+        "businessDomain": "媒体处理",
+        "architectureLayer": "business",
+        "tags": [
+          "媒体处理",
+          "文件识别",
+          "多格式支持",
+          "类型检测",
+          "统一入口"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:52:36.724Z"
+      }
+    },
+    "src/media/mime.ts": {
+      "id": "src/media/mime.ts",
+      "name": "mime.ts",
+      "path": "F:\\claude-code-open\\src\\media\\mime.ts",
+      "language": "typescript",
+      "lines": 125,
+      "size": 3193,
+      "exports": [
+        "src/media/mime.ts::getMediaType",
+        "src/media/mime.ts::getMimeType",
+        "src/media/mime.ts::getMimeTypeFromExtension",
+        "src/media/mime.ts::getMimeTypeSync"
+      ],
+      "imports": [
+        {
+          "source": "file-type",
+          "symbols": [
+            "fileTypeFromBuffer"
+          ],
+          "isExternal": true,
+          "isTypeOnly": true
+        }
+      ],
+      "semantic": {
+        "description": "提供文件 MIME 类型检测功能，支持通过文件头魔数（magic bytes）同步识别和基于 file-type 库的异步检测，覆盖图片、PDF、视频、音频等常见格式。",
+        "responsibility": "检测文件的 MIME 类型并提供媒体类型分类",
+        "businessDomain": "媒体处理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "MIME检测",
+          "文件类型识别",
+          "魔数检测",
+          "媒体处理",
+          "工具函数"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:52:36.529Z"
+      }
+    },
+    "src/media/pdf.ts": {
+      "id": "src/media/pdf.ts",
+      "name": "pdf.ts",
+      "path": "F:\\claude-code-open\\src\\media\\pdf.ts",
+      "language": "typescript",
+      "lines": 170,
+      "size": 4235,
+      "exports": [
+        "src/media/pdf.ts::formatBytes",
+        "src/media/pdf.ts::isPdfExtension",
+        "src/media/pdf.ts::isPdfSupported",
+        "src/media/pdf.ts::readPdfFile",
+        "src/media/pdf.ts::readPdfFileSync",
+        "src/media/pdf.ts::validatePdfFile"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "PDF 文件处理模块，负责读取、验证和转换 PDF 文件为 base64 格式。支持文件大小限制（最大 32MB）、格式校验（PDF 文件头验证）和扩展名检查。",
+        "responsibility": "提供 PDF 文件的读取、验证和 base64 编码转换功能",
+        "businessDomain": "文件处理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "PDF",
+          "文件读取",
+          "base64编码",
+          "文件验证",
+          "媒体处理"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:52:35.933Z"
+      }
+    },
+    "src/media/svg.ts": {
+      "id": "src/media/svg.ts",
+      "name": "svg.ts",
+      "path": "F:\\claude-code-open\\src\\media\\svg.ts",
+      "language": "typescript",
+      "lines": 230,
+      "size": 5760,
+      "exports": [
+        "src/media/svg.ts::getSvgDimensions",
+        "src/media/svg.ts::isSvgRenderEnabled",
+        "src/media/svg.ts::renderSvgStringToPng",
+        "src/media/svg.ts::renderSvgToPng",
+        "src/media/svg.ts::validateSvgFile"
+      ],
+      "imports": [
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "@resvg/resvg-js",
+          "symbols": [
+            "Resvg"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "SVG图像渲染模块，使用resvg-js库将SVG文件或字符串转换为PNG格式图像。支持自定义尺寸、DPI、背景色等渲染选项，并提供SVG文件验证和尺寸提取功能。",
+        "responsibility": "将SVG矢量图转换为PNG位图，并返回base64编码的图像结果",
+        "businessDomain": "媒体处理",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "SVG渲染",
+          "图像转换",
+          "媒体处理",
+          "PNG生成",
+          "文件验证"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:52:42.666Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/media/image.ts::compressImage": {
+      "id": "src/media/image.ts::compressImage",
+      "name": "compressImage",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 147,
+        "startColumn": 0,
+        "endLine": 191,
+        "endColumn": 1
+      },
+      "signature": "compressImage()"
+    },
+    "src/media/image.ts::createImageResult": {
+      "id": "src/media/image.ts::createImageResult",
+      "name": "createImageResult",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 67,
+        "startColumn": 0,
+        "endLine": 82,
+        "endColumn": 1
+      },
+      "signature": "createImageResult()"
+    },
+    "src/media/image.ts::estimateImageTokens": {
+      "id": "src/media/image.ts::estimateImageTokens",
+      "name": "estimateImageTokens",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 245,
+        "startColumn": 0,
+        "endLine": 247,
+        "endColumn": 1
+      },
+      "signature": "estimateImageTokens()"
+    },
+    "src/media/image.ts::extractImageDimensions": {
+      "id": "src/media/image.ts::extractImageDimensions",
+      "name": "extractImageDimensions",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 87,
+        "startColumn": 0,
+        "endLine": 107,
+        "endColumn": 1
+      },
+      "signature": "extractImageDimensions()"
+    },
+    "src/media/image.ts::isSupportedImageFormat": {
+      "id": "src/media/image.ts::isSupportedImageFormat",
+      "name": "isSupportedImageFormat",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 59,
+        "startColumn": 0,
+        "endLine": 62,
+        "endColumn": 1
+      },
+      "signature": "isSupportedImageFormat()"
+    },
+    "src/media/image.ts::processImage": {
+      "id": "src/media/image.ts::processImage",
+      "name": "processImage",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 113,
+        "startColumn": 0,
+        "endLine": 141,
+        "endColumn": 1
+      },
+      "signature": "processImage()"
+    },
+    "src/media/image.ts::readImageFile": {
+      "id": "src/media/image.ts::readImageFile",
+      "name": "readImageFile",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 201,
+        "startColumn": 0,
+        "endLine": 222,
+        "endColumn": 1
+      },
+      "signature": "readImageFile()"
+    },
+    "src/media/image.ts::readImageFileSync": {
+      "id": "src/media/image.ts::readImageFileSync",
+      "name": "readImageFileSync",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 227,
+        "startColumn": 0,
+        "endLine": 240,
+        "endColumn": 1
+      },
+      "signature": "readImageFileSync()"
+    },
+    "src/media/image.ts::validateImageFile": {
+      "id": "src/media/image.ts::validateImageFile",
+      "name": "validateImageFile",
+      "kind": "function",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 252,
+        "startColumn": 0,
+        "endLine": 275,
+        "endColumn": 1
+      },
+      "signature": "validateImageFile()"
+    },
+    "src/media/image.ts::ImageDimensions": {
+      "id": "src/media/image.ts::ImageDimensions",
+      "name": "ImageDimensions",
+      "kind": "interface",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 36,
+        "startColumn": 0,
+        "endLine": 41,
+        "endColumn": 1
+      }
+    },
+    "src/media/image.ts::ImageResult": {
+      "id": "src/media/image.ts::ImageResult",
+      "name": "ImageResult",
+      "kind": "interface",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 46,
+        "startColumn": 0,
+        "endLine": 54,
+        "endColumn": 1
+      }
+    },
+    "src/media/image.ts::IMAGE_COMPRESSION_CONFIG": {
+      "id": "src/media/image.ts::IMAGE_COMPRESSION_CONFIG",
+      "name": "IMAGE_COMPRESSION_CONFIG",
+      "kind": "constant",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 26,
+        "startColumn": 13,
+        "endLine": 31,
+        "endColumn": 1
+      }
+    },
+    "src/media/image.ts::MAX_IMAGE_TOKENS": {
+      "id": "src/media/image.ts::MAX_IMAGE_TOKENS",
+      "name": "MAX_IMAGE_TOKENS",
+      "kind": "constant",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 21,
+        "startColumn": 13,
+        "endLine": 21,
+        "endColumn": 37
+      }
+    },
+    "src/media/image.ts::SUPPORTED_IMAGE_FORMATS": {
+      "id": "src/media/image.ts::SUPPORTED_IMAGE_FORMATS",
+      "name": "SUPPORTED_IMAGE_FORMATS",
+      "kind": "constant",
+      "moduleId": "src/media/image.ts",
+      "location": {
+        "file": "src/media/image.ts",
+        "startLine": 14,
+        "startColumn": 13,
+        "endLine": 16,
+        "endColumn": 2
+      }
+    },
+    "src/media/index.ts::detectMediaType": {
+      "id": "src/media/index.ts::detectMediaType",
+      "name": "detectMediaType",
+      "kind": "function",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 76,
+        "startColumn": 0,
+        "endLine": 92,
+        "endColumn": 1
+      },
+      "signature": "detectMediaType()"
+    },
+    "src/media/index.ts::getMediaStats": {
+      "id": "src/media/index.ts::getMediaStats",
+      "name": "getMediaStats",
+      "kind": "function",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 152,
+        "startColumn": 0,
+        "endLine": 164,
+        "endColumn": 1
+      },
+      "signature": "getMediaStats()"
+    },
+    "src/media/index.ts::isBlacklistedFile": {
+      "id": "src/media/index.ts::isBlacklistedFile",
+      "name": "isBlacklistedFile",
+      "kind": "function",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 202,
+        "startColumn": 0,
+        "endLine": 205,
+        "endColumn": 1
+      },
+      "signature": "isBlacklistedFile()"
+    },
+    "src/media/index.ts::isSupportedMediaFile": {
+      "id": "src/media/index.ts::isSupportedMediaFile",
+      "name": "isSupportedMediaFile",
+      "kind": "function",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 136,
+        "startColumn": 0,
+        "endLine": 139,
+        "endColumn": 1
+      },
+      "signature": "isSupportedMediaFile()"
+    },
+    "src/media/index.ts::readMediaFile": {
+      "id": "src/media/index.ts::readMediaFile",
+      "name": "readMediaFile",
+      "kind": "function",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 102,
+        "startColumn": 0,
+        "endLine": 131,
+        "endColumn": 1
+      },
+      "signature": "readMediaFile()"
+    },
+    "src/media/index.ts::MediaStats": {
+      "id": "src/media/index.ts::MediaStats",
+      "name": "MediaStats",
+      "kind": "interface",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 144,
+        "startColumn": 0,
+        "endLine": 150,
+        "endColumn": 1
+      }
+    },
+    "src/media/index.ts::BINARY_FILE_BLACKLIST": {
+      "id": "src/media/index.ts::BINARY_FILE_BLACKLIST",
+      "name": "BINARY_FILE_BLACKLIST",
+      "kind": "constant",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 170,
+        "startColumn": 13,
+        "endLine": 197,
+        "endColumn": 2
+      }
+    },
+    "src/media/index.ts::MediaResult": {
+      "id": "src/media/index.ts::MediaResult",
+      "name": "MediaResult",
+      "kind": "variable",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 71,
+        "startColumn": 0,
+        "endLine": 71,
+        "endColumn": 54
+      }
+    },
+    "src/media/index.ts::MediaType": {
+      "id": "src/media/index.ts::MediaType",
+      "name": "MediaType",
+      "kind": "variable",
+      "moduleId": "src/media/index.ts",
+      "location": {
+        "file": "src/media/index.ts",
+        "startLine": 66,
+        "startColumn": 0,
+        "endLine": 66,
+        "endColumn": 60
+      }
+    },
+    "src/media/mime.ts::getMediaType": {
+      "id": "src/media/mime.ts::getMediaType",
+      "name": "getMediaType",
+      "kind": "function",
+      "moduleId": "src/media/mime.ts",
+      "location": {
+        "file": "src/media/mime.ts",
+        "startLine": 76,
+        "startColumn": 0,
+        "endLine": 90,
+        "endColumn": 1
+      },
+      "signature": "getMediaType()"
+    },
+    "src/media/mime.ts::getMimeType": {
+      "id": "src/media/mime.ts::getMimeType",
+      "name": "getMimeType",
+      "kind": "function",
+      "moduleId": "src/media/mime.ts",
+      "location": {
+        "file": "src/media/mime.ts",
+        "startLine": 12,
+        "startColumn": 0,
+        "endLine": 20,
+        "endColumn": 1
+      },
+      "signature": "getMimeType()"
+    },
+    "src/media/mime.ts::getMimeTypeFromExtension": {
+      "id": "src/media/mime.ts::getMimeTypeFromExtension",
+      "name": "getMimeTypeFromExtension",
+      "kind": "function",
+      "moduleId": "src/media/mime.ts",
+      "location": {
+        "file": "src/media/mime.ts",
+        "startLine": 95,
+        "startColumn": 0,
+        "endLine": 124,
+        "endColumn": 1
+      },
+      "signature": "getMimeTypeFromExtension()"
+    },
+    "src/media/mime.ts::getMimeTypeSync": {
+      "id": "src/media/mime.ts::getMimeTypeSync",
+      "name": "getMimeTypeSync",
+      "kind": "function",
+      "moduleId": "src/media/mime.ts",
+      "location": {
+        "file": "src/media/mime.ts",
+        "startLine": 26,
+        "startColumn": 0,
+        "endLine": 71,
+        "endColumn": 1
+      },
+      "signature": "getMimeTypeSync()"
+    },
+    "src/media/pdf.ts::formatBytes": {
+      "id": "src/media/pdf.ts::formatBytes",
+      "name": "formatBytes",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 50,
+        "startColumn": 0,
+        "endLine": 54,
+        "endColumn": 1
+      },
+      "signature": "formatBytes()"
+    },
+    "src/media/pdf.ts::isPdfExtension": {
+      "id": "src/media/pdf.ts::isPdfExtension",
+      "name": "isPdfExtension",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 42,
+        "startColumn": 0,
+        "endLine": 45,
+        "endColumn": 1
+      },
+      "signature": "isPdfExtension()"
+    },
+    "src/media/pdf.ts::isPdfSupported": {
+      "id": "src/media/pdf.ts::isPdfSupported",
+      "name": "isPdfSupported",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 31,
+        "startColumn": 0,
+        "endLine": 37,
+        "endColumn": 1
+      },
+      "signature": "isPdfSupported()"
+    },
+    "src/media/pdf.ts::readPdfFile": {
+      "id": "src/media/pdf.ts::readPdfFile",
+      "name": "readPdfFile",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 65,
+        "startColumn": 0,
+        "endLine": 96,
+        "endColumn": 1
+      },
+      "signature": "readPdfFile()"
+    },
+    "src/media/pdf.ts::readPdfFileSync": {
+      "id": "src/media/pdf.ts::readPdfFileSync",
+      "name": "readPdfFileSync",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 101,
+        "startColumn": 0,
+        "endLine": 131,
+        "endColumn": 1
+      },
+      "signature": "readPdfFileSync()"
+    },
+    "src/media/pdf.ts::validatePdfFile": {
+      "id": "src/media/pdf.ts::validatePdfFile",
+      "name": "validatePdfFile",
+      "kind": "function",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 136,
+        "startColumn": 0,
+        "endLine": 169,
+        "endColumn": 1
+      },
+      "signature": "validatePdfFile()"
+    },
+    "src/media/pdf.ts::PdfReadResult": {
+      "id": "src/media/pdf.ts::PdfReadResult",
+      "name": "PdfReadResult",
+      "kind": "interface",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 18,
+        "startColumn": 0,
+        "endLine": 25,
+        "endColumn": 1
+      }
+    },
+    "src/media/pdf.ts::PDF_EXTENSIONS": {
+      "id": "src/media/pdf.ts::PDF_EXTENSIONS",
+      "name": "PDF_EXTENSIONS",
+      "kind": "constant",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 13,
+        "startColumn": 13,
+        "endLine": 13,
+        "endColumn": 46
+      }
+    },
+    "src/media/pdf.ts::PDF_MAX_SIZE": {
+      "id": "src/media/pdf.ts::PDF_MAX_SIZE",
+      "name": "PDF_MAX_SIZE",
+      "kind": "constant",
+      "moduleId": "src/media/pdf.ts",
+      "location": {
+        "file": "src/media/pdf.ts",
+        "startLine": 12,
+        "startColumn": 13,
+        "endLine": 12,
+        "endColumn": 36
+      }
+    },
+    "src/media/svg.ts::getSvgDimensions": {
+      "id": "src/media/svg.ts::getSvgDimensions",
+      "name": "getSvgDimensions",
+      "kind": "function",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 213,
+        "startColumn": 0,
+        "endLine": 229,
+        "endColumn": 1
+      },
+      "signature": "getSvgDimensions()"
+    },
+    "src/media/svg.ts::isSvgRenderEnabled": {
+      "id": "src/media/svg.ts::isSvgRenderEnabled",
+      "name": "isSvgRenderEnabled",
+      "kind": "function",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 36,
+        "startColumn": 0,
+        "endLine": 41,
+        "endColumn": 1
+      },
+      "signature": "isSvgRenderEnabled()"
+    },
+    "src/media/svg.ts::renderSvgStringToPng": {
+      "id": "src/media/svg.ts::renderSvgStringToPng",
+      "name": "renderSvgStringToPng",
+      "kind": "function",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 132,
+        "startColumn": 0,
+        "endLine": 180,
+        "endColumn": 1
+      },
+      "signature": "renderSvgStringToPng()"
+    },
+    "src/media/svg.ts::renderSvgToPng": {
+      "id": "src/media/svg.ts::renderSvgToPng",
+      "name": "renderSvgToPng",
+      "kind": "function",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 50,
+        "startColumn": 0,
+        "endLine": 123,
+        "endColumn": 1
+      },
+      "signature": "renderSvgToPng()"
+    },
+    "src/media/svg.ts::validateSvgFile": {
+      "id": "src/media/svg.ts::validateSvgFile",
+      "name": "validateSvgFile",
+      "kind": "function",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 185,
+        "startColumn": 0,
+        "endLine": 208,
+        "endColumn": 1
+      },
+      "signature": "validateSvgFile()"
+    },
+    "src/media/svg.ts::SvgRenderOptions": {
+      "id": "src/media/svg.ts::SvgRenderOptions",
+      "name": "SvgRenderOptions",
+      "kind": "interface",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 14,
+        "startColumn": 0,
+        "endLine": 23,
+        "endColumn": 1
+      }
+    },
+    "src/media/svg.ts::DEFAULT_RENDER_OPTIONS": {
+      "id": "src/media/svg.ts::DEFAULT_RENDER_OPTIONS",
+      "name": "DEFAULT_RENDER_OPTIONS",
+      "kind": "constant",
+      "moduleId": "src/media/svg.ts",
+      "location": {
+        "file": "src/media/svg.ts",
+        "startLine": 28,
+        "startColumn": 6,
+        "endLine": 30,
+        "endColumn": 1
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/media/image.ts",
+        "target": "src/media/mime.ts",
+        "type": "import",
+        "symbols": [
+          "getMimeTypeSync"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/media/index.ts",
+        "target": "src/media/image.ts",
+        "type": "import",
+        "symbols": [
+          "readImageFile",
+          "isSupportedImageFormat",
+          "type",
+          "ImageResult"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/media/index.ts",
+        "target": "src/media/pdf.ts",
+        "type": "import",
+        "symbols": [
+          "readPdfFile",
+          "isPdfExtension",
+          "isPdfSupported",
+          "type",
+          "PdfReadResult"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/media/index.ts",
+        "target": "src/media/svg.ts",
+        "type": "import",
+        "symbols": [
+          "renderSvgToPng",
+          "isSvgRenderEnabled"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/media/image.ts::compressImage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 147,
+            "startColumn": 15,
+            "endLine": 147,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/media/mime.ts::getMimeTypeSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 156,
+            "startColumn": 19,
+            "endLine": 156,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/agents/parallel.ts::AgentPool::resize",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 161,
+            "startColumn": 7,
+            "endLine": 161,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 186,
+            "startColumn": 12,
+            "endLine": 186,
+            "endColumn": 17
+          },
+          {
+            "file": "src/media/image.ts",
+            "startLine": 186,
+            "startColumn": 4,
+            "endLine": 186,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 186,
+            "startColumn": 4,
+            "endLine": 186,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 186,
+            "startColumn": 4,
+            "endLine": 186,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 186,
+            "startColumn": 4,
+            "endLine": 186,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::compressImage",
+        "callee": "src/media/image.ts::createImageResult",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 189,
+            "startColumn": 11,
+            "endLine": 189,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::createImageResult",
+        "callee": "src/media/image.ts::createImageResult",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 67,
+            "startColumn": 9,
+            "endLine": 67,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::estimateImageTokens",
+        "callee": "src/media/image.ts::estimateImageTokens",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 245,
+            "startColumn": 16,
+            "endLine": 245,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::extractImageDimensions",
+        "callee": "src/media/image.ts::extractImageDimensions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 87,
+            "startColumn": 15,
+            "endLine": 87,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::extractImageDimensions",
+        "callee": "src/media/image.ts::createImageResult",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 102,
+            "startColumn": 11,
+            "endLine": 102,
+            "endColumn": 28
+          },
+          {
+            "file": "src/media/image.ts",
+            "startLine": 105,
+            "startColumn": 11,
+            "endLine": 105,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::isSupportedImageFormat",
+        "callee": "src/media/image.ts::isSupportedImageFormat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 59,
+            "startColumn": 16,
+            "endLine": 59,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::isSupportedImageFormat",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 61,
+            "startColumn": 33,
+            "endLine": 61,
+            "endColumn": 36
+          },
+          {
+            "file": "src/media/image.ts",
+            "startLine": 61,
+            "startColumn": 9,
+            "endLine": 61,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::isSupportedImageFormat",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 61,
+            "startColumn": 9,
+            "endLine": 61,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::isSupportedImageFormat",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 61,
+            "startColumn": 9,
+            "endLine": 61,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/media/image.ts::processImage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 113,
+            "startColumn": 15,
+            "endLine": 113,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/media/mime.ts::getMimeTypeSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 129,
+            "startColumn": 19,
+            "endLine": 129,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/media/image.ts::extractImageDimensions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 134,
+            "startColumn": 25,
+            "endLine": 134,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 138,
+            "startColumn": 12,
+            "endLine": 138,
+            "endColumn": 17
+          },
+          {
+            "file": "src/media/image.ts",
+            "startLine": 138,
+            "startColumn": 4,
+            "endLine": 138,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 138,
+            "startColumn": 4,
+            "endLine": 138,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 138,
+            "startColumn": 4,
+            "endLine": 138,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 138,
+            "startColumn": 4,
+            "endLine": 138,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::processImage",
+        "callee": "src/media/image.ts::createImageResult",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 139,
+            "startColumn": 11,
+            "endLine": 139,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFile",
+        "callee": "src/media/image.ts::readImageFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 201,
+            "startColumn": 22,
+            "endLine": 201,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFile",
+        "callee": "src/media/image.ts::processImage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 210,
+            "startColumn": 23,
+            "endLine": 210,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFile",
+        "callee": "src/media/image.ts::compressImage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 218,
+            "startColumn": 17,
+            "endLine": 218,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFileSync",
+        "callee": "src/media/image.ts::readImageFileSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 227,
+            "startColumn": 16,
+            "endLine": 227,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFileSync",
+        "callee": "src/media/mime.ts::getMimeTypeSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 237,
+            "startColumn": 19,
+            "endLine": 237,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::readImageFileSync",
+        "callee": "src/media/image.ts::createImageResult",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 239,
+            "startColumn": 9,
+            "endLine": 239,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::validateImageFile",
+        "callee": "src/media/image.ts::validateImageFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 252,
+            "startColumn": 16,
+            "endLine": 252,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/media/image.ts::validateImageFile",
+        "callee": "src/media/image.ts::isSupportedImageFormat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/image.ts",
+            "startLine": 264,
+            "startColumn": 9,
+            "endLine": 264,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::detectMediaType",
+        "callee": "src/media/index.ts::detectMediaType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 76,
+            "startColumn": 16,
+            "endLine": 76,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::detectMediaType",
+        "callee": "src/media/image.ts::isSupportedImageFormat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 79,
+            "startColumn": 6,
+            "endLine": 79,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::detectMediaType",
+        "callee": "src/media/pdf.ts::isPdfExtension",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 83,
+            "startColumn": 6,
+            "endLine": 83,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::getMediaStats",
+        "callee": "src/media/index.ts::getMediaStats",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 152,
+            "startColumn": 16,
+            "endLine": 152,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isBlacklistedFile",
+        "callee": "src/media/index.ts::isBlacklistedFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 202,
+            "startColumn": 16,
+            "endLine": 202,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isBlacklistedFile",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 204,
+            "startColumn": 31,
+            "endLine": 204,
+            "endColumn": 34
+          },
+          {
+            "file": "src/media/index.ts",
+            "startLine": 204,
+            "startColumn": 9,
+            "endLine": 204,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isBlacklistedFile",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 204,
+            "startColumn": 9,
+            "endLine": 204,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isBlacklistedFile",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 204,
+            "startColumn": 9,
+            "endLine": 204,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isSupportedMediaFile",
+        "callee": "src/media/index.ts::isSupportedMediaFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 136,
+            "startColumn": 16,
+            "endLine": 136,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::isSupportedMediaFile",
+        "callee": "src/media/index.ts::detectMediaType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 137,
+            "startColumn": 20,
+            "endLine": 137,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/index.ts::readMediaFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 102,
+            "startColumn": 22,
+            "endLine": 102,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/index.ts::detectMediaType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 110,
+            "startColumn": 20,
+            "endLine": 110,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/image.ts::readImageFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 114,
+            "startColumn": 19,
+            "endLine": 114,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/pdf.ts::isPdfSupported",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 117,
+            "startColumn": 11,
+            "endLine": 117,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/pdf.ts::readPdfFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 120,
+            "startColumn": 19,
+            "endLine": 120,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/svg.ts::isSvgRenderEnabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 123,
+            "startColumn": 31,
+            "endLine": 123,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/media/index.ts::readMediaFile",
+        "callee": "src/media/svg.ts::renderSvgToPng",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/index.ts",
+            "startLine": 124,
+            "startColumn": 21,
+            "endLine": 124,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMediaType",
+        "callee": "src/media/mime.ts::getMediaType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 76,
+            "startColumn": 16,
+            "endLine": 76,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeType",
+        "callee": "src/media/mime.ts::getMimeType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 12,
+            "startColumn": 22,
+            "endLine": 12,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeType",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 17,
+            "startColumn": 12,
+            "endLine": 17,
+            "endColumn": 17
+          },
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 17,
+            "startColumn": 4,
+            "endLine": 17,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeType",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 17,
+            "startColumn": 4,
+            "endLine": 17,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeType",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 17,
+            "startColumn": 4,
+            "endLine": 17,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeType",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 17,
+            "startColumn": 4,
+            "endLine": 17,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeTypeFromExtension",
+        "callee": "src/media/mime.ts::getMimeTypeFromExtension",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 95,
+            "startColumn": 16,
+            "endLine": 95,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/media/mime.ts::getMimeTypeSync",
+        "callee": "src/media/mime.ts::getMimeTypeSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/mime.ts",
+            "startLine": 26,
+            "startColumn": 16,
+            "endLine": 26,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::formatBytes",
+        "callee": "src/media/pdf.ts::formatBytes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 50,
+            "startColumn": 9,
+            "endLine": 50,
+            "endColumn": 20
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::isPdfExtension",
+        "callee": "src/media/pdf.ts::isPdfExtension",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 42,
+            "startColumn": 16,
+            "endLine": 42,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::isPdfExtension",
+        "callee": "src/env/manager.ts::EnvManager::has",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 44,
+            "startColumn": 24,
+            "endLine": 44,
+            "endColumn": 27
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 44,
+            "startColumn": 9,
+            "endLine": 44,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::isPdfExtension",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 44,
+            "startColumn": 9,
+            "endLine": 44,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::isPdfExtension",
+        "callee": "src/tools/file.ts::FileBackup::has",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 44,
+            "startColumn": 9,
+            "endLine": 44,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::isPdfSupported",
+        "callee": "src/media/pdf.ts::isPdfSupported",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 31,
+            "startColumn": 16,
+            "endLine": 31,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFile",
+        "callee": "src/media/pdf.ts::readPdfFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 65,
+            "startColumn": 22,
+            "endLine": 65,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFile",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::size",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 77,
+            "startColumn": 16,
+            "endLine": 77,
+            "endColumn": 20
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 78,
+            "startColumn": 15,
+            "endLine": 78,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFile",
+        "callee": "src/media/pdf.ts::formatBytes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 77,
+            "startColumn": 24,
+            "endLine": 77,
+            "endColumn": 35
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 78,
+            "startColumn": 23,
+            "endLine": 78,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFileSync",
+        "callee": "src/media/pdf.ts::readPdfFileSync",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 101,
+            "startColumn": 16,
+            "endLine": 101,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFileSync",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::size",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 113,
+            "startColumn": 16,
+            "endLine": 113,
+            "endColumn": 20
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 114,
+            "startColumn": 15,
+            "endLine": 114,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::readPdfFileSync",
+        "callee": "src/media/pdf.ts::formatBytes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 113,
+            "startColumn": 24,
+            "endLine": 113,
+            "endColumn": 35
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 114,
+            "startColumn": 23,
+            "endLine": 114,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::validatePdfFile",
+        "callee": "src/media/pdf.ts::validatePdfFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 136,
+            "startColumn": 16,
+            "endLine": 136,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::validatePdfFile",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::size",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 152,
+            "startColumn": 25,
+            "endLine": 152,
+            "endColumn": 29
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 152,
+            "startColumn": 77,
+            "endLine": 152,
+            "endColumn": 81
+          }
+        ]
+      },
+      {
+        "caller": "src/media/pdf.ts::validatePdfFile",
+        "callee": "src/media/pdf.ts::formatBytes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 152,
+            "startColumn": 33,
+            "endLine": 152,
+            "endColumn": 44
+          },
+          {
+            "file": "src/media/pdf.ts",
+            "startLine": 152,
+            "startColumn": 85,
+            "endLine": 152,
+            "endColumn": 96
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::getSvgDimensions",
+        "callee": "src/media/svg.ts::getSvgDimensions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 213,
+            "startColumn": 16,
+            "endLine": 213,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::getSvgDimensions",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 226,
+            "startColumn": 12,
+            "endLine": 226,
+            "endColumn": 17
+          },
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::getSvgDimensions",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::getSvgDimensions",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::getSvgDimensions",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 226,
+            "startColumn": 4,
+            "endLine": 226,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::isSvgRenderEnabled",
+        "callee": "src/media/svg.ts::isSvgRenderEnabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 36,
+            "startColumn": 16,
+            "endLine": 36,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgStringToPng",
+        "callee": "src/media/svg.ts::renderSvgStringToPng",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 132,
+            "startColumn": 22,
+            "endLine": 132,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgStringToPng",
+        "callee": "src/renderer/index.ts::Resvg",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 153,
+            "startColumn": 22,
+            "endLine": 153,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgStringToPng",
+        "callee": "src/renderer/index.ts::SvgRenderer::render",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 154,
+            "startColumn": 26,
+            "endLine": 154,
+            "endColumn": 32
+          },
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 154,
+            "startColumn": 20,
+            "endLine": 154,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgStringToPng",
+        "callee": "src/ui/ink-v2/renderer.ts::Renderer::render",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 154,
+            "startColumn": 20,
+            "endLine": 154,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgToPng",
+        "callee": "src/media/svg.ts::renderSvgToPng",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 50,
+            "startColumn": 22,
+            "endLine": 50,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgToPng",
+        "callee": "src/renderer/index.ts::Resvg",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 96,
+            "startColumn": 22,
+            "endLine": 96,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgToPng",
+        "callee": "src/renderer/index.ts::SvgRenderer::render",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 97,
+            "startColumn": 26,
+            "endLine": 97,
+            "endColumn": 32
+          },
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 97,
+            "startColumn": 20,
+            "endLine": 97,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::renderSvgToPng",
+        "callee": "src/ui/ink-v2/renderer.ts::Renderer::render",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 97,
+            "startColumn": 20,
+            "endLine": 97,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/media/svg.ts::validateSvgFile",
+        "callee": "src/media/svg.ts::validateSvgFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/media/svg.ts",
+            "startLine": 185,
+            "startColumn": 16,
+            "endLine": 185,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::execute",
+        "callee": "src/media/index.ts::isBlacklistedFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 331,
+            "startColumn": 10,
+            "endLine": 331,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::execute",
+        "callee": "src/media/index.ts::detectMediaType",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 339,
+            "startColumn": 24,
+            "endLine": 339,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::readImageEnhanced",
+        "callee": "src/media/image.ts::readImageFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 393,
+            "startColumn": 27,
+            "endLine": 393,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::readPdfEnhanced",
+        "callee": "src/media/pdf.ts::isPdfSupported",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 436,
+            "startColumn": 11,
+            "endLine": 436,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::readPdfEnhanced",
+        "callee": "src/media/pdf.ts::readPdfFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 443,
+            "startColumn": 27,
+            "endLine": 443,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::readSvg",
+        "callee": "src/media/svg.ts::isSvgRenderEnabled",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 486,
+            "startColumn": 10,
+            "endLine": 486,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/file.ts::ReadTool::readSvg",
+        "callee": "src/media/svg.ts::renderSvgToPng",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/file.ts",
+            "startLine": 488,
+            "startColumn": 29,
+            "endLine": 488,
+            "endColumn": 43
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

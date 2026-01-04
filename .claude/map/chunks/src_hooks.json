@@ -1,0 +1,5824 @@
+{
+  "path": "src/hooks",
+  "modules": {
+    "src/hooks/index.test.ts": {
+      "id": "src/hooks/index.test.ts",
+      "name": "index.test.ts",
+      "path": "F:\\claude-code-open\\src\\hooks\\index.test.ts",
+      "language": "typescript",
+      "lines": 259,
+      "size": 6777,
+      "exports": [
+        "src/hooks/index.test.ts::runAllTests",
+        "src/hooks/index.test.ts::testAllEventTypes",
+        "src/hooks/index.test.ts::testCommandHookExecution",
+        "src/hooks/index.test.ts::testEnvironmentVariables",
+        "src/hooks/index.test.ts::testHelperFunctions",
+        "src/hooks/index.test.ts::testHookMatcher",
+        "src/hooks/index.test.ts::testHookRegistration"
+      ],
+      "imports": [
+        {
+          "source": "assert",
+          "symbols": [
+            "assert"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "Hooks 系统的单元测试模块，测试钩子注册、执行、匹配、环境变量替换等核心功能，覆盖 12 种事件类型（PreToolUse、PostToolUse、SessionStart 等）及命令/URL 钩子的完整生命周期。",
+        "responsibility": "验证 Hooks 系统的注册机制、事件触发、工具匹配规则和执行结果的正确性",
+        "businessDomain": "插件系统/事件钩子",
+        "architectureLayer": "crossCutting",
+        "tags": [
+          "单元测试",
+          "钩子系统",
+          "事件驱动",
+          "插件机制",
+          "命令执行"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:14.447Z"
+      }
+    },
+    "src/hooks/index.ts": {
+      "id": "src/hooks/index.ts",
+      "name": "index.ts",
+      "path": "F:\\claude-code-open\\src\\hooks\\index.ts",
+      "language": "typescript",
+      "lines": 1439,
+      "size": 39560,
+      "exports": [
+        "src/hooks/index.ts::clearEventHooks",
+        "src/hooks/index.ts::clearHooks",
+        "src/hooks/index.ts::executeAgentHook",
+        "src/hooks/index.ts::executeCommandHook",
+        "src/hooks/index.ts::executeHook",
+        "src/hooks/index.ts::executeMcpHook",
+        "src/hooks/index.ts::executePromptHook",
+        "src/hooks/index.ts::executeUrlHook",
+        "src/hooks/index.ts::getEventHookCount",
+        "src/hooks/index.ts::getHookCount",
+        "src/hooks/index.ts::getHooksForEvent",
+        "src/hooks/index.ts::getMatchingHooks",
+        "src/hooks/index.ts::getRegisteredHooks",
+        "src/hooks/index.ts::getRegisteredHooksFlat",
+        "src/hooks/index.ts::isBlocked",
+        "src/hooks/index.ts::isValidHookConfig",
+        "src/hooks/index.ts::isValidHookEvent",
+        "src/hooks/index.ts::isValidLegacyHookConfig",
+        "src/hooks/index.ts::loadHooksFromFile",
+        "src/hooks/index.ts::loadProjectHooks",
+        "src/hooks/index.ts::registerHook",
+        "src/hooks/index.ts::registerLegacyHook",
+        "src/hooks/index.ts::replaceCommandVariables",
+        "src/hooks/index.ts::runHooks",
+        "src/hooks/index.ts::runNotificationHooks",
+        "src/hooks/index.ts::runPermissionRequestHooks",
+        "src/hooks/index.ts::runPostToolUseFailureHooks",
+        "src/hooks/index.ts::runPostToolUseHooks",
+        "src/hooks/index.ts::runPreCompactHooks",
+        "src/hooks/index.ts::runPreToolUseHooks",
+        "src/hooks/index.ts::runSessionEndHooks",
+        "src/hooks/index.ts::runSessionStartHooks",
+        "src/hooks/index.ts::runStopHooks",
+        "src/hooks/index.ts::runSubagentStartHooks",
+        "src/hooks/index.ts::runSubagentStopHooks",
+        "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "src/hooks/index.ts::unregisterHook"
+      ],
+      "imports": [
+        {
+          "source": "child_process",
+          "symbols": [
+            "spawn"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "path",
+          "symbols": [
+            "path"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "fs",
+          "symbols": [
+            "fs"
+          ],
+          "isExternal": true,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../core/client.js",
+          "symbols": [],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../core/client.js",
+          "symbols": [],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../tools/mcp.js",
+          "symbols": [],
+          "isExternal": false,
+          "isTypeOnly": false
+        },
+        {
+          "source": "../tools/mcp.js",
+          "symbols": [],
+          "isExternal": false,
+          "isTypeOnly": false
+        }
+      ],
+      "semantic": {
+        "description": "实现工具调用生命周期的钩子系统，支持在工具执行前后通过命令、MCP服务、LLM提示、代理或URL回调执行自定义逻辑。提供Hook注册、配置加载和执行机制，支持同步阻塞和异步非阻塞模式。",
+        "responsibility": "管理工具调用生命周期的Hook注册、配置加载和执行调度",
+        "businessDomain": "工具执行扩展",
+        "architectureLayer": "crossCutting",
+        "tags": [
+          "钩子系统",
+          "生命周期",
+          "插件机制",
+          "事件驱动",
+          "工具拦截"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:51:16.420Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/hooks/index.test.ts::runAllTests": {
+      "id": "src/hooks/index.test.ts::runAllTests",
+      "name": "runAllTests",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 236,
+        "startColumn": 0,
+        "endLine": 253,
+        "endColumn": 1
+      },
+      "signature": "runAllTests()"
+    },
+    "src/hooks/index.test.ts::testAllEventTypes": {
+      "id": "src/hooks/index.test.ts::testAllEventTypes",
+      "name": "testAllEventTypes",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 195,
+        "startColumn": 0,
+        "endLine": 231,
+        "endColumn": 1
+      },
+      "signature": "testAllEventTypes()"
+    },
+    "src/hooks/index.test.ts::testCommandHookExecution": {
+      "id": "src/hooks/index.test.ts::testCommandHookExecution",
+      "name": "testCommandHookExecution",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 60,
+        "startColumn": 0,
+        "endLine": 84,
+        "endColumn": 1
+      },
+      "signature": "testCommandHookExecution()"
+    },
+    "src/hooks/index.test.ts::testEnvironmentVariables": {
+      "id": "src/hooks/index.test.ts::testEnvironmentVariables",
+      "name": "testEnvironmentVariables",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 140,
+        "startColumn": 0,
+        "endLine": 161,
+        "endColumn": 1
+      },
+      "signature": "testEnvironmentVariables()"
+    },
+    "src/hooks/index.test.ts::testHelperFunctions": {
+      "id": "src/hooks/index.test.ts::testHelperFunctions",
+      "name": "testHelperFunctions",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 166,
+        "startColumn": 0,
+        "endLine": 190,
+        "endColumn": 1
+      },
+      "signature": "testHelperFunctions()"
+    },
+    "src/hooks/index.test.ts::testHookMatcher": {
+      "id": "src/hooks/index.test.ts::testHookMatcher",
+      "name": "testHookMatcher",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 89,
+        "startColumn": 0,
+        "endLine": 135,
+        "endColumn": 1
+      },
+      "signature": "testHookMatcher()"
+    },
+    "src/hooks/index.test.ts::testHookRegistration": {
+      "id": "src/hooks/index.test.ts::testHookRegistration",
+      "name": "testHookRegistration",
+      "kind": "function",
+      "moduleId": "src/hooks/index.test.ts",
+      "location": {
+        "file": "src/hooks/index.test.ts",
+        "startLine": 26,
+        "startColumn": 0,
+        "endLine": 55,
+        "endColumn": 1
+      },
+      "signature": "testHookRegistration()"
+    },
+    "src/hooks/index.ts::clearEventHooks": {
+      "id": "src/hooks/index.ts::clearEventHooks",
+      "name": "clearEventHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1436,
+        "startColumn": 0,
+        "endLine": 1438,
+        "endColumn": 1
+      },
+      "signature": "clearEventHooks()"
+    },
+    "src/hooks/index.ts::clearHooks": {
+      "id": "src/hooks/index.ts::clearHooks",
+      "name": "clearHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1216,
+        "startColumn": 0,
+        "endLine": 1220,
+        "endColumn": 1
+      },
+      "signature": "clearHooks()"
+    },
+    "src/hooks/index.ts::executeAgentHook": {
+      "id": "src/hooks/index.ts::executeAgentHook",
+      "name": "executeAgentHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 645,
+        "startColumn": 0,
+        "endLine": 767,
+        "endColumn": 1
+      },
+      "signature": "executeAgentHook()"
+    },
+    "src/hooks/index.ts::executeCommandHook": {
+      "id": "src/hooks/index.ts::executeCommandHook",
+      "name": "executeCommandHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 406,
+        "startColumn": 0,
+        "endLine": 522,
+        "endColumn": 1
+      },
+      "signature": "executeCommandHook()"
+    },
+    "src/hooks/index.ts::executeHook": {
+      "id": "src/hooks/index.ts::executeHook",
+      "name": "executeHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1026,
+        "startColumn": 0,
+        "endLine": 1043,
+        "endColumn": 1
+      },
+      "signature": "executeHook()"
+    },
+    "src/hooks/index.ts::executeMcpHook": {
+      "id": "src/hooks/index.ts::executeMcpHook",
+      "name": "executeMcpHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 772,
+        "startColumn": 0,
+        "endLine": 917,
+        "endColumn": 1
+      },
+      "signature": "executeMcpHook()"
+    },
+    "src/hooks/index.ts::executePromptHook": {
+      "id": "src/hooks/index.ts::executePromptHook",
+      "name": "executePromptHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 527,
+        "startColumn": 0,
+        "endLine": 640,
+        "endColumn": 1
+      },
+      "signature": "executePromptHook()"
+    },
+    "src/hooks/index.ts::executeUrlHook": {
+      "id": "src/hooks/index.ts::executeUrlHook",
+      "name": "executeUrlHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 922,
+        "startColumn": 0,
+        "endLine": 1021,
+        "endColumn": 1
+      },
+      "signature": "executeUrlHook()"
+    },
+    "src/hooks/index.ts::getEventHookCount": {
+      "id": "src/hooks/index.ts::getEventHookCount",
+      "name": "getEventHookCount",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1236,
+        "startColumn": 0,
+        "endLine": 1238,
+        "endColumn": 1
+      },
+      "signature": "getEventHookCount()"
+    },
+    "src/hooks/index.ts::getHookCount": {
+      "id": "src/hooks/index.ts::getHookCount",
+      "name": "getHookCount",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1225,
+        "startColumn": 0,
+        "endLine": 1231,
+        "endColumn": 1
+      },
+      "signature": "getHookCount()"
+    },
+    "src/hooks/index.ts::getHooksForEvent": {
+      "id": "src/hooks/index.ts::getHooksForEvent",
+      "name": "getHooksForEvent",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1403,
+        "startColumn": 0,
+        "endLine": 1405,
+        "endColumn": 1
+      },
+      "signature": "getHooksForEvent()"
+    },
+    "src/hooks/index.ts::getMatchingHooks": {
+      "id": "src/hooks/index.ts::getMatchingHooks",
+      "name": "getMatchingHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 375,
+        "startColumn": 0,
+        "endLine": 391,
+        "endColumn": 1
+      },
+      "signature": "getMatchingHooks()"
+    },
+    "src/hooks/index.ts::getRegisteredHooks": {
+      "id": "src/hooks/index.ts::getRegisteredHooks",
+      "name": "getRegisteredHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1383,
+        "startColumn": 0,
+        "endLine": 1385,
+        "endColumn": 1
+      },
+      "signature": "getRegisteredHooks()"
+    },
+    "src/hooks/index.ts::getRegisteredHooksFlat": {
+      "id": "src/hooks/index.ts::getRegisteredHooksFlat",
+      "name": "getRegisteredHooksFlat",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1390,
+        "startColumn": 0,
+        "endLine": 1398,
+        "endColumn": 1
+      },
+      "signature": "getRegisteredHooksFlat()"
+    },
+    "src/hooks/index.ts::isBlocked": {
+      "id": "src/hooks/index.ts::isBlocked",
+      "name": "isBlocked",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1068,
+        "startColumn": 0,
+        "endLine": 1075,
+        "endColumn": 1
+      },
+      "signature": "isBlocked()"
+    },
+    "src/hooks/index.ts::isValidHookConfig": {
+      "id": "src/hooks/index.ts::isValidHookConfig",
+      "name": "isValidHookConfig",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 324,
+        "startColumn": 0,
+        "endLine": 340,
+        "endColumn": 1
+      },
+      "signature": "isValidHookConfig()"
+    },
+    "src/hooks/index.ts::isValidHookEvent": {
+      "id": "src/hooks/index.ts::isValidHookEvent",
+      "name": "isValidHookEvent",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 294,
+        "startColumn": 0,
+        "endLine": 319,
+        "endColumn": 1
+      },
+      "signature": "isValidHookEvent()"
+    },
+    "src/hooks/index.ts::isValidLegacyHookConfig": {
+      "id": "src/hooks/index.ts::isValidLegacyHookConfig",
+      "name": "isValidLegacyHookConfig",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 345,
+        "startColumn": 0,
+        "endLine": 350,
+        "endColumn": 1
+      },
+      "signature": "isValidLegacyHookConfig()"
+    },
+    "src/hooks/index.ts::loadHooksFromFile": {
+      "id": "src/hooks/index.ts::loadHooksFromFile",
+      "name": "loadHooksFromFile",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 253,
+        "startColumn": 0,
+        "endLine": 289,
+        "endColumn": 1
+      },
+      "signature": "loadHooksFromFile()"
+    },
+    "src/hooks/index.ts::loadProjectHooks": {
+      "id": "src/hooks/index.ts::loadProjectHooks",
+      "name": "loadProjectHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 355,
+        "startColumn": 0,
+        "endLine": 370,
+        "endColumn": 1
+      },
+      "signature": "loadProjectHooks()"
+    },
+    "src/hooks/index.ts::registerHook": {
+      "id": "src/hooks/index.ts::registerHook",
+      "name": "registerHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 227,
+        "startColumn": 0,
+        "endLine": 232,
+        "endColumn": 1
+      },
+      "signature": "registerHook()"
+    },
+    "src/hooks/index.ts::registerLegacyHook": {
+      "id": "src/hooks/index.ts::registerLegacyHook",
+      "name": "registerLegacyHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 237,
+        "startColumn": 0,
+        "endLine": 248,
+        "endColumn": 1
+      },
+      "signature": "registerLegacyHook()"
+    },
+    "src/hooks/index.ts::replaceCommandVariables": {
+      "id": "src/hooks/index.ts::replaceCommandVariables",
+      "name": "replaceCommandVariables",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 396,
+        "startColumn": 0,
+        "endLine": 401,
+        "endColumn": 1
+      },
+      "signature": "replaceCommandVariables()"
+    },
+    "src/hooks/index.ts::runHooks": {
+      "id": "src/hooks/index.ts::runHooks",
+      "name": "runHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1048,
+        "startColumn": 0,
+        "endLine": 1063,
+        "endColumn": 1
+      },
+      "signature": "runHooks()"
+    },
+    "src/hooks/index.ts::runNotificationHooks": {
+      "id": "src/hooks/index.ts::runNotificationHooks",
+      "name": "runNotificationHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1367,
+        "startColumn": 0,
+        "endLine": 1378,
+        "endColumn": 1
+      },
+      "signature": "runNotificationHooks()"
+    },
+    "src/hooks/index.ts::runPermissionRequestHooks": {
+      "id": "src/hooks/index.ts::runPermissionRequestHooks",
+      "name": "runPermissionRequestHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1326,
+        "startColumn": 0,
+        "endLine": 1358,
+        "endColumn": 1
+      },
+      "signature": "runPermissionRequestHooks()"
+    },
+    "src/hooks/index.ts::runPostToolUseFailureHooks": {
+      "id": "src/hooks/index.ts::runPostToolUseFailureHooks",
+      "name": "runPostToolUseFailureHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1190,
+        "startColumn": 0,
+        "endLine": 1211,
+        "endColumn": 1
+      },
+      "signature": "runPostToolUseFailureHooks()"
+    },
+    "src/hooks/index.ts::runPostToolUseHooks": {
+      "id": "src/hooks/index.ts::runPostToolUseHooks",
+      "name": "runPostToolUseHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1102,
+        "startColumn": 0,
+        "endLine": 1115,
+        "endColumn": 1
+      },
+      "signature": "runPostToolUseHooks()"
+    },
+    "src/hooks/index.ts::runPreCompactHooks": {
+      "id": "src/hooks/index.ts::runPreCompactHooks",
+      "name": "runPreCompactHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1159,
+        "startColumn": 0,
+        "endLine": 1176,
+        "endColumn": 1
+      },
+      "signature": "runPreCompactHooks()"
+    },
+    "src/hooks/index.ts::runPreToolUseHooks": {
+      "id": "src/hooks/index.ts::runPreToolUseHooks",
+      "name": "runPreToolUseHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1080,
+        "startColumn": 0,
+        "endLine": 1097,
+        "endColumn": 1
+      },
+      "signature": "runPreToolUseHooks()"
+    },
+    "src/hooks/index.ts::runSessionEndHooks": {
+      "id": "src/hooks/index.ts::runSessionEndHooks",
+      "name": "runSessionEndHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1263,
+        "startColumn": 0,
+        "endLine": 1272,
+        "endColumn": 1
+      },
+      "signature": "runSessionEndHooks()"
+    },
+    "src/hooks/index.ts::runSessionStartHooks": {
+      "id": "src/hooks/index.ts::runSessionStartHooks",
+      "name": "runSessionStartHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1246,
+        "startColumn": 0,
+        "endLine": 1255,
+        "endColumn": 1
+      },
+      "signature": "runSessionStartHooks()"
+    },
+    "src/hooks/index.ts::runStopHooks": {
+      "id": "src/hooks/index.ts::runStopHooks",
+      "name": "runStopHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1140,
+        "startColumn": 0,
+        "endLine": 1149,
+        "endColumn": 1
+      },
+      "signature": "runStopHooks()"
+    },
+    "src/hooks/index.ts::runSubagentStartHooks": {
+      "id": "src/hooks/index.ts::runSubagentStartHooks",
+      "name": "runSubagentStartHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1281,
+        "startColumn": 0,
+        "endLine": 1292,
+        "endColumn": 1
+      },
+      "signature": "runSubagentStartHooks()"
+    },
+    "src/hooks/index.ts::runSubagentStopHooks": {
+      "id": "src/hooks/index.ts::runSubagentStopHooks",
+      "name": "runSubagentStopHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1302,
+        "startColumn": 0,
+        "endLine": 1315,
+        "endColumn": 1
+      },
+      "signature": "runSubagentStopHooks()"
+    },
+    "src/hooks/index.ts::runUserPromptSubmitHooks": {
+      "id": "src/hooks/index.ts::runUserPromptSubmitHooks",
+      "name": "runUserPromptSubmitHooks",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1120,
+        "startColumn": 0,
+        "endLine": 1135,
+        "endColumn": 1
+      },
+      "signature": "runUserPromptSubmitHooks()"
+    },
+    "src/hooks/index.ts::unregisterHook": {
+      "id": "src/hooks/index.ts::unregisterHook",
+      "name": "unregisterHook",
+      "kind": "function",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 1410,
+        "startColumn": 0,
+        "endLine": 1431,
+        "endColumn": 1
+      },
+      "signature": "unregisterHook()"
+    },
+    "src/hooks/index.ts::AgentHookConfig": {
+      "id": "src/hooks/index.ts::AgentHookConfig",
+      "name": "AgentHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 91,
+        "startColumn": 0,
+        "endLine": 103,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::CommandHookConfig": {
+      "id": "src/hooks/index.ts::CommandHookConfig",
+      "name": "CommandHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 55,
+        "startColumn": 0,
+        "endLine": 69,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::HookInput": {
+      "id": "src/hooks/index.ts::HookInput",
+      "name": "HookInput",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 164,
+        "startColumn": 0,
+        "endLine": 199,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::HookResult": {
+      "id": "src/hooks/index.ts::HookResult",
+      "name": "HookResult",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 201,
+        "startColumn": 0,
+        "endLine": 213,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::LegacyHookConfig": {
+      "id": "src/hooks/index.ts::LegacyHookConfig",
+      "name": "LegacyHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 151,
+        "startColumn": 0,
+        "endLine": 159,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::McpHookConfig": {
+      "id": "src/hooks/index.ts::McpHookConfig",
+      "name": "McpHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 108,
+        "startColumn": 0,
+        "endLine": 122,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::PromptHookConfig": {
+      "id": "src/hooks/index.ts::PromptHookConfig",
+      "name": "PromptHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 74,
+        "startColumn": 0,
+        "endLine": 86,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::RegisteredHooks": {
+      "id": "src/hooks/index.ts::RegisteredHooks",
+      "name": "RegisteredHooks",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 218,
+        "startColumn": 0,
+        "endLine": 220,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::UrlHookConfig": {
+      "id": "src/hooks/index.ts::UrlHookConfig",
+      "name": "UrlHookConfig",
+      "kind": "interface",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 127,
+        "startColumn": 0,
+        "endLine": 141,
+        "endColumn": 1
+      }
+    },
+    "src/hooks/index.ts::DEFAULT_HOOK_TIMEOUT": {
+      "id": "src/hooks/index.ts::DEFAULT_HOOK_TIMEOUT",
+      "name": "DEFAULT_HOOK_TIMEOUT",
+      "kind": "constant",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 50,
+        "startColumn": 13,
+        "endLine": 50,
+        "endColumn": 41
+      }
+    },
+    "src/hooks/index.ts::HookConfig": {
+      "id": "src/hooks/index.ts::HookConfig",
+      "name": "HookConfig",
+      "kind": "variable",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 146,
+        "startColumn": 0,
+        "endLine": 146,
+        "endColumn": 112
+      }
+    },
+    "src/hooks/index.ts::HookEvent": {
+      "id": "src/hooks/index.ts::HookEvent",
+      "name": "HookEvent",
+      "kind": "variable",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 14,
+        "startColumn": 0,
+        "endLine": 35,
+        "endColumn": 17
+      }
+    },
+    "src/hooks/index.ts::HookType": {
+      "id": "src/hooks/index.ts::HookType",
+      "name": "HookType",
+      "kind": "variable",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 45,
+        "startColumn": 0,
+        "endLine": 45,
+        "endColumn": 70
+      }
+    },
+    "src/hooks/index.ts::registeredHooks": {
+      "id": "src/hooks/index.ts::registeredHooks",
+      "name": "registeredHooks",
+      "kind": "constant",
+      "moduleId": "src/hooks/index.ts",
+      "location": {
+        "file": "src/hooks/index.ts",
+        "startLine": 222,
+        "startColumn": 6,
+        "endLine": 222,
+        "endColumn": 43
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/cli.ts",
+        "target": "src/hooks/index.ts",
+        "type": "import",
+        "symbols": [
+          "runHooks"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/core/loop.ts",
+        "target": "src/hooks/index.ts",
+        "type": "import",
+        "symbols": [
+          "runPermissionRequestHooks"
+        ],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/hooks/index.ts",
+        "target": "src/core/client.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/hooks/index.ts",
+        "target": "src/core/client.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/hooks/index.ts",
+        "target": "src/tools/mcp.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/hooks/index.ts",
+        "target": "src/tools/mcp.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": false
+      },
+      {
+        "source": "src/tools/bash.ts",
+        "target": "src/hooks/index.ts",
+        "type": "import",
+        "symbols": [
+          "runPreToolUseHooks",
+          "runPostToolUseHooks"
+        ],
+        "isTypeOnly": false
+      }
+    ],
+    "symbolCalls": [
+      {
+        "caller": "src/cli.ts::action() callback",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/cli.ts",
+            "startLine": 208,
+            "startColumn": 10,
+            "endLine": 208,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 284,
+            "startColumn": 10,
+            "endLine": 284,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 288,
+            "startColumn": 10,
+            "endLine": 288,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 295,
+            "startColumn": 10,
+            "endLine": 295,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 313,
+            "startColumn": 10,
+            "endLine": 313,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 318,
+            "startColumn": 10,
+            "endLine": 318,
+            "endColumn": 18
+          },
+          {
+            "file": "src/cli.ts",
+            "startLine": 323,
+            "startColumn": 10,
+            "endLine": 323,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/core/loop.ts::ConversationLoop::handlePermissionRequest",
+        "callee": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/core/loop.ts",
+            "startLine": 248,
+            "startColumn": 29,
+            "endLine": 248,
+            "endColumn": 54
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::runAllTests",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 236,
+            "startColumn": 22,
+            "endLine": 236,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 237,
+            "startColumn": 10,
+            "endLine": 237,
+            "endColumn": 13
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 247,
+            "startColumn": 12,
+            "endLine": 247,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 237,
+            "startColumn": 2,
+            "endLine": 237,
+            "endColumn": 13
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 247,
+            "startColumn": 4,
+            "endLine": 247,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 237,
+            "startColumn": 2,
+            "endLine": 237,
+            "endColumn": 13
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 247,
+            "startColumn": 4,
+            "endLine": 247,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 237,
+            "startColumn": 2,
+            "endLine": 237,
+            "endColumn": 13
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 247,
+            "startColumn": 4,
+            "endLine": 247,
+            "endColumn": 15
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testHookRegistration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 240,
+            "startColumn": 10,
+            "endLine": 240,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 241,
+            "startColumn": 10,
+            "endLine": 241,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testHookMatcher",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 242,
+            "startColumn": 10,
+            "endLine": 242,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 243,
+            "startColumn": 10,
+            "endLine": 243,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testHelperFunctions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 244,
+            "startColumn": 10,
+            "endLine": 244,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/hooks/index.test.ts::testAllEventTypes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 245,
+            "startColumn": 10,
+            "endLine": 245,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 249,
+            "startColumn": 12,
+            "endLine": 249,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 249,
+            "startColumn": 4,
+            "endLine": 249,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 250,
+            "startColumn": 12,
+            "endLine": 250,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 250,
+            "startColumn": 4,
+            "endLine": 250,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 249,
+            "startColumn": 4,
+            "endLine": 249,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 250,
+            "startColumn": 4,
+            "endLine": 250,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 249,
+            "startColumn": 4,
+            "endLine": 249,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 250,
+            "startColumn": 4,
+            "endLine": 250,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::runAllTests",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 249,
+            "startColumn": 4,
+            "endLine": 249,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 250,
+            "startColumn": 4,
+            "endLine": 250,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/hooks/index.test.ts::testAllEventTypes",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 195,
+            "startColumn": 22,
+            "endLine": 195,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 196,
+            "startColumn": 2,
+            "endLine": 196,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 220,
+            "startColumn": 4,
+            "endLine": 220,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/hooks/index.ts::getHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 223,
+            "startColumn": 21,
+            "endLine": 223,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/hooks/index.ts::getEventHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 227,
+            "startColumn": 23,
+            "endLine": 227,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 230,
+            "startColumn": 10,
+            "endLine": 230,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 230,
+            "startColumn": 2,
+            "endLine": 230,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 230,
+            "startColumn": 2,
+            "endLine": 230,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testAllEventTypes",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 230,
+            "startColumn": 2,
+            "endLine": 230,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 60,
+            "startColumn": 22,
+            "endLine": 60,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 61,
+            "startColumn": 2,
+            "endLine": 61,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 70,
+            "startColumn": 2,
+            "endLine": 70,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 72,
+            "startColumn": 24,
+            "endLine": 72,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 83,
+            "startColumn": 10,
+            "endLine": 83,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 83,
+            "startColumn": 2,
+            "endLine": 83,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 83,
+            "startColumn": 2,
+            "endLine": 83,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testCommandHookExecution",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 83,
+            "startColumn": 2,
+            "endLine": 83,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 140,
+            "startColumn": 22,
+            "endLine": 140,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 141,
+            "startColumn": 2,
+            "endLine": 141,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 148,
+            "startColumn": 2,
+            "endLine": 148,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 150,
+            "startColumn": 24,
+            "endLine": 150,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 160,
+            "startColumn": 10,
+            "endLine": 160,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 160,
+            "startColumn": 2,
+            "endLine": 160,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 160,
+            "startColumn": 2,
+            "endLine": 160,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testEnvironmentVariables",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 160,
+            "startColumn": 2,
+            "endLine": 160,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.test.ts::testHelperFunctions",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 166,
+            "startColumn": 22,
+            "endLine": 166,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 167,
+            "startColumn": 2,
+            "endLine": 167,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 174,
+            "startColumn": 2,
+            "endLine": 174,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 175,
+            "startColumn": 2,
+            "endLine": 175,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 176,
+            "startColumn": 2,
+            "endLine": 176,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 177,
+            "startColumn": 2,
+            "endLine": 177,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::runPreToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 180,
+            "startColumn": 30,
+            "endLine": 180,
+            "endColumn": 48
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::runPostToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 183,
+            "startColumn": 8,
+            "endLine": 183,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::runSessionStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 184,
+            "startColumn": 8,
+            "endLine": 184,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 186,
+            "startColumn": 29,
+            "endLine": 186,
+            "endColumn": 53
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 189,
+            "startColumn": 10,
+            "endLine": 189,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 189,
+            "startColumn": 2,
+            "endLine": 189,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 189,
+            "startColumn": 2,
+            "endLine": 189,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHelperFunctions",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 189,
+            "startColumn": 2,
+            "endLine": 189,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/hooks/index.test.ts::testHookMatcher",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 89,
+            "startColumn": 22,
+            "endLine": 89,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 90,
+            "startColumn": 2,
+            "endLine": 90,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 104,
+            "startColumn": 2,
+            "endLine": 104,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 105,
+            "startColumn": 2,
+            "endLine": 105,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 108,
+            "startColumn": 28,
+            "endLine": 108,
+            "endColumn": 36
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 115,
+            "startColumn": 29,
+            "endLine": 115,
+            "endColumn": 37
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 121,
+            "startColumn": 28,
+            "endLine": 121,
+            "endColumn": 36
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 128,
+            "startColumn": 28,
+            "endLine": 128,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 134,
+            "startColumn": 10,
+            "endLine": 134,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 134,
+            "startColumn": 2,
+            "endLine": 134,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 134,
+            "startColumn": 2,
+            "endLine": 134,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookMatcher",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 134,
+            "startColumn": 2,
+            "endLine": 134,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.test.ts::testHookRegistration",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 26,
+            "startColumn": 22,
+            "endLine": 26,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 27,
+            "startColumn": 2,
+            "endLine": 27,
+            "endColumn": 12
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 41,
+            "startColumn": 2,
+            "endLine": 41,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 42,
+            "startColumn": 2,
+            "endLine": 42,
+            "endColumn": 14
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 43,
+            "startColumn": 2,
+            "endLine": 43,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.ts::getHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 45,
+            "startColumn": 21,
+            "endLine": 45,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.ts::getEventHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 46,
+            "startColumn": 21,
+            "endLine": 46,
+            "endColumn": 38
+          },
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 47,
+            "startColumn": 21,
+            "endLine": 47,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/hooks/index.ts::getHooksForEvent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 49,
+            "startColumn": 23,
+            "endLine": 49,
+            "endColumn": 39
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/chrome-mcp/socket-server.ts::log",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 54,
+            "startColumn": 10,
+            "endLine": 54,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/mcp/logging.ts::McpLoggingManager::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 54,
+            "startColumn": 2,
+            "endLine": 54,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/mcp/websocket-connection.ts::WebSocketConnection::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 54,
+            "startColumn": 2,
+            "endLine": 54,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.test.ts::testHookRegistration",
+        "callee": "src/security/audit.ts::AuditLogger::log",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.test.ts",
+            "startLine": 54,
+            "startColumn": 2,
+            "endLine": 54,
+            "endColumn": 13
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::clearEventHooks",
+        "callee": "src/hooks/index.ts::clearEventHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1436,
+            "startColumn": 16,
+            "endLine": 1436,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::clearHooks",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1216,
+            "startColumn": 16,
+            "endLine": 1216,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/hooks/index.ts::executeAgentHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 645,
+            "startColumn": 15,
+            "endLine": 645,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/core/client.ts::ClaudeClient",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 699,
+            "startColumn": 23,
+            "endLine": 699,
+            "endColumn": 35
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 699,
+            "startColumn": 19,
+            "endLine": 699,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::setTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 707,
+            "startColumn": 22,
+            "endLine": 707,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/core/loop.ts::ConversationLoop::abort",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 707,
+            "startColumn": 50,
+            "endLine": 707,
+            "endColumn": 55
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 707,
+            "startColumn": 39,
+            "endLine": 707,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/streaming/message-stream.ts::EnhancedMessageStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 707,
+            "startColumn": 39,
+            "endLine": 707,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/streaming/sse.ts::SSEStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 707,
+            "startColumn": 39,
+            "endLine": 707,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/core/client.ts::ClaudeClient::createMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 710,
+            "startColumn": 36,
+            "endLine": 710,
+            "endColumn": 49
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 710,
+            "startColumn": 29,
+            "endLine": 710,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "tests/core/loop.test.ts::MockClaudeClient::createMessage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 710,
+            "startColumn": 29,
+            "endLine": 710,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::clearTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 717,
+            "startColumn": 6,
+            "endLine": 717,
+            "endColumn": 18
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 747,
+            "startColumn": 6,
+            "endLine": 747,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 728,
+            "startColumn": 26,
+            "endLine": 728,
+            "endColumn": 31
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 728,
+            "startColumn": 21,
+            "endLine": 728,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeAgentHook",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 728,
+            "startColumn": 21,
+            "endLine": 728,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/hooks/index.ts::executeCommandHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 406,
+            "startColumn": 15,
+            "endLine": 406,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/hooks/index.ts::replaceCommandVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 416,
+            "startColumn": 20,
+            "endLine": 416,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::setTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 462,
+            "startColumn": 22,
+            "endLine": 462,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/streaming/index.ts::StreamJsonWriter::write",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 470,
+            "startColumn": 16,
+            "endLine": 470,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/session/index.ts::SessionManager::end",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 471,
+            "startColumn": 16,
+            "endLine": 471,
+            "endColumn": 19
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/lifecycle/index.ts::LifecycleManager::on",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 473,
+            "startColumn": 17,
+            "endLine": 473,
+            "endColumn": 19
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 477,
+            "startColumn": 17,
+            "endLine": 477,
+            "endColumn": 19
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 9,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 4,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 9,
+            "endLine": 514,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 4,
+            "endLine": 514,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/mcp/notifications.ts::McpNotificationManager::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 4,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 4,
+            "endLine": 514,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/security/runtime-monitor.ts::RuntimeMonitor::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 4,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 4,
+            "endLine": 514,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/streaming/index.ts::StreamSession::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 4,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 4,
+            "endLine": 514,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "tests/mcp/integration.test.ts::MockTransport::on",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 481,
+            "startColumn": 4,
+            "endLine": 481,
+            "endColumn": 11
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 514,
+            "startColumn": 4,
+            "endLine": 514,
+            "endColumn": 11
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::clearTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 482,
+            "startColumn": 6,
+            "endLine": 482,
+            "endColumn": 18
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 515,
+            "startColumn": 6,
+            "endLine": 515,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 488,
+            "startColumn": 30,
+            "endLine": 488,
+            "endColumn": 35
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 488,
+            "startColumn": 25,
+            "endLine": 488,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeCommandHook",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 488,
+            "startColumn": 25,
+            "endLine": 488,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executeHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1026,
+            "startColumn": 15,
+            "endLine": 1026,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executeCommandHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1028,
+            "startColumn": 11,
+            "endLine": 1028,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executePromptHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1030,
+            "startColumn": 11,
+            "endLine": 1030,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executeAgentHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1032,
+            "startColumn": 11,
+            "endLine": 1032,
+            "endColumn": 27
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executeMcpHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1034,
+            "startColumn": 11,
+            "endLine": 1034,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeHook",
+        "callee": "src/hooks/index.ts::executeUrlHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1036,
+            "startColumn": 11,
+            "endLine": 1036,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/hooks/index.ts::executeMcpHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 772,
+            "startColumn": 15,
+            "endLine": 772,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/config/index.ts::ConfigManager::getMcpServers",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 784,
+            "startColumn": 20,
+            "endLine": 784,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/agents/communication.ts::SharedStateManager::get",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 27,
+            "endLine": 785,
+            "endColumn": 30
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/commands/registry.ts::CommandRegistryImpl::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/config/config-command.ts::ConfigCommand::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/config/index.ts::ConfigManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/env/manager.ts::EnvManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/env/validator.ts::EnvValidatorRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/memory/index.ts::MemoryManager::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/prompt/cache.ts::PromptCache::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/tools/base.ts::ToolRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/ui/ink-v2/screen.ts::Screen::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/ui/ink-v2/style-pool.ts::StylePool::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/web/server/slash-commands.ts::SlashCommandRegistry::get",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 785,
+            "startColumn": 19,
+            "endLine": 785,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/agents/communication.ts::SharedStateManager::keys",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 790,
+            "startColumn": 95,
+            "endLine": 790,
+            "endColumn": 99
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 790,
+            "startColumn": 87,
+            "endLine": 790,
+            "endColumn": 99
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::setTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 846,
+            "startColumn": 22,
+            "endLine": 846,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/core/loop.ts::ConversationLoop::abort",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 846,
+            "startColumn": 50,
+            "endLine": 846,
+            "endColumn": 55
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 846,
+            "startColumn": 39,
+            "endLine": 846,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/streaming/message-stream.ts::EnhancedMessageStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 846,
+            "startColumn": 39,
+            "endLine": 846,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/streaming/sse.ts::SSEStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 846,
+            "startColumn": 39,
+            "endLine": 846,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/tools/mcp.ts::callMcpTool",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 852,
+            "startColumn": 27,
+            "endLine": 852,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::clearTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 854,
+            "startColumn": 6,
+            "endLine": 854,
+            "endColumn": 18
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 897,
+            "startColumn": 6,
+            "endLine": 897,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 866,
+            "startColumn": 66,
+            "endLine": 866,
+            "endColumn": 71
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 866,
+            "startColumn": 61,
+            "endLine": 866,
+            "endColumn": 71
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeMcpHook",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 866,
+            "startColumn": 61,
+            "endLine": 866,
+            "endColumn": 71
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/hooks/index.ts::executePromptHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 527,
+            "startColumn": 15,
+            "endLine": 527,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/core/client.ts::ClaudeClient",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 563,
+            "startColumn": 23,
+            "endLine": 563,
+            "endColumn": 35
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 563,
+            "startColumn": 19,
+            "endLine": 563,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::setTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 571,
+            "startColumn": 22,
+            "endLine": 571,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/core/loop.ts::ConversationLoop::abort",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 571,
+            "startColumn": 50,
+            "endLine": 571,
+            "endColumn": 55
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 571,
+            "startColumn": 39,
+            "endLine": 571,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/streaming/message-stream.ts::EnhancedMessageStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 571,
+            "startColumn": 39,
+            "endLine": 571,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/streaming/sse.ts::SSEStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 571,
+            "startColumn": 39,
+            "endLine": 571,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/core/client.ts::ClaudeClient::createMessage",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 574,
+            "startColumn": 36,
+            "endLine": 574,
+            "endColumn": 49
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 574,
+            "startColumn": 29,
+            "endLine": 574,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "tests/core/loop.test.ts::MockClaudeClient::createMessage",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 574,
+            "startColumn": 29,
+            "endLine": 574,
+            "endColumn": 49
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::clearTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 591,
+            "startColumn": 6,
+            "endLine": 591,
+            "endColumn": 18
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 620,
+            "startColumn": 6,
+            "endLine": 620,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 602,
+            "startColumn": 26,
+            "endLine": 602,
+            "endColumn": 31
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 602,
+            "startColumn": 21,
+            "endLine": 602,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executePromptHook",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 602,
+            "startColumn": 21,
+            "endLine": 602,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/hooks/index.ts::executeUrlHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 922,
+            "startColumn": 15,
+            "endLine": 922,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::setTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 962,
+            "startColumn": 22,
+            "endLine": 962,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/core/loop.ts::ConversationLoop::abort",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 962,
+            "startColumn": 50,
+            "endLine": 962,
+            "endColumn": 55
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 962,
+            "startColumn": 39,
+            "endLine": 962,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/streaming/message-stream.ts::EnhancedMessageStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 962,
+            "startColumn": 39,
+            "endLine": 962,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/streaming/sse.ts::SSEStream::abort",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 962,
+            "startColumn": 39,
+            "endLine": 962,
+            "endColumn": 55
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/background/timeout.ts::TimeoutManager::clearTimeout",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 977,
+            "startColumn": 4,
+            "endLine": 977,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/renderer/index.ts::SvgBuilder::text",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 979,
+            "startColumn": 40,
+            "endLine": 979,
+            "endColumn": 44
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 979,
+            "startColumn": 31,
+            "endLine": 979,
+            "endColumn": 44
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 990,
+            "startColumn": 32,
+            "endLine": 990,
+            "endColumn": 37
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 990,
+            "startColumn": 27,
+            "endLine": 990,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::executeUrlHook",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 990,
+            "startColumn": 27,
+            "endLine": 990,
+            "endColumn": 37
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getEventHookCount",
+        "callee": "src/hooks/index.ts::getEventHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1236,
+            "startColumn": 16,
+            "endLine": 1236,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getHookCount",
+        "callee": "src/hooks/index.ts::getHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1225,
+            "startColumn": 16,
+            "endLine": 1225,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getHooksForEvent",
+        "callee": "src/hooks/index.ts::getHooksForEvent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1403,
+            "startColumn": 16,
+            "endLine": 1403,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getMatchingHooks",
+        "callee": "src/hooks/index.ts::getMatchingHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 375,
+            "startColumn": 9,
+            "endLine": 375,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getMatchingHooks",
+        "callee": "src/agents/context.ts::AgentContextManager::filter",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 378,
+            "startColumn": 15,
+            "endLine": 378,
+            "endColumn": 21
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 378,
+            "startColumn": 9,
+            "endLine": 378,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getMatchingHooks",
+        "callee": "tests/config.test.ts::test",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 383,
+            "startColumn": 21,
+            "endLine": 383,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getRegisteredHooks",
+        "callee": "src/hooks/index.ts::getRegisteredHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1383,
+            "startColumn": 16,
+            "endLine": 1383,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getRegisteredHooksFlat",
+        "callee": "src/hooks/index.ts::getRegisteredHooksFlat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1390,
+            "startColumn": 16,
+            "endLine": 1390,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::getRegisteredHooksFlat",
+        "callee": "src/mcp/logging.ts::entries",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1392,
+            "startColumn": 38,
+            "endLine": 1392,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::isBlocked",
+        "callee": "src/hooks/index.ts::isBlocked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1068,
+            "startColumn": 16,
+            "endLine": 1068,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::isValidHookConfig",
+        "callee": "src/hooks/index.ts::isValidHookConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 324,
+            "startColumn": 9,
+            "endLine": 324,
+            "endColumn": 26
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::isValidHookEvent",
+        "callee": "src/hooks/index.ts::isValidHookEvent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 294,
+            "startColumn": 9,
+            "endLine": 294,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::isValidLegacyHookConfig",
+        "callee": "src/hooks/index.ts::isValidLegacyHookConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 345,
+            "startColumn": 9,
+            "endLine": 345,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::loadHooksFromFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 253,
+            "startColumn": 16,
+            "endLine": 253,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 258,
+            "startColumn": 24,
+            "endLine": 258,
+            "endColumn": 29
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 258,
+            "startColumn": 19,
+            "endLine": 258,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 258,
+            "startColumn": 19,
+            "endLine": 258,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/mcp/logging.ts::entries",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 262,
+            "startColumn": 46,
+            "endLine": 262,
+            "endColumn": 53
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::isValidHookEvent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 263,
+            "startColumn": 13,
+            "endLine": 263,
+            "endColumn": 29
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::warn",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 264,
+            "startColumn": 18,
+            "endLine": 264,
+            "endColumn": 22
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 264,
+            "startColumn": 10,
+            "endLine": 264,
+            "endColumn": 22
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 273,
+            "startColumn": 20,
+            "endLine": 273,
+            "endColumn": 24
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 273,
+            "startColumn": 12,
+            "endLine": 273,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/mcp/debug.ts::McpDebugger::warn",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 264,
+            "startColumn": 10,
+            "endLine": 264,
+            "endColumn": 22
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 273,
+            "startColumn": 12,
+            "endLine": 273,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/notifications/index.ts::NotificationManager::warn",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 264,
+            "startColumn": 10,
+            "endLine": 264,
+            "endColumn": 22
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 273,
+            "startColumn": 12,
+            "endLine": 273,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::isValidHookConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 270,
+            "startColumn": 14,
+            "endLine": 270,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 271,
+            "startColumn": 12,
+            "endLine": 271,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::isValidLegacyHookConfig",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 281,
+            "startColumn": 12,
+            "endLine": 281,
+            "endColumn": 35
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/hooks/index.ts::registerLegacyHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 282,
+            "startColumn": 10,
+            "endLine": 282,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/chrome-mcp/mcp-server.ts::DefaultMcpLogger::error",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 287,
+            "startColumn": 12,
+            "endLine": 287,
+            "endColumn": 17
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 287,
+            "startColumn": 4,
+            "endLine": 287,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/mcp/debug.ts::McpDebugger::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 287,
+            "startColumn": 4,
+            "endLine": 287,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/notifications/index.ts::NotificationManager::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 287,
+            "startColumn": 4,
+            "endLine": 287,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadHooksFromFile",
+        "callee": "src/tools/base.ts::BaseTool::error",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 287,
+            "startColumn": 4,
+            "endLine": 287,
+            "endColumn": 17
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadProjectHooks",
+        "callee": "src/hooks/index.ts::loadProjectHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 355,
+            "startColumn": 16,
+            "endLine": 355,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::loadProjectHooks",
+        "callee": "src/hooks/index.ts::loadHooksFromFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 358,
+            "startColumn": 2,
+            "endLine": 358,
+            "endColumn": 19
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 366,
+            "startColumn": 8,
+            "endLine": 366,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::registerHook",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 227,
+            "startColumn": 16,
+            "endLine": 227,
+            "endColumn": 28
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::registerLegacyHook",
+        "callee": "src/hooks/index.ts::registerLegacyHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 237,
+            "startColumn": 16,
+            "endLine": 237,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::registerLegacyHook",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 247,
+            "startColumn": 2,
+            "endLine": 247,
+            "endColumn": 14
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::replaceCommandVariables",
+        "callee": "src/hooks/index.ts::replaceCommandVariables",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 396,
+            "startColumn": 9,
+            "endLine": 396,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1048,
+            "startColumn": 22,
+            "endLine": 1048,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runHooks",
+        "callee": "src/hooks/index.ts::getMatchingHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1049,
+            "startColumn": 24,
+            "endLine": 1049,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runHooks",
+        "callee": "src/hooks/index.ts::executeHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1053,
+            "startColumn": 25,
+            "endLine": 1053,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runNotificationHooks",
+        "callee": "src/hooks/index.ts::runNotificationHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1367,
+            "startColumn": 22,
+            "endLine": 1367,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runNotificationHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1372,
+            "startColumn": 8,
+            "endLine": 1372,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callee": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1326,
+            "startColumn": 22,
+            "endLine": 1326,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1332,
+            "startColumn": 24,
+            "endLine": 1332,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callee": "src/config/claude-md-parser.ts::ClaudeMdParser::parse",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1344,
+            "startColumn": 28,
+            "endLine": 1344,
+            "endColumn": 33
+          },
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1344,
+            "startColumn": 23,
+            "endLine": 1344,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callee": "src/permissions/rule-parser.ts::PermissionRuleParser::parse",
+        "callType": "method",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1344,
+            "startColumn": 23,
+            "endLine": 1344,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPostToolUseFailureHooks",
+        "callee": "src/hooks/index.ts::runPostToolUseFailureHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1190,
+            "startColumn": 22,
+            "endLine": 1190,
+            "endColumn": 48
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPostToolUseFailureHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1200,
+            "startColumn": 8,
+            "endLine": 1200,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPostToolUseHooks",
+        "callee": "src/hooks/index.ts::runPostToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1102,
+            "startColumn": 22,
+            "endLine": 1102,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPostToolUseHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1108,
+            "startColumn": 8,
+            "endLine": 1108,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreCompactHooks",
+        "callee": "src/hooks/index.ts::runPreCompactHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1159,
+            "startColumn": 22,
+            "endLine": 1159,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreCompactHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1164,
+            "startColumn": 24,
+            "endLine": 1164,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreCompactHooks",
+        "callee": "src/hooks/index.ts::isBlocked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1171,
+            "startColumn": 21,
+            "endLine": 1171,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreToolUseHooks",
+        "callee": "src/hooks/index.ts::runPreToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1080,
+            "startColumn": 22,
+            "endLine": 1080,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreToolUseHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1085,
+            "startColumn": 24,
+            "endLine": 1085,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runPreToolUseHooks",
+        "callee": "src/hooks/index.ts::isBlocked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1092,
+            "startColumn": 21,
+            "endLine": 1092,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSessionEndHooks",
+        "callee": "src/hooks/index.ts::runSessionEndHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1263,
+            "startColumn": 22,
+            "endLine": 1263,
+            "endColumn": 40
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSessionEndHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1267,
+            "startColumn": 8,
+            "endLine": 1267,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSessionStartHooks",
+        "callee": "src/hooks/index.ts::runSessionStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1246,
+            "startColumn": 22,
+            "endLine": 1246,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSessionStartHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1250,
+            "startColumn": 8,
+            "endLine": 1250,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runStopHooks",
+        "callee": "src/hooks/index.ts::runStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1140,
+            "startColumn": 22,
+            "endLine": 1140,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runStopHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1144,
+            "startColumn": 8,
+            "endLine": 1144,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSubagentStartHooks",
+        "callee": "src/hooks/index.ts::runSubagentStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1281,
+            "startColumn": 22,
+            "endLine": 1281,
+            "endColumn": 43
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSubagentStartHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1286,
+            "startColumn": 8,
+            "endLine": 1286,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSubagentStopHooks",
+        "callee": "src/hooks/index.ts::runSubagentStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1302,
+            "startColumn": 22,
+            "endLine": 1302,
+            "endColumn": 42
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runSubagentStopHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1308,
+            "startColumn": 8,
+            "endLine": 1308,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callee": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1120,
+            "startColumn": 22,
+            "endLine": 1120,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1124,
+            "startColumn": 24,
+            "endLine": 1124,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callee": "src/hooks/index.ts::isBlocked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1130,
+            "startColumn": 21,
+            "endLine": 1130,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/hooks/index.ts::unregisterHook",
+        "callee": "src/hooks/index.ts::unregisterHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/hooks/index.ts",
+            "startLine": 1410,
+            "startColumn": 16,
+            "endLine": 1410,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/agent.ts::TaskTool::executeAgentLoop",
+        "callee": "src/hooks/index.ts::runSubagentStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/agent.ts",
+            "startLine": 647,
+            "startColumn": 10,
+            "endLine": 647,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/agent.ts::TaskTool::executeAgentLoop",
+        "callee": "src/hooks/index.ts::runSubagentStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/agent.ts",
+            "startLine": 719,
+            "startColumn": 12,
+            "endLine": 719,
+            "endColumn": 32
+          },
+          {
+            "file": "src/tools/agent.ts",
+            "startLine": 723,
+            "startColumn": 12,
+            "endLine": 723,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/bash.ts::BashTool::execute",
+        "callee": "src/hooks/index.ts::runPreToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 562,
+            "startColumn": 29,
+            "endLine": 562,
+            "endColumn": 47
+          }
+        ]
+      },
+      {
+        "caller": "src/tools/bash.ts::BashTool::execute",
+        "callee": "src/hooks/index.ts::runPostToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 613,
+            "startColumn": 12,
+            "endLine": 613,
+            "endColumn": 31
+          },
+          {
+            "file": "src/tools/bash.ts",
+            "startLine": 645,
+            "startColumn": 12,
+            "endLine": 645,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/task-manager.ts::TaskManager::executeTaskInBackground",
+        "callee": "src/hooks/index.ts::runSubagentStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/task-manager.ts",
+            "startLine": 248,
+            "startColumn": 12,
+            "endLine": 248,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "src/web/server/task-manager.ts::TaskManager::executeTaskInBackground",
+        "callee": "src/hooks/index.ts::runSubagentStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "src/web/server/task-manager.ts",
+            "startLine": 289,
+            "startColumn": 12,
+            "endLine": 289,
+            "endColumn": 32
+          },
+          {
+            "file": "src/web/server/task-manager.ts",
+            "startLine": 301,
+            "startColumn": 12,
+            "endLine": 301,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::clearHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 63,
+            "startColumn": 4,
+            "endLine": 63,
+            "endColumn": 14
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 68,
+            "startColumn": 4,
+            "endLine": 68,
+            "endColumn": 14
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 149,
+            "startColumn": 6,
+            "endLine": 149,
+            "endColumn": 16
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 790,
+            "startColumn": 6,
+            "endLine": 790,
+            "endColumn": 16
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 814,
+            "startColumn": 6,
+            "endLine": 814,
+            "endColumn": 16
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 861,
+            "startColumn": 6,
+            "endLine": 861,
+            "endColumn": 16
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 901,
+            "startColumn": 6,
+            "endLine": 901,
+            "endColumn": 16
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 927,
+            "startColumn": 6,
+            "endLine": 927,
+            "endColumn": 16
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::registerHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 81,
+            "startColumn": 6,
+            "endLine": 81,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 96,
+            "startColumn": 6,
+            "endLine": 96,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 97,
+            "startColumn": 6,
+            "endLine": 97,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 109,
+            "startColumn": 6,
+            "endLine": 109,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 110,
+            "startColumn": 6,
+            "endLine": 110,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 111,
+            "startColumn": 6,
+            "endLine": 111,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 129,
+            "startColumn": 6,
+            "endLine": 129,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 130,
+            "startColumn": 6,
+            "endLine": 130,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 131,
+            "startColumn": 6,
+            "endLine": 131,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 145,
+            "startColumn": 6,
+            "endLine": 145,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 146,
+            "startColumn": 6,
+            "endLine": 146,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 159,
+            "startColumn": 6,
+            "endLine": 159,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 160,
+            "startColumn": 6,
+            "endLine": 160,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 177,
+            "startColumn": 6,
+            "endLine": 177,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 178,
+            "startColumn": 6,
+            "endLine": 178,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 195,
+            "startColumn": 6,
+            "endLine": 195,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 196,
+            "startColumn": 6,
+            "endLine": 196,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 209,
+            "startColumn": 6,
+            "endLine": 209,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 210,
+            "startColumn": 6,
+            "endLine": 210,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 227,
+            "startColumn": 6,
+            "endLine": 227,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 248,
+            "startColumn": 6,
+            "endLine": 248,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 272,
+            "startColumn": 6,
+            "endLine": 272,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 291,
+            "startColumn": 6,
+            "endLine": 291,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 309,
+            "startColumn": 6,
+            "endLine": 309,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 332,
+            "startColumn": 6,
+            "endLine": 332,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 333,
+            "startColumn": 6,
+            "endLine": 333,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 354,
+            "startColumn": 6,
+            "endLine": 354,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 378,
+            "startColumn": 6,
+            "endLine": 378,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 412,
+            "startColumn": 6,
+            "endLine": 412,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 433,
+            "startColumn": 6,
+            "endLine": 433,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 465,
+            "startColumn": 6,
+            "endLine": 465,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 500,
+            "startColumn": 6,
+            "endLine": 500,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 501,
+            "startColumn": 6,
+            "endLine": 501,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 502,
+            "startColumn": 6,
+            "endLine": 502,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 566,
+            "startColumn": 8,
+            "endLine": 566,
+            "endColumn": 20
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 582,
+            "startColumn": 6,
+            "endLine": 582,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 594,
+            "startColumn": 6,
+            "endLine": 594,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 606,
+            "startColumn": 6,
+            "endLine": 606,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 618,
+            "startColumn": 6,
+            "endLine": 618,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 630,
+            "startColumn": 6,
+            "endLine": 630,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 642,
+            "startColumn": 6,
+            "endLine": 642,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 654,
+            "startColumn": 6,
+            "endLine": 654,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 666,
+            "startColumn": 6,
+            "endLine": 666,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 678,
+            "startColumn": 6,
+            "endLine": 678,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 690,
+            "startColumn": 6,
+            "endLine": 690,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 702,
+            "startColumn": 6,
+            "endLine": 702,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 714,
+            "startColumn": 6,
+            "endLine": 714,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 729,
+            "startColumn": 6,
+            "endLine": 729,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 742,
+            "startColumn": 6,
+            "endLine": 742,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 759,
+            "startColumn": 6,
+            "endLine": 759,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 945,
+            "startColumn": 6,
+            "endLine": 945,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 968,
+            "startColumn": 6,
+            "endLine": 968,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 969,
+            "startColumn": 6,
+            "endLine": 969,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 999,
+            "startColumn": 6,
+            "endLine": 999,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1015,
+            "startColumn": 6,
+            "endLine": 1015,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1032,
+            "startColumn": 6,
+            "endLine": 1032,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1059,
+            "startColumn": 6,
+            "endLine": 1059,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1060,
+            "startColumn": 6,
+            "endLine": 1060,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1061,
+            "startColumn": 6,
+            "endLine": 1061,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1081,
+            "startColumn": 6,
+            "endLine": 1081,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1112,
+            "startColumn": 6,
+            "endLine": 1112,
+            "endColumn": 18
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1113,
+            "startColumn": 6,
+            "endLine": 1113,
+            "endColumn": 18
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::getHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 82,
+            "startColumn": 13,
+            "endLine": 82,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 99,
+            "startColumn": 13,
+            "endLine": 99,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 113,
+            "startColumn": 13,
+            "endLine": 113,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 147,
+            "startColumn": 13,
+            "endLine": 147,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 150,
+            "startColumn": 13,
+            "endLine": 150,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 569,
+            "startColumn": 13,
+            "endLine": 569,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 828,
+            "startColumn": 13,
+            "endLine": 828,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 839,
+            "startColumn": 13,
+            "endLine": 839,
+            "endColumn": 25
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::getEventHookCount",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 83,
+            "startColumn": 13,
+            "endLine": 83,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 100,
+            "startColumn": 13,
+            "endLine": 100,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 114,
+            "startColumn": 13,
+            "endLine": 114,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 115,
+            "startColumn": 13,
+            "endLine": 115,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 116,
+            "startColumn": 13,
+            "endLine": 116,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 163,
+            "startColumn": 13,
+            "endLine": 163,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 164,
+            "startColumn": 13,
+            "endLine": 164,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 179,
+            "startColumn": 13,
+            "endLine": 179,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 183,
+            "startColumn": 13,
+            "endLine": 183,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 572,
+            "startColumn": 15,
+            "endLine": 572,
+            "endColumn": 32
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 793,
+            "startColumn": 13,
+            "endLine": 793,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 794,
+            "startColumn": 13,
+            "endLine": 794,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 817,
+            "startColumn": 13,
+            "endLine": 817,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 818,
+            "startColumn": 13,
+            "endLine": 818,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 865,
+            "startColumn": 13,
+            "endLine": 865,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 904,
+            "startColumn": 13,
+            "endLine": 904,
+            "endColumn": 30
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 905,
+            "startColumn": 13,
+            "endLine": 905,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::getHooksForEvent",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 133,
+            "startColumn": 27,
+            "endLine": 133,
+            "endColumn": 43
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 185,
+            "startColumn": 20,
+            "endLine": 185,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 731,
+            "startColumn": 20,
+            "endLine": 731,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 744,
+            "startColumn": 20,
+            "endLine": 744,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 761,
+            "startColumn": 20,
+            "endLine": 761,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 930,
+            "startColumn": 20,
+            "endLine": 930,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1001,
+            "startColumn": 20,
+            "endLine": 1001,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1017,
+            "startColumn": 20,
+            "endLine": 1017,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1034,
+            "startColumn": 20,
+            "endLine": 1034,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::clearEventHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 162,
+            "startColumn": 6,
+            "endLine": 162,
+            "endColumn": 21
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::unregisterHook",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 181,
+            "startColumn": 22,
+            "endLine": 181,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::getRegisteredHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 198,
+            "startColumn": 23,
+            "endLine": 198,
+            "endColumn": 41
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::getRegisteredHooksFlat",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 212,
+            "startColumn": 24,
+            "endLine": 212,
+            "endColumn": 46
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 229,
+            "startColumn": 28,
+            "endLine": 229,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 250,
+            "startColumn": 28,
+            "endLine": 250,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 274,
+            "startColumn": 28,
+            "endLine": 274,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 293,
+            "startColumn": 28,
+            "endLine": 293,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 311,
+            "startColumn": 28,
+            "endLine": 311,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 335,
+            "startColumn": 28,
+            "endLine": 335,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 357,
+            "startColumn": 32,
+            "endLine": 357,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 364,
+            "startColumn": 32,
+            "endLine": 364,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 380,
+            "startColumn": 33,
+            "endLine": 380,
+            "endColumn": 41
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 386,
+            "startColumn": 32,
+            "endLine": 386,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 392,
+            "startColumn": 32,
+            "endLine": 392,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 398,
+            "startColumn": 32,
+            "endLine": 398,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 414,
+            "startColumn": 36,
+            "endLine": 414,
+            "endColumn": 44
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 420,
+            "startColumn": 37,
+            "endLine": 420,
+            "endColumn": 45
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 435,
+            "startColumn": 32,
+            "endLine": 435,
+            "endColumn": 40
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 441,
+            "startColumn": 33,
+            "endLine": 441,
+            "endColumn": 41
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 467,
+            "startColumn": 28,
+            "endLine": 467,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 504,
+            "startColumn": 28,
+            "endLine": 504,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 947,
+            "startColumn": 28,
+            "endLine": 947,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 971,
+            "startColumn": 28,
+            "endLine": 971,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 982,
+            "startColumn": 28,
+            "endLine": 982,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1063,
+            "startColumn": 28,
+            "endLine": 1063,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1088,
+            "startColumn": 28,
+            "endLine": 1088,
+            "endColumn": 36
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 1115,
+            "startColumn": 28,
+            "endLine": 1115,
+            "endColumn": 36
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::isBlocked",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 520,
+            "startColumn": 25,
+            "endLine": 520,
+            "endColumn": 34
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 531,
+            "startColumn": 25,
+            "endLine": 531,
+            "endColumn": 34
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runPreToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 584,
+            "startColumn": 27,
+            "endLine": 584,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runPostToolUseHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 596,
+            "startColumn": 12,
+            "endLine": 596,
+            "endColumn": 31
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runSessionStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 608,
+            "startColumn": 12,
+            "endLine": 608,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runSessionEndHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 620,
+            "startColumn": 12,
+            "endLine": 620,
+            "endColumn": 30
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runUserPromptSubmitHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 632,
+            "startColumn": 27,
+            "endLine": 632,
+            "endColumn": 51
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 644,
+            "startColumn": 12,
+            "endLine": 644,
+            "endColumn": 24
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runSubagentStartHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 656,
+            "startColumn": 12,
+            "endLine": 656,
+            "endColumn": 33
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runSubagentStopHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 668,
+            "startColumn": 12,
+            "endLine": 668,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runPreCompactHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 680,
+            "startColumn": 27,
+            "endLine": 680,
+            "endColumn": 45
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runPostToolUseFailureHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 692,
+            "startColumn": 12,
+            "endLine": 692,
+            "endColumn": 38
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runPermissionRequestHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 704,
+            "startColumn": 27,
+            "endLine": 704,
+            "endColumn": 52
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::runNotificationHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 716,
+            "startColumn": 12,
+            "endLine": 716,
+            "endColumn": 32
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::loadHooksFromFile",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 791,
+            "startColumn": 6,
+            "endLine": 791,
+            "endColumn": 23
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 815,
+            "startColumn": 6,
+            "endLine": 815,
+            "endColumn": 23
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 825,
+            "startColumn": 8,
+            "endLine": 825,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 836,
+            "startColumn": 8,
+            "endLine": 836,
+            "endColumn": 25
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 862,
+            "startColumn": 6,
+            "endLine": 862,
+            "endColumn": 23
+          },
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 928,
+            "startColumn": 6,
+            "endLine": 928,
+            "endColumn": 23
+          }
+        ]
+      },
+      {
+        "caller": "tests/hooks/hooks.test.ts::describe('Hooks System') callback",
+        "callee": "src/hooks/index.ts::loadProjectHooks",
+        "callType": "direct",
+        "locations": [
+          {
+            "file": "tests/hooks/hooks.test.ts",
+            "startLine": 902,
+            "startColumn": 6,
+            "endLine": 902,
+            "endColumn": 22
+          }
+        ]
+      }
+    ],
+    "typeRefs": []
+  }
+}

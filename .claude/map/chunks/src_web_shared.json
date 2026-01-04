@@ -1,0 +1,1226 @@
+{
+  "path": "src/web/shared",
+  "modules": {
+    "src/web/shared/types.ts": {
+      "id": "src/web/shared/types.ts",
+      "name": "types.ts",
+      "path": "F:\\claude-code-open\\src\\web\\shared\\types.ts",
+      "language": "typescript",
+      "lines": 1112,
+      "size": 26728,
+      "exports": [],
+      "imports": [],
+      "semantic": {
+        "description": "WebUI 共享类型定义模块，定义了前后端通信的所有 TypeScript 类型接口，包括 WebSocket 消息、会话管理、工具调用、权限控制、MCP 服务器、检查点、插件系统和认证等完整的类型系统。",
+        "responsibility": "提供前后端通信协议的类型安全保障和数据结构规范",
+        "businessDomain": "类型系统与通信协议",
+        "architectureLayer": "infrastructure",
+        "tags": [
+          "TypeScript类型定义",
+          "WebSocket协议",
+          "前后端共享",
+          "消息类型",
+          "接口规范"
+        ],
+        "confidence": 0.85,
+        "generatedAt": "2026-01-04T00:56:58.041Z"
+      }
+    }
+  },
+  "symbols": {
+    "src/web/shared/types.ts::ApiStatusPayload": {
+      "id": "src/web/shared/types.ts::ApiStatusPayload",
+      "name": "ApiStatusPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 747,
+        "startColumn": 0,
+        "endLine": 763,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ApiTestResult": {
+      "id": "src/web/shared/types.ts::ApiTestResult",
+      "name": "ApiTestResult",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 768,
+        "startColumn": 0,
+        "endLine": 779,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::Attachment": {
+      "id": "src/web/shared/types.ts::Attachment",
+      "name": "Attachment",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 19,
+        "startColumn": 0,
+        "endLine": 24,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::AuthSetKeyPayload": {
+      "id": "src/web/shared/types.ts::AuthSetKeyPayload",
+      "name": "AuthSetKeyPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 47,
+        "startColumn": 0,
+        "endLine": 50,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::AuthStatus": {
+      "id": "src/web/shared/types.ts::AuthStatus",
+      "name": "AuthStatus",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 31,
+        "startColumn": 0,
+        "endLine": 42,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::AuthStatusPayload": {
+      "id": "src/web/shared/types.ts::AuthStatusPayload",
+      "name": "AuthStatusPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 55,
+        "startColumn": 0,
+        "endLine": 58,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::BashResultData": {
+      "id": "src/web/shared/types.ts::BashResultData",
+      "name": "BashResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 361,
+        "startColumn": 0,
+        "endLine": 368,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ChatMessage": {
+      "id": "src/web/shared/types.ts::ChatMessage",
+      "name": "ChatMessage",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 282,
+        "startColumn": 0,
+        "endLine": 293,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointCreatedPayload": {
+      "id": "src/web/shared/types.ts::CheckpointCreatedPayload",
+      "name": "CheckpointCreatedPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 916,
+        "startColumn": 0,
+        "endLine": 927,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointCreatePayload": {
+      "id": "src/web/shared/types.ts::CheckpointCreatePayload",
+      "name": "CheckpointCreatePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 902,
+        "startColumn": 0,
+        "endLine": 911,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointDiffPayload": {
+      "id": "src/web/shared/types.ts::CheckpointDiffPayload",
+      "name": "CheckpointDiffPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 998,
+        "startColumn": 0,
+        "endLine": 1010,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointFileInfo": {
+      "id": "src/web/shared/types.ts::CheckpointFileInfo",
+      "name": "CheckpointFileInfo",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 870,
+        "startColumn": 0,
+        "endLine": 877,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointListRequestPayload": {
+      "id": "src/web/shared/types.ts::CheckpointListRequestPayload",
+      "name": "CheckpointListRequestPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 932,
+        "startColumn": 0,
+        "endLine": 939,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointListResponsePayload": {
+      "id": "src/web/shared/types.ts::CheckpointListResponsePayload",
+      "name": "CheckpointListResponsePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 944,
+        "startColumn": 0,
+        "endLine": 956,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointRestoredPayload": {
+      "id": "src/web/shared/types.ts::CheckpointRestoredPayload",
+      "name": "CheckpointRestoredPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 961,
+        "startColumn": 0,
+        "endLine": 972,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::CheckpointSummary": {
+      "id": "src/web/shared/types.ts::CheckpointSummary",
+      "name": "CheckpointSummary",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 882,
+        "startColumn": 0,
+        "endLine": 897,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DiagnosticResult": {
+      "id": "src/web/shared/types.ts::DiagnosticResult",
+      "name": "DiagnosticResult",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1017,
+        "startColumn": 0,
+        "endLine": 1024,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DiffHunk": {
+      "id": "src/web/shared/types.ts::DiffHunk",
+      "name": "DiffHunk",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 392,
+        "startColumn": 0,
+        "endLine": 398,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DiffLine": {
+      "id": "src/web/shared/types.ts::DiffLine",
+      "name": "DiffLine",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 400,
+        "startColumn": 0,
+        "endLine": 405,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DiffResultData": {
+      "id": "src/web/shared/types.ts::DiffResultData",
+      "name": "DiffResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 461,
+        "startColumn": 0,
+        "endLine": 464,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DoctorReport": {
+      "id": "src/web/shared/types.ts::DoctorReport",
+      "name": "DoctorReport",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1029,
+        "startColumn": 0,
+        "endLine": 1053,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DoctorResultPayload": {
+      "id": "src/web/shared/types.ts::DoctorResultPayload",
+      "name": "DoctorResultPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1066,
+        "startColumn": 0,
+        "endLine": 1069,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::DoctorRunPayload": {
+      "id": "src/web/shared/types.ts::DoctorRunPayload",
+      "name": "DoctorRunPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1058,
+        "startColumn": 0,
+        "endLine": 1061,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::EditResultData": {
+      "id": "src/web/shared/types.ts::EditResultData",
+      "name": "EditResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 384,
+        "startColumn": 0,
+        "endLine": 390,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::FileDiff": {
+      "id": "src/web/shared/types.ts::FileDiff",
+      "name": "FileDiff",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 982,
+        "startColumn": 0,
+        "endLine": 993,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::GlobResultData": {
+      "id": "src/web/shared/types.ts::GlobResultData",
+      "name": "GlobResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 407,
+        "startColumn": 0,
+        "endLine": 412,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::GrepMatch": {
+      "id": "src/web/shared/types.ts::GrepMatch",
+      "name": "GrepMatch",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 421,
+        "startColumn": 0,
+        "endLine": 429,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::GrepResultData": {
+      "id": "src/web/shared/types.ts::GrepResultData",
+      "name": "GrepResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 414,
+        "startColumn": 0,
+        "endLine": 419,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ImageContent": {
+      "id": "src/web/shared/types.ts::ImageContent",
+      "name": "ImageContent",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 310,
+        "startColumn": 0,
+        "endLine": 314,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::McpAddPayload": {
+      "id": "src/web/shared/types.ts::McpAddPayload",
+      "name": "McpAddPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 842,
+        "startColumn": 0,
+        "endLine": 845,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::McpListPayload": {
+      "id": "src/web/shared/types.ts::McpListPayload",
+      "name": "McpListPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 832,
+        "startColumn": 0,
+        "endLine": 837,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::McpRemovePayload": {
+      "id": "src/web/shared/types.ts::McpRemovePayload",
+      "name": "McpRemovePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 850,
+        "startColumn": 0,
+        "endLine": 853,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::McpServerConfig": {
+      "id": "src/web/shared/types.ts::McpServerConfig",
+      "name": "McpServerConfig",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 806,
+        "startColumn": 0,
+        "endLine": 827,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::McpTogglePayload": {
+      "id": "src/web/shared/types.ts::McpTogglePayload",
+      "name": "McpTogglePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 858,
+        "startColumn": 0,
+        "endLine": 863,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::MessageCompletePayload": {
+      "id": "src/web/shared/types.ts::MessageCompletePayload",
+      "name": "MessageCompletePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 194,
+        "startColumn": 0,
+        "endLine": 201,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::PermissionConfigPayload": {
+      "id": "src/web/shared/types.ts::PermissionConfigPayload",
+      "name": "PermissionConfigPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 233,
+        "startColumn": 0,
+        "endLine": 239,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::PermissionRequestPayload": {
+      "id": "src/web/shared/types.ts::PermissionRequestPayload",
+      "name": "PermissionRequestPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 211,
+        "startColumn": 0,
+        "endLine": 218,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::PermissionResponsePayload": {
+      "id": "src/web/shared/types.ts::PermissionResponsePayload",
+      "name": "PermissionResponsePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 223,
+        "startColumn": 0,
+        "endLine": 228,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::PluginInfo": {
+      "id": "src/web/shared/types.ts::PluginInfo",
+      "name": "PluginInfo",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1076,
+        "startColumn": 0,
+        "endLine": 1101,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::PluginListPayload": {
+      "id": "src/web/shared/types.ts::PluginListPayload",
+      "name": "PluginListPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 1106,
+        "startColumn": 0,
+        "endLine": 1111,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ProviderInfo": {
+      "id": "src/web/shared/types.ts::ProviderInfo",
+      "name": "ProviderInfo",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 784,
+        "startColumn": 0,
+        "endLine": 799,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::QuestionOption": {
+      "id": "src/web/shared/types.ts::QuestionOption",
+      "name": "QuestionOption",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 253,
+        "startColumn": 0,
+        "endLine": 256,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ReadResultData": {
+      "id": "src/web/shared/types.ts::ReadResultData",
+      "name": "ReadResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 370,
+        "startColumn": 0,
+        "endLine": 376,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SearchResult": {
+      "id": "src/web/shared/types.ts::SearchResult",
+      "name": "SearchResult",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 444,
+        "startColumn": 0,
+        "endLine": 448,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionCreatedPayload": {
+      "id": "src/web/shared/types.ts::SessionCreatedPayload",
+      "name": "SessionCreatedPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 542,
+        "startColumn": 0,
+        "endLine": 547,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionCreatePayload": {
+      "id": "src/web/shared/types.ts::SessionCreatePayload",
+      "name": "SessionCreatePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 533,
+        "startColumn": 0,
+        "endLine": 537,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionInfo": {
+      "id": "src/web/shared/types.ts::SessionInfo",
+      "name": "SessionInfo",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 476,
+        "startColumn": 0,
+        "endLine": 484,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionListRequestPayload": {
+      "id": "src/web/shared/types.ts::SessionListRequestPayload",
+      "name": "SessionListRequestPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 491,
+        "startColumn": 0,
+        "endLine": 497,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionListResponsePayload": {
+      "id": "src/web/shared/types.ts::SessionListResponsePayload",
+      "name": "SessionListResponsePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 502,
+        "startColumn": 0,
+        "endLine": 508,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SessionSummary": {
+      "id": "src/web/shared/types.ts::SessionSummary",
+      "name": "SessionSummary",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 513,
+        "startColumn": 0,
+        "endLine": 528,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SlashCommandResultPayload": {
+      "id": "src/web/shared/types.ts::SlashCommandResultPayload",
+      "name": "SlashCommandResultPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 269,
+        "startColumn": 0,
+        "endLine": 275,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::StatusPayload": {
+      "id": "src/web/shared/types.ts::StatusPayload",
+      "name": "StatusPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 203,
+        "startColumn": 0,
+        "endLine": 206,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SystemPromptConfig": {
+      "id": "src/web/shared/types.ts::SystemPromptConfig",
+      "name": "SystemPromptConfig",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 716,
+        "startColumn": 0,
+        "endLine": 723,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SystemPromptGetPayload": {
+      "id": "src/web/shared/types.ts::SystemPromptGetPayload",
+      "name": "SystemPromptGetPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 735,
+        "startColumn": 0,
+        "endLine": 740,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::SystemPromptUpdatePayload": {
+      "id": "src/web/shared/types.ts::SystemPromptUpdatePayload",
+      "name": "SystemPromptUpdatePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 728,
+        "startColumn": 0,
+        "endLine": 730,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskListPayload": {
+      "id": "src/web/shared/types.ts::TaskListPayload",
+      "name": "TaskListPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 562,
+        "startColumn": 0,
+        "endLine": 564,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskListRequestPayload": {
+      "id": "src/web/shared/types.ts::TaskListRequestPayload",
+      "name": "TaskListRequestPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 554,
+        "startColumn": 0,
+        "endLine": 557,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskOutputPayload": {
+      "id": "src/web/shared/types.ts::TaskOutputPayload",
+      "name": "TaskOutputPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 601,
+        "startColumn": 0,
+        "endLine": 606,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskResultData": {
+      "id": "src/web/shared/types.ts::TaskResultData",
+      "name": "TaskResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 466,
+        "startColumn": 0,
+        "endLine": 472,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskStatusPayload": {
+      "id": "src/web/shared/types.ts::TaskStatusPayload",
+      "name": "TaskStatusPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 586,
+        "startColumn": 0,
+        "endLine": 596,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TaskSummary": {
+      "id": "src/web/shared/types.ts::TaskSummary",
+      "name": "TaskSummary",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 569,
+        "startColumn": 0,
+        "endLine": 581,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TextContent": {
+      "id": "src/web/shared/types.ts::TextContent",
+      "name": "TextContent",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 305,
+        "startColumn": 0,
+        "endLine": 308,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ThinkingContent": {
+      "id": "src/web/shared/types.ts::ThinkingContent",
+      "name": "ThinkingContent",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 316,
+        "startColumn": 0,
+        "endLine": 319,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TodoItem": {
+      "id": "src/web/shared/types.ts::TodoItem",
+      "name": "TodoItem",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 455,
+        "startColumn": 0,
+        "endLine": 459,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TodoResultData": {
+      "id": "src/web/shared/types.ts::TodoResultData",
+      "name": "TodoResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 450,
+        "startColumn": 0,
+        "endLine": 453,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolFilterConfig": {
+      "id": "src/web/shared/types.ts::ToolFilterConfig",
+      "name": "ToolFilterConfig",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 677,
+        "startColumn": 0,
+        "endLine": 684,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolFilterUpdatePayload": {
+      "id": "src/web/shared/types.ts::ToolFilterUpdatePayload",
+      "name": "ToolFilterUpdatePayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 689,
+        "startColumn": 0,
+        "endLine": 691,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolInfo": {
+      "id": "src/web/shared/types.ts::ToolInfo",
+      "name": "ToolInfo",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 704,
+        "startColumn": 0,
+        "endLine": 709,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolListPayload": {
+      "id": "src/web/shared/types.ts::ToolListPayload",
+      "name": "ToolListPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 696,
+        "startColumn": 0,
+        "endLine": 699,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolResultContent": {
+      "id": "src/web/shared/types.ts::ToolResultContent",
+      "name": "ToolResultContent",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 332,
+        "startColumn": 0,
+        "endLine": 340,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolResultPayload": {
+      "id": "src/web/shared/types.ts::ToolResultPayload",
+      "name": "ToolResultPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 183,
+        "startColumn": 0,
+        "endLine": 192,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolUseContent": {
+      "id": "src/web/shared/types.ts::ToolUseContent",
+      "name": "ToolUseContent",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 321,
+        "startColumn": 0,
+        "endLine": 330,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolUseStartPayload": {
+      "id": "src/web/shared/types.ts::ToolUseStartPayload",
+      "name": "ToolUseStartPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 176,
+        "startColumn": 0,
+        "endLine": 181,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::UserAnswerPayload": {
+      "id": "src/web/shared/types.ts::UserAnswerPayload",
+      "name": "UserAnswerPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 261,
+        "startColumn": 0,
+        "endLine": 264,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::UserQuestionPayload": {
+      "id": "src/web/shared/types.ts::UserQuestionPayload",
+      "name": "UserQuestionPayload",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 244,
+        "startColumn": 0,
+        "endLine": 251,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::WebFetchResultData": {
+      "id": "src/web/shared/types.ts::WebFetchResultData",
+      "name": "WebFetchResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 431,
+        "startColumn": 0,
+        "endLine": 436,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::WebSearchResultData": {
+      "id": "src/web/shared/types.ts::WebSearchResultData",
+      "name": "WebSearchResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 438,
+        "startColumn": 0,
+        "endLine": 442,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::WriteResultData": {
+      "id": "src/web/shared/types.ts::WriteResultData",
+      "name": "WriteResultData",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 378,
+        "startColumn": 0,
+        "endLine": 382,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::WSMessage": {
+      "id": "src/web/shared/types.ts::WSMessage",
+      "name": "WSMessage",
+      "kind": "interface",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 11,
+        "startColumn": 0,
+        "endLine": 14,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ChatContent": {
+      "id": "src/web/shared/types.ts::ChatContent",
+      "name": "ChatContent",
+      "kind": "variable",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 298,
+        "startColumn": 0,
+        "endLine": 303,
+        "endColumn": 20
+      }
+    },
+    "src/web/shared/types.ts::ClientMessage": {
+      "id": "src/web/shared/types.ts::ClientMessage",
+      "name": "ClientMessage",
+      "kind": "variable",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 63,
+        "startColumn": 0,
+        "endLine": 112,
+        "endColumn": 58
+      }
+    },
+    "src/web/shared/types.ts::FileDiffType": {
+      "id": "src/web/shared/types.ts::FileDiffType",
+      "name": "FileDiffType",
+      "kind": "variable",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 977,
+        "startColumn": 0,
+        "endLine": 977,
+        "endColumn": 74
+      }
+    },
+    "src/web/shared/types.ts::ServerMessage": {
+      "id": "src/web/shared/types.ts::ServerMessage",
+      "name": "ServerMessage",
+      "kind": "variable",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 117,
+        "startColumn": 0,
+        "endLine": 172,
+        "endColumn": 78
+      }
+    },
+    "src/web/shared/types.ts::TOOL_DISPLAY_NAMES": {
+      "id": "src/web/shared/types.ts::TOOL_DISPLAY_NAMES",
+      "name": "TOOL_DISPLAY_NAMES",
+      "kind": "constant",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 610,
+        "startColumn": 13,
+        "endLine": 638,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::TOOL_ICONS": {
+      "id": "src/web/shared/types.ts::TOOL_ICONS",
+      "name": "TOOL_ICONS",
+      "kind": "constant",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 642,
+        "startColumn": 13,
+        "endLine": 670,
+        "endColumn": 1
+      }
+    },
+    "src/web/shared/types.ts::ToolResultData": {
+      "id": "src/web/shared/types.ts::ToolResultData",
+      "name": "ToolResultData",
+      "kind": "variable",
+      "moduleId": "src/web/shared/types.ts",
+      "location": {
+        "file": "src/web/shared/types.ts",
+        "startLine": 348,
+        "startColumn": 0,
+        "endLine": 359,
+        "endColumn": 19
+      }
+    }
+  },
+  "references": {
+    "moduleDeps": [
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/conversation.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      },
+      {
+        "source": "src/web/server/websocket.ts",
+        "target": "src/web/shared/types.ts",
+        "type": "dynamic",
+        "symbols": [],
+        "isTypeOnly": true
+      }
+    ],
+    "symbolCalls": [],
+    "typeRefs": []
+  }
+}

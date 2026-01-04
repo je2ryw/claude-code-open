@@ -83,6 +83,18 @@
    * 从 index 绘制架构图（分块模式）
    */
   window.drawArchitectureFromIndex = async function() {
+    // 防护检查：确保 index 和 views 存在
+    if (!window.index || !window.index.views || !window.index.views.architectureLayers) {
+      console.error('缺少架构数据: index.views.architectureLayers');
+      const loadingEl = document.querySelector('.loading');
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.textContent = '加载失败: 缺少架构层数据';
+        loadingEl.style.color = '#ff6b6b';
+      }
+      return;
+    }
+
     const container = document.getElementById('graph-container');
     const width = container.clientWidth;
     const height = container.clientHeight;
