@@ -75,12 +75,12 @@ $env:CLAUDE_API_KEY="your-api-key"
 
 ### 环境变量
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `ANTHROPIC_API_KEY` | API 密钥 | - |
-| `BASH_MAX_OUTPUT_LENGTH` | Bash 输出最大长度 | 30000 |
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 最大输出 tokens | 32000 |
-| `CLAUDE_TELEMETRY_ENABLED` | 启用遥测 | true |
+| 变量                            | 说明              | 默认值 |
+| ------------------------------- | ----------------- | ------ |
+| `ANTHROPIC_API_KEY`             | API 密钥          | -      |
+| `BASH_MAX_OUTPUT_LENGTH`        | Bash 输出最大长度 | 30000  |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 最大输出 tokens   | 32000  |
+| `CLAUDE_TELEMETRY_ENABLED`      | 启用遥测          | true   |
 
 ## 项目结构
 
@@ -187,40 +187,40 @@ src/
 
 ## 已实现工具（25+）
 
-| 工具 | 状态 | 说明 |
-|------|------|------|
-| **文件操作** | | |
-| Read | ✅ 完成 | 文件读取，支持图像/PDF/Notebook + 外部修改检测 |
-| Write | ✅ 完成 | 文件写入，带覆盖保护 |
-| Edit | ✅ 完成 | 文件编辑（字符串替换） |
-| MultiEdit | ✅ 完成 | 批量文件编辑（原子操作） |
-| **搜索与发现** | | |
-| Glob | ✅ 完成 | 文件模式匹配 |
-| Grep | ✅ 完成 | 内容搜索（基于 ripgrep），官方输出格式 |
-| **执行** | | |
-| Bash | ✅ 完成 | 命令执行，支持后台和沙箱 |
-| TaskOutput | ✅ 完成 | 获取后台命令/代理输出（统一 UUID/task_id 格式） |
-| KillShell | ✅ 完成 | 终止后台进程 |
-| **Web 访问** | | |
-| WebFetch | ✅ 完成 | Web 页面获取，带缓存 |
-| WebSearch | ⚠️ 需配置 | Web 搜索（需要 API 配置） |
-| **任务管理** | | |
-| TodoWrite | ✅ 完成 | 任务管理，带自动提醒系统 |
-| Task | ✅ 完成 | 子代理（explore、plan、guide 等） |
-| **规划** | | |
-| EnterPlanMode | ✅ 完成 | 进入规划模式，带权限系统 |
-| ExitPlanMode | ✅ 完成 | 退出规划模式 |
-| **交互** | | |
-| AskUserQuestion | ✅ 完成 | 询问用户问题（multiSelect、选项、验证） |
-| **代码工具** | | |
-| NotebookEdit | ✅ 完成 | Jupyter Notebook 单元格编辑（replace/insert/delete） |
-| LSP* | ✅ 完成 | 语言服务器协议集成（诊断、悬停、引用） |
-| **集成** | | |
-| ListMcpResources | ✅ 完成 | 列出 MCP 资源 |
-| ReadMcpResource | ✅ 完成 | 读取 MCP 资源 |
-| Skill | ✅ 完成 | 技能系统，带 args 参数和权限检查 |
-| **终端** | | |
-| Tmux | ✅ 完成 | 多终端会话管理（Linux/macOS） |
+| 工具             | 状态     | 说明                                                 |
+| ---------------- | -------- | ---------------------------------------------------- |
+| **文件操作**     |          |                                                      |
+| Read             | ✅ 完成   | 文件读取，支持图像/PDF/Notebook + 外部修改检测       |
+| Write            | ✅ 完成   | 文件写入，带覆盖保护                                 |
+| Edit             | ✅ 完成   | 文件编辑（字符串替换）                               |
+| MultiEdit        | ✅ 完成   | 批量文件编辑（原子操作）                             |
+| **搜索与发现**   |          |                                                      |
+| Glob             | ✅ 完成   | 文件模式匹配                                         |
+| Grep             | ✅ 完成   | 内容搜索（基于 ripgrep），官方输出格式               |
+| **执行**         |          |                                                      |
+| Bash             | ✅ 完成   | 命令执行，支持后台和沙箱                             |
+| TaskOutput       | ✅ 完成   | 获取后台命令/代理输出（统一 UUID/task_id 格式）      |
+| KillShell        | ✅ 完成   | 终止后台进程                                         |
+| **Web 访问**     |          |                                                      |
+| WebFetch         | ✅ 完成   | Web 页面获取，带缓存                                 |
+| WebSearch        | ⚠️ 需配置 | Web 搜索（需要 API 配置）                            |
+| **任务管理**     |          |                                                      |
+| TodoWrite        | ✅ 完成   | 任务管理，带自动提醒系统                             |
+| Task             | ✅ 完成   | 子代理（explore、plan、guide 等）                    |
+| **规划**         |          |                                                      |
+| EnterPlanMode    | ✅ 完成   | 进入规划模式，带权限系统                             |
+| ExitPlanMode     | ✅ 完成   | 退出规划模式                                         |
+| **交互**         |          |                                                      |
+| AskUserQuestion  | ✅ 完成   | 询问用户问题（multiSelect、选项、验证）              |
+| **代码工具**     |          |                                                      |
+| NotebookEdit     | ✅ 完成   | Jupyter Notebook 单元格编辑（replace/insert/delete） |
+| LSP*             | ✅ 完成   | 语言服务器协议集成（诊断、悬停、引用）               |
+| **集成**         |          |                                                      |
+| ListMcpResources | ✅ 完成   | 列出 MCP 资源                                        |
+| ReadMcpResource  | ✅ 完成   | 读取 MCP 资源                                        |
+| Skill            | ✅ 完成   | 技能系统，带 args 参数和权限检查                     |
+| **终端**         |          |                                                      |
+| Tmux             | ✅ 完成   | 多终端会话管理（Linux/macOS）                        |
 
 *LSP 工具在配置语言服务器后可用
 
@@ -534,27 +534,27 @@ npm run test:watch
 
 ## 与官方版本对比
 
-| 组件 | 状态 | 说明 |
-|------|------|------|
-| **核心架构** | ✅ 100% | 三层设计（Entry → Engine → Tools） |
-| **CLI 接口** | ✅ 100% | 所有命令和标志已实现 |
-| **工具系统** | ✅ 100% | 25+ 工具，功能完全一致 |
-| **API 客户端** | ✅ 100% | 流式、重试、成本计算 |
-| **权限系统** | ✅ 100% | Accept/bypass/plan 模式 |
-| **错误处理** | ✅ 100% | 工具级指数退避重试 |
-| **文件操作** | ✅ 100% | 外部修改检测 |
-| **后台任务** | ✅ 100% | 统一 UUID/task_id 格式 |
-| **输出格式** | ✅ 100% | Grep、LSP 和所有工具匹配官方 |
-| **沙箱** | ✅ 100% | Bubblewrap 隔离（Linux） |
-| **Hooks** | ✅ 100% | 完整事件系统 |
-| **MCP** | ✅ 100% | 完整协议支持 |
-| **UI 组件** | ✅ 100% | Ink/React 框架，带自动滚动 |
-| **技能/命令** | ✅ 100% | Args、权限、发现 |
-| **认证** | ✅ 100% | API 密钥 + OAuth |
-| **会话管理** | ✅ 100% | 持久化、恢复、导出 |
-| **上下文管理** | ✅ 100% | 自动摘要 |
-| **代码解析器** | ✅ 100% | Tree-sitter WASM |
-| **遥测** | ✅ 100% | 本地分析 |
+| 组件           | 状态   | 说明                               |
+| -------------- | ------ | ---------------------------------- |
+| **核心架构**   | ✅ 100% | 三层设计（Entry → Engine → Tools） |
+| **CLI 接口**   | ✅ 100% | 所有命令和标志已实现               |
+| **工具系统**   | ✅ 100% | 25+ 工具，功能完全一致             |
+| **API 客户端** | ✅ 100% | 流式、重试、成本计算               |
+| **权限系统**   | ✅ 100% | Accept/bypass/plan 模式            |
+| **错误处理**   | ✅ 100% | 工具级指数退避重试                 |
+| **文件操作**   | ✅ 100% | 外部修改检测                       |
+| **后台任务**   | ✅ 100% | 统一 UUID/task_id 格式             |
+| **输出格式**   | ✅ 100% | Grep、LSP 和所有工具匹配官方       |
+| **沙箱**       | ✅ 100% | Bubblewrap 隔离（Linux）           |
+| **Hooks**      | ✅ 100% | 完整事件系统                       |
+| **MCP**        | ✅ 100% | 完整协议支持                       |
+| **UI 组件**    | ✅ 100% | Ink/React 框架，带自动滚动         |
+| **技能/命令**  | ✅ 100% | Args、权限、发现                   |
+| **认证**       | ✅ 100% | API 密钥 + OAuth                   |
+| **会话管理**   | ✅ 100% | 持久化、恢复、导出                 |
+| **上下文管理** | ✅ 100% | 自动摘要                           |
+| **代码解析器** | ✅ 100% | Tree-sitter WASM                   |
+| **遥测**       | ✅ 100% | 本地分析                           |
 
 **总体准确性：~100%**（基于公共 API 和行为分析）
 
@@ -585,6 +585,7 @@ npx tsc --noEmit
 
 - **Discord：** [加入我们的 Discord](https://discord.gg/hs5BWGjt)
 - **X (Twitter)：** [@wangbingjie1989](https://x.com/wangbingjie1989)
+- **微信：** h694623326
 
 ## 许可证
 

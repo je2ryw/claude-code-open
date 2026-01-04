@@ -571,7 +571,7 @@ npx tsc --noEmit
 
 ## Community
 
-- **Discord:** [Join our Discord](https://discord.gg/hs5BWGjt)
+- **Discord:** [Join our Discord](https://discord.gg/bNyJKk6PVZ)
 - **X (Twitter):** [@wangbingjie1989](https://x.com/wangbingjie1989)
 
 ## License
