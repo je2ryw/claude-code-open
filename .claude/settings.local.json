@@ -122,7 +122,9 @@
       "Bash(lsof:*)",
       "Bash(tee:*)",
       "Bash(python3:*)",
-      "Bash(git -C f:/claude-code-open diff src/map/view-builder.ts)"
+      "Bash(git -C f:/claude-code-open diff src/map/view-builder.ts)",
+      "Bash(git -C f:/claude-code-open log --oneline --all -20 -- src/commands/map.ts)",
+      "Bash(git -C f:/claude-code-open show 45928d1:src/commands/map.ts)"
     ]
   }
 }

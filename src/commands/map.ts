@@ -430,9 +430,6 @@ async function handleStatus(
   }
 }
 
-/**
- * implement 子命令 - 根据蓝图中的计划模块生成代码
- */
 async function handleImplement(
   ctx: CommandContext,
   options: Record<string, string | boolean>
@@ -548,9 +545,6 @@ async function handleImplement(
   }
 }
 
-/**
- * 实现指定的计划模块
- */
 async function implementModules(
   ctx: CommandContext,
   modules: Array<{
@@ -722,8 +716,6 @@ export const mapCommand: SlashCommand = {
 选项:
   --skip-semantics, -s  跳过 AI 语义生成
   --port <n>            服务器端口 (默认: 3030)
-  --id <path>           指定要实现的模块路径 (implement)
-  --all                 实现所有计划模块 (implement)
 
 输出目录: .claude/map/
   • index.json          轻量级索引文件
@@ -739,7 +731,8 @@ export const mapCommand: SlashCommand = {
   /map -s               生成蓝图（跳过语义，更快）
   /map serve            启动可视化服务器
   /map serve --port 8080
-  /map status`,
+  /map view             生成并启动可视化
+  /map status           查看当前蓝图状态`,
   category: 'development',
   execute: async (ctx: CommandContext): Promise<CommandResult> => {
     const { subcommand, options } = parseArgs(ctx.args);
