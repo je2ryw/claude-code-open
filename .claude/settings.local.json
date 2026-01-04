@@ -124,7 +124,12 @@
       "Bash(python3:*)",
       "Bash(git -C f:/claude-code-open diff src/map/view-builder.ts)",
       "Bash(git -C f:/claude-code-open log --oneline --all -20 -- src/commands/map.ts)",
-      "Bash(git -C f:/claude-code-open show 45928d1:src/commands/map.ts)"
+      "Bash(git -C f:/claude-code-open show 45928d1:src/commands/map.ts)",
+      "Bash(gh issue view:*)",
+      "Bash(git -C f:/claude-code-open log:*)",
+      "Bash(git -C f:/claude-code-open add .github/FUNDING.yml)",
+      "Bash(git -C f:/claude-code-open commit -m \"$\\(cat <<''EOF''\nfeat: 启用 GitHub Sponsors 赞助功能\n\n添加 .github/FUNDING.yml 配置文件，支持通过 GitHub Sponsors 赞助项目。\n\nCloses #43\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C f:/claude-code-open push origin main)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-# The world needs an open-source Claude Code.
+# The world needs an open-source Claude Code.It will become the foundational infrastructure of AI in the future, running on every PC.
 
 A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.0.76.
 
