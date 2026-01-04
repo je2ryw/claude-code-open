@@ -17,6 +17,8 @@ import {
   VisualizationServer,
 } from '../map/index.js';
 import { ChunkedBlueprintGenerator } from '../map/chunked-generator.js';
+import { IncrementalBlueprintUpdater } from '../map/incremental-updater.js';
+import { BlueprintCodeSyncManager } from '../map/sync-manager.js';
 
 // ============================================================================
 // 辅助函数
@@ -616,11 +618,284 @@ async function implementModules(
     `\n🎉 **完成！** 已生成 ${modules.length} 个模块骨架。\n\n` +
     '下一步：\n' +
     '1. 完善生成的代码\n' +
-    '2. 运行 `/map generate` 更新蓝图\n' +
+    '2. 运行 `/map update` 增量更新蓝图\n' +
     '3. 使用 `/map serve` 查看更新后的架构'
   );
 
   return { success: true };
+}
+
+/**
+ * update 子命令 - 增量更新蓝图
+ */
+async function handleUpdate(
+  ctx: CommandContext,
+  options: Record<string, string | boolean>
+): Promise<CommandResult> {
+  const { config, ui } = ctx;
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+  const indexFile = path.join(mapDir, 'index.json');
+
+  // 检查蓝图是否存在
+  if (!fs.existsSync(indexFile)) {
+    ui.addMessage(
+      'assistant',
+      '❌ 未找到蓝图。请先运行 `/map generate` 生成蓝图。'
+    );
+    return { success: false, message: 'Blueprint not found' };
+  }
+
+  ui.addMessage('assistant', '正在检测变更并更新蓝图...');
+
+  try {
+    const updater = new IncrementalBlueprintUpdater(config.cwd);
+
+    const result = await updater.update({
+      fullRebuild: options.full === true,
+      targetDir: options.dir as string | undefined,
+      verbose: options.verbose === true,
+      onProgress: (message) => {
+        if (options.verbose) {
+          ui.addMessage('assistant', message);
+        }
+      },
+    });
+
+    if (result.chunksUpdated === 0) {
+      ui.addMessage(
+        'assistant',
+        '没有检测到变更，蓝图已是最新状态。\n\n' +
+        '提示：\n' +
+        '  • 使用 `--full` 强制完全重新生成\n' +
+        '  • 使用 `--dir <目录>` 更新指定目录'
+      );
+      return { success: true };
+    }
+
+    ui.addMessage(
+      'assistant',
+      `✅ ${result.message}\n\n` +
+      `变更文件：\n${result.files.map(f => `  • ${f}`).join('\n')}\n\n` +
+      `受影响目录：\n${result.affectedDirs.map(d => `  • ${d || 'root'}`).join('\n')}`
+    );
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ui.addMessage('assistant', `❌ 更新失败: ${message}`);
+    return { success: false, message };
+  }
+}
+
+/**
+ * sync 子命令 - 同步蓝图和代码
+ */
+async function handleSync(
+  ctx: CommandContext,
+  options: Record<string, string | boolean>
+): Promise<CommandResult> {
+  const { config, ui } = ctx;
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+
+  // 检查蓝图是否存在
+  if (!fs.existsSync(mapDir)) {
+    ui.addMessage(
+      'assistant',
+      '❌ 未找到蓝图目录。请先运行 `/map generate` 生成蓝图。'
+    );
+    return { success: false, message: 'Blueprint not found' };
+  }
+
+  const syncManager = new BlueprintCodeSyncManager(config.cwd);
+  const direction = options.direction || 'code-to-blueprint';
+
+  if (direction === 'blueprint-to-code' || options['to-code']) {
+    // 蓝图 → 代码
+    ui.addMessage('assistant', '正在从蓝图同步到代码...');
+
+    const result = await syncManager.syncAllPlannedModules({
+      verbose: options.verbose === true,
+      onProgress: (message) => {
+        if (options.verbose) {
+          ui.addMessage('assistant', message);
+        }
+      },
+    });
+
+    if (result.syncedFiles.length === 0 && result.conflicts.length === 0) {
+      ui.addMessage('assistant', '没有需要同步的计划模块。');
+      return { success: true };
+    }
+
+    let message = `✅ ${result.message}\n\n`;
+
+    if (result.syncedFiles.length > 0) {
+      message += `已生成：\n${result.syncedFiles.map(f => `  • ${f}`).join('\n')}\n\n`;
+    }
+
+    if (result.conflicts.length > 0) {
+      message += `⚠️ 冲突：\n${result.conflicts.map(c =>
+        `  • ${c.moduleId}: ${c.description}`
+      ).join('\n')}`;
+    }
+
+    ui.addMessage('assistant', message);
+    return { success: result.success };
+  } else {
+    // 代码 → 蓝图（默认）
+    ui.addMessage('assistant', '正在从代码同步到蓝图...');
+
+    // 获取 git diff 的文件
+    const updater = new IncrementalBlueprintUpdater(config.cwd);
+    const updateResult = await updater.update({
+      verbose: options.verbose === true,
+      onProgress: (message) => {
+        if (options.verbose) {
+          ui.addMessage('assistant', message);
+        }
+      },
+    });
+
+    if (updateResult.files.length > 0) {
+      const syncResult = await syncManager.syncCodeToBlueprint(updateResult.files, {
+        verbose: options.verbose === true,
+        onProgress: (message) => {
+          if (options.verbose) {
+            ui.addMessage('assistant', message);
+          }
+        },
+      });
+
+      let message = `✅ ${syncResult.message}\n\n`;
+
+      if (syncResult.conflicts.length > 0) {
+        message += `⚠️ 检测到冲突：\n${syncResult.conflicts.map(c =>
+          `  • ${c.moduleId}: ${c.description}`
+        ).join('\n')}`;
+      }
+
+      ui.addMessage('assistant', message);
+      return { success: syncResult.success };
+    } else {
+      ui.addMessage('assistant', '没有检测到变更。');
+      return { success: true };
+    }
+  }
+}
+
+/**
+ * watch 子命令 - 监听文件变化并自动更新
+ */
+async function handleWatch(
+  ctx: CommandContext,
+  options: Record<string, string | boolean>
+): Promise<CommandResult> {
+  const { config, ui } = ctx;
+  const mapDir = path.join(config.cwd, '.claude', 'map');
+  const indexFile = path.join(mapDir, 'index.json');
+
+  // 检查蓝图是否存在
+  if (!fs.existsSync(indexFile)) {
+    ui.addMessage(
+      'assistant',
+      '❌ 未找到蓝图。请先运行 `/map generate` 生成蓝图。'
+    );
+    return { success: false, message: 'Blueprint not found' };
+  }
+
+  ui.addMessage(
+    'assistant',
+    '🔍 **文件监听模式启动**\n\n' +
+    '正在监听代码变化...\n' +
+    '每当检测到变更时，蓝图将自动更新。\n\n' +
+    '注意：此功能需要安装 chokidar 依赖。\n' +
+    '如果尚未安装，请运行：`npm install chokidar`\n\n' +
+    '按 Ctrl+C 停止监听。'
+  );
+
+  try {
+    // 动态导入 chokidar（可能未安装）
+    const { default: chokidar } = await import('chokidar');
+
+    const watcher = chokidar.watch(config.cwd, {
+      ignored: [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.claude/map/**',
+        '**/*.d.ts',
+      ],
+      persistent: true,
+      ignoreInitial: true,
+    });
+
+    const pendingUpdates = new Set<string>();
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    const performUpdate = async () => {
+      const files = Array.from(pendingUpdates);
+      pendingUpdates.clear();
+
+      if (files.length === 0) return;
+
+      ui.addMessage('assistant', `检测到 ${files.length} 个文件变更，正在更新蓝图...`);
+
+      try {
+        const updater = new IncrementalBlueprintUpdater(config.cwd);
+        const result = await updater.update({ files });
+
+        ui.addMessage(
+          'assistant',
+          `✓ 蓝图已更新 (${result.chunksUpdated} 个 chunk)`
+        );
+      } catch (error) {
+        ui.addMessage(
+          'assistant',
+          `✗ 更新失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    };
+
+    const queueUpdate = (filePath: string) => {
+      // 过滤非源文件
+      const ext = path.extname(filePath).toLowerCase();
+      if (!['.ts', '.tsx', '.js', '.jsx'].includes(ext)) return;
+
+      // 相对路径
+      const relativePath = path.relative(config.cwd, filePath).replace(/\\/g, '/');
+      pendingUpdates.add(relativePath);
+
+      // 防抖：500ms 内的多次变更只触发一次更新
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(performUpdate, 500);
+    };
+
+    watcher
+      .on('change', queueUpdate)
+      .on('add', queueUpdate)
+      .on('unlink', queueUpdate);
+
+    // 保持进程运行
+    await new Promise(() => {}); // 永不 resolve
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes('Cannot find module') || message.includes('chokidar')) {
+      ui.addMessage(
+        'assistant',
+        '❌ 需要安装 chokidar 依赖才能使用 watch 功能。\n\n' +
+        '请运行：`npm install chokidar`'
+      );
+    } else {
+      ui.addMessage('assistant', `❌ 启动监听失败: ${message}`);
+    }
+
+    return { success: false, message };
+  }
 }
 
 /**
@@ -708,6 +983,9 @@ export const mapCommand: SlashCommand = {
 
 子命令:
   generate    生成分块代码蓝图 (默认)
+  update      增量更新蓝图（基于 git diff）
+  sync        同步蓝图和代码
+  watch       监听文件变化并自动更新
   serve       启动可视化服务器
   view        生成并打开可视化
   status      查看当前蓝图状态
@@ -716,6 +994,10 @@ export const mapCommand: SlashCommand = {
 选项:
   --skip-semantics, -s  跳过 AI 语义生成
   --port <n>            服务器端口 (默认: 3030)
+  --full                强制完全重新生成（用于 update）
+  --dir <目录>          只更新指定目录（用于 update）
+  --to-code             从蓝图同步到代码（用于 sync）
+  --verbose             显示详细日志
 
 输出目录: .claude/map/
   • index.json          轻量级索引文件
@@ -729,6 +1011,11 @@ export const mapCommand: SlashCommand = {
 示例:
   /map                  生成分块蓝图到 .claude/map/
   /map -s               生成蓝图（跳过语义，更快）
+  /map update           增量更新蓝图
+  /map update --full    完全重新生成
+  /map sync             代码变更同步到蓝图
+  /map sync --to-code   从蓝图生成代码
+  /map watch            监听文件变化自动更新
   /map serve            启动可视化服务器
   /map serve --port 8080
   /map view             生成并启动可视化
@@ -740,6 +1027,15 @@ export const mapCommand: SlashCommand = {
     switch (subcommand) {
       case 'generate':
         return handleGenerate(ctx, options);
+
+      case 'update':
+        return handleUpdate(ctx, options);
+
+      case 'sync':
+        return handleSync(ctx, options);
+
+      case 'watch':
+        return handleWatch(ctx, options);
 
       case 'serve':
         return handleServe(ctx, options);

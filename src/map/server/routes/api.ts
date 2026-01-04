@@ -578,4 +578,197 @@ export function setupApiRoutes(app: Express, ontologyPath: string): void {
       res.status(500).json({ error: message });
     }
   });
+
+  // ============ 增量更新 API 端点 ============
+
+  // 6. GET /api/chunk-metadata - 获取 chunk 元数据（用于缓存验证）
+  app.get('/api/chunk-metadata', (req: Request, res: Response) => {
+    try {
+      const chunkPath = req.query.path as string;
+
+      if (!chunkPath) {
+        res.status(400).json({ error: '缺少 path 参数' });
+        return;
+      }
+
+      // 读取 index.json 中的元数据
+      const indexPath = path.join(mapDir, 'index.json');
+      if (!fs.existsSync(indexPath)) {
+        res.status(404).json({ error: 'Index not found' });
+        return;
+      }
+
+      const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+
+      // 从 chunkIndex 获取信息
+      const chunkFile = index.chunkIndex?.[chunkPath];
+      if (!chunkFile) {
+        res.status(404).json({ error: 'Chunk not found in index' });
+        return;
+      }
+
+      // 获取 chunk 文件的实际信息
+      const fullChunkPath = path.join(mapDir, chunkFile);
+      if (!fs.existsSync(fullChunkPath)) {
+        res.status(404).json({ error: 'Chunk file not found' });
+        return;
+      }
+
+      const stats = fs.statSync(fullChunkPath);
+      const chunkContent = fs.readFileSync(fullChunkPath, 'utf8');
+
+      // 计算简单的 checksum（基于内容长度和修改时间）
+      const checksum = `${stats.size}-${stats.mtime.getTime()}`;
+
+      res.json({
+        path: chunkPath,
+        file: chunkFile,
+        lastModified: stats.mtime.toISOString(),
+        size: stats.size,
+        checksum,
+        moduleCount: Object.keys(JSON.parse(chunkContent).modules || {}).length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 7. GET /api/all-chunk-metadata - 获取所有 chunk 的元数据
+  app.get('/api/all-chunk-metadata', (req: Request, res: Response) => {
+    try {
+      const chunksDir = path.join(mapDir, 'chunks');
+      if (!fs.existsSync(chunksDir)) {
+        res.json({ chunks: {} });
+        return;
+      }
+
+      const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.endsWith('.json'));
+      const metadata: Record<string, any> = {};
+
+      for (const chunkFile of chunkFiles) {
+        const fullPath = path.join(chunksDir, chunkFile);
+        const stats = fs.statSync(fullPath);
+        const dirPath = chunkFile === 'root.json' ? '' : chunkFile.replace('.json', '').replace(/_/g, '/');
+
+        metadata[dirPath] = {
+          file: `chunks/${chunkFile}`,
+          lastModified: stats.mtime.toISOString(),
+          size: stats.size,
+          checksum: `${stats.size}-${stats.mtime.getTime()}`,
+        };
+      }
+
+      res.json({ chunks: metadata });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 8. GET /api/global-dependency-graph - 获取全局依赖图
+  app.get('/api/global-dependency-graph', (req: Request, res: Response) => {
+    try {
+      const indexPath = path.join(mapDir, 'index.json');
+      if (!fs.existsSync(indexPath)) {
+        res.status(404).json({ error: 'Index not found' });
+        return;
+      }
+
+      const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+
+      if (!index.globalDependencyGraph) {
+        res.json({ graph: {} });
+        return;
+      }
+
+      res.json({ graph: index.globalDependencyGraph });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 9. GET /api/planned-modules - 获取所有计划模块
+  app.get('/api/planned-modules', (req: Request, res: Response) => {
+    try {
+      const chunksDir = path.join(mapDir, 'chunks');
+      if (!fs.existsSync(chunksDir)) {
+        res.json({ modules: [] });
+        return;
+      }
+
+      const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.endsWith('.json'));
+      const plannedModules: any[] = [];
+
+      for (const chunkFile of chunkFiles) {
+        const fullPath = path.join(chunksDir, chunkFile);
+        const chunk = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+
+        if (chunk.plannedModules && Array.isArray(chunk.plannedModules)) {
+          const dirPath = chunkFile === 'root.json' ? '' : chunkFile.replace('.json', '').replace(/_/g, '/');
+          for (const planned of chunk.plannedModules) {
+            plannedModules.push({
+              ...planned,
+              chunkPath: dirPath,
+            });
+          }
+        }
+      }
+
+      // 按优先级排序
+      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      plannedModules.sort((a, b) =>
+        (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+      );
+
+      res.json({ modules: plannedModules });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // 10. GET /api/refactoring-tasks - 获取所有重构任务
+  app.get('/api/refactoring-tasks', (req: Request, res: Response) => {
+    try {
+      const chunksDir = path.join(mapDir, 'chunks');
+      if (!fs.existsSync(chunksDir)) {
+        res.json({ tasks: [] });
+        return;
+      }
+
+      const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.endsWith('.json'));
+      const tasks: any[] = [];
+
+      for (const chunkFile of chunkFiles) {
+        const fullPath = path.join(chunksDir, chunkFile);
+        const chunk = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+
+        if (chunk.refactoringTasks && Array.isArray(chunk.refactoringTasks)) {
+          const dirPath = chunkFile === 'root.json' ? '' : chunkFile.replace('.json', '').replace(/_/g, '/');
+          for (const task of chunk.refactoringTasks) {
+            // 只返回未完成的任务
+            if (task.status !== 'completed' && task.status !== 'cancelled') {
+              tasks.push({
+                ...task,
+                chunkPath: dirPath,
+              });
+            }
+          }
+        }
+      }
+
+      // 按优先级排序
+      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      tasks.sort((a, b) =>
+        (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+      );
+
+      res.json({ tasks });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
 }

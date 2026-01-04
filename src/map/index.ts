@@ -131,3 +131,52 @@ export {
   generateEnhancedBlueprint,
   generateAndSaveEnhancedBlueprint,
 } from './enhanced-generator.js';
+
+// ============================================================================
+// 分块模式模块
+// ============================================================================
+
+// 分块生成器
+export {
+  ChunkedBlueprintGenerator,
+} from './chunked-generator.js';
+
+// 分块类型
+export type {
+  ChunkedIndex,
+  ChunkData,
+  ChunkedGenerateOptions,
+  DirectoryNodeWithChunk,
+  ArchitectureLayersWithChunks,
+  LayerWithChunks,
+  GlobalDependencyNode,
+  ChunkMetadata,
+  ChunkReferences,
+  LightweightViews,
+  ModuleStatus,
+  PlannedModule,
+  RefactoringTask,
+  RefactoringType,
+  ModuleDesignMeta,
+  ChunkDataWithDesign,
+} from './types-chunked.js';
+
+// ============================================================================
+// 增量更新与同步模块
+// ============================================================================
+
+// 增量更新器
+export {
+  IncrementalBlueprintUpdater,
+  type UpdateOptions,
+  type UpdateResult,
+} from './incremental-updater.js';
+
+// 双向同步管理器
+export {
+  BlueprintCodeSyncManager,
+  type SyncOptions,
+  type SyncResult,
+  type Conflict,
+  type CodeGenerationResult,
+} from './sync-manager.js';
