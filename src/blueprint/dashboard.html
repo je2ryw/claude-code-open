@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>蓝图系统仪表板 | Claude Code</title>
+  <style>
+    :root {
+      --bg-primary: #1a1b26;
+      --bg-secondary: #24283b;
+      --bg-tertiary: #414868;
+      --text-primary: #c0caf5;
+      --text-secondary: #a9b1d6;
+      --accent-blue: #7aa2f7;
+      --accent-green: #9ece6a;
+      --accent-red: #f7768e;
+      --accent-yellow: #e0af68;
+      --accent-purple: #bb9af7;
+      --border-color: #414868;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* 头部 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      color: var(--accent-blue);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent-blue);
+      color: var(--bg-primary);
+    }
+
+    .btn-success {
+      background: var(--accent-green);
+      color: var(--bg-primary);
+    }
+
+    .btn-danger {
+      background: var(--accent-red);
+      color: var(--bg-primary);
+    }
+
+    .btn:hover {
+      opacity: 0.8;
+    }
+
+    /* 统计卡片 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--bg-secondary);
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .stat-card h3 {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    .stat-card .value.blue { color: var(--accent-blue); }
+    .stat-card .value.green { color: var(--accent-green); }
+    .stat-card .value.red { color: var(--accent-red); }
+    .stat-card .value.yellow { color: var(--accent-yellow); }
+    .stat-card .value.purple { color: var(--accent-purple); }
+
+    /* 主内容区 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 350px 1fr 300px;
+      gap: 20px;
+    }
+
+    @media (max-width: 1200px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 面板 */
+    .panel {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 15px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .panel-body {
+      padding: 15px 20px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    /* 任务树 */
+    .task-tree {
+      font-size: 13px;
+    }
+
+    .tree-node {
+      margin-left: 20px;
+      padding: 5px 0;
+    }
+
+    .tree-node.root {
+      margin-left: 0;
+    }
+
+    .node-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .node-content:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .node-icon {
+      width: 20px;
+      text-align: center;
+    }
+
+    .node-name {
+      flex: 1;
+    }
+
+    .node-status {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .status-pending { background: var(--bg-tertiary); color: var(--text-secondary); }
+    .status-coding { background: var(--accent-blue); color: var(--bg-primary); }
+    .status-testing { background: var(--accent-yellow); color: var(--bg-primary); }
+    .status-passed { background: var(--accent-green); color: var(--bg-primary); }
+    .status-failed { background: var(--accent-red); color: var(--bg-primary); }
+
+    /* 时间线 */
+    .timeline {
+      position: relative;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--border-color);
+    }
+
+    .timeline-item {
+      position: relative;
+      padding-left: 35px;
+      padding-bottom: 15px;
+    }
+
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: 5px;
+      top: 5px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent-blue);
+      border: 2px solid var(--bg-secondary);
+    }
+
+    .timeline-item.checkpoint::before {
+      background: var(--accent-purple);
+    }
+
+    .timeline-item.error::before {
+      background: var(--accent-red);
+    }
+
+    .timeline-item.success::before {
+      background: var(--accent-green);
+    }
+
+    .timeline-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .timeline-content {
+      font-size: 13px;
+    }
+
+    /* Worker 列表 */
+    .worker-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .worker-card {
+      background: var(--bg-tertiary);
+      padding: 12px;
+      border-radius: 6px;
+    }
+
+    .worker-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .worker-id {
+      font-size: 12px;
+      color: var(--accent-purple);
+    }
+
+    .worker-status {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .worker-task {
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .worker-progress {
+      height: 4px;
+      background: var(--bg-primary);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .worker-progress-bar {
+      height: 100%;
+      background: var(--accent-green);
+      transition: width 0.3s;
+    }
+
+    /* TDD 循环指示器 */
+    .tdd-cycle {
+      display: flex;
+      justify-content: space-around;
+      padding: 20px;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    .tdd-phase {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      opacity: 0.5;
+    }
+
+    .tdd-phase.active {
+      opacity: 1;
+    }
+
+    .tdd-phase-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-bottom: 8px;
+      background: var(--bg-secondary);
+    }
+
+    .tdd-phase.active .tdd-phase-icon {
+      background: var(--accent-blue);
+    }
+
+    .tdd-phase.completed .tdd-phase-icon {
+      background: var(--accent-green);
+    }
+
+    .tdd-phase-name {
+      font-size: 11px;
+      text-align: center;
+    }
+
+    /* 检查点列表 */
+    .checkpoint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .checkpoint-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .checkpoint-item:hover {
+      background: var(--border-color);
+    }
+
+    .checkpoint-icon {
+      font-size: 18px;
+    }
+
+    .checkpoint-info {
+      flex: 1;
+    }
+
+    .checkpoint-name {
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .checkpoint-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .checkpoint-action {
+      padding: 4px 8px;
+      font-size: 11px;
+      background: var(--accent-purple);
+      color: var(--bg-primary);
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .checkpoint-item:hover .checkpoint-action {
+      opacity: 1;
+    }
+
+    /* 加载动画 */
+    .loading {
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* 空状态 */
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <div class="header">
+      <h1>🐝 蓝图系统仪表板</h1>
+      <div class="header-actions">
+        <button class="btn btn-primary" onclick="refreshData()">🔄 刷新</button>
+        <button class="btn btn-success" id="startBtn" onclick="toggleExecution()">▶️ 开始执行</button>
+        <button class="btn btn-danger" onclick="createCheckpoint()">📌 创建检查点</button>
+      </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3>总任务数</h3>
+        <div class="value blue" id="totalTasks">--</div>
+      </div>
+      <div class="stat-card">
+        <h3>已完成</h3>
+        <div class="value green" id="passedTasks">--</div>
+      </div>
+      <div class="stat-card">
+        <h3>执行中</h3>
+        <div class="value yellow" id="runningTasks">--</div>
+      </div>
+      <div class="stat-card">
+        <h3>失败</h3>
+        <div class="value red" id="failedTasks">--</div>
+      </div>
+      <div class="stat-card">
+        <h3>进度</h3>
+        <div class="value purple" id="progress">--%</div>
+      </div>
+      <div class="stat-card">
+        <h3>活跃 Worker</h3>
+        <div class="value blue" id="activeWorkers">--</div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-grid">
+      <!-- 左侧：任务树 -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>🌳 任务树</h2>
+          <span id="treeDepth">深度: --</span>
+        </div>
+        <div class="panel-body">
+          <div id="taskTree" class="task-tree">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中间：主面板 -->
+      <div>
+        <!-- TDD 循环状态 -->
+        <div class="panel" style="margin-bottom: 20px;">
+          <div class="panel-header">
+            <h2>🔄 TDD 循环状态</h2>
+          </div>
+          <div class="panel-body">
+            <div class="tdd-cycle">
+              <div class="tdd-phase" id="phase-write_test">
+                <div class="tdd-phase-icon">✍️</div>
+                <div class="tdd-phase-name">编写测试</div>
+              </div>
+              <div class="tdd-phase" id="phase-run_test_red">
+                <div class="tdd-phase-icon">🔴</div>
+                <div class="tdd-phase-name">红灯</div>
+              </div>
+              <div class="tdd-phase" id="phase-write_code">
+                <div class="tdd-phase-icon">💻</div>
+                <div class="tdd-phase-name">编写代码</div>
+              </div>
+              <div class="tdd-phase" id="phase-run_test_green">
+                <div class="tdd-phase-icon">🟢</div>
+                <div class="tdd-phase-name">绿灯</div>
+              </div>
+              <div class="tdd-phase" id="phase-refactor">
+                <div class="tdd-phase-icon">🔧</div>
+                <div class="tdd-phase-name">重构</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Worker 列表 -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>🐝 Worker 蜜蜂们</h2>
+            <span id="workerCount">0 / 5</span>
+          </div>
+          <div class="panel-body">
+            <div id="workerList" class="worker-list">
+              <div class="empty-state">
+                <div class="empty-state-icon">🐝</div>
+                <div>暂无活跃的 Worker</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：时间线和检查点 -->
+      <div>
+        <!-- 时间线 -->
+        <div class="panel" style="margin-bottom: 20px;">
+          <div class="panel-header">
+            <h2>📜 时间线</h2>
+          </div>
+          <div class="panel-body" style="max-height: 300px;">
+            <div id="timeline" class="timeline">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 检查点 -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>⏱️ 时光倒流</h2>
+          </div>
+          <div class="panel-body">
+            <div id="checkpointList" class="checkpoint-list">
+              <div class="empty-state">
+                <div class="empty-state-icon">📌</div>
+                <div>暂无检查点</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API 基础路径
+    const API_BASE = '/api/blueprint';
+
+    // 状态
+    let isRunning = false;
+    let currentTreeId = null;
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshData();
+      // 每 5 秒刷新
+      setInterval(refreshData, 5000);
+    });
+
+    // 刷新数据
+    async function refreshData() {
+      try {
+        const response = await fetch(`${API_BASE}/coordinator/dashboard`);
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          updateDashboard(result.data);
+        }
+      } catch (error) {
+        console.error('刷新数据失败:', error);
+      }
+    }
+
+    // 更新仪表板
+    function updateDashboard(data) {
+      // 更新统计
+      if (data.stats) {
+        document.getElementById('totalTasks').textContent = data.stats.totalTasks || 0;
+        document.getElementById('passedTasks').textContent = data.stats.passedTasks || 0;
+        document.getElementById('runningTasks').textContent = data.stats.runningTasks || 0;
+        document.getElementById('failedTasks').textContent = data.stats.failedTasks || 0;
+        document.getElementById('progress').textContent =
+          (data.stats.progressPercentage || 0).toFixed(1) + '%';
+        document.getElementById('treeDepth').textContent = `深度: ${data.stats.maxDepth || 0}`;
+      }
+
+      // 更新 Worker 数量
+      const workers = data.workers || [];
+      const activeWorkers = workers.filter(w => w.status !== 'idle').length;
+      document.getElementById('activeWorkers').textContent = activeWorkers;
+      document.getElementById('workerCount').textContent = `${activeWorkers} / 5`;
+
+      // 更新任务树
+      if (data.taskTree) {
+        currentTreeId = data.taskTree.id;
+        renderTaskTree(data.taskTree.root);
+      }
+
+      // 更新 Worker 列表
+      renderWorkerList(workers);
+
+      // 更新时间线
+      if (data.timeline) {
+        renderTimeline(data.timeline);
+      }
+
+      // 更新执行状态
+      isRunning = data.queen?.status === 'coordinating';
+      updateStartButton();
+    }
+
+    // 渲染任务树
+    function renderTaskTree(node, container = null) {
+      if (!container) {
+        container = document.getElementById('taskTree');
+        container.innerHTML = '';
+      }
+
+      const nodeEl = document.createElement('div');
+      nodeEl.className = `tree-node ${node.depth === 0 ? 'root' : ''}`;
+
+      const statusClass = `status-${node.status}`;
+      const icon = getStatusIcon(node.status);
+
+      nodeEl.innerHTML = `
+        <div class="node-content" onclick="selectTask('${node.id}')">
+          <span class="node-icon">${icon}</span>
+          <span class="node-name">${node.name}</span>
+          <span class="node-status ${statusClass}">${node.status}</span>
+        </div>
+      `;
+
+      container.appendChild(nodeEl);
+
+      // 递归渲染子节点
+      if (node.children && node.children.length > 0) {
+        const childContainer = document.createElement('div');
+        childContainer.style.marginLeft = '20px';
+        for (const child of node.children) {
+          renderTaskTree(child, childContainer);
+        }
+        nodeEl.appendChild(childContainer);
+      }
+    }
+
+    // 获取状态图标
+    function getStatusIcon(status) {
+      const icons = {
+        pending: '⏳',
+        blocked: '🚫',
+        test_writing: '✍️',
+        coding: '💻',
+        testing: '🧪',
+        test_failed: '❌',
+        passed: '✅',
+        review: '👀',
+        approved: '✅',
+        rejected: '❌',
+        cancelled: '🚫',
+      };
+      return icons[status] || '❓';
+    }
+
+    // 渲染 Worker 列表
+    function renderWorkerList(workers) {
+      const container = document.getElementById('workerList');
+
+      if (!workers || workers.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🐝</div>
+            <div>暂无活跃的 Worker</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = workers.map(worker => {
+        const progress = worker.tddCycle ?
+          ((worker.tddCycle.iteration / worker.tddCycle.maxIterations) * 100) : 0;
+
+        return `
+          <div class="worker-card">
+            <div class="worker-header">
+              <span class="worker-id">${worker.id.substring(0, 8)}...</span>
+              <span class="worker-status status-${worker.status}">${worker.status}</span>
+            </div>
+            <div class="worker-task">${worker.taskId ? '任务: ' + worker.taskId.substring(0, 8) + '...' : '空闲'}</div>
+            <div class="worker-progress">
+              <div class="worker-progress-bar" style="width: ${progress}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 更新 TDD 阶段高亮
+      const activeWorker = workers.find(w => w.status !== 'idle');
+      if (activeWorker && activeWorker.tddCycle) {
+        updateTDDPhase(activeWorker.tddCycle.phase);
+      }
+    }
+
+    // 更新 TDD 阶段
+    function updateTDDPhase(phase) {
+      const phases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor'];
+      phases.forEach(p => {
+        const el = document.getElementById(`phase-${p}`);
+        if (el) {
+          el.classList.remove('active', 'completed');
+          if (p === phase) {
+            el.classList.add('active');
+          } else if (phases.indexOf(p) < phases.indexOf(phase)) {
+            el.classList.add('completed');
+          }
+        }
+      });
+    }
+
+    // 渲染时间线
+    function renderTimeline(events) {
+      const container = document.getElementById('timeline');
+
+      if (!events || events.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📜</div>
+            <div>暂无事件</div>
+          </div>
+        `;
+        return;
+      }
+
+      // 只显示最近 20 条
+      const recentEvents = events.slice(-20).reverse();
+
+      container.innerHTML = recentEvents.map(event => {
+        const typeClass = event.type.includes('fail') ? 'error' :
+                         event.type.includes('complete') || event.type.includes('pass') ? 'success' :
+                         event.type.includes('checkpoint') ? 'checkpoint' : '';
+
+        const time = new Date(event.timestamp).toLocaleTimeString();
+
+        return `
+          <div class="timeline-item ${typeClass}">
+            <div class="timeline-time">${time}</div>
+            <div class="timeline-content">${event.description}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 切换执行状态
+    async function toggleExecution() {
+      try {
+        if (isRunning) {
+          await fetch(`${API_BASE}/coordinator/stop`, { method: 'POST' });
+        } else {
+          await fetch(`${API_BASE}/coordinator/start`, { method: 'POST' });
+        }
+        isRunning = !isRunning;
+        updateStartButton();
+        refreshData();
+      } catch (error) {
+        console.error('切换执行状态失败:', error);
+      }
+    }
+
+    // 更新开始按钮
+    function updateStartButton() {
+      const btn = document.getElementById('startBtn');
+      if (isRunning) {
+        btn.textContent = '⏸️ 暂停执行';
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-danger');
+      } else {
+        btn.textContent = '▶️ 开始执行';
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-success');
+      }
+    }
+
+    // 创建检查点
+    async function createCheckpoint() {
+      if (!currentTreeId) {
+        alert('请先选择一个任务树');
+        return;
+      }
+
+      const name = prompt('请输入检查点名称:');
+      if (!name) return;
+
+      try {
+        await fetch(`${API_BASE}/time-travel/${currentTreeId}/checkpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        alert('检查点创建成功!');
+        refreshData();
+      } catch (error) {
+        console.error('创建检查点失败:', error);
+        alert('创建检查点失败');
+      }
+    }
+
+    // 选择任务
+    function selectTask(taskId) {
+      console.log('选择任务:', taskId);
+      // TODO: 显示任务详情
+    }
+
+    // 回滚到检查点
+    async function rollbackTo(checkpointId) {
+      if (!currentTreeId) return;
+
+      if (!confirm('确定要回滚到此检查点吗? 这将撤销之后的所有更改。')) {
+        return;
+      }
+
+      try {
+        await fetch(`${API_BASE}/time-travel/${currentTreeId}/rollback/${checkpointId}`, {
+          method: 'POST',
+        });
+        alert('回滚成功!');
+        refreshData();
+      } catch (error) {
+        console.error('回滚失败:', error);
+        alert('回滚失败');
+      }
+    }
+  </script>
+</body>
+</html>
