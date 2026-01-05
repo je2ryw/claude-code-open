@@ -175,6 +175,43 @@ export interface TestSpec {
 }
 
 /**
+ * 验收测试（由主 Agent 生成，子 Agent 不能修改）
+ */
+export interface AcceptanceTest {
+  id: string;
+  taskId: string;
+
+  // 测试内容
+  name: string;                 // 测试名称
+  description: string;          // 测试描述
+  testCode: string;             // 测试代码
+  testFilePath: string;         // 测试文件路径
+  testCommand: string;          // 执行命令
+
+  // 验收标准（必须全部满足）
+  criteria: AcceptanceCriterion[];
+
+  // 生成信息
+  generatedBy: 'queen';         // 由主 Agent 生成
+  generatedAt: Date;
+
+  // 执行结果
+  lastResult?: TestResult;
+  runHistory: TestResult[];
+}
+
+/**
+ * 验收标准项
+ */
+export interface AcceptanceCriterion {
+  id: string;
+  description: string;          // 描述
+  checkType: 'output' | 'behavior' | 'performance' | 'error_handling';
+  expectedResult: string;       // 期望结果
+  passed?: boolean;             // 是否通过
+}
+
+/**
  * 测试结果
  */
 export interface TestResult {
@@ -212,7 +249,8 @@ export interface TaskNode {
   dependencies: string[];      // 依赖的任务 ID
 
   // TDD 相关
-  testSpec?: TestSpec;         // 测试规格（先于编码生成）
+  testSpec?: TestSpec;         // 测试规格（Worker Agent 的单元测试）
+  acceptanceTests: AcceptanceTest[];  // 验收测试（由 Queen Agent 生成，Worker 不能修改）
 
   // 执行信息
   agentId?: string;            // 执行该任务的 Agent ID

@@ -28,6 +28,7 @@ import type {
   CodeSnapshot,
   FileChange,
   SystemModule,
+  AcceptanceTest,
 } from './types.js';
 
 // ============================================================================
@@ -114,6 +115,7 @@ export class TaskTreeManager extends EventEmitter {
       status: 'pending',
       children: [],
       dependencies: [],
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
@@ -141,6 +143,7 @@ export class TaskTreeManager extends EventEmitter {
       status: 'pending',
       children: [],
       dependencies: [],
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
@@ -196,6 +199,7 @@ export class TaskTreeManager extends EventEmitter {
       status: 'pending',
       children: [],
       dependencies: [],
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
@@ -237,6 +241,7 @@ export class TaskTreeManager extends EventEmitter {
       status: 'pending',
       children: [],
       dependencies: index > 0 ? [] : [], // 后续任务依赖前置任务
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
@@ -263,6 +268,7 @@ export class TaskTreeManager extends EventEmitter {
       status: 'pending',
       children: [],
       dependencies: [],
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
@@ -550,6 +556,126 @@ export class TaskTreeManager extends EventEmitter {
   }
 
   // --------------------------------------------------------------------------
+  // 验收测试管理
+  // --------------------------------------------------------------------------
+
+  /**
+   * 为任务设置验收测试（由 Queen Agent 调用）
+   */
+  setAcceptanceTests(
+    treeId: string,
+    taskId: string,
+    tests: AcceptanceTest[]
+  ): AcceptanceTest[] {
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      throw new Error(`Task tree ${treeId} not found`);
+    }
+
+    const task = this.findTask(tree.root, taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    // 设置验收测试
+    task.acceptanceTests = tests;
+
+    this.saveTaskTree(tree);
+
+    this.emit('task:acceptance-tests-set', { treeId, taskId, tests });
+
+    return tests;
+  }
+
+  /**
+   * 记录验收测试结果
+   */
+  recordAcceptanceTestResult(
+    treeId: string,
+    taskId: string,
+    testId: string,
+    result: Omit<TestResult, 'id' | 'timestamp'>
+  ): TestResult | null {
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      throw new Error(`Task tree ${treeId} not found`);
+    }
+
+    const task = this.findTask(tree.root, taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const test = task.acceptanceTests.find(t => t.id === testId);
+    if (!test) {
+      throw new Error(`Acceptance test ${testId} not found`);
+    }
+
+    const testResult: TestResult = {
+      id: uuidv4(),
+      timestamp: new Date(),
+      ...result,
+    };
+
+    test.lastResult = testResult;
+    test.runHistory.push(testResult);
+
+    // 更新验收标准的通过状态
+    if (result.passed) {
+      for (const criterion of test.criteria) {
+        criterion.passed = true;
+      }
+    }
+
+    // 检查是否所有验收测试都通过
+    const allPassed = task.acceptanceTests.every(t => t.lastResult?.passed);
+    if (allPassed && task.acceptanceTests.length > 0) {
+      // 所有验收测试通过，任务可以标记为已通过
+      task.status = 'passed';
+      task.completedAt = new Date();
+    }
+
+    // 更新统计
+    tree.stats = this.calculateStats(tree.root);
+
+    this.saveTaskTree(tree);
+
+    this.emit('task:acceptance-test-result', { treeId, taskId, testId, result: testResult });
+
+    return testResult;
+  }
+
+  /**
+   * 获取任务的验收测试状态
+   */
+  getAcceptanceTestStatus(treeId: string, taskId: string): {
+    hasTests: boolean;
+    totalTests: number;
+    passedTests: number;
+    allPassed: boolean;
+  } {
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      return { hasTests: false, totalTests: 0, passedTests: 0, allPassed: false };
+    }
+
+    const task = this.findTask(tree.root, taskId);
+    if (!task) {
+      return { hasTests: false, totalTests: 0, passedTests: 0, allPassed: false };
+    }
+
+    const totalTests = task.acceptanceTests.length;
+    const passedTests = task.acceptanceTests.filter(t => t.lastResult?.passed).length;
+
+    return {
+      hasTests: totalTests > 0,
+      totalTests,
+      passedTests,
+      allPassed: totalTests > 0 && passedTests === totalTests,
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // 检查点管理（时光倒流）
   // --------------------------------------------------------------------------
 
@@ -768,6 +894,7 @@ export class TaskTreeManager extends EventEmitter {
       createdAt: new Date(),
       checkpoints: [],
       codeArtifacts: [],
+      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       ...subTask,
     };
 
@@ -1058,6 +1185,19 @@ export class TaskTreeManager extends EventEmitter {
           timestamp: r.timestamp.toISOString(),
         })),
       } : undefined,
+      // 序列化验收测试
+      acceptanceTests: node.acceptanceTests.map(t => ({
+        ...t,
+        generatedAt: t.generatedAt.toISOString(),
+        lastResult: t.lastResult ? {
+          ...t.lastResult,
+          timestamp: t.lastResult.timestamp.toISOString(),
+        } : undefined,
+        runHistory: t.runHistory.map(r => ({
+          ...r,
+          timestamp: r.timestamp.toISOString(),
+        })),
+      })),
     };
   }
 
@@ -1105,6 +1245,19 @@ export class TaskTreeManager extends EventEmitter {
           timestamp: new Date(r.timestamp),
         })),
       } : undefined,
+      // 反序列化验收测试
+      acceptanceTests: (data.acceptanceTests || []).map((t: any) => ({
+        ...t,
+        generatedAt: new Date(t.generatedAt),
+        lastResult: t.lastResult ? {
+          ...t.lastResult,
+          timestamp: new Date(t.lastResult.timestamp),
+        } : undefined,
+        runHistory: (t.runHistory || []).map((r: any) => ({
+          ...r,
+          timestamp: new Date(r.timestamp),
+        })),
+      })),
     };
   }
 

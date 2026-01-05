@@ -23,10 +23,16 @@ import type {
   AgentAction,
   TDDCycleState,
   TimelineEvent,
+  AcceptanceTest,
 } from './types.js';
 import { blueprintManager } from './blueprint-manager.js';
 import { taskTreeManager } from './task-tree-manager.js';
 import { tddExecutor, TDDLoopState, TDD_PROMPTS } from './tdd-executor.js';
+import {
+  AcceptanceTestGenerator,
+  AcceptanceTestContext,
+  createAcceptanceTestGenerator,
+} from './acceptance-test-generator.js';
 
 // ============================================================================
 // 协调器配置
@@ -45,6 +51,12 @@ export interface CoordinatorConfig {
   modelStrategy: 'fixed' | 'adaptive' | 'round_robin';
   /** 默认 Worker 模型 */
   defaultWorkerModel: string;
+  /** 项目根目录（用于验收测试生成） */
+  projectRoot?: string;
+  /** 测试框架 */
+  testFramework?: string;
+  /** 测试目录 */
+  testDirectory?: string;
 }
 
 const DEFAULT_CONFIG: CoordinatorConfig = {
@@ -54,6 +66,9 @@ const DEFAULT_CONFIG: CoordinatorConfig = {
   autoAssignTasks: true,
   modelStrategy: 'adaptive',
   defaultWorkerModel: 'haiku',
+  projectRoot: process.cwd(),
+  testFramework: 'vitest',
+  testDirectory: '__tests__',
 };
 
 // ============================================================================
@@ -79,10 +94,18 @@ export class AgentCoordinator extends EventEmitter {
   private timeline: TimelineEvent[] = [];
   private mainLoopTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private acceptanceTestGenerator: AcceptanceTestGenerator | null = null;
 
   constructor(config?: Partial<CoordinatorConfig>) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // 初始化验收测试生成器
+    this.acceptanceTestGenerator = createAcceptanceTestGenerator({
+      projectRoot: this.config.projectRoot || process.cwd(),
+      testFramework: this.config.testFramework,
+      testDirectory: this.config.testDirectory,
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -316,6 +339,64 @@ export class AgentCoordinator extends EventEmitter {
       throw new Error(`任务 ${taskId} 不存在`);
     }
 
+    // =========================================================================
+    // 蜂王在分配任务前生成验收测试（TDD 的核心：测试先行）
+    // =========================================================================
+    if (task.acceptanceTests.length === 0 && this.acceptanceTestGenerator) {
+      this.addTimelineEvent('task_start', `蜂王正在为任务生成验收测试: ${taskId}`);
+
+      // 获取蓝图和模块信息
+      const blueprint = blueprintManager.getBlueprint(this.queen.blueprintId);
+      const module = blueprint?.modules.find(m => m.id === task.blueprintModuleId);
+
+      // 获取父任务的验收测试（作为参考）
+      let parentAcceptanceTests: AcceptanceTest[] | undefined;
+      if (task.parentId) {
+        const parentTask = taskTreeManager.findTask(tree.root, task.parentId);
+        if (parentTask && parentTask.acceptanceTests.length > 0) {
+          parentAcceptanceTests = parentTask.acceptanceTests;
+        }
+      }
+
+      // 构建上下文
+      const context: AcceptanceTestContext = {
+        task,
+        blueprint: blueprint!,
+        module,
+        parentAcceptanceTests,
+      };
+
+      try {
+        // 生成验收测试
+        const result = await this.acceptanceTestGenerator.generateAcceptanceTests(context);
+
+        if (result.success && result.tests.length > 0) {
+          // 保存验收测试到任务
+          taskTreeManager.setAcceptanceTests(this.queen.taskTreeId, taskId, result.tests);
+
+          // 写入测试文件到磁盘
+          await this.acceptanceTestGenerator.writeTestFiles(result.tests);
+
+          this.recordDecision(
+            'task_assignment',
+            `蜂王为任务 ${taskId} 生成了 ${result.tests.length} 个验收测试`,
+            '验收测试在 Worker 编码前生成，确保 TDD 流程'
+          );
+
+          this.addTimelineEvent('test_pass', `验收测试生成完成: ${result.tests.length} 个测试`, {
+            taskId,
+            testCount: result.tests.length,
+          });
+        } else {
+          console.warn(`为任务 ${taskId} 生成验收测试失败:`, result.error);
+          this.addTimelineEvent('test_fail', `验收测试生成失败: ${result.error}`, { taskId });
+        }
+      } catch (error) {
+        console.error(`生成验收测试出错:`, error);
+        this.addTimelineEvent('test_fail', `验收测试生成异常: ${error}`, { taskId });
+      }
+    }
+
     // 更新 Worker 状态
     worker.taskId = taskId;
     worker.status = 'test_writing';
@@ -411,9 +492,49 @@ export class AgentCoordinator extends EventEmitter {
     lines.push(task.description);
     lines.push('');
 
-    // 验收标准来自 testSpec
+    // =========================================================================
+    // 验收测试（由蜂王生成，Worker 不能修改）
+    // =========================================================================
+    if (task.acceptanceTests && task.acceptanceTests.length > 0) {
+      lines.push(`## 🎯 验收测试（由蜂王生成，你不能修改）`);
+      lines.push('');
+      lines.push('以下验收测试必须全部通过，任务才算完成：');
+      lines.push('');
+
+      for (let i = 0; i < task.acceptanceTests.length; i++) {
+        const test = task.acceptanceTests[i];
+        lines.push(`### 验收测试 ${i + 1}: ${test.name}`);
+        lines.push(`- **描述**: ${test.description}`);
+        lines.push(`- **测试文件**: ${test.testFilePath}`);
+        lines.push(`- **执行命令**: \`${test.testCommand}\``);
+        lines.push('');
+
+        if (test.criteria && test.criteria.length > 0) {
+          lines.push('**验收标准**:');
+          for (const criterion of test.criteria) {
+            lines.push(`- [${criterion.checkType}] ${criterion.description}`);
+            lines.push(`  - 期望结果: ${criterion.expectedResult}`);
+          }
+          lines.push('');
+        }
+
+        if (test.testCode) {
+          lines.push('**测试代码**:');
+          lines.push('```');
+          lines.push(test.testCode);
+          lines.push('```');
+          lines.push('');
+        }
+      }
+
+      lines.push('⚠️ **重要**: 这些验收测试由蜂王（主 Agent）生成，你不能修改它们。');
+      lines.push('你的任务是编写实现代码使所有验收测试通过。');
+      lines.push('');
+    }
+
+    // 验收标准来自 testSpec（Worker 自己的单元测试规范）
     if (task.testSpec?.acceptanceCriteria && task.testSpec.acceptanceCriteria.length > 0) {
-      lines.push(`## 验收标准`);
+      lines.push(`## 额外验收标准（可选）`);
       for (const criteria of task.testSpec.acceptanceCriteria) {
         lines.push(`- ${criteria}`);
       }
@@ -421,7 +542,7 @@ export class AgentCoordinator extends EventEmitter {
     }
 
     if (task.testSpec) {
-      lines.push(`## 测试规范`);
+      lines.push(`## Worker 单元测试规范（你可以添加）`);
       lines.push(task.testSpec.description);
       if (task.testSpec.testCode) {
         lines.push('');
@@ -436,11 +557,21 @@ export class AgentCoordinator extends EventEmitter {
     lines.push('');
     lines.push('你必须严格遵循 TDD（测试驱动开发）方法：');
     lines.push('');
-    lines.push('1. **先写测试** - 在编写任何实现代码之前，先编写失败的测试用例');
-    lines.push('2. **运行测试（红灯）** - 确认测试失败，证明测试有效');
-    lines.push('3. **编写实现** - 编写最少的代码让测试通过');
-    lines.push('4. **运行测试（绿灯）** - 确认所有测试通过');
-    lines.push('5. **重构** - 在保持测试通过的前提下优化代码');
+
+    if (task.acceptanceTests && task.acceptanceTests.length > 0) {
+      lines.push('1. **先运行验收测试（红灯）** - 确认蜂王生成的验收测试当前失败');
+      lines.push('2. **可选：编写单元测试** - 为实现细节添加更细粒度的测试');
+      lines.push('3. **编写实现** - 编写最少的代码让验收测试通过');
+      lines.push('4. **运行验收测试（绿灯）** - 确认所有验收测试通过');
+      lines.push('5. **重构** - 在保持测试通过的前提下优化代码');
+    } else {
+      lines.push('1. **先写测试** - 在编写任何实现代码之前，先编写失败的测试用例');
+      lines.push('2. **运行测试（红灯）** - 确认测试失败，证明测试有效');
+      lines.push('3. **编写实现** - 编写最少的代码让测试通过');
+      lines.push('4. **运行测试（绿灯）** - 确认所有测试通过');
+      lines.push('5. **重构** - 在保持测试通过的前提下优化代码');
+    }
+
     lines.push('');
     lines.push('⚠️ 重要：只有当所有测试通过时，任务才算完成！');
 

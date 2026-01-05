@@ -381,13 +381,15 @@ export class CodebaseAnalyzer extends EventEmitter {
       const client = new ClaudeClient();
 
       const prompt = this.buildAIPrompt(context);
-      const response = await client.sendMessage([{
+      const response = await client.createMessage([{
         role: 'user',
         content: prompt,
       }]);
 
       // 解析 AI 响应
-      return this.parseAIResponse(response.content);
+      const textContent = response.content.find(block => block.type === 'text');
+      const responseText = textContent && 'text' in textContent ? textContent.text : '';
+      return this.parseAIResponse(responseText);
     } catch (error) {
       // AI 分析失败，返回基于规则的分析结果
       return this.generateRuleBasedAnalysis(codebase);

@@ -17,6 +17,7 @@ import type {
   TDDCycleState,
   WorkerAgent,
   Checkpoint,
+  AcceptanceTest,
 } from './types.js';
 import { taskTreeManager } from './task-tree-manager.js';
 
@@ -72,6 +73,11 @@ export interface TDDLoopState {
   lastError?: string;
   startTime: Date;
   phaseHistory: PhaseTransition[];
+
+  // 验收测试相关（由蜂王生成）
+  hasAcceptanceTests: boolean;
+  acceptanceTests: AcceptanceTest[];
+  acceptanceTestResults: Map<string, TestResult>;  // testId -> result
 }
 
 export interface PhaseTransition {
@@ -102,6 +108,9 @@ export class TDDExecutor extends EventEmitter {
   /**
    * 为任务启动 TDD 循环
    * 返回循环状态 ID，用于后续操作
+   *
+   * 如果任务有蜂王生成的验收测试，则直接进入 run_test_red 阶段
+   * 否则从 write_test 阶段开始
    */
   startLoop(treeId: string, taskId: string): TDDLoopState {
     const tree = taskTreeManager.getTaskTree(treeId);
@@ -114,24 +123,43 @@ export class TDDExecutor extends EventEmitter {
       throw new Error(`Task ${taskId} not found`);
     }
 
+    // 检查是否有蜂王生成的验收测试
+    const hasAcceptanceTests = task.acceptanceTests && task.acceptanceTests.length > 0;
+
     // 创建循环状态
     const loopState: TDDLoopState = {
       taskId,
       treeId,
-      phase: 'write_test', // 从编写测试开始！
+      // 如果有验收测试，直接进入红灯阶段（因为测试已经由蜂王生成）
+      phase: hasAcceptanceTests ? 'run_test_red' : 'write_test',
       iteration: 0,
       testResults: [],
       codeWritten: false,
       startTime: new Date(),
       phaseHistory: [],
+      // 验收测试相关
+      hasAcceptanceTests,
+      acceptanceTests: hasAcceptanceTests ? [...task.acceptanceTests] : [],
+      acceptanceTestResults: new Map(),
     };
 
     this.loopStates.set(taskId, loopState);
 
     // 更新任务状态
-    taskTreeManager.updateTaskStatus(treeId, taskId, 'test_writing');
-
-    this.emit('loop:started', { treeId, taskId, loopState });
+    if (hasAcceptanceTests) {
+      // 有验收测试，直接进入测试阶段
+      taskTreeManager.updateTaskStatus(treeId, taskId, 'testing');
+      this.emit('loop:started', {
+        treeId,
+        taskId,
+        loopState,
+        message: `任务有 ${task.acceptanceTests.length} 个蜂王生成的验收测试，直接进入红灯阶段`,
+      });
+    } else {
+      // 没有验收测试，Worker 需要自己编写测试
+      taskTreeManager.updateTaskStatus(treeId, taskId, 'test_writing');
+      this.emit('loop:started', { treeId, taskId, loopState });
+    }
 
     return loopState;
   }
@@ -400,6 +428,198 @@ export class TDDExecutor extends EventEmitter {
     this.completeLoop(state, '跳过重构，任务完成');
 
     return state;
+  }
+
+  // --------------------------------------------------------------------------
+  // 验收测试相关方法（蜂王生成的测试）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 提交验收测试结果（红灯阶段）
+   * 用于有蜂王生成的验收测试的任务
+   */
+  submitAcceptanceTestRedResult(
+    taskId: string,
+    testId: string,
+    result: Omit<TestResult, 'id' | 'timestamp'>
+  ): TDDLoopState {
+    const state = this.getLoopState(taskId);
+
+    if (state.phase !== 'run_test_red') {
+      throw new Error(`Cannot submit acceptance test result in phase ${state.phase}. Expected: run_test_red`);
+    }
+
+    if (!state.hasAcceptanceTests) {
+      throw new Error('Task does not have acceptance tests');
+    }
+
+    const testResult: TestResult = {
+      id: uuidv4(),
+      timestamp: new Date(),
+      ...result,
+    };
+
+    // 记录验收测试结果
+    state.acceptanceTestResults.set(testId, testResult);
+    state.testResults.push(testResult);
+
+    // 记录到任务树
+    taskTreeManager.recordAcceptanceTestResult(state.treeId, taskId, testId, result);
+
+    // 红灯阶段，验收测试应该失败
+    if (result.passed) {
+      // 如果验收测试通过了，说明功能已经存在
+      this.emit('loop:warning', {
+        taskId,
+        testId,
+        message: '红灯阶段验收测试意外通过，功能可能已经存在',
+        result,
+      });
+    }
+
+    // 检查是否所有验收测试都已运行
+    if (state.acceptanceTestResults.size >= state.acceptanceTests.length) {
+      // 所有验收测试都运行了，进入编写代码阶段
+      this.transitionPhase(state, 'write_code', '所有验收测试已运行（红灯），开始编写实现代码');
+      taskTreeManager.updateTaskStatus(state.treeId, taskId, 'coding');
+    }
+
+    return state;
+  }
+
+  /**
+   * 提交验收测试结果（绿灯阶段）
+   * 验收测试必须全部通过，任务才算完成
+   */
+  submitAcceptanceTestGreenResult(
+    taskId: string,
+    testId: string,
+    result: Omit<TestResult, 'id' | 'timestamp'>
+  ): TDDLoopState {
+    const state = this.getLoopState(taskId);
+
+    if (state.phase !== 'run_test_green') {
+      throw new Error(`Cannot submit acceptance test result in phase ${state.phase}. Expected: run_test_green`);
+    }
+
+    if (!state.hasAcceptanceTests) {
+      throw new Error('Task does not have acceptance tests');
+    }
+
+    const testResult: TestResult = {
+      id: uuidv4(),
+      timestamp: new Date(),
+      ...result,
+    };
+
+    // 更新验收测试结果
+    state.acceptanceTestResults.set(testId, testResult);
+    state.testResults.push(testResult);
+
+    // 记录到任务树
+    taskTreeManager.recordAcceptanceTestResult(state.treeId, taskId, testId, result);
+
+    // 检查是否所有验收测试都已运行
+    if (state.acceptanceTestResults.size >= state.acceptanceTests.length) {
+      // 检查是否所有验收测试都通过
+      const allPassed = Array.from(state.acceptanceTestResults.values()).every(r => r.passed);
+
+      if (allPassed) {
+        // 所有验收测试通过！
+        if (this.config.enableRefactoring) {
+          this.transitionPhase(state, 'refactor', '所有验收测试通过，进入重构阶段');
+        } else {
+          this.completeLoop(state, '所有验收测试通过，任务完成');
+        }
+
+        // 创建检查点
+        if (this.config.enableCheckpoints) {
+          taskTreeManager.createTaskCheckpoint(
+            state.treeId,
+            taskId,
+            `验收测试全部通过 - 迭代 ${state.iteration}`,
+            `${state.acceptanceTests.length} 个验收测试全部通过`
+          );
+        }
+
+        this.emit('loop:acceptance-tests-passed', {
+          taskId,
+          testCount: state.acceptanceTests.length,
+          iteration: state.iteration,
+        });
+
+      } else {
+        // 有验收测试失败，需要修复代码
+        state.iteration++;
+        const failedTests = Array.from(state.acceptanceTestResults.entries())
+          .filter(([_, r]) => !r.passed)
+          .map(([id, r]) => ({ id, error: r.errorMessage }));
+
+        state.lastError = `验收测试失败: ${failedTests.map(t => t.error).join(', ')}`;
+
+        if (state.iteration >= this.config.maxIterations) {
+          // 超过最大迭代次数
+          taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
+          this.emit('loop:max-iterations', {
+            taskId,
+            iteration: state.iteration,
+            lastError: state.lastError,
+            failedTests,
+          });
+        } else {
+          // 回到编写代码阶段继续修复
+          // 清除之前的验收测试结果，准备重新运行
+          state.acceptanceTestResults.clear();
+          this.transitionPhase(state, 'write_code', `验收测试失败，进入第 ${state.iteration + 1} 次迭代`);
+          taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
+
+          this.emit('loop:acceptance-tests-failed', {
+            taskId,
+            failedTests,
+            iteration: state.iteration,
+            willRetry: true,
+          });
+        }
+      }
+    }
+
+    return state;
+  }
+
+  /**
+   * 获取验收测试状态
+   */
+  getAcceptanceTestStatus(taskId: string): {
+    hasTests: boolean;
+    totalTests: number;
+    testedCount: number;
+    passedCount: number;
+    allTested: boolean;
+    allPassed: boolean;
+  } {
+    const state = this.loopStates.get(taskId);
+    if (!state || !state.hasAcceptanceTests) {
+      return {
+        hasTests: false,
+        totalTests: 0,
+        testedCount: 0,
+        passedCount: 0,
+        allTested: false,
+        allPassed: false,
+      };
+    }
+
+    const testedCount = state.acceptanceTestResults.size;
+    const passedCount = Array.from(state.acceptanceTestResults.values()).filter(r => r.passed).length;
+
+    return {
+      hasTests: true,
+      totalTests: state.acceptanceTests.length,
+      testedCount,
+      passedCount,
+      allTested: testedCount >= state.acceptanceTests.length,
+      allPassed: testedCount >= state.acceptanceTests.length && passedCount === testedCount,
+    };
   }
 
   // --------------------------------------------------------------------------

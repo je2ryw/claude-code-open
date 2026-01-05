@@ -561,14 +561,6 @@ export class BlueprintManager extends EventEmitter {
   }
 
   /**
-   * 获取当前蓝图
-   */
-  getCurrentBlueprint(): Blueprint | null {
-    if (!this.currentBlueprintId) return null;
-    return this.getBlueprint(this.currentBlueprintId);
-  }
-
-  /**
    * 设置当前蓝图
    */
   setCurrentBlueprint(id: string): void {
