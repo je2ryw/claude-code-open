@@ -618,6 +618,8 @@ export class ConversationLoop {
       // 处理响应内容
       const assistantContent: ContentBlock[] = [];
       const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
+      // 收集所有工具返回的 newMessages（对齐官网实现）
+      const allNewMessages: Array<{ role: 'user'; content: any[] }> = [];
 
       for (const block of response.content) {
         if (block.type === 'text') {
@@ -660,6 +662,11 @@ export class ConversationLoop {
             tool_use_id: toolId,
             content: formattedContent,
           });
+
+          // 收集 newMessages（对齐官网实现）
+          if (result.newMessages && result.newMessages.length > 0) {
+            allNewMessages.push(...result.newMessages);
+          }
         }
       }
 
@@ -675,6 +682,11 @@ export class ConversationLoop {
           role: 'user',
           content: toolResults,
         });
+
+        // 添加 newMessages（对齐官网实现：skill 内容作为独立的 user 消息）
+        for (const newMsg of allNewMessages) {
+          this.session.addMessage(newMsg);
+        }
       }
 
       // 检查是否应该停止
@@ -851,6 +863,8 @@ Guidelines:
 
       // 执行所有工具调用
       const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
+      // 收集所有工具返回的 newMessages（对齐官网实现）
+      const allNewMessages: Array<{ role: 'user'; content: any[] }> = [];
 
       for (const [id, tool] of toolCalls) {
         try {
@@ -889,6 +903,11 @@ Guidelines:
             tool_use_id: id,
             content: formattedContent,
           });
+
+          // 收集 newMessages（对齐官网实现）
+          if (result.newMessages && result.newMessages.length > 0) {
+            allNewMessages.push(...result.newMessages);
+          }
         } catch (err) {
           yield {
             type: 'tool_end',
@@ -910,6 +929,11 @@ Guidelines:
           role: 'user',
           content: toolResults,
         });
+
+        // 添加 newMessages（对齐官网实现：skill 内容作为独立的 user 消息）
+        for (const newMsg of allNewMessages) {
+          this.session.addMessage(newMsg);
+        }
       } else {
         break;
       }

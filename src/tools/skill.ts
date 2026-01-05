@@ -559,29 +559,45 @@ ${skillsXml}
     // 记录已调用的 skill（对齐官网 KP0）
     recordInvokedSkill(skill.skillName, skill.filePath, skillContent);
 
-    // 构建输出消息（对齐官网格式）
-    let output = `<command-message>The "${skill.displayName}" skill is loading</command-message>\n\n`;
-    output += `<skill name="${skill.skillName}" location="${skill.source}"`;
+    // 构建 skill 内容消息（对齐官网格式）
+    // 官网实现：skill 内容通过 newMessages 传递，而不是 tool_result
+    let skillMessage = `<command-message>The "${skill.displayName}" skill is loading</command-message>\n\n`;
+    skillMessage += `<skill name="${skill.skillName}" location="${skill.source}"`;
 
     if (skill.version) {
-      output += ` version="${skill.version}"`;
+      skillMessage += ` version="${skill.version}"`;
     }
     if (skill.model) {
-      output += ` model="${skill.model}"`;
+      skillMessage += ` model="${skill.model}"`;
     }
     if (skill.allowedTools && skill.allowedTools.length > 0) {
-      output += ` allowed-tools="${skill.allowedTools.join(',')}"`;
+      skillMessage += ` allowed-tools="${skill.allowedTools.join(',')}"`;
     }
 
-    output += `>\n${skillContent}\n</skill>`;
+    skillMessage += `>\n${skillContent}\n</skill>`;
 
+    // 对齐官网实现：
+    // - output（tool_result 内容）只是简短的 "Launching skill: xxx"
+    // - skill 的完整内容通过 newMessages 作为独立的 user 消息传递
     return {
       success: true,
-      output,
+      output: `Launching skill: ${skill.displayName}`,
       // 官网格式的额外字段
       commandName: skill.displayName,
       allowedTools: skill.allowedTools,
       model: skill.model,
+      // newMessages：skill 内容作为独立的 user 消息（对齐官网实现）
+      newMessages: [
+        {
+          role: 'user' as const,
+          content: [
+            {
+              type: 'text' as const,
+              text: skillMessage,
+            },
+          ],
+        },
+      ],
     };
   }
 }
