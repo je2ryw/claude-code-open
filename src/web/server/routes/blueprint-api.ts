@@ -16,6 +16,7 @@ import {
   agentCoordinator,
   tddExecutor,
   generateBlueprintSummary,
+  codebaseAnalyzer,
 } from '../../../blueprint/index.js';
 import { timeTravelManager } from '../../../blueprint/time-travel.js';
 
@@ -151,6 +152,76 @@ router.post('/blueprints/:id/reject', (req: Request, res: Response) => {
     const { reason } = req.body;
     const blueprint = blueprintManager.rejectBlueprint(req.params.id, reason);
     res.json({ success: true, data: blueprint });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 一键分析 API
+// ============================================================================
+
+/**
+ * 分析现有代码库并生成蓝图
+ */
+router.post('/analyze', async (req: Request, res: Response) => {
+  try {
+    const { rootDir = '.', projectName, projectDescription, granularity = 'medium' } = req.body;
+
+    // 使用代码库分析器
+    const result = await codebaseAnalyzer.analyzeAndGenerate({
+      rootDir,
+      projectName,
+      projectDescription,
+      granularity,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        codebase: {
+          name: result.codebase.name,
+          description: result.codebase.description,
+          stats: result.codebase.stats,
+          modules: result.codebase.modules.map(m => ({
+            name: m.name,
+            path: m.path,
+            type: m.type,
+            fileCount: m.files.length,
+          })),
+        },
+        blueprint: {
+          id: result.blueprint.id,
+          name: result.blueprint.name,
+          moduleCount: result.blueprint.modules.length,
+          processCount: result.blueprint.businessProcesses.length,
+        },
+        taskTree: {
+          id: result.taskTree.id,
+          taskCount: result.taskTree.stats.totalTasks,
+          maxDepth: result.taskTree.stats.maxDepth,
+        },
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取分析进度（用于长时间运行的分析）
+ */
+router.get('/analyze/status', (req: Request, res: Response) => {
+  try {
+    // 简单实现：返回当前状态
+    res.json({
+      success: true,
+      data: {
+        status: 'idle',
+        progress: 0,
+        message: '等待分析任务',
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

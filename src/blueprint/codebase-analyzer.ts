@@ -122,6 +122,7 @@ export class CodebaseAnalyzer extends EventEmitter {
     rootDir?: string;
     projectName?: string;
     projectDescription?: string;
+    granularity?: 'coarse' | 'medium' | 'fine';
   }): Promise<{
     codebase: CodebaseInfo;
     blueprint: Blueprint;
@@ -130,6 +131,9 @@ export class CodebaseAnalyzer extends EventEmitter {
     // 更新配置
     if (options?.rootDir) {
       this.config.rootDir = options.rootDir;
+    }
+    if (options?.granularity) {
+      this.config.granularity = options.granularity;
     }
 
     this.emit('analyze:start', { rootDir: this.config.rootDir });

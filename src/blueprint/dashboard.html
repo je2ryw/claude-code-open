@@ -452,8 +452,15 @@
   <div class="container">
     <!-- 头部 -->
     <div class="header">
-      <h1>🐝 蓝图系统仪表板</h1>
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <h1>🐝 蓝图系统仪表板</h1>
+        <div class="ws-status">
+          <div class="ws-indicator"></div>
+          <span id="wsStatusText">未连接</span>
+        </div>
+      </div>
       <div class="header-actions">
+        <button class="btn" onclick="showBlueprints()">📘 蓝图管理</button>
         <button class="btn btn-primary" onclick="refreshData()">🔄 刷新</button>
         <button class="btn btn-success" id="startBtn" onclick="toggleExecution()">▶️ 开始执行</button>
         <button class="btn btn-danger" onclick="createCheckpoint()">📌 创建检查点</button>
@@ -497,6 +504,14 @@
           <span id="treeDepth">深度: --</span>
         </div>
         <div class="panel-body">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="taskSearch" placeholder="搜索任务..." oninput="filterTasks(this.value)">
+          </div>
+          <div class="tree-actions" style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button class="btn" style="font-size: 12px; padding: 4px 8px;" onclick="expandAllTasks()">📂 全部展开</button>
+            <button class="btn" style="font-size: 12px; padding: 4px 8px;" onclick="collapseAllTasks()">📁 全部折叠</button>
+          </div>
           <div id="taskTree" class="task-tree">
             <div class="loading"><div class="spinner"></div></div>
           </div>
@@ -585,6 +600,524 @@
     </div>
   </div>
 
+  <!-- Toast 通知容器 -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- 任务详情模态框 -->
+  <div id="taskModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeModal('taskModal')"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📋 任务详情</h2>
+        <button class="modal-close" onclick="closeModal('taskModal')">×</button>
+      </div>
+      <div class="modal-body" id="taskModalBody">
+        <!-- 动态内容 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="startTaskTDD()">🚀 启动 TDD</button>
+        <button class="btn" onclick="closeModal('taskModal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 检查点详情/回滚预览模态框 -->
+  <div id="checkpointModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeModal('checkpointModal')"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>⏱️ 检查点详情</h2>
+        <button class="modal-close" onclick="closeModal('checkpointModal')">×</button>
+      </div>
+      <div class="modal-body" id="checkpointModalBody">
+        <!-- 动态内容 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="rollbackBtn" onclick="confirmRollback()">⏪ 确认回滚</button>
+        <button class="btn" onclick="closeModal('checkpointModal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 蓝图选择模态框 -->
+  <div id="blueprintModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeModal('blueprintModal')"></div>
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>📘 蓝图管理</h2>
+        <button class="modal-close" onclick="closeModal('blueprintModal')">×</button>
+      </div>
+      <div class="modal-body" id="blueprintModalBody">
+        <div class="blueprint-actions" style="margin-bottom: 20px;">
+          <button class="btn btn-primary" onclick="analyzeCodebase()">🔍 一键分析代码库</button>
+          <button class="btn btn-success" onclick="showCreateBlueprint()">➕ 创建新蓝图</button>
+        </div>
+        <div id="blueprintList" class="blueprint-list">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建检查点模态框 -->
+  <div id="createCheckpointModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeModal('createCheckpointModal')"></div>
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>📌 创建检查点</h2>
+        <button class="modal-close" onclick="closeModal('createCheckpointModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>检查点名称</label>
+          <input type="text" id="checkpointName" class="form-input" placeholder="例如: 完成用户认证模块">
+        </div>
+        <div class="form-group">
+          <label>描述（可选）</label>
+          <textarea id="checkpointDesc" class="form-textarea" placeholder="描述此检查点的状态..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" onclick="submitCheckpoint()">✅ 创建</button>
+        <button class="btn" onclick="closeModal('createCheckpointModal')">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    /* 模态框样式 */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+    }
+
+    .modal-content {
+      position: relative;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      width: 90%;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      animation: modalSlideIn 0.2s ease-out;
+    }
+
+    .modal-content.modal-large {
+      max-width: 900px;
+    }
+
+    .modal-content.modal-small {
+      max-width: 400px;
+    }
+
+    @keyframes modalSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h2 {
+      font-size: 16px;
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 15px 20px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Toast 通知样式 */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toast {
+      padding: 12px 20px;
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      font-size: 14px;
+      animation: toastSlideIn 0.3s ease-out;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 250px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .toast.success {
+      border-color: var(--accent-green);
+    }
+
+    .toast.error {
+      border-color: var(--accent-red);
+    }
+
+    .toast.info {
+      border-color: var(--accent-blue);
+    }
+
+    .toast.warning {
+      border-color: var(--accent-yellow);
+    }
+
+    @keyframes toastSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    /* 表单样式 */
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 14px;
+    }
+
+    .form-input:focus, .form-textarea:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .form-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    /* 蓝图列表样式 */
+    .blueprint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .blueprint-card {
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .blueprint-card:hover {
+      border-color: var(--accent-blue);
+    }
+
+    .blueprint-card.selected {
+      border-color: var(--accent-green);
+      background: rgba(158, 206, 106, 0.1);
+    }
+
+    .blueprint-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .blueprint-card-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .blueprint-card-status {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .blueprint-card-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+
+    .blueprint-card-meta {
+      display: flex;
+      gap: 15px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* 任务详情样式 */
+    .task-detail-section {
+      margin-bottom: 20px;
+    }
+
+    .task-detail-section h3 {
+      font-size: 13px;
+      color: var(--accent-blue);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .task-detail-content {
+      background: var(--bg-tertiary);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .task-detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .task-detail-row:last-child {
+      border-bottom: none;
+    }
+
+    .task-detail-label {
+      color: var(--text-secondary);
+    }
+
+    /* 回滚预览样式 */
+    .rollback-preview {
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 15px;
+    }
+
+    .rollback-warning {
+      color: var(--accent-yellow);
+      margin-bottom: 15px;
+      padding: 10px;
+      background: rgba(224, 175, 104, 0.1);
+      border-radius: 6px;
+    }
+
+    .rollback-tasks {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .rollback-task-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+
+    /* 搜索框样式 */
+    .search-box {
+      position: relative;
+      margin-bottom: 10px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 32px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+    }
+
+    /* 折叠按钮样式 */
+    .collapse-btn {
+      cursor: pointer;
+      user-select: none;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+      transition: transform 0.2s;
+    }
+
+    .collapse-btn.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .tree-children {
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+
+    .tree-children.collapsed {
+      max-height: 0 !important;
+    }
+
+    /* 任务选中状态 */
+    .node-content.selected {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--accent-blue);
+    }
+
+    /* 右键菜单 */
+    .context-menu {
+      position: fixed;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 0;
+      min-width: 150px;
+      z-index: 3000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .context-menu-item {
+      padding: 8px 15px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .context-menu-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .context-menu-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 6px 0;
+    }
+
+    /* 进度条动画 */
+    .progress-animated {
+      background: linear-gradient(
+        90deg,
+        var(--accent-green) 0%,
+        var(--accent-blue) 50%,
+        var(--accent-green) 100%
+      );
+      background-size: 200% 100%;
+      animation: progressShimmer 2s infinite;
+    }
+
+    @keyframes progressShimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* WebSocket 连接状态 */
+    .ws-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .ws-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+    }
+
+    .ws-indicator.connected {
+      background: var(--accent-green);
+    }
+  </style>
+
   <script>
     // API 基础路径
     const API_BASE = '/api/blueprint';
@@ -592,15 +1125,162 @@
     // 状态
     let isRunning = false;
     let currentTreeId = null;
+    let currentBlueprintId = null;
+    let selectedTaskId = null;
+    let selectedCheckpointId = null;
+    let taskDataCache = {};
+    let collapsedNodes = new Set();
+    let ws = null;
 
+    // ========================================================================
     // 初始化
+    // ========================================================================
     document.addEventListener('DOMContentLoaded', () => {
       refreshData();
-      // 每 5 秒刷新
-      setInterval(refreshData, 5000);
+      loadCheckpoints();
+      initWebSocket();
+
+      // 轮询作为 WebSocket 的后备
+      setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          refreshData();
+        }
+      }, 5000);
+
+      // 点击空白处关闭右键菜单
+      document.addEventListener('click', () => {
+        const menu = document.getElementById('contextMenu');
+        if (menu) menu.remove();
+      });
+
+      // 键盘快捷键
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeAllModals();
+        }
+      });
     });
 
-    // 刷新数据
+    // ========================================================================
+    // WebSocket 实时更新
+    // ========================================================================
+    function initWebSocket() {
+      const wsUrl = `ws://${window.location.host}/ws/blueprint`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          updateWsStatus(true);
+          showToast('实时连接已建立', 'success');
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleWsMessage(data);
+          } catch (e) {
+            console.error('解析 WebSocket 消息失败:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          updateWsStatus(false);
+          // 尝试重连
+          setTimeout(initWebSocket, 3000);
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket 错误:', error);
+          updateWsStatus(false);
+        };
+      } catch (e) {
+        console.error('WebSocket 初始化失败:', e);
+      }
+    }
+
+    function updateWsStatus(connected) {
+      const indicator = document.querySelector('.ws-indicator');
+      const statusText = document.getElementById('wsStatusText');
+      if (indicator) {
+        indicator.classList.toggle('connected', connected);
+      }
+      if (statusText) {
+        statusText.textContent = connected ? '已连接' : '未连接';
+      }
+    }
+
+    function handleWsMessage(data) {
+      switch (data.type) {
+        case 'task_update':
+          updateTaskInTree(data.task);
+          break;
+        case 'worker_update':
+          updateWorkerCard(data.worker);
+          break;
+        case 'tdd_phase':
+          updateTDDPhase(data.phase);
+          break;
+        case 'checkpoint_created':
+          loadCheckpoints();
+          showToast(`检查点 "${data.name}" 已创建`, 'success');
+          break;
+        case 'timeline_event':
+          addTimelineEvent(data.event);
+          break;
+        case 'stats_update':
+          updateStats(data.stats);
+          break;
+      }
+    }
+
+    // ========================================================================
+    // Toast 通知系统
+    // ========================================================================
+    function showToast(message, type = 'info', duration = 3000) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+
+      const icons = {
+        success: '✅',
+        error: '❌',
+        warning: '⚠️',
+        info: 'ℹ️'
+      };
+
+      toast.innerHTML = `
+        <span>${icons[type] || icons.info}</span>
+        <span>${message}</span>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    // ========================================================================
+    // 模态框管理
+    // ========================================================================
+    function openModal(modalId) {
+      document.getElementById(modalId).style.display = 'flex';
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.display = 'none';
+    }
+
+    function closeAllModals() {
+      document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+    }
+
+    // ========================================================================
+    // 数据刷新
+    // ========================================================================
     async function refreshData() {
       try {
         const response = await fetch(`${API_BASE}/coordinator/dashboard`);
@@ -614,17 +1294,10 @@
       }
     }
 
-    // 更新仪表板
     function updateDashboard(data) {
       // 更新统计
       if (data.stats) {
-        document.getElementById('totalTasks').textContent = data.stats.totalTasks || 0;
-        document.getElementById('passedTasks').textContent = data.stats.passedTasks || 0;
-        document.getElementById('runningTasks').textContent = data.stats.runningTasks || 0;
-        document.getElementById('failedTasks').textContent = data.stats.failedTasks || 0;
-        document.getElementById('progress').textContent =
-          (data.stats.progressPercentage || 0).toFixed(1) + '%';
-        document.getElementById('treeDepth').textContent = `深度: ${data.stats.maxDepth || 0}`;
+        updateStats(data.stats);
       }
 
       // 更新 Worker 数量
@@ -637,6 +1310,11 @@
       if (data.taskTree) {
         currentTreeId = data.taskTree.id;
         renderTaskTree(data.taskTree.root);
+      }
+
+      // 缓存任务数据
+      if (data.taskTree) {
+        cacheTaskData(data.taskTree.root);
       }
 
       // 更新 Worker 列表
@@ -652,21 +1330,45 @@
       updateStartButton();
     }
 
-    // 渲染任务树
-    function renderTaskTree(node, container = null) {
+    function updateStats(stats) {
+      document.getElementById('totalTasks').textContent = stats.totalTasks || 0;
+      document.getElementById('passedTasks').textContent = stats.passedTasks || 0;
+      document.getElementById('runningTasks').textContent = stats.runningTasks || 0;
+      document.getElementById('failedTasks').textContent = stats.failedTasks || 0;
+      document.getElementById('progress').textContent = (stats.progressPercentage || 0).toFixed(1) + '%';
+      document.getElementById('treeDepth').textContent = `深度: ${stats.maxDepth || 0}`;
+    }
+
+    function cacheTaskData(node) {
+      taskDataCache[node.id] = node;
+      if (node.children) {
+        node.children.forEach(child => cacheTaskData(child));
+      }
+    }
+
+    // ========================================================================
+    // 任务树渲染（带折叠功能）
+    // ========================================================================
+    function renderTaskTree(node, container = null, depth = 0) {
       if (!container) {
         container = document.getElementById('taskTree');
         container.innerHTML = '';
       }
 
       const nodeEl = document.createElement('div');
-      nodeEl.className = `tree-node ${node.depth === 0 ? 'root' : ''}`;
+      nodeEl.className = `tree-node ${depth === 0 ? 'root' : ''}`;
+      nodeEl.dataset.taskId = node.id;
 
       const statusClass = `status-${node.status}`;
       const icon = getStatusIcon(node.status);
+      const hasChildren = node.children && node.children.length > 0;
+      const isCollapsed = collapsedNodes.has(node.id);
 
       nodeEl.innerHTML = `
-        <div class="node-content" onclick="selectTask('${node.id}')">
+        <div class="node-content ${selectedTaskId === node.id ? 'selected' : ''}"
+             onclick="selectTask('${node.id}')"
+             oncontextmenu="showTaskContextMenu(event, '${node.id}')">
+          ${hasChildren ? `<span class="collapse-btn ${isCollapsed ? 'collapsed' : ''}" onclick="toggleCollapse(event, '${node.id}')">▼</span>` : '<span style="width: 16px;"></span>'}
           <span class="node-icon">${icon}</span>
           <span class="node-name">${node.name}</span>
           <span class="node-status ${statusClass}">${node.status}</span>
@@ -676,17 +1378,39 @@
       container.appendChild(nodeEl);
 
       // 递归渲染子节点
-      if (node.children && node.children.length > 0) {
+      if (hasChildren) {
         const childContainer = document.createElement('div');
+        childContainer.className = `tree-children ${isCollapsed ? 'collapsed' : ''}`;
         childContainer.style.marginLeft = '20px';
+        if (!isCollapsed) {
+          childContainer.style.maxHeight = 'none';
+        }
         for (const child of node.children) {
-          renderTaskTree(child, childContainer);
+          renderTaskTree(child, childContainer, depth + 1);
         }
         nodeEl.appendChild(childContainer);
       }
     }
 
-    // 获取状态图标
+    function toggleCollapse(event, nodeId) {
+      event.stopPropagation();
+
+      if (collapsedNodes.has(nodeId)) {
+        collapsedNodes.delete(nodeId);
+      } else {
+        collapsedNodes.add(nodeId);
+      }
+
+      const nodeEl = document.querySelector(`[data-task-id="${nodeId}"]`);
+      if (nodeEl) {
+        const btn = nodeEl.querySelector('.collapse-btn');
+        const children = nodeEl.querySelector('.tree-children');
+
+        if (btn) btn.classList.toggle('collapsed');
+        if (children) children.classList.toggle('collapsed');
+      }
+    }
+
     function getStatusIcon(status) {
       const icons = {
         pending: '⏳',
@@ -704,7 +1428,319 @@
       return icons[status] || '❓';
     }
 
-    // 渲染 Worker 列表
+    function updateTaskInTree(task) {
+      taskDataCache[task.id] = task;
+      const nodeEl = document.querySelector(`[data-task-id="${task.id}"]`);
+      if (nodeEl) {
+        const statusEl = nodeEl.querySelector('.node-status');
+        const iconEl = nodeEl.querySelector('.node-icon');
+        if (statusEl) {
+          statusEl.className = `node-status status-${task.status}`;
+          statusEl.textContent = task.status;
+        }
+        if (iconEl) {
+          iconEl.textContent = getStatusIcon(task.status);
+        }
+      }
+    }
+
+    // ========================================================================
+    // 任务详情
+    // ========================================================================
+    function selectTask(taskId) {
+      selectedTaskId = taskId;
+
+      // 更新选中状态
+      document.querySelectorAll('.node-content').forEach(el => el.classList.remove('selected'));
+      const nodeEl = document.querySelector(`[data-task-id="${taskId}"] > .node-content`);
+      if (nodeEl) nodeEl.classList.add('selected');
+
+      // 显示任务详情
+      showTaskDetails(taskId);
+    }
+
+    async function showTaskDetails(taskId) {
+      const task = taskDataCache[taskId];
+      if (!task) {
+        showToast('无法加载任务详情', 'error');
+        return;
+      }
+
+      const body = document.getElementById('taskModalBody');
+      body.innerHTML = `
+        <div class="task-detail-section">
+          <h3>基本信息</h3>
+          <div class="task-detail-content">
+            <div class="task-detail-row">
+              <span class="task-detail-label">任务名称</span>
+              <span>${task.name}</span>
+            </div>
+            <div class="task-detail-row">
+              <span class="task-detail-label">状态</span>
+              <span class="node-status status-${task.status}">${task.status}</span>
+            </div>
+            <div class="task-detail-row">
+              <span class="task-detail-label">优先级</span>
+              <span>${task.priority || 'normal'}</span>
+            </div>
+            <div class="task-detail-row">
+              <span class="task-detail-label">深度</span>
+              <span>${task.depth}</span>
+            </div>
+            <div class="task-detail-row">
+              <span class="task-detail-label">子任务数</span>
+              <span>${task.children?.length || 0}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="task-detail-section">
+          <h3>描述</h3>
+          <div class="task-detail-content">
+            ${task.description || '无描述'}
+          </div>
+        </div>
+
+        ${task.testSpec ? `
+        <div class="task-detail-section">
+          <h3>测试规格</h3>
+          <div class="task-detail-content">
+            <pre style="white-space: pre-wrap; margin: 0;">${typeof task.testSpec === 'string' ? task.testSpec : JSON.stringify(task.testSpec, null, 2)}</pre>
+          </div>
+        </div>
+        ` : ''}
+
+        ${task.dependencies?.length > 0 ? `
+        <div class="task-detail-section">
+          <h3>依赖任务</h3>
+          <div class="task-detail-content">
+            ${task.dependencies.map(d => `<div>• ${d}</div>`).join('')}
+          </div>
+        </div>
+        ` : ''}
+      `;
+
+      openModal('taskModal');
+    }
+
+    async function startTaskTDD() {
+      if (!selectedTaskId || !currentTreeId) {
+        showToast('请先选择一个任务', 'warning');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/tdd/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ treeId: currentTreeId, taskId: selectedTaskId }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('TDD 循环已启动', 'success');
+          closeModal('taskModal');
+          refreshData();
+        } else {
+          showToast(result.error || '启动失败', 'error');
+        }
+      } catch (error) {
+        showToast('启动 TDD 循环失败', 'error');
+      }
+    }
+
+    // ========================================================================
+    // 右键菜单
+    // ========================================================================
+    function showTaskContextMenu(event, taskId) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      // 移除已存在的菜单
+      const existingMenu = document.getElementById('contextMenu');
+      if (existingMenu) existingMenu.remove();
+
+      const task = taskDataCache[taskId];
+      const menu = document.createElement('div');
+      menu.id = 'contextMenu';
+      menu.className = 'context-menu';
+      menu.style.left = `${event.pageX}px`;
+      menu.style.top = `${event.pageY}px`;
+
+      menu.innerHTML = `
+        <div class="context-menu-item" onclick="selectTask('${taskId}'); showTaskDetails('${taskId}')">
+          📋 查看详情
+        </div>
+        <div class="context-menu-item" onclick="startTaskTDDDirect('${taskId}')">
+          🚀 启动 TDD
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="expandAll('${taskId}')">
+          📂 展开所有
+        </div>
+        <div class="context-menu-item" onclick="collapseAll('${taskId}')">
+          📁 折叠所有
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="createCheckpointForTask('${taskId}')">
+          📌 创建检查点
+        </div>
+      `;
+
+      document.body.appendChild(menu);
+    }
+
+    async function startTaskTDDDirect(taskId) {
+      if (!currentTreeId) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/tdd/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ treeId: currentTreeId, taskId }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('TDD 循环已启动', 'success');
+          refreshData();
+        } else {
+          showToast(result.error || '启动失败', 'error');
+        }
+      } catch (error) {
+        showToast('启动 TDD 循环失败', 'error');
+      }
+    }
+
+    function expandAll(nodeId) {
+      const nodeEl = document.querySelector(`[data-task-id="${nodeId}"]`);
+      if (!nodeEl) return;
+
+      nodeEl.querySelectorAll('.tree-children').forEach(el => {
+        el.classList.remove('collapsed');
+        collapsedNodes.delete(el.parentElement.dataset.taskId);
+      });
+      nodeEl.querySelectorAll('.collapse-btn').forEach(el => {
+        el.classList.remove('collapsed');
+      });
+    }
+
+    function collapseAll(nodeId) {
+      const nodeEl = document.querySelector(`[data-task-id="${nodeId}"]`);
+      if (!nodeEl) return;
+
+      nodeEl.querySelectorAll('.tree-children').forEach(el => {
+        el.classList.add('collapsed');
+        collapsedNodes.add(el.parentElement.dataset.taskId);
+      });
+      nodeEl.querySelectorAll('.collapse-btn').forEach(el => {
+        el.classList.add('collapsed');
+      });
+    }
+
+    // 全部展开
+    function expandAllTasks() {
+      const container = document.getElementById('taskTree');
+      container.querySelectorAll('.tree-children').forEach(el => {
+        el.classList.remove('collapsed');
+        el.style.maxHeight = 'none';
+      });
+      container.querySelectorAll('.collapse-btn').forEach(el => {
+        el.classList.remove('collapsed');
+      });
+      collapsedNodes.clear();
+      showToast('已展开所有任务', 'info');
+    }
+
+    // 全部折叠
+    function collapseAllTasks() {
+      const container = document.getElementById('taskTree');
+      container.querySelectorAll('.tree-children').forEach(el => {
+        el.classList.add('collapsed');
+        const parentId = el.parentElement?.dataset?.taskId;
+        if (parentId) collapsedNodes.add(parentId);
+      });
+      container.querySelectorAll('.collapse-btn').forEach(el => {
+        el.classList.add('collapsed');
+      });
+      showToast('已折叠所有任务', 'info');
+    }
+
+    // 搜索过滤任务
+    let searchTimeout = null;
+    function filterTasks(query) {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        const normalizedQuery = query.toLowerCase().trim();
+        const container = document.getElementById('taskTree');
+        const allNodes = container.querySelectorAll('.tree-node');
+
+        if (!normalizedQuery) {
+          // 清除搜索，恢复所有节点
+          allNodes.forEach(node => {
+            node.style.display = '';
+            const content = node.querySelector('.node-content');
+            if (content) content.style.background = '';
+          });
+          return;
+        }
+
+        // 收集匹配的节点ID
+        const matchedIds = new Set();
+        const parentIds = new Set();
+
+        // 首先找出所有匹配的任务
+        Object.values(taskDataCache).forEach(task => {
+          if (task.name.toLowerCase().includes(normalizedQuery) ||
+              (task.description && task.description.toLowerCase().includes(normalizedQuery))) {
+            matchedIds.add(task.id);
+            // 收集所有祖先节点
+            let parentId = task.parentId;
+            while (parentId) {
+              parentIds.add(parentId);
+              const parent = taskDataCache[parentId];
+              parentId = parent?.parentId;
+            }
+          }
+        });
+
+        // 显示/隐藏节点
+        allNodes.forEach(node => {
+          const taskId = node.dataset.taskId;
+          const isMatched = matchedIds.has(taskId);
+          const isParent = parentIds.has(taskId);
+          const content = node.querySelector('.node-content');
+
+          if (isMatched || isParent) {
+            node.style.display = '';
+            // 高亮匹配的节点
+            if (content) {
+              content.style.background = isMatched ? 'rgba(122, 162, 247, 0.2)' : '';
+            }
+            // 展开父节点
+            if (isParent) {
+              const children = node.querySelector('.tree-children');
+              const btn = node.querySelector('.collapse-btn');
+              if (children) {
+                children.classList.remove('collapsed');
+                children.style.maxHeight = 'none';
+              }
+              if (btn) btn.classList.remove('collapsed');
+              collapsedNodes.delete(taskId);
+            }
+          } else {
+            node.style.display = 'none';
+            if (content) content.style.background = '';
+          }
+        });
+
+        showToast(`找到 ${matchedIds.size} 个匹配任务`, 'info');
+      }, 300);
+    }
+
+    // ========================================================================
+    // Worker 列表
+    // ========================================================================
     function renderWorkerList(workers) {
       const container = document.getElementById('workerList');
 
@@ -721,16 +1757,17 @@
       container.innerHTML = workers.map(worker => {
         const progress = worker.tddCycle ?
           ((worker.tddCycle.iteration / worker.tddCycle.maxIterations) * 100) : 0;
+        const isActive = worker.status !== 'idle';
 
         return `
-          <div class="worker-card">
+          <div class="worker-card" data-worker-id="${worker.id}">
             <div class="worker-header">
               <span class="worker-id">${worker.id.substring(0, 8)}...</span>
               <span class="worker-status status-${worker.status}">${worker.status}</span>
             </div>
             <div class="worker-task">${worker.taskId ? '任务: ' + worker.taskId.substring(0, 8) + '...' : '空闲'}</div>
             <div class="worker-progress">
-              <div class="worker-progress-bar" style="width: ${progress}%"></div>
+              <div class="worker-progress-bar ${isActive ? 'progress-animated' : ''}" style="width: ${progress}%"></div>
             </div>
           </div>
         `;
@@ -743,7 +1780,32 @@
       }
     }
 
-    // 更新 TDD 阶段
+    function updateWorkerCard(worker) {
+      const card = document.querySelector(`[data-worker-id="${worker.id}"]`);
+      if (!card) {
+        refreshData();
+        return;
+      }
+
+      const statusEl = card.querySelector('.worker-status');
+      const taskEl = card.querySelector('.worker-task');
+      const progressBar = card.querySelector('.worker-progress-bar');
+
+      if (statusEl) {
+        statusEl.className = `worker-status status-${worker.status}`;
+        statusEl.textContent = worker.status;
+      }
+
+      if (taskEl) {
+        taskEl.textContent = worker.taskId ? '任务: ' + worker.taskId.substring(0, 8) + '...' : '空闲';
+      }
+
+      if (progressBar && worker.tddCycle) {
+        const progress = (worker.tddCycle.iteration / worker.tddCycle.maxIterations) * 100;
+        progressBar.style.width = `${progress}%`;
+      }
+    }
+
     function updateTDDPhase(phase) {
       const phases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor'];
       phases.forEach(p => {
@@ -759,7 +1821,9 @@
       });
     }
 
-    // 渲染时间线
+    // ========================================================================
+    // 时间线
+    // ========================================================================
     function renderTimeline(events) {
       const container = document.getElementById('timeline');
 
@@ -773,7 +1837,6 @@
         return;
       }
 
-      // 只显示最近 20 条
       const recentEvents = events.slice(-20).reverse();
 
       container.innerHTML = recentEvents.map(event => {
@@ -792,23 +1855,373 @@
       }).join('');
     }
 
-    // 切换执行状态
+    function addTimelineEvent(event) {
+      const container = document.getElementById('timeline');
+      const emptyState = container.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+
+      const typeClass = event.type.includes('fail') ? 'error' :
+                       event.type.includes('complete') || event.type.includes('pass') ? 'success' :
+                       event.type.includes('checkpoint') ? 'checkpoint' : '';
+
+      const time = new Date(event.timestamp).toLocaleTimeString();
+
+      const eventEl = document.createElement('div');
+      eventEl.className = `timeline-item ${typeClass}`;
+      eventEl.innerHTML = `
+        <div class="timeline-time">${time}</div>
+        <div class="timeline-content">${event.description}</div>
+      `;
+
+      container.insertBefore(eventEl, container.firstChild);
+
+      // 限制显示数量
+      while (container.children.length > 20) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    // ========================================================================
+    // 检查点管理
+    // ========================================================================
+    async function loadCheckpoints() {
+      if (!currentTreeId) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/time-travel/${currentTreeId}/checkpoints`);
+        const result = await response.json();
+
+        if (result.success) {
+          renderCheckpointList(result.data);
+        }
+      } catch (error) {
+        console.error('加载检查点失败:', error);
+      }
+    }
+
+    function renderCheckpointList(checkpoints) {
+      const container = document.getElementById('checkpointList');
+
+      if (!checkpoints || checkpoints.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📌</div>
+            <div>暂无检查点</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = checkpoints.map(cp => `
+        <div class="checkpoint-item" onclick="showCheckpointDetails('${cp.id}')">
+          <span class="checkpoint-icon">${cp.type === 'manual' ? '📌' : '🔄'}</span>
+          <div class="checkpoint-info">
+            <div class="checkpoint-name">${cp.name}</div>
+            <div class="checkpoint-time">${new Date(cp.timestamp).toLocaleString()}</div>
+          </div>
+          <span class="checkpoint-action">预览</span>
+        </div>
+      `).join('');
+    }
+
+    async function showCheckpointDetails(checkpointId) {
+      if (!currentTreeId) return;
+
+      selectedCheckpointId = checkpointId;
+
+      try {
+        // 获取检查点详情和回滚预览
+        const [detailsRes, previewRes] = await Promise.all([
+          fetch(`${API_BASE}/time-travel/${currentTreeId}/checkpoints/${checkpointId}`),
+          fetch(`${API_BASE}/time-travel/${currentTreeId}/preview/${checkpointId}`)
+        ]);
+
+        const details = await detailsRes.json();
+        const preview = await previewRes.json();
+
+        if (!details.success) {
+          showToast('加载检查点详情失败', 'error');
+          return;
+        }
+
+        const cp = details.data;
+        const rollbackInfo = preview.success ? preview.data : null;
+
+        const body = document.getElementById('checkpointModalBody');
+        body.innerHTML = `
+          <div class="task-detail-section">
+            <h3>检查点信息</h3>
+            <div class="task-detail-content">
+              <div class="task-detail-row">
+                <span class="task-detail-label">名称</span>
+                <span>${cp.name}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="task-detail-label">类型</span>
+                <span>${cp.type === 'manual' ? '手动' : '自动'}</span>
+              </div>
+              <div class="task-detail-row">
+                <span class="task-detail-label">创建时间</span>
+                <span>${new Date(cp.timestamp).toLocaleString()}</span>
+              </div>
+              ${cp.description ? `
+              <div class="task-detail-row">
+                <span class="task-detail-label">描述</span>
+                <span>${cp.description}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+
+          ${rollbackInfo ? `
+          <div class="task-detail-section">
+            <h3>回滚预览</h3>
+            <div class="rollback-preview">
+              <div class="rollback-warning">
+                ⚠️ 回滚将撤销以下 ${rollbackInfo.affectedTasks?.length || 0} 个任务的更改
+              </div>
+              <div class="rollback-tasks">
+                ${(rollbackInfo.affectedTasks || []).map(t => `
+                  <div class="rollback-task-item">
+                    <span>${getStatusIcon(t.status)}</span>
+                    <span>${t.name}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+          ` : ''}
+        `;
+
+        openModal('checkpointModal');
+      } catch (error) {
+        showToast('加载检查点详情失败', 'error');
+      }
+    }
+
+    async function confirmRollback() {
+      if (!currentTreeId || !selectedCheckpointId) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/time-travel/${currentTreeId}/rollback/${selectedCheckpointId}`, {
+          method: 'POST',
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('回滚成功!', 'success');
+          closeModal('checkpointModal');
+          refreshData();
+          loadCheckpoints();
+        } else {
+          showToast(result.error || '回滚失败', 'error');
+        }
+      } catch (error) {
+        showToast('回滚失败', 'error');
+      }
+    }
+
+    function createCheckpoint() {
+      if (!currentTreeId) {
+        showToast('请先加载任务树', 'warning');
+        return;
+      }
+      openModal('createCheckpointModal');
+    }
+
+    function createCheckpointForTask(taskId) {
+      if (!currentTreeId) return;
+      document.getElementById('checkpointName').value = `任务 ${taskId.substring(0, 8)} 检查点`;
+      openModal('createCheckpointModal');
+    }
+
+    async function submitCheckpoint() {
+      const name = document.getElementById('checkpointName').value.trim();
+      const description = document.getElementById('checkpointDesc').value.trim();
+
+      if (!name) {
+        showToast('请输入检查点名称', 'warning');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/time-travel/${currentTreeId}/checkpoints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('检查点创建成功!', 'success');
+          closeModal('createCheckpointModal');
+          document.getElementById('checkpointName').value = '';
+          document.getElementById('checkpointDesc').value = '';
+          loadCheckpoints();
+        } else {
+          showToast(result.error || '创建失败', 'error');
+        }
+      } catch (error) {
+        showToast('创建检查点失败', 'error');
+      }
+    }
+
+    // ========================================================================
+    // 蓝图管理
+    // ========================================================================
+    function showBlueprints() {
+      openModal('blueprintModal');
+      loadBlueprints();
+    }
+
+    async function loadBlueprints() {
+      try {
+        const response = await fetch(`${API_BASE}/blueprints`);
+        const result = await response.json();
+
+        if (result.success) {
+          renderBlueprintList(result.data);
+        }
+      } catch (error) {
+        showToast('加载蓝图列表失败', 'error');
+      }
+    }
+
+    function renderBlueprintList(blueprints) {
+      const container = document.getElementById('blueprintList');
+
+      if (!blueprints || blueprints.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📘</div>
+            <div>暂无蓝图，点击上方按钮创建</div>
+          </div>
+        `;
+        return;
+      }
+
+      const statusColors = {
+        draft: 'var(--text-secondary)',
+        review: 'var(--accent-yellow)',
+        approved: 'var(--accent-green)',
+        rejected: 'var(--accent-red)',
+      };
+
+      container.innerHTML = blueprints.map(bp => `
+        <div class="blueprint-card ${currentBlueprintId === bp.id ? 'selected' : ''}"
+             onclick="selectBlueprint('${bp.id}')">
+          <div class="blueprint-card-header">
+            <span class="blueprint-card-title">${bp.name}</span>
+            <span class="blueprint-card-status" style="background: ${statusColors[bp.status] || statusColors.draft}; color: var(--bg-primary);">
+              ${bp.status}
+            </span>
+          </div>
+          <div class="blueprint-card-desc">${bp.description || '无描述'}</div>
+          <div class="blueprint-card-meta">
+            <span>📦 ${bp.moduleCount} 模块</span>
+            <span>🔄 ${bp.processCount} 流程</span>
+            <span>v${bp.version}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectBlueprint(blueprintId) {
+      currentBlueprintId = blueprintId;
+
+      try {
+        // 初始化蜂王
+        const response = await fetch(`${API_BASE}/coordinator/queen`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blueprintId }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('蓝图已加载', 'success');
+          closeModal('blueprintModal');
+          refreshData();
+        } else {
+          showToast(result.error || '加载蓝图失败', 'error');
+        }
+      } catch (error) {
+        showToast('加载蓝图失败', 'error');
+      }
+    }
+
+    async function analyzeCodebase() {
+      showToast('开始分析代码库...', 'info');
+
+      try {
+        // 调用 blueprint/analyze API（需要在后端添加）
+        const response = await fetch(`${API_BASE}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rootDir: '.' }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('代码库分析完成!', 'success');
+          loadBlueprints();
+        } else {
+          showToast(result.error || '分析失败', 'error');
+        }
+      } catch (error) {
+        showToast('分析代码库失败', 'error');
+      }
+    }
+
+    function showCreateBlueprint() {
+      // 简单实现：使用 prompt
+      const name = prompt('请输入蓝图名称:');
+      if (!name) return;
+
+      const description = prompt('请输入蓝图描述:');
+      createNewBlueprint(name, description || '');
+    }
+
+    async function createNewBlueprint(name, description) {
+      try {
+        const response = await fetch(`${API_BASE}/blueprints`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description }),
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          showToast('蓝图创建成功!', 'success');
+          loadBlueprints();
+        } else {
+          showToast(result.error || '创建失败', 'error');
+        }
+      } catch (error) {
+        showToast('创建蓝图失败', 'error');
+      }
+    }
+
+    // ========================================================================
+    // 执行控制
+    // ========================================================================
     async function toggleExecution() {
       try {
         if (isRunning) {
           await fetch(`${API_BASE}/coordinator/stop`, { method: 'POST' });
+          showToast('执行已暂停', 'info');
         } else {
           await fetch(`${API_BASE}/coordinator/start`, { method: 'POST' });
+          showToast('开始执行任务', 'success');
         }
         isRunning = !isRunning;
         updateStartButton();
         refreshData();
       } catch (error) {
-        console.error('切换执行状态失败:', error);
+        showToast('操作失败', 'error');
       }
     }
 
-    // 更新开始按钮
     function updateStartButton() {
       const btn = document.getElementById('startBtn');
       if (isRunning) {
@@ -819,56 +2232,6 @@
         btn.textContent = '▶️ 开始执行';
         btn.classList.remove('btn-danger');
         btn.classList.add('btn-success');
-      }
-    }
-
-    // 创建检查点
-    async function createCheckpoint() {
-      if (!currentTreeId) {
-        alert('请先选择一个任务树');
-        return;
-      }
-
-      const name = prompt('请输入检查点名称:');
-      if (!name) return;
-
-      try {
-        await fetch(`${API_BASE}/time-travel/${currentTreeId}/checkpoints`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        alert('检查点创建成功!');
-        refreshData();
-      } catch (error) {
-        console.error('创建检查点失败:', error);
-        alert('创建检查点失败');
-      }
-    }
-
-    // 选择任务
-    function selectTask(taskId) {
-      console.log('选择任务:', taskId);
-      // TODO: 显示任务详情
-    }
-
-    // 回滚到检查点
-    async function rollbackTo(checkpointId) {
-      if (!currentTreeId) return;
-
-      if (!confirm('确定要回滚到此检查点吗? 这将撤销之后的所有更改。')) {
-        return;
-      }
-
-      try {
-        await fetch(`${API_BASE}/time-travel/${currentTreeId}/rollback/${checkpointId}`, {
-          method: 'POST',
-        });
-        alert('回滚成功!');
-        refreshData();
-      } catch (error) {
-        console.error('回滚失败:', error);
-        alert('回滚失败');
       }
     }
   </script>
