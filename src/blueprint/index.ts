@@ -66,3 +66,24 @@ export {
   type DirectoryNode,
   type CodebaseStats,
 } from './codebase-analyzer.js';
+
+// 需求对话流程
+export {
+  RequirementDialogManager,
+  requirementDialogManager,
+  type DialogPhase,
+  type DialogState,
+  type DialogMessage,
+  type BusinessProcessDraft,
+  type SystemModuleDraft,
+  type NFRDraft,
+} from './requirement-dialog.js';
+
+// 验收测试生成器
+export {
+  AcceptanceTestGenerator,
+  createAcceptanceTestGenerator,
+  type AcceptanceTestGeneratorConfig,
+  type AcceptanceTestContext,
+  type AcceptanceTestResult,
+} from './acceptance-test-generator.js';
