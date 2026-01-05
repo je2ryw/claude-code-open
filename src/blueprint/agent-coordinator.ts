@@ -26,7 +26,7 @@ import type {
 } from './types.js';
 import { blueprintManager } from './blueprint-manager.js';
 import { taskTreeManager } from './task-tree-manager.js';
-import { tddExecutor, TDDLoopState } from './tdd-executor.js';
+import { tddExecutor, TDDLoopState, TDD_PROMPTS } from './tdd-executor.js';
 
 // ============================================================================
 // 协调器配置
@@ -309,6 +309,13 @@ export class AgentCoordinator extends EventEmitter {
       throw new Error(`任务 ${taskId} 无法开始: ${blockers.join(', ')}`);
     }
 
+    // 获取任务详情
+    const tree = taskTreeManager.getTaskTree(this.queen.taskTreeId);
+    const task = tree ? taskTreeManager.findTask(tree.root, taskId) : null;
+    if (!task) {
+      throw new Error(`任务 ${taskId} 不存在`);
+    }
+
     // 更新 Worker 状态
     worker.taskId = taskId;
     worker.status = 'test_writing';
@@ -324,6 +331,120 @@ export class AgentCoordinator extends EventEmitter {
 
     this.addTimelineEvent('task_start', `任务分配: ${taskId}`, { workerId, taskId });
     this.emit('task:assigned', { workerId, taskId });
+
+    // 在后台执行 Worker 任务
+    this.executeWorkerTask(worker, task).catch(error => {
+      console.error(`Worker ${workerId} 任务执行失败:`, error);
+      this.workerFailTask(workerId, error.message || String(error));
+    });
+  }
+
+  /**
+   * 执行 Worker 任务（使用 TDD 循环）
+   */
+  private async executeWorkerTask(worker: WorkerAgent, task: TaskNode): Promise<void> {
+    if (!this.queen) return;
+
+    try {
+      // 构建任务提示词，强调 TDD 方法
+      const taskPrompt = this.buildWorkerTaskPrompt(task);
+
+      // 动态导入 TaskTool 避免循环依赖
+      const { TaskTool } = await import('../tools/agent.js');
+      const taskTool = new TaskTool();
+
+      // 使用 blueprint-worker 代理类型执行任务
+      // 注意：model 参数需要匹配 AgentInput 的类型
+      const modelAlias = this.config.defaultWorkerModel as 'sonnet' | 'opus' | 'haiku';
+      const result = await taskTool.execute({
+        description: `Execute: ${task.name}`,
+        prompt: taskPrompt,
+        subagent_type: 'blueprint-worker',
+        model: modelAlias,
+      });
+
+      if (result.success) {
+        // 检查 TDD 循环是否完成
+        if (tddExecutor.isInLoop(task.id)) {
+          const loopState = tddExecutor.getLoopState(task.id);
+
+          if (loopState.phase === 'done') {
+            // 任务完成
+            taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'passed');
+            this.workerCompleteTask(worker.id);
+          } else {
+            // TDD 循环未完成，标记为失败
+            taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'test_failed');
+            this.workerFailTask(worker.id, `TDD 循环未完成，当前阶段: ${loopState.phase}`);
+          }
+        } else {
+          // 没有 TDD 循环状态，根据输出判断
+          if (result.output?.includes('tests pass') || result.output?.includes('测试通过')) {
+            taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'passed');
+            this.workerCompleteTask(worker.id);
+          } else {
+            taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'test_failed');
+            this.workerFailTask(worker.id, '任务完成但测试状态不明');
+          }
+        }
+      } else {
+        // 任务执行失败
+        taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'test_failed');
+        this.workerFailTask(worker.id, result.error || '任务执行失败');
+      }
+
+    } catch (error: any) {
+      taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, task.id, 'test_failed');
+      throw error;
+    }
+  }
+
+  /**
+   * 构建 Worker 任务提示词
+   */
+  private buildWorkerTaskPrompt(task: TaskNode): string {
+    const lines: string[] = [];
+
+    lines.push(`# 任务: ${task.name}`);
+    lines.push('');
+    lines.push(`## 任务描述`);
+    lines.push(task.description);
+    lines.push('');
+
+    // 验收标准来自 testSpec
+    if (task.testSpec?.acceptanceCriteria && task.testSpec.acceptanceCriteria.length > 0) {
+      lines.push(`## 验收标准`);
+      for (const criteria of task.testSpec.acceptanceCriteria) {
+        lines.push(`- ${criteria}`);
+      }
+      lines.push('');
+    }
+
+    if (task.testSpec) {
+      lines.push(`## 测试规范`);
+      lines.push(task.testSpec.description);
+      if (task.testSpec.testCode) {
+        lines.push('');
+        lines.push('```');
+        lines.push(task.testSpec.testCode);
+        lines.push('```');
+      }
+      lines.push('');
+    }
+
+    lines.push(`## TDD 执行要求`);
+    lines.push('');
+    lines.push('你必须严格遵循 TDD（测试驱动开发）方法：');
+    lines.push('');
+    lines.push('1. **先写测试** - 在编写任何实现代码之前，先编写失败的测试用例');
+    lines.push('2. **运行测试（红灯）** - 确认测试失败，证明测试有效');
+    lines.push('3. **编写实现** - 编写最少的代码让测试通过');
+    lines.push('4. **运行测试（绿灯）** - 确认所有测试通过');
+    lines.push('5. **重构** - 在保持测试通过的前提下优化代码');
+    lines.push('');
+    lines.push('⚠️ 重要：只有当所有测试通过时，任务才算完成！');
+
+    return lines.join('\n');
   }
 
   /**

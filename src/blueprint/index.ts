@@ -54,3 +54,15 @@ export {
   type CompareResult,
   type TaskChange,
 } from './time-travel.js';
+
+// 代码库分析器
+export {
+  CodebaseAnalyzer,
+  codebaseAnalyzer,
+  quickAnalyze,
+  type AnalyzerConfig,
+  type CodebaseInfo,
+  type DetectedModule,
+  type DirectoryNode,
+  type CodebaseStats,
+} from './codebase-analyzer.js';
