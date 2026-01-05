@@ -8,11 +8,32 @@ import { toolRegistry } from '../../../tools/index.js';
 import { apiManager } from '../api-manager.js';
 import { authManager } from '../auth-manager.js';
 import { CheckpointManager } from '../checkpoint-manager.js';
+import blueprintApiRouter from './blueprint-api.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 全局检查点管理器实例
 const checkpointManager = new CheckpointManager();
 
 export function setupApiRoutes(app: Express, conversationManager: ConversationManager): void {
+  // ============ 蓝图系统 API ============
+  // 注册蓝图API路由
+  app.use('/api/blueprint', blueprintApiRouter);
+
+  // 蓝图仪表板页面
+  app.get('/blueprint', (req: Request, res: Response) => {
+    const dashboardPath = path.join(__dirname, '../../../blueprint/dashboard.html');
+    if (fs.existsSync(dashboardPath)) {
+      res.sendFile(dashboardPath);
+    } else {
+      res.status(404).send('蓝图仪表板未找到');
+    }
+  });
+
   // 健康检查
   app.get('/api/health', (req: Request, res: Response) => {
     res.json({

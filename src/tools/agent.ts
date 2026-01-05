@@ -18,7 +18,7 @@ import {
   type HookInput
 } from '../hooks/index.js';
 import type { Message } from '../types/index.js';
-import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT } from '../prompt/templates.js';
+import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
 
 // 代理类型定义（参照官方）
 export interface AgentTypeDefinition {
@@ -118,6 +118,13 @@ export const BUILT_IN_AGENT_TYPES: AgentTypeDefinition[] = [
     tools: ['Glob', 'Grep', 'Read', 'WebFetch', 'WebSearch'],
     forkContext: false,
     // claude-code-guide agent 的系统提示词待后续添加
+  },
+  {
+    agentType: 'blueprint-worker',
+    whenToUse: 'Worker agent for executing blueprint tasks with TDD methodology. This agent writes tests first, then implements code until tests pass. Only used by the blueprint system (Queen Agent).',
+    tools: ['*'],
+    forkContext: false,
+    getSystemPrompt: () => BLUEPRINT_WORKER_PROMPT,
   },
 ];
 
