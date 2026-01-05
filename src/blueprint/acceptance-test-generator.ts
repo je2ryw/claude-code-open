@@ -14,6 +14,7 @@ import {
   SystemModule,
   Blueprint,
 } from './types.js';
+import { getAuth, type AuthConfig } from '../auth/index.js';
 
 /**
  * 验收测试生成配置
@@ -69,22 +70,59 @@ export class AcceptanceTestGenerator {
     this.model = config.model || 'claude-sonnet-4-20250514';
 
     // 延迟初始化 - 不在构造函数中抛出错误
-    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+    // 尝试初始化 client（API key 或 OAuth token）
+    this.tryInitClient();
+  }
+
+  /**
+   * 尝试初始化 client（支持 API key 和 OAuth token）
+   * 如果没有可用的凭证，client 保持为 null，等待 ensureClient() 时再次尝试
+   */
+  private tryInitClient(): void {
+    // 1. 检查配置和环境变量中的 API key
+    const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
     if (apiKey) {
       this.client = new Anthropic({ apiKey });
+      return;
     }
+
+    // 2. 检查 OAuth 认证
+    const auth = getAuth();
+    if (auth) {
+      if (auth.type === 'api_key' && auth.apiKey) {
+        this.client = new Anthropic({ apiKey: auth.apiKey });
+      } else if (auth.type === 'oauth' && auth.authToken) {
+        // OAuth 订阅用户：直接使用 authToken
+        this.client = new Anthropic({
+          apiKey: auth.authToken,
+          baseURL: 'https://api.anthropic.com',
+          defaultHeaders: {
+            'anthropic-beta': 'claude-code-20250219',
+          },
+        });
+      }
+    }
+    // 如果都没有，client 保持 null，稍后调用 ensureClient() 会抛出错误
   }
 
   /**
    * 确保 client 已初始化
+   * 支持 API Key 和 OAuth token 两种认证方式
    */
   private ensureClient(): Anthropic {
     if (!this.client) {
-      const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-      if (!apiKey) {
-        throw new Error('Anthropic API key is required for acceptance test generation');
+      // 尝试初始化 client
+      this.tryInitClient();
+
+      // 如果仍然没有初始化成功，抛出错误
+      if (!this.client) {
+        throw new Error(
+          'Anthropic API key or OAuth token is required for acceptance test generation.\n' +
+          'Please either:\n' +
+          '  1. Set ANTHROPIC_API_KEY environment variable\n' +
+          '  2. Login with /login command (OAuth subscription)'
+        );
       }
-      this.client = new Anthropic({ apiKey });
     }
     return this.client;
   }
