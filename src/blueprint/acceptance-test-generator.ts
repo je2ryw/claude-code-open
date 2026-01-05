@@ -60,7 +60,7 @@ export interface AcceptanceTestResult {
  * 验收测试生成器
  */
 export class AcceptanceTestGenerator {
-  private client: Anthropic;
+  private client: Anthropic | null = null;
   private config: AcceptanceTestGeneratorConfig;
   private model: string;
 
@@ -68,12 +68,25 @@ export class AcceptanceTestGenerator {
     this.config = config;
     this.model = config.model || 'claude-sonnet-4-20250514';
 
+    // 延迟初始化 - 不在构造函数中抛出错误
     const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Anthropic API key is required for acceptance test generation');
+    if (apiKey) {
+      this.client = new Anthropic({ apiKey });
     }
+  }
 
-    this.client = new Anthropic({ apiKey });
+  /**
+   * 确保 client 已初始化
+   */
+  private ensureClient(): Anthropic {
+    if (!this.client) {
+      const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+      if (!apiKey) {
+        throw new Error('Anthropic API key is required for acceptance test generation');
+      }
+      this.client = new Anthropic({ apiKey });
+    }
+    return this.client;
   }
 
   /**
@@ -86,7 +99,8 @@ export class AcceptanceTestGenerator {
     const prompt = this.buildPrompt(task, blueprint, module, parentAcceptanceTests, relatedCode);
 
     try {
-      const response = await this.client.messages.create({
+      const client = this.ensureClient();
+      const response = await client.messages.create({
         model: this.model,
         max_tokens: 4096,
         messages: [
