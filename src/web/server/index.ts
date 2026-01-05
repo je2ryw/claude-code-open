@@ -1665,6 +1665,347 @@ function getInlineCSS(): string {
       border-color: var(--accent-primary);
     }
 
+    .blueprint-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--accent-primary) 0%, #9f7aea 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .blueprint-btn:hover {
+      opacity: 0.9;
+    }
+
+    /* 蓝图面板 */
+    .blueprint-panel-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .blueprint-panel {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 900px;
+      height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .blueprint-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .blueprint-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .blueprint-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    .blueprint-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .blueprint-nav {
+      width: 140px;
+      background: var(--bg-primary);
+      border-right: 1px solid var(--border-color);
+      padding: 12px 0;
+    }
+
+    .blueprint-nav-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .blueprint-nav-item:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .blueprint-nav-item.active {
+      background: var(--bg-secondary);
+      color: var(--accent-primary);
+      border-right: 2px solid var(--accent-primary);
+    }
+
+    .blueprint-content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .blueprint-section {
+      height: 100%;
+    }
+
+    .blueprint-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+    }
+
+    .blueprint-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .blueprint-empty .empty-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+
+    .blueprint-empty h3 {
+      margin: 0 0 8px 0;
+      color: var(--text-primary);
+    }
+
+    .blueprint-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .blueprint-action-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .blueprint-action-btn:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .blueprint-action-btn.primary {
+      background: var(--accent-primary);
+      border: none;
+      color: var(--bg-primary);
+    }
+
+    .blueprint-action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .blueprint-overview {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .blueprint-info h3 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+    }
+
+    .blueprint-status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: var(--bg-tertiary);
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .blueprint-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 12px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* 模块列表 */
+    .module-list, .process-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .module-item, .process-item {
+      padding: 16px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .module-name, .process-name {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .module-type, .process-type {
+      display: inline-block;
+      padding: 2px 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .module-desc, .process-steps {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    /* 任务树 */
+    .task-tree-view {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .task-tree-stats {
+      display: flex;
+      gap: 24px;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+    }
+
+    .task-tree-stats span {
+      font-size: 14px;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      border-left: 3px solid var(--border-color);
+    }
+
+    .task-item.task-completed {
+      border-left-color: var(--accent-success);
+    }
+
+    .task-item.task-in_progress {
+      border-left-color: var(--accent-warning);
+    }
+
+    .task-item.task-failed {
+      border-left-color: var(--accent-error);
+    }
+
+    .task-status-icon {
+      font-size: 16px;
+    }
+
+    .task-title {
+      flex: 1;
+    }
+
+    .task-tests {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 2px 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+    }
+
+    /* 时间线 */
+    .timeline-view h4 {
+      margin: 0 0 8px 0;
+    }
+
+    .timeline-view > p {
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .checkpoint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .checkpoint-item {
+      padding: 16px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .checkpoint-item:hover {
+      border-color: var(--accent-primary);
+      background: var(--bg-tertiary);
+    }
+
+    .checkpoint-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .checkpoint-desc {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .checkpoint-task {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
     .empty-state {
       text-align: center;
       padding: 40px 20px;
@@ -2279,6 +2620,7 @@ function getInlineReactApp(port: number): string {
       const [userQuestion, setUserQuestion] = useState(null);
       const [sessions, setSessions] = useState([]);
       const [showSettings, setShowSettings] = useState(false);
+      const [showBlueprint, setShowBlueprint] = useState(false);
       const chatContainerRef = useRef(null);
       const inputRef = useRef(null);
       const fileInputRef = useRef(null);
@@ -2729,6 +3071,10 @@ function getInlineReactApp(port: number): string {
           }),
           React.createElement('div', { className: 'sidebar-footer' },
             React.createElement('button', {
+              className: 'blueprint-btn',
+              onClick: () => setShowBlueprint(true)
+            }, '📋 蓝图'),
+            React.createElement('button', {
               className: 'settings-btn',
               onClick: () => setShowSettings(true)
             }, '⚙️ 设置'),
@@ -2842,7 +3188,376 @@ function getInlineReactApp(port: number): string {
           onClose: () => setShowSettings(false),
           send: send,
           addMessageHandler: addMessageHandler
+        }),
+        // 蓝图面板
+        showBlueprint && React.createElement(BlueprintPanel, {
+          onClose: () => setShowBlueprint(false),
+          send: send,
+          addMessageHandler: addMessageHandler
         })
+      );
+    }
+
+    // 蓝图面板组件
+    function BlueprintPanel({ onClose, send, addMessageHandler }) {
+      const [activeTab, setActiveTab] = useState('overview');
+      const [blueprint, setBlueprint] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [analyzing, setAnalyzing] = useState(false);
+      const [taskTree, setTaskTree] = useState(null);
+      const [timeline, setTimeline] = useState([]);
+
+      // 加载蓝图数据
+      useEffect(() => {
+        fetchBlueprint();
+      }, []);
+
+      const fetchBlueprint = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch('/api/blueprint/blueprints');
+          const data = await res.json();
+          if (data.success && data.data.length > 0) {
+            // 获取最新的蓝图详情
+            const latestId = data.data.sort((a, b) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            )[0].id;
+            const detailRes = await fetch(\`/api/blueprint/blueprints/\${latestId}\`);
+            const detailData = await detailRes.json();
+            if (detailData.success) {
+              setBlueprint(detailData.data);
+              // 如果有任务树，加载它
+              if (detailData.data.taskTreeId) {
+                const treeRes = await fetch(\`/api/blueprint/task-trees/\${detailData.data.taskTreeId}\`);
+                const treeData = await treeRes.json();
+                if (treeData.success) {
+                  setTaskTree(treeData.data);
+                }
+                // 加载时间线
+                const timelineRes = await fetch(\`/api/blueprint/time-travel/\${detailData.data.taskTreeId}/timeline\`);
+                const timelineData = await timelineRes.json();
+                if (timelineData.success) {
+                  setTimeline(timelineData.data.checkpoints || []);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('加载蓝图失败:', err);
+        }
+        setLoading(false);
+      };
+
+      // 分析代码库
+      const handleAnalyze = async () => {
+        setAnalyzing(true);
+        try {
+          const res = await fetch('/api/blueprint/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ granularity: 'medium' })
+          });
+          const data = await res.json();
+          if (data.success) {
+            await fetchBlueprint();
+            setActiveTab('overview');
+          } else {
+            alert('分析失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('分析失败: ' + err.message);
+        }
+        setAnalyzing(false);
+      };
+
+      // 创建新蓝图
+      const handleCreate = async () => {
+        const name = prompt('请输入项目名称:');
+        if (!name) return;
+        const description = prompt('请输入项目描述:');
+        if (!description) return;
+
+        try {
+          const res = await fetch('/api/blueprint/blueprints', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+          });
+          const data = await res.json();
+          if (data.success) {
+            await fetchBlueprint();
+            setActiveTab('overview');
+          } else {
+            alert('创建失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('创建失败: ' + err.message);
+        }
+      };
+
+      // 提交审核
+      const handleSubmitReview = async () => {
+        if (!blueprint) return;
+        try {
+          const res = await fetch(\`/api/blueprint/blueprints/\${blueprint.id}/submit\`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (data.success) {
+            setBlueprint(data.data);
+          } else {
+            alert('提交审核失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('提交审核失败: ' + err.message);
+        }
+      };
+
+      // 批准蓝图
+      const handleApprove = async () => {
+        if (!blueprint) return;
+        try {
+          const res = await fetch(\`/api/blueprint/blueprints/\${blueprint.id}/approve\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approvedBy: 'user' })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setBlueprint(data.data);
+          } else {
+            alert('批准失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('批准失败: ' + err.message);
+        }
+      };
+
+      // 初始化蜂王并执行
+      const handleExecute = async () => {
+        if (!blueprint) return;
+        try {
+          const res = await fetch('/api/blueprint/coordinator/queen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blueprintId: blueprint.id })
+          });
+          const data = await res.json();
+          if (data.success) {
+            // 启动主循环
+            await fetch('/api/blueprint/coordinator/start', { method: 'POST' });
+            await fetchBlueprint();
+            setActiveTab('execution');
+          } else {
+            alert('启动执行失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('启动执行失败: ' + err.message);
+        }
+      };
+
+      // 回滚到检查点
+      const handleRollback = async (checkpointId) => {
+        if (!blueprint?.taskTreeId) return;
+        if (!confirm('确定要回滚到这个检查点吗？这将撤销之后的所有更改。')) return;
+        try {
+          const res = await fetch(\`/api/blueprint/time-travel/\${blueprint.taskTreeId}/rollback/\${checkpointId}\`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('回滚成功！');
+            await fetchBlueprint();
+          } else {
+            alert('回滚失败: ' + data.error);
+          }
+        } catch (err) {
+          alert('回滚失败: ' + err.message);
+        }
+      };
+
+      // 格式化状态
+      const formatStatus = (status) => {
+        const map = {
+          draft: '📝 草稿',
+          review: '🔍 审核中',
+          approved: '✅ 已批准',
+          executing: '🚀 执行中',
+          paused: '⏸️ 已暂停',
+          completed: '🎉 已完成',
+          modified: '⚠️ 已修改'
+        };
+        return map[status] || status;
+      };
+
+      return React.createElement('div', { className: 'blueprint-panel-overlay', onClick: onClose },
+        React.createElement('div', { className: 'blueprint-panel', onClick: (e) => e.stopPropagation() },
+          // 头部
+          React.createElement('div', { className: 'blueprint-header' },
+            React.createElement('h2', null, '📋 项目蓝图'),
+            React.createElement('button', { className: 'blueprint-close-btn', onClick: onClose }, '×')
+          ),
+          // 主体
+          React.createElement('div', { className: 'blueprint-body' },
+            // 导航
+            React.createElement('div', { className: 'blueprint-nav' },
+              React.createElement('div', {
+                className: 'blueprint-nav-item ' + (activeTab === 'overview' ? 'active' : ''),
+                onClick: () => setActiveTab('overview')
+              }, '📄 概览'),
+              React.createElement('div', {
+                className: 'blueprint-nav-item ' + (activeTab === 'modules' ? 'active' : ''),
+                onClick: () => setActiveTab('modules')
+              }, '🧩 模块'),
+              React.createElement('div', {
+                className: 'blueprint-nav-item ' + (activeTab === 'processes' ? 'active' : ''),
+                onClick: () => setActiveTab('processes')
+              }, '🔄 流程'),
+              React.createElement('div', {
+                className: 'blueprint-nav-item ' + (activeTab === 'execution' ? 'active' : ''),
+                onClick: () => setActiveTab('execution')
+              }, '🚀 执行'),
+              React.createElement('div', {
+                className: 'blueprint-nav-item ' + (activeTab === 'timeline' ? 'active' : ''),
+                onClick: () => setActiveTab('timeline')
+              }, '⏳ 时光机')
+            ),
+            // 内容区
+            React.createElement('div', { className: 'blueprint-content' },
+              loading ? React.createElement('div', { className: 'blueprint-loading' }, '加载中...') :
+              // 概览 Tab
+              activeTab === 'overview' && React.createElement('div', { className: 'blueprint-section' },
+                !blueprint ? React.createElement('div', { className: 'blueprint-empty' },
+                  React.createElement('div', { className: 'empty-icon' }, '📋'),
+                  React.createElement('h3', null, '暂无蓝图'),
+                  React.createElement('p', null, '您可以：'),
+                  React.createElement('div', { className: 'blueprint-actions' },
+                    React.createElement('button', {
+                      className: 'blueprint-action-btn primary',
+                      onClick: handleAnalyze,
+                      disabled: analyzing
+                    }, analyzing ? '分析中...' : '🔍 分析现有代码'),
+                    React.createElement('button', {
+                      className: 'blueprint-action-btn',
+                      onClick: handleCreate
+                    }, '✨ 创建新项目')
+                  )
+                ) : React.createElement('div', { className: 'blueprint-overview' },
+                  React.createElement('div', { className: 'blueprint-info' },
+                    React.createElement('h3', null, blueprint.name),
+                    React.createElement('div', { className: 'blueprint-status' }, formatStatus(blueprint.status)),
+                    React.createElement('p', null, blueprint.description),
+                    React.createElement('div', { className: 'blueprint-meta' },
+                      React.createElement('span', null, \`版本: \${blueprint.version}\`),
+                      React.createElement('span', null, \`模块: \${blueprint.modules?.length || 0}\`),
+                      React.createElement('span', null, \`流程: \${blueprint.businessProcesses?.length || 0}\`)
+                    )
+                  ),
+                  // 操作按钮
+                  React.createElement('div', { className: 'blueprint-actions' },
+                    blueprint.status === 'draft' && React.createElement('button', {
+                      className: 'blueprint-action-btn',
+                      onClick: handleSubmitReview
+                    }, '📤 提交审核'),
+                    blueprint.status === 'review' && React.createElement('button', {
+                      className: 'blueprint-action-btn primary',
+                      onClick: handleApprove
+                    }, '✅ 批准蓝图'),
+                    blueprint.status === 'approved' && React.createElement('button', {
+                      className: 'blueprint-action-btn primary',
+                      onClick: handleExecute
+                    }, '🚀 开始执行'),
+                    React.createElement('button', {
+                      className: 'blueprint-action-btn',
+                      onClick: handleAnalyze,
+                      disabled: analyzing
+                    }, analyzing ? '分析中...' : '🔄 重新分析')
+                  )
+                )
+              ),
+              // 模块 Tab
+              activeTab === 'modules' && React.createElement('div', { className: 'blueprint-section' },
+                !blueprint?.modules?.length
+                  ? React.createElement('div', { className: 'blueprint-empty' }, '暂无模块')
+                  : React.createElement('div', { className: 'module-list' },
+                      blueprint.modules.map(m => React.createElement('div', { key: m.id, className: 'module-item' },
+                        React.createElement('div', { className: 'module-name' }, m.name),
+                        React.createElement('div', { className: 'module-type' }, m.type),
+                        React.createElement('div', { className: 'module-desc' }, m.description)
+                      ))
+                    )
+              ),
+              // 流程 Tab
+              activeTab === 'processes' && React.createElement('div', { className: 'blueprint-section' },
+                !blueprint?.businessProcesses?.length
+                  ? React.createElement('div', { className: 'blueprint-empty' }, '暂无流程')
+                  : React.createElement('div', { className: 'process-list' },
+                      blueprint.businessProcesses.map(p => React.createElement('div', { key: p.id, className: 'process-item' },
+                        React.createElement('div', { className: 'process-name' }, p.name),
+                        React.createElement('div', { className: 'process-type' }, p.type),
+                        React.createElement('div', { className: 'process-steps' }, \`\${p.steps?.length || 0} 个步骤\`)
+                      ))
+                    )
+              ),
+              // 执行 Tab
+              activeTab === 'execution' && React.createElement('div', { className: 'blueprint-section' },
+                !taskTree
+                  ? React.createElement('div', { className: 'blueprint-empty' },
+                      React.createElement('p', null, '蓝图尚未开始执行'),
+                      blueprint?.status === 'approved' && React.createElement('button', {
+                        className: 'blueprint-action-btn primary',
+                        onClick: handleExecute
+                      }, '🚀 开始执行')
+                    )
+                  : React.createElement('div', { className: 'task-tree-view' },
+                      React.createElement('div', { className: 'task-tree-stats' },
+                        React.createElement('span', null, \`总任务: \${taskTree.stats?.totalTasks || 0}\`),
+                        React.createElement('span', null, \`已完成: \${taskTree.stats?.completedTasks || 0}\`),
+                        React.createElement('span', null, \`执行中: \${taskTree.stats?.inProgressTasks || 0}\`)
+                      ),
+                      React.createElement('div', { className: 'task-list' },
+                        taskTree.tasks?.slice(0, 20).map(t => React.createElement('div', {
+                          key: t.id,
+                          className: \`task-item task-\${t.status}\`
+                        },
+                          React.createElement('span', { className: 'task-status-icon' },
+                            t.status === 'completed' ? '✅' :
+                            t.status === 'in_progress' ? '🔄' :
+                            t.status === 'failed' ? '❌' : '⏳'
+                          ),
+                          React.createElement('span', { className: 'task-title' }, t.title || t.name),
+                          t.acceptanceTests?.length > 0 && React.createElement('span', { className: 'task-tests' },
+                            \`测试: \${t.acceptanceTests.filter(at => at.lastResult?.passed).length}/\${t.acceptanceTests.length}\`
+                          )
+                        ))
+                      )
+                    )
+              ),
+              // 时光机 Tab
+              activeTab === 'timeline' && React.createElement('div', { className: 'blueprint-section' },
+                !timeline.length
+                  ? React.createElement('div', { className: 'blueprint-empty' }, '暂无历史检查点')
+                  : React.createElement('div', { className: 'timeline-view' },
+                      React.createElement('h4', null, '⏳ 时光倒流'),
+                      React.createElement('p', null, '点击检查点可回滚到该状态'),
+                      React.createElement('div', { className: 'checkpoint-list' },
+                        timeline.map(cp => React.createElement('div', {
+                          key: cp.id,
+                          className: 'checkpoint-item',
+                          onClick: () => handleRollback(cp.id)
+                        },
+                          React.createElement('div', { className: 'checkpoint-time' },
+                            new Date(cp.timestamp).toLocaleString()
+                          ),
+                          React.createElement('div', { className: 'checkpoint-desc' }, cp.description),
+                          React.createElement('div', { className: 'checkpoint-task' }, cp.taskId ? \`任务: \${cp.taskId.slice(0, 8)}...\` : '手动保存')
+                        ))
+                      )
+                    )
+              )
+            )
+          )
+        )
       );
     }
 
