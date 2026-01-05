@@ -10,6 +10,8 @@
  */
 
 import { Router, Request, Response } from 'express';
+import * as path from 'path';
+import * as fs from 'fs';
 import {
   blueprintManager,
   taskTreeManager,
@@ -596,6 +598,53 @@ router.get('/time-travel/:treeId/ascii', (req: Request, res: Response) => {
   try {
     const ascii = timeTravelManager.generateTimelineAscii(req.params.treeId);
     res.json({ success: true, data: ascii });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 页面路由
+// ============================================================================
+
+/**
+ * 蓝图预览页面
+ */
+router.get('/preview', (req: Request, res: Response) => {
+  const previewPath = path.join(__dirname, '../../../blueprint/blueprint-preview.html');
+  if (fs.existsSync(previewPath)) {
+    res.sendFile(previewPath);
+  } else {
+    res.status(404).send('Preview page not found');
+  }
+});
+
+/**
+ * 仪表板页面
+ */
+router.get('/dashboard', (req: Request, res: Response) => {
+  const dashboardPath = path.join(__dirname, '../../../blueprint/dashboard.html');
+  if (fs.existsSync(dashboardPath)) {
+    res.sendFile(dashboardPath);
+  } else {
+    res.status(404).send('Dashboard page not found');
+  }
+});
+
+/**
+ * 获取当前/最新的蓝图（便捷接口）
+ */
+router.get('/blueprints/current', (req: Request, res: Response) => {
+  try {
+    const blueprints = blueprintManager.getAllBlueprints();
+    if (blueprints.length === 0) {
+      return res.status(404).json({ success: false, error: 'No blueprints found' });
+    }
+    // 返回最新的蓝图
+    const latest = blueprints.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )[0];
+    res.json({ success: true, data: latest });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

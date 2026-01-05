@@ -972,7 +972,7 @@ export class TaskTreeManager extends EventEmitter {
   // 持久化
   // --------------------------------------------------------------------------
 
-  private saveTaskTree(tree: TaskTree): void {
+  saveTaskTree(tree: TaskTree): void {
     try {
       const filePath = getTaskTreeFilePath(tree.id);
       const data = this.serializeTree(tree);

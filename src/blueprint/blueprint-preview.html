@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>蓝图预览 | Claude Code</title>
+  <style>
+    :root {
+      --bg-primary: #1a1b26;
+      --bg-secondary: #24283b;
+      --bg-tertiary: #414868;
+      --text-primary: #c0caf5;
+      --text-secondary: #a9b1d6;
+      --accent-blue: #7aa2f7;
+      --accent-green: #9ece6a;
+      --accent-red: #f7768e;
+      --accent-yellow: #e0af68;
+      --accent-purple: #bb9af7;
+      --accent-cyan: #7dcfff;
+      --border-color: #414868;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* 头部 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: var(--accent-blue);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header h1::before {
+      content: '📋';
+    }
+
+    .status-badge {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-draft { background: var(--bg-tertiary); color: var(--text-secondary); }
+    .status-review { background: var(--accent-yellow); color: var(--bg-primary); }
+    .status-approved { background: var(--accent-green); color: var(--bg-primary); }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--accent-blue);
+      color: var(--bg-primary);
+    }
+
+    .btn-success {
+      background: var(--accent-green);
+      color: var(--bg-primary);
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 2px solid var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    .btn:hover {
+      opacity: 0.85;
+      transform: translateY(-1px);
+    }
+
+    /* 项目概述 */
+    .overview-section {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border-color);
+    }
+
+    .overview-section h2 {
+      font-size: 18px;
+      color: var(--accent-cyan);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .overview-item {
+      background: var(--bg-tertiary);
+      padding: 16px;
+      border-radius: 8px;
+    }
+
+    .overview-item label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .overview-item .value {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    /* 主内容区 */
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1000px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 卡片 */
+    .card {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 16px 20px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-body {
+      padding: 20px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    /* 模块列表 */
+    .module-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .module-item {
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 16px;
+      transition: transform 0.2s;
+    }
+
+    .module-item:hover {
+      transform: translateX(4px);
+    }
+
+    .module-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .module-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent-purple);
+    }
+
+    .module-type {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+    }
+
+    .module-description {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+
+    .module-responsibilities {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .responsibility-tag {
+      font-size: 11px;
+      padding: 4px 8px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    /* 业务流程 */
+    .process-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .process-item {
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .process-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent-yellow);
+      margin-bottom: 8px;
+    }
+
+    .process-description {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .process-steps {
+      position: relative;
+      padding-left: 24px;
+    }
+
+    .process-steps::before {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      background: var(--border-color);
+    }
+
+    .step-item {
+      position: relative;
+      margin-bottom: 12px;
+      padding-left: 16px;
+    }
+
+    .step-item::before {
+      content: '';
+      position: absolute;
+      left: -18px;
+      top: 6px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-blue);
+      border: 2px solid var(--bg-tertiary);
+    }
+
+    .step-number {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-right: 8px;
+    }
+
+    .step-name {
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    /* 任务树预览 */
+    .task-tree-preview {
+      font-size: 13px;
+    }
+
+    .tree-node {
+      padding: 4px 0;
+    }
+
+    .tree-node-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .tree-node-content:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .tree-icon {
+      color: var(--accent-green);
+    }
+
+    .tree-children {
+      margin-left: 20px;
+      border-left: 1px dashed var(--border-color);
+      padding-left: 12px;
+    }
+
+    /* NFR 列表 */
+    .nfr-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nfr-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+    }
+
+    .nfr-priority {
+      font-size: 10px;
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .priority-must { background: var(--accent-red); color: var(--bg-primary); }
+    .priority-should { background: var(--accent-yellow); color: var(--bg-primary); }
+    .priority-could { background: var(--accent-blue); color: var(--bg-primary); }
+
+    .nfr-content {
+      flex: 1;
+    }
+
+    .nfr-name {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .nfr-description {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* 底部操作区 */
+    .footer-actions {
+      margin-top: 30px;
+      padding: 24px;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-info {
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .footer-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    /* 对话框 */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      border: 1px solid var(--border-color);
+    }
+
+    .modal-header {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .modal-body {
+      margin-bottom: 20px;
+      color: var(--text-secondary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    /* 加载状态 */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+
+    .loading::before {
+      content: '';
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--accent-blue);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <h1>
+        <span id="blueprint-name">项目蓝图</span>
+        <span id="blueprint-status" class="status-badge status-draft">草稿</span>
+      </h1>
+      <div class="header-actions">
+        <button class="btn btn-outline" onclick="editBlueprint()">
+          ✏️ 编辑
+        </button>
+        <button class="btn btn-primary" onclick="submitForReview()">
+          📤 提交审核
+        </button>
+        <button class="btn btn-success" onclick="approveBlueprint()">
+          ✅ 确认签字
+        </button>
+      </div>
+    </header>
+
+    <!-- 项目概述 -->
+    <section class="overview-section">
+      <h2>📊 项目概述</h2>
+      <div class="overview-grid">
+        <div class="overview-item">
+          <label>项目名称</label>
+          <div class="value" id="project-name">-</div>
+        </div>
+        <div class="overview-item">
+          <label>语言/框架</label>
+          <div class="value" id="tech-stack">-</div>
+        </div>
+        <div class="overview-item">
+          <label>模块数量</label>
+          <div class="value" id="module-count">-</div>
+        </div>
+        <div class="overview-item">
+          <label>任务数量</label>
+          <div class="value" id="task-count">-</div>
+        </div>
+      </div>
+      <p class="description" id="project-description">-</p>
+    </section>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+      <!-- 左侧：系统模块 -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🧩 系统模块</h3>
+          <span id="modules-count">0 个模块</span>
+        </div>
+        <div class="card-body">
+          <div class="module-list" id="modules-list">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：业务流程 -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🔄 业务流程</h3>
+          <span id="processes-count">0 个流程</span>
+        </div>
+        <div class="card-body">
+          <div class="process-list" id="processes-list">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 任务树预览 -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🌳 任务树预览</h3>
+          <span id="tasks-status">全部已完成</span>
+        </div>
+        <div class="card-body">
+          <div class="task-tree-preview" id="task-tree">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 非功能性要求 -->
+      <div class="card">
+        <div class="card-header">
+          <h3>⚡ 非功能性要求</h3>
+          <span id="nfr-count">0 项</span>
+        </div>
+        <div class="card-body">
+          <div class="nfr-list" id="nfr-list">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作区 -->
+    <footer class="footer-actions">
+      <div class="footer-info">
+        <p>蓝图版本: <strong id="blueprint-version">1.0.0</strong></p>
+        <p>创建时间: <span id="created-at">-</span></p>
+      </div>
+      <div class="footer-buttons">
+        <button class="btn btn-outline" onclick="exportBlueprint()">
+          📥 导出 JSON
+        </button>
+        <button class="btn btn-success" onclick="startExecution()">
+          🚀 开始执行
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 确认对话框 -->
+  <div class="modal" id="confirm-modal">
+    <div class="modal-content">
+      <div class="modal-header" id="modal-title">确认操作</div>
+      <div class="modal-body" id="modal-body">确定要执行此操作吗？</div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal()">取消</button>
+        <button class="btn btn-primary" id="modal-confirm" onclick="confirmAction()">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 状态
+    let currentBlueprint = null;
+    let currentTaskTree = null;
+    let pendingAction = null;
+
+    // API 基础路径
+    const API_BASE = '/api/blueprint';
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      loadBlueprint();
+    });
+
+    // 加载蓝图数据
+    async function loadBlueprint() {
+      try {
+        // 从 URL 获取蓝图 ID
+        const urlParams = new URLSearchParams(window.location.search);
+        const blueprintId = urlParams.get('id') || 'current';
+
+        const response = await fetch(`${API_BASE}/blueprints/${blueprintId}`);
+        const data = await response.json();
+
+        if (data.success) {
+          currentBlueprint = data.data;
+          renderBlueprint(currentBlueprint);
+
+          // 加载任务树
+          if (currentBlueprint.taskTreeId) {
+            await loadTaskTree(currentBlueprint.taskTreeId);
+          }
+        } else {
+          showError('加载蓝图失败: ' + data.error);
+        }
+      } catch (error) {
+        showError('网络错误: ' + error.message);
+      }
+    }
+
+    // 加载任务树
+    async function loadTaskTree(treeId) {
+      try {
+        const response = await fetch(`${API_BASE}/task-trees/${treeId}`);
+        const data = await response.json();
+
+        if (data.success) {
+          currentTaskTree = data.data;
+          renderTaskTree(currentTaskTree);
+        }
+      } catch (error) {
+        console.error('加载任务树失败:', error);
+      }
+    }
+
+    // 渲染蓝图
+    function renderBlueprint(blueprint) {
+      // 更新标题
+      document.getElementById('blueprint-name').textContent = blueprint.name;
+      document.getElementById('project-name').textContent = blueprint.name;
+      document.getElementById('project-description').textContent = blueprint.description;
+      document.getElementById('blueprint-version').textContent = blueprint.version;
+      document.getElementById('created-at').textContent = new Date(blueprint.createdAt).toLocaleString();
+
+      // 状态
+      const statusBadge = document.getElementById('blueprint-status');
+      statusBadge.textContent = getStatusText(blueprint.status);
+      statusBadge.className = 'status-badge status-' + blueprint.status;
+
+      // 统计
+      document.getElementById('module-count').textContent = blueprint.modules.length;
+      document.getElementById('modules-count').textContent = blueprint.modules.length + ' 个模块';
+      document.getElementById('processes-count').textContent = blueprint.businessProcesses.length + ' 个流程';
+      document.getElementById('nfr-count').textContent = blueprint.nfrs.length + ' 项';
+
+      // 技术栈
+      const techStack = blueprint.modules
+        .flatMap(m => m.techStack || [])
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 3)
+        .join(', ');
+      document.getElementById('tech-stack').textContent = techStack || '-';
+
+      // 渲染模块
+      renderModules(blueprint.modules);
+
+      // 渲染业务流程
+      renderProcesses(blueprint.businessProcesses);
+
+      // 渲染 NFR
+      renderNFRs(blueprint.nfrs);
+    }
+
+    // 渲染模块列表
+    function renderModules(modules) {
+      const container = document.getElementById('modules-list');
+      if (modules.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary);">暂无模块</p>';
+        return;
+      }
+
+      container.innerHTML = modules.map(m => `
+        <div class="module-item">
+          <div class="module-header">
+            <span class="module-name">${m.name}</span>
+            <span class="module-type">${m.type}</span>
+          </div>
+          <p class="module-description">${m.description}</p>
+          <div class="module-responsibilities">
+            ${m.responsibilities.map(r => `<span class="responsibility-tag">${r}</span>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 渲染业务流程
+    function renderProcesses(processes) {
+      const container = document.getElementById('processes-list');
+      if (processes.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary);">暂无流程</p>';
+        return;
+      }
+
+      container.innerHTML = processes.map(p => `
+        <div class="process-item">
+          <div class="process-name">${p.name}</div>
+          <p class="process-description">${p.description}</p>
+          <div class="process-steps">
+            ${p.steps.map((s, i) => `
+              <div class="step-item">
+                <span class="step-number">${i + 1}.</span>
+                <span class="step-name">${s.name}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 渲染任务树
+    function renderTaskTree(tree) {
+      const container = document.getElementById('task-tree');
+      document.getElementById('task-count').textContent = tree.stats.totalTasks;
+      document.getElementById('tasks-status').textContent =
+        `${tree.stats.passedTasks}/${tree.stats.totalTasks} 已完成`;
+
+      container.innerHTML = renderTreeNode(tree.root);
+    }
+
+    function renderTreeNode(node, depth = 0) {
+      const icon = node.status === 'passed' ? '✅' :
+                   node.status === 'pending' ? '⏳' : '🔄';
+
+      let html = `
+        <div class="tree-node">
+          <div class="tree-node-content">
+            <span class="tree-icon">${icon}</span>
+            <span>${node.name}</span>
+          </div>
+      `;
+
+      if (node.children && node.children.length > 0 && depth < 3) {
+        html += '<div class="tree-children">';
+        for (const child of node.children.slice(0, 5)) {
+          html += renderTreeNode(child, depth + 1);
+        }
+        if (node.children.length > 5) {
+          html += `<div class="tree-node-content" style="color: var(--text-secondary);">... 还有 ${node.children.length - 5} 项</div>`;
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    // 渲染 NFR
+    function renderNFRs(nfrs) {
+      const container = document.getElementById('nfr-list');
+      if (nfrs.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-secondary);">暂无要求</p>';
+        return;
+      }
+
+      container.innerHTML = nfrs.map(nfr => `
+        <div class="nfr-item">
+          <span class="nfr-priority priority-${nfr.priority}">${nfr.priority.toUpperCase()}</span>
+          <div class="nfr-content">
+            <div class="nfr-name">${nfr.name}</div>
+            <div class="nfr-description">${nfr.description}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 工具函数
+    function getStatusText(status) {
+      const map = {
+        draft: '草稿',
+        review: '审核中',
+        approved: '已批准',
+        executing: '执行中',
+        completed: '已完成',
+        paused: '已暂停',
+      };
+      return map[status] || status;
+    }
+
+    // 操作函数
+    function editBlueprint() {
+      alert('编辑功能：可以通过对话修改蓝图\n\n示例：\n- "添加一个用户评论模块"\n- "把支付模块拆分成两个"\n- "添加性能要求：响应时间<200ms"');
+    }
+
+    function submitForReview() {
+      showConfirm('提交审核', '确定要提交蓝图进行审核吗？', async () => {
+        try {
+          const response = await fetch(`${API_BASE}/blueprints/${currentBlueprint.id}/submit`, {
+            method: 'POST',
+          });
+          const data = await response.json();
+          if (data.success) {
+            loadBlueprint();
+          } else {
+            showError(data.error);
+          }
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+    }
+
+    function approveBlueprint() {
+      showConfirm('确认签字', '我确认此蓝图准确反映了项目需求，同意开始执行。', async () => {
+        try {
+          const response = await fetch(`${API_BASE}/blueprints/${currentBlueprint.id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approvedBy: 'user' }),
+          });
+          const data = await response.json();
+          if (data.success) {
+            loadBlueprint();
+          } else {
+            showError(data.error);
+          }
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+    }
+
+    function startExecution() {
+      if (currentBlueprint.status !== 'approved') {
+        showError('请先签字确认蓝图');
+        return;
+      }
+
+      showConfirm('开始执行', '确定要开始执行任务树吗？Agent 将开始工作。', async () => {
+        try {
+          const response = await fetch(`${API_BASE}/blueprints/${currentBlueprint.id}/start`, {
+            method: 'POST',
+          });
+          const data = await response.json();
+          if (data.success) {
+            window.location.href = '/blueprint/dashboard?id=' + currentBlueprint.id;
+          } else {
+            showError(data.error);
+          }
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+    }
+
+    function exportBlueprint() {
+      const data = JSON.stringify(currentBlueprint, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `blueprint-${currentBlueprint.name}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // 对话框
+    function showConfirm(title, message, callback) {
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-body').textContent = message;
+      pendingAction = callback;
+      document.getElementById('confirm-modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('confirm-modal').classList.remove('active');
+      pendingAction = null;
+    }
+
+    function confirmAction() {
+      if (pendingAction) {
+        pendingAction();
+      }
+      closeModal();
+    }
+
+    function showError(message) {
+      alert('错误: ' + message);
+    }
+  </script>
+</body>
+</html>

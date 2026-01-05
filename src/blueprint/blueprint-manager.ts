@@ -58,13 +58,56 @@ export class BlueprintManager extends EventEmitter {
 
   /**
    * 创建新蓝图（草稿状态）
+   *
+   * 单蓝图约束：一个项目只有一个蓝图
+   * - 如果已有蓝图且处于 draft 状态，返回现有蓝图
+   * - 如果已有蓝图且处于其他状态，抛出错误
+   * - 如果没有蓝图，创建新的
    */
   createBlueprint(name: string, description: string): Blueprint {
+    // 单蓝图约束：检查是否已有蓝图
+    const existingBlueprints = this.getAllBlueprints();
+    if (existingBlueprints.length > 0) {
+      const existing = existingBlueprints[0];
+
+      // 如果已有蓝图处于 draft 状态，更新并返回
+      if (existing.status === 'draft') {
+        existing.name = name;
+        existing.description = description;
+        existing.updatedAt = new Date();
+        existing.changeHistory.push({
+          id: uuidv4(),
+          timestamp: new Date(),
+          type: 'update',
+          description: `蓝图更新：${name}`,
+          author: 'agent',
+        });
+        this.saveBlueprint(existing);
+        this.currentBlueprintId = existing.id;
+        this.emit('blueprint:updated', existing);
+        return existing;
+      }
+
+      // 如果已有蓝图处于完成状态，创建新版本
+      if (existing.status === 'completed') {
+        // 可以创建新蓝图，旧的保留为历史版本
+        // 继续执行下面的创建逻辑
+      } else {
+        // 其他状态（review, approved, executing, paused）不允许创建新蓝图
+        throw new Error(
+          `项目已有蓝图 "${existing.name}"（状态：${existing.status}）。` +
+          `请先完成或取消当前蓝图，再创建新的蓝图。`
+        );
+      }
+    }
+
     const blueprint: Blueprint = {
       id: uuidv4(),
       name,
       description,
-      version: '1.0.0',
+      version: existingBlueprints.length > 0
+        ? this.incrementVersion(existingBlueprints[0].version)
+        : '1.0.0',
       status: 'draft',
       businessProcesses: [],
       modules: [],
@@ -87,6 +130,32 @@ export class BlueprintManager extends EventEmitter {
     this.emit('blueprint:created', blueprint);
 
     return blueprint;
+  }
+
+  /**
+   * 版本号递增
+   */
+  private incrementVersion(version: string): string {
+    const parts = version.split('.').map(Number);
+    parts[0]++; // 主版本号 +1
+    parts[1] = 0;
+    parts[2] = 0;
+    return parts.join('.');
+  }
+
+  /**
+   * 获取当前项目的蓝图（单蓝图约束）
+   */
+  getCurrentBlueprint(): Blueprint | null {
+    if (this.currentBlueprintId) {
+      return this.getBlueprint(this.currentBlueprintId);
+    }
+    // 返回最新的蓝图
+    const blueprints = this.getAllBlueprints();
+    if (blueprints.length === 0) return null;
+    return blueprints.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )[0];
   }
 
   // --------------------------------------------------------------------------
