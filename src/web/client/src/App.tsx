@@ -540,7 +540,7 @@ function App() {
   };
 
   return (
-    <>
+    <div style={{ display: 'flex', height: '100%' }}>
       {/* 侧边栏 */}
       <div className="sidebar">
         <div className="sidebar-header">
@@ -665,7 +665,7 @@ function App() {
         model={model}
         onModelChange={setModel}
       />
-    </>
+    </div>
   );
 }
 
