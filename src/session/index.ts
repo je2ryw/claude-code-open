@@ -50,6 +50,68 @@ export interface SessionData {
   context?: Record<string, unknown>;
 }
 
+/**
+ * 官方 Claude Code 会话状态
+ */
+export interface OfficialSessionState {
+  sessionId: string;
+  cwd: string;
+  originalCwd: string;
+  startTime: number;
+  totalCostUSD: number;
+  totalAPIDuration: number;
+  totalAPIDurationWithoutRetries: number;
+  totalToolDuration: number;
+  modelUsage: Record<string, unknown>;
+  todos: unknown[];
+}
+
+/**
+ * 官方 Claude Code 会话元数据
+ */
+export interface OfficialSessionMetadata {
+  gitStatus?: string;
+  firstPrompt?: string;
+  projectPath?: string;
+  created: number;
+  modified: number;
+  messageCount: number;
+}
+
+/**
+ * 官方 Claude Code 会话数据格式
+ */
+export interface OfficialSessionData {
+  version: string;
+  state: OfficialSessionState;
+  messages: Message[];
+  metadata: OfficialSessionMetadata;
+}
+
+/**
+ * 判断是否为官方格式的会话数据
+ */
+function isOfficialFormat(data: any): data is OfficialSessionData {
+  return data?.version && data?.state?.sessionId && typeof data.state.sessionId === 'string';
+}
+
+/**
+ * 将官方格式转换为内部格式的元数据
+ */
+function convertOfficialToMetadata(data: OfficialSessionData): SessionMetadata {
+  return {
+    id: data.state.sessionId,
+    name: data.metadata?.firstPrompt?.substring(0, 50) || `会话 ${data.state.sessionId.substring(0, 8)}`,
+    createdAt: data.metadata?.created || data.state.startTime || Date.now(),
+    updatedAt: data.metadata?.modified || data.state.startTime || Date.now(),
+    workingDirectory: data.state.cwd || data.metadata?.projectPath || process.cwd(),
+    model: Object.keys(data.state.modelUsage || {})[0] || 'sonnet',
+    messageCount: data.metadata?.messageCount || data.messages?.length || 0,
+    tokenUsage: { input: 0, output: 0, total: 0 },
+    cost: data.state.totalCostUSD || 0,
+  };
+}
+
 export interface SessionListOptions {
   limit?: number;
   offset?: number;
@@ -115,9 +177,16 @@ function getSessionPath(sessionId: string): string {
  * 保存会话
  */
 export function saveSession(session: SessionData): void {
+  // 验证 sessionId 有效性
+  const sessionId = session.metadata.id;
+  if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+    console.error(`[Session] 无效的会话 ID，拒绝保存: ${sessionId}`);
+    return;
+  }
+
   ensureSessionDir();
 
-  const sessionPath = getSessionPath(session.metadata.id);
+  const sessionPath = getSessionPath(sessionId);
   session.metadata.updatedAt = Date.now();
   session.metadata.messageCount = session.messages.length;
 
@@ -152,6 +221,12 @@ export function loadSession(sessionId: string): SessionData | null {
  * 删除会话
  */
 export function deleteSession(sessionId: string): boolean {
+  // 验证 sessionId 有效性
+  if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+    console.error(`[Session] 无效的会话 ID: ${sessionId}`);
+    return false;
+  }
+
   const sessionPath = getSessionPath(sessionId);
 
   // 如果文件不存在，仍然返回 true（会话已经不存在了，删除目标达成）
@@ -191,15 +266,31 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
   for (const file of files) {
     try {
       const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
-      const session = JSON.parse(content) as SessionData;
-      sessions.push(session.metadata);
+      const data = JSON.parse(content);
+
+      // 兼容官方 Claude Code 格式和内部格式
+      if (isOfficialFormat(data)) {
+        sessions.push(convertOfficialToMetadata(data));
+      } else if (data?.metadata?.id) {
+        sessions.push((data as SessionData).metadata);
+      }
     } catch {
       // 忽略无法解析的文件
     }
   }
 
+  // 去重（按 id 去重，保留第一个）
+  const seenIds = new Set<string>();
+  const uniqueSessions = sessions.filter((s) => {
+    if (seenIds.has(s.id)) {
+      return false;
+    }
+    seenIds.add(s.id);
+    return true;
+  });
+
   // 过滤
-  let filtered = sessions;
+  let filtered = uniqueSessions;
 
   if (search) {
     const searchLower = search.toLowerCase();
@@ -694,8 +785,14 @@ export function getSessionStatistics(): SessionStatistics {
   for (const file of files) {
     try {
       const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
-      const session = JSON.parse(content) as SessionData;
-      sessions.push(session.metadata);
+      const data = JSON.parse(content);
+
+      // 兼容官方 Claude Code 格式和内部格式
+      if (isOfficialFormat(data)) {
+        sessions.push(convertOfficialToMetadata(data));
+      } else if (data?.metadata?.id) {
+        sessions.push((data as SessionData).metadata);
+      }
     } catch {
       // 忽略无法解析的文件
     }

@@ -4,7 +4,8 @@ import App from './App';
 import './styles/index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  // 暂时移除 StrictMode 以避免开发环境 WebSocket 双重连接问题
+  // <React.StrictMode>
     <App />
-  </React.StrictMode>
+  // </React.StrictMode>
 );
