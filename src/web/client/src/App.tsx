@@ -1,0 +1,560 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useWebSocket } from './hooks/useWebSocket';
+import {
+  Message,
+  WelcomeScreen,
+  SlashCommandPalette,
+  UserQuestionDialog,
+  PermissionDialog,
+  SessionList,
+} from './components';
+import type {
+  ChatMessage,
+  ChatContent,
+  Session,
+  Attachment,
+  PermissionRequest,
+  UserQuestion,
+  SlashCommand,
+  WSMessage,
+} from './types';
+
+type Status = 'idle' | 'thinking' | 'streaming' | 'tool_executing';
+
+// 获取 WebSocket URL
+function getWebSocketUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws`;
+}
+
+function App() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [status, setStatus] = useState<Status>('idle');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
+  const [userQuestion, setUserQuestion] = useState<UserQuestion | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { connected, sessionId, model, send, addMessageHandler } = useWebSocket(getWebSocketUrl());
+
+  // 当前正在构建的消息
+  const currentMessageRef = useRef<ChatMessage | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = addMessageHandler((msg: WSMessage) => {
+      const payload = msg.payload as Record<string, unknown>;
+
+      switch (msg.type) {
+        case 'message_start':
+          currentMessageRef.current = {
+            id: payload.messageId as string,
+            role: 'assistant',
+            timestamp: Date.now(),
+            content: [],
+            model,
+          };
+          setStatus('streaming');
+          break;
+
+        case 'text_delta':
+          if (currentMessageRef.current) {
+            const currentMsg = currentMessageRef.current;
+            const lastContent = currentMsg.content[currentMsg.content.length - 1];
+            if (lastContent?.type === 'text') {
+              lastContent.text += payload.text as string;
+            } else {
+              currentMsg.content.push({ type: 'text', text: payload.text as string });
+            }
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== currentMsg.id);
+              return [...filtered, { ...currentMsg }];
+            });
+          }
+          break;
+
+        case 'thinking_start':
+          if (currentMessageRef.current) {
+            currentMessageRef.current.content.push({ type: 'thinking', text: '' });
+            setStatus('thinking');
+          }
+          break;
+
+        case 'thinking_delta':
+          if (currentMessageRef.current) {
+            const currentMsg = currentMessageRef.current;
+            const thinkingContent = currentMsg.content.find(c => c.type === 'thinking');
+            if (thinkingContent && thinkingContent.type === 'thinking') {
+              thinkingContent.text += payload.text as string;
+              setMessages(prev => {
+                const filtered = prev.filter(m => m.id !== currentMsg.id);
+                return [...filtered, { ...currentMsg }];
+              });
+            }
+          }
+          break;
+
+        case 'tool_use_start':
+          if (currentMessageRef.current) {
+            const currentMsg = currentMessageRef.current;
+            currentMsg.content.push({
+              type: 'tool_use',
+              id: payload.toolUseId as string,
+              name: payload.toolName as string,
+              input: payload.input,
+              status: 'running',
+            });
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== currentMsg.id);
+              return [...filtered, { ...currentMsg }];
+            });
+            setStatus('tool_executing');
+          }
+          break;
+
+        case 'tool_result':
+          if (currentMessageRef.current) {
+            const currentMsg = currentMessageRef.current;
+            const toolUse = currentMsg.content.find(
+              c => c.type === 'tool_use' && c.id === payload.toolUseId
+            );
+            if (toolUse && toolUse.type === 'tool_use') {
+              toolUse.status = payload.success ? 'completed' : 'error';
+              toolUse.result = {
+                success: payload.success as boolean,
+                output: payload.output as string | undefined,
+                error: payload.error as string | undefined,
+              };
+              setMessages(prev => {
+                const filtered = prev.filter(m => m.id !== currentMsg.id);
+                return [...filtered, { ...currentMsg }];
+              });
+            }
+          }
+          break;
+
+        case 'message_complete':
+          if (currentMessageRef.current) {
+            const currentMsg = currentMessageRef.current;
+            const usage = payload.usage as { inputTokens: number; outputTokens: number } | undefined;
+            if (usage) {
+              currentMsg.usage = usage;
+            }
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== currentMsg.id);
+              return [...filtered, { ...currentMsg }];
+            });
+            currentMessageRef.current = null;
+          }
+          setStatus('idle');
+          break;
+
+        case 'error':
+          console.error('Server error:', payload);
+          setStatus('idle');
+          break;
+
+        case 'status':
+          setStatus(payload.status as Status);
+          break;
+
+        case 'permission_request':
+          setPermissionRequest(payload as unknown as PermissionRequest);
+          break;
+
+        case 'user_question':
+          setUserQuestion(payload as unknown as UserQuestion);
+          break;
+
+        case 'session_list_response':
+          if (payload.sessions) {
+            setSessions(payload.sessions as Session[]);
+          }
+          break;
+
+        case 'session_switched':
+          setMessages([]);
+          send({ type: 'get_history' });
+          send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+          break;
+
+        case 'session_deleted':
+          if (payload.success) {
+            setSessions(prev => prev.filter(s => s.id !== payload.sessionId));
+          }
+          break;
+
+        case 'session_renamed':
+          if (payload.success) {
+            setSessions(prev =>
+              prev.map(s => (s.id === payload.sessionId ? { ...s, name: payload.name as string } : s))
+            );
+          }
+          break;
+      }
+    });
+
+    return unsubscribe;
+  }, [addMessageHandler, model, send]);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // 请求会话列表
+  useEffect(() => {
+    if (connected) {
+      send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+    }
+  }, [connected, send]);
+
+  // 会话操作
+  const handleSessionSelect = useCallback(
+    (id: string) => {
+      send({ type: 'session_switch', payload: { sessionId: id } });
+    },
+    [send]
+  );
+
+  const handleSessionDelete = useCallback(
+    (id: string) => {
+      send({ type: 'session_delete', payload: { sessionId: id } });
+    },
+    [send]
+  );
+
+  const handleSessionRename = useCallback(
+    (id: string, name: string) => {
+      send({ type: 'session_rename', payload: { sessionId: id, name } });
+    },
+    [send]
+  );
+
+  const handleNewSession = useCallback(() => {
+    setMessages([]);
+    send({ type: 'clear_history' });
+    setTimeout(() => {
+      send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+    }, 500);
+  }, [send]);
+
+  // 文件处理
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const isImage = file.type.startsWith('image/');
+      const isText =
+        file.type.startsWith('text/') ||
+        /\.(txt|md|json|js|ts|tsx|jsx|py|java|c|cpp|h|css|html|xml|yaml|yml|sh|bat|sql|log)$/i.test(file.name);
+
+      if (!isImage && !isText) {
+        alert(`不支持的文件类型: ${file.name}`);
+        return;
+      }
+
+      const reader = new FileReader();
+      if (isImage) {
+        reader.onload = (event) => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: 'image',
+              mimeType: file.type,
+              data: event.target?.result as string,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = (event) => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: 'text',
+              mimeType: file.type || 'text/plain',
+              data: event.target?.result as string,
+            },
+          ]);
+        };
+        reader.readAsText(file);
+      }
+    });
+
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  // 粘贴处理
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const files: File[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length > 0) {
+      e.preventDefault();
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name || `粘贴的图片_${new Date().toLocaleTimeString()}.png`,
+              type: 'image',
+              mimeType: file.type,
+              data: event.target?.result as string,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  // 发送消息
+  const handleSend = () => {
+    if ((!input.trim() && attachments.length === 0) || !connected || status !== 'idle') return;
+
+    const contentItems: ChatContent[] = [];
+
+    // 添加附件
+    attachments.forEach(att => {
+      if (att.type === 'image') {
+        contentItems.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: att.mimeType,
+            data: att.data.split(',')[1],
+          },
+          fileName: att.name,
+        });
+      } else if (att.type === 'text') {
+        contentItems.push({
+          type: 'text',
+          text: `[文件: ${att.name}]\n\`\`\`\n${att.data}\n\`\`\``,
+        });
+      }
+    });
+
+    if (input.trim()) {
+      contentItems.push({ type: 'text', text: input });
+    }
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      timestamp: Date.now(),
+      content: contentItems,
+      attachments: attachments.map(a => ({ name: a.name, type: a.type })),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    send({
+      type: 'chat',
+      payload: {
+        content: input,
+        attachments: attachments.map(att => ({
+          name: att.name,
+          type: att.type,
+          mimeType: att.mimeType,
+          data: att.type === 'image' ? att.data.split(',')[1] : att.data,
+        })),
+      },
+    });
+
+    setInput('');
+    setAttachments([]);
+    setStatus('thinking');
+  };
+
+  // 命令选择
+  const handleCommandSelect = (command: SlashCommand) => {
+    setInput(command.name + ' ');
+    setShowCommandPalette(false);
+    inputRef.current?.focus();
+  };
+
+  // 用户问答
+  const handleAnswerQuestion = (answer: string) => {
+    if (userQuestion) {
+      send({
+        type: 'user_answer',
+        payload: {
+          requestId: userQuestion.requestId,
+          answer,
+        },
+      });
+      setUserQuestion(null);
+    }
+  };
+
+  // 权限响应
+  const handlePermissionRespond = (approved: boolean, remember: boolean) => {
+    if (permissionRequest) {
+      send({
+        type: 'permission_response',
+        payload: {
+          requestId: permissionRequest.requestId,
+          approved,
+          remember,
+        },
+      });
+      setPermissionRequest(null);
+    }
+  };
+
+  // 输入处理
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInput(value);
+    setShowCommandPalette(value.startsWith('/') && value.length > 0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <>
+      {/* 侧边栏 */}
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <h1>🤖 Claude Code</h1>
+          <button className="new-chat-btn" onClick={handleNewSession}>
+            + 新对话
+          </button>
+        </div>
+        <SessionList
+          sessions={sessions}
+          currentSessionId={sessionId}
+          onSessionSelect={handleSessionSelect}
+          onSessionDelete={handleSessionDelete}
+          onSessionRename={handleSessionRename}
+        />
+        <div className="sidebar-footer">
+          <button className="settings-btn" onClick={() => setShowSettings(true)}>
+            ⚙️ 设置
+          </button>
+          <div className="status-indicator">
+            <span className={`status-dot ${status !== 'idle' ? 'thinking' : ''}`} />
+            {connected ? '已连接' : '连接中...'}
+          </div>
+        </div>
+      </div>
+
+      {/* 主内容区 */}
+      <div className="main-content">
+        <div className="chat-header">
+          <select className="model-selector" value={model} disabled>
+            <option value="opus">Claude Opus</option>
+            <option value="sonnet">Claude Sonnet</option>
+            <option value="haiku">Claude Haiku</option>
+          </select>
+        </div>
+
+        <div className="chat-container" ref={chatContainerRef}>
+          {messages.length === 0 ? (
+            <WelcomeScreen />
+          ) : (
+            messages.map(msg => <Message key={msg.id} message={msg} />)
+          )}
+        </div>
+
+        <div className="input-area">
+          {attachments.length > 0 && (
+            <div className="attachments-preview">
+              {attachments.map(att => (
+                <div key={att.id} className="attachment-item">
+                  <span className="file-icon">{att.type === 'image' ? '🖼️' : '📄'}</span>
+                  <span className="file-name">{att.name}</span>
+                  <button className="remove-btn" onClick={() => handleRemoveAttachment(att.id)}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="input-container">
+            <button className="attach-btn" onClick={() => fileInputRef.current?.click()}>
+              📎
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.txt,.md,.json,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.css,.html,.xml,.yaml,.yml,.sh,.bat,.sql,.log"
+                onChange={handleFileSelect}
+              />
+            </button>
+            <div className="input-wrapper">
+              {showCommandPalette && (
+                <SlashCommandPalette
+                  input={input}
+                  onSelect={handleCommandSelect}
+                  onClose={() => setShowCommandPalette(false)}
+                />
+              )}
+              <textarea
+                ref={inputRef}
+                className="chat-input"
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="输入消息... (/ 显示命令)"
+                disabled={!connected || status !== 'idle'}
+              />
+            </div>
+            <button
+              className="send-btn"
+              onClick={handleSend}
+              disabled={!connected || status !== 'idle' || (!input.trim() && attachments.length === 0)}
+            >
+              发送
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 对话框 */}
+      {userQuestion && (
+        <UserQuestionDialog question={userQuestion} onAnswer={handleAnswerQuestion} />
+      )}
+      {permissionRequest && (
+        <PermissionDialog request={permissionRequest} onRespond={handlePermissionRespond} />
+      )}
+    </>
+  );
+}
+
+export default App;
