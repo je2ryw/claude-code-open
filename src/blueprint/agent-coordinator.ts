@@ -315,6 +315,7 @@ export class AgentCoordinator extends EventEmitter {
 
   /**
    * 分配任务给 Worker
+   * 注意：验收测试已在任务创建时由 TaskTreeManager 生成（TDD 核心：测试先行）
    */
   async assignTask(workerId: string, taskId: string): Promise<void> {
     const worker = this.workers.get(workerId);
@@ -339,62 +340,18 @@ export class AgentCoordinator extends EventEmitter {
       throw new Error(`任务 ${taskId} 不存在`);
     }
 
-    // =========================================================================
-    // 蜂王在分配任务前生成验收测试（TDD 的核心：测试先行）
-    // =========================================================================
-    if (task.acceptanceTests.length === 0 && this.acceptanceTestGenerator) {
-      this.addTimelineEvent('task_start', `蜂王正在为任务生成验收测试: ${taskId}`);
-
-      // 获取蓝图和模块信息
-      const blueprint = blueprintManager.getBlueprint(this.queen.blueprintId);
-      const module = blueprint?.modules.find(m => m.id === task.blueprintModuleId);
-
-      // 获取父任务的验收测试（作为参考）
-      let parentAcceptanceTests: AcceptanceTest[] | undefined;
-      if (task.parentId) {
-        const parentTask = taskTreeManager.findTask(tree.root, task.parentId);
-        if (parentTask && parentTask.acceptanceTests.length > 0) {
-          parentAcceptanceTests = parentTask.acceptanceTests;
-        }
-      }
-
-      // 构建上下文
-      const context: AcceptanceTestContext = {
-        task,
-        blueprint: blueprint!,
-        module,
-        parentAcceptanceTests,
-      };
-
-      try {
-        // 生成验收测试
-        const result = await this.acceptanceTestGenerator.generateAcceptanceTests(context);
-
-        if (result.success && result.tests.length > 0) {
-          // 保存验收测试到任务
-          taskTreeManager.setAcceptanceTests(this.queen.taskTreeId, taskId, result.tests);
-
-          // 写入测试文件到磁盘
-          await this.acceptanceTestGenerator.writeTestFiles(result.tests);
-
-          this.recordDecision(
-            'task_assignment',
-            `蜂王为任务 ${taskId} 生成了 ${result.tests.length} 个验收测试`,
-            '验收测试在 Worker 编码前生成，确保 TDD 流程'
-          );
-
-          this.addTimelineEvent('test_pass', `验收测试生成完成: ${result.tests.length} 个测试`, {
-            taskId,
-            testCount: result.tests.length,
-          });
-        } else {
-          console.warn(`为任务 ${taskId} 生成验收测试失败:`, result.error);
-          this.addTimelineEvent('test_fail', `验收测试生成失败: ${result.error}`, { taskId });
-        }
-      } catch (error) {
-        console.error(`生成验收测试出错:`, error);
-        this.addTimelineEvent('test_fail', `验收测试生成异常: ${error}`, { taskId });
-      }
+    // 验收测试检查：确保任务有验收测试
+    // TDD 核心：测试必须在编码前就已存在
+    if (task.acceptanceTests.length === 0) {
+      // 如果没有验收测试，记录警告但继续执行
+      // 测试应该在任务创建时就已经生成了
+      console.warn(`警告：任务 ${taskId} 没有验收测试，TDD 流程可能不完整`);
+      this.addTimelineEvent('test_fail', `任务缺少验收测试，可能需要手动生成`, { taskId });
+    } else {
+      this.addTimelineEvent('test_pass', `任务已有 ${task.acceptanceTests.length} 个验收测试（在任务创建时生成）`, {
+        taskId,
+        testCount: task.acceptanceTests.length,
+      });
     }
 
     // 更新 Worker 状态

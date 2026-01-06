@@ -6,7 +6,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import Anthropic from '@anthropic-ai/sdk';
 import {
   AcceptanceTest,
   AcceptanceCriterion,
@@ -14,7 +13,7 @@ import {
   SystemModule,
   Blueprint,
 } from './types.js';
-import { getAuth, type AuthConfig } from '../auth/index.js';
+import { ClaudeClient, getDefaultClient } from '../core/client.js';
 
 /**
  * 验收测试生成配置
@@ -61,68 +60,26 @@ export interface AcceptanceTestResult {
  * 验收测试生成器
  */
 export class AcceptanceTestGenerator {
-  private client: Anthropic | null = null;
+  private client: ClaudeClient | null = null;
   private config: AcceptanceTestGeneratorConfig;
   private model: string;
 
   constructor(config: AcceptanceTestGeneratorConfig) {
     this.config = config;
-    this.model = config.model || 'claude-sonnet-4-20250514';
+    this.model = config.model || 'sonnet';  // 使用别名，ClaudeClient 会解析
 
-    // 延迟初始化 - 不在构造函数中抛出错误
-    // 尝试初始化 client（API key 或 OAuth token）
-    this.tryInitClient();
-  }
-
-  /**
-   * 尝试初始化 client（支持 API key 和 OAuth token）
-   * 如果没有可用的凭证，client 保持为 null，等待 ensureClient() 时再次尝试
-   */
-  private tryInitClient(): void {
-    // 1. 检查配置和环境变量中的 API key
-    const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-    if (apiKey) {
-      this.client = new Anthropic({ apiKey });
-      return;
-    }
-
-    // 2. 检查 OAuth 认证
-    const auth = getAuth();
-    if (auth) {
-      if (auth.type === 'api_key' && auth.apiKey) {
-        this.client = new Anthropic({ apiKey: auth.apiKey });
-      } else if (auth.type === 'oauth' && auth.authToken) {
-        // OAuth 订阅用户：直接使用 authToken
-        this.client = new Anthropic({
-          apiKey: auth.authToken,
-          baseURL: 'https://api.anthropic.com',
-          defaultHeaders: {
-            'anthropic-beta': 'claude-code-20250219',
-          },
-        });
-      }
-    }
-    // 如果都没有，client 保持 null，稍后调用 ensureClient() 会抛出错误
+    // 延迟初始化 - 使用统一的 ClaudeClient
+    // ClaudeClient 会自动处理 API Key 和 OAuth 认证
   }
 
   /**
    * 确保 client 已初始化
-   * 支持 API Key 和 OAuth token 两种认证方式
+   * 使用统一的 ClaudeClient，自动处理 API Key 和 OAuth 认证
    */
-  private ensureClient(): Anthropic {
+  private ensureClient(): ClaudeClient {
     if (!this.client) {
-      // 尝试初始化 client
-      this.tryInitClient();
-
-      // 如果仍然没有初始化成功，抛出错误
-      if (!this.client) {
-        throw new Error(
-          'Anthropic API key or OAuth token is required for acceptance test generation.\n' +
-          'Please either:\n' +
-          '  1. Set ANTHROPIC_API_KEY environment variable\n' +
-          '  2. Login with /login command (OAuth subscription)'
-        );
-      }
+      // 使用全局默认客户端，它会自动处理认证
+      this.client = getDefaultClient();
     }
     return this.client;
   }
@@ -138,20 +95,23 @@ export class AcceptanceTestGenerator {
 
     try {
       const client = this.ensureClient();
-      const response = await client.messages.create({
-        model: this.model,
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      });
 
-      // 解析响应
-      const content = response.content[0];
-      if (content.type !== 'text') {
+      // 使用 ClaudeClient 的 createMessage API
+      const response = await client.createMessage(
+        [{ role: 'user', content: prompt }],
+        undefined, // 不需要 tools
+        '你是一个专业的软件测试专家，负责为任务生成验收测试。请以 JSON 格式输出。'
+      );
+
+      // 解析响应 - 提取文本内容
+      let responseText = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          responseText += block.text;
+        }
+      }
+
+      if (!responseText) {
         return {
           success: false,
           tests: [],
@@ -159,7 +119,7 @@ export class AcceptanceTestGenerator {
         };
       }
 
-      const tests = this.parseAcceptanceTests(content.text, task.id);
+      const tests = this.parseAcceptanceTests(responseText, task.id);
 
       return {
         success: true,

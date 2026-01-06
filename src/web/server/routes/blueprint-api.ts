@@ -19,6 +19,7 @@ import {
   tddExecutor,
   generateBlueprintSummary,
   codebaseAnalyzer,
+  requirementDialogManager,
 } from '../../../blueprint/index.js';
 import { timeTravelManager } from '../../../blueprint/time-travel.js';
 
@@ -645,6 +646,359 @@ router.get('/blueprints/current', (req: Request, res: Response) => {
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     )[0];
     res.json({ success: true, data: latest });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 需求对话 API
+// ============================================================================
+
+/**
+ * 开始新的需求对话
+ */
+router.post('/requirement-dialog/start', (req: Request, res: Response) => {
+  try {
+    const dialogState = requirementDialogManager.startDialog();
+    res.json({
+      success: true,
+      data: {
+        sessionId: dialogState.id,
+        phase: dialogState.phase,
+        history: dialogState.history,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 发送消息到需求对话
+ */
+router.post('/requirement-dialog/:sessionId/message', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ success: false, error: 'Message is required' });
+    }
+
+    const response = await requirementDialogManager.processUserInput(sessionId, message);
+    const state = requirementDialogManager.getDialogState(sessionId);
+
+    res.json({
+      success: true,
+      data: {
+        response,
+        phase: state?.phase,
+        isComplete: state?.phase === 'complete',
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取对话状态
+ */
+router.get('/requirement-dialog/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const state = requirementDialogManager.getDialogState(sessionId);
+
+    if (!state) {
+      return res.status(404).json({ success: false, error: 'Dialog session not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        sessionId: state.id,
+        phase: state.phase,
+        projectName: state.projectName,
+        projectDescription: state.projectDescription,
+        businessProcesses: state.businessProcesses,
+        modules: state.modules,
+        nfrs: state.nfrs,
+        history: state.history,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 结束对话
+ */
+router.delete('/requirement-dialog/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    requirementDialogManager.endDialog(sessionId);
+    res.json({ success: true, message: 'Dialog ended' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 时光倒流 API
+// ============================================================================
+
+/**
+ * 时光倒流可视化页面
+ */
+router.get('/time-travel', (req: Request, res: Response) => {
+  const visualizerPath = path.join(__dirname, '../../../blueprint/time-travel-visualizer.html');
+  if (fs.existsSync(visualizerPath)) {
+    res.sendFile(visualizerPath);
+  } else {
+    res.status(404).send('Time travel visualizer not found');
+  }
+});
+
+/**
+ * 获取时间线视图
+ */
+router.get('/time-travel/:treeId/timeline', (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const timeline = timeTravelManager.getTimelineView(treeId);
+    res.json({ success: true, data: timeline });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取检查点详情
+ */
+router.get('/time-travel/:treeId/checkpoints/:checkpointId', (req: Request, res: Response) => {
+  try {
+    const { treeId, checkpointId } = req.params;
+    const detail = timeTravelManager.getCheckpointDetails(treeId, checkpointId);
+
+    if (!detail) {
+      return res.status(404).json({ success: false, error: 'Checkpoint not found' });
+    }
+
+    // 添加任务状态快照
+    const tree = taskTreeManager.getTaskTree(treeId);
+    let taskSnapshot: any[] = [];
+    if (tree) {
+      const collectTasks = (node: any) => {
+        taskSnapshot.push({
+          id: node.id,
+          name: node.name,
+          status: node.status,
+        });
+        for (const child of node.children || []) {
+          collectTasks(child);
+        }
+      };
+      collectTasks(tree.root);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...detail,
+        taskSnapshot: taskSnapshot.slice(0, 20), // 限制数量
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 创建检查点
+ */
+router.post('/time-travel/:treeId/checkpoints', (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const { name, description, isGlobal, taskId } = req.body;
+
+    const checkpoint = timeTravelManager.createManualCheckpoint(
+      treeId,
+      name,
+      description,
+      isGlobal ? undefined : taskId
+    );
+
+    res.json({ success: true, data: checkpoint });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 回滚到检查点
+ */
+router.post('/time-travel/:treeId/rollback', (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const { checkpointId } = req.body;
+
+    timeTravelManager.rollback(treeId, checkpointId);
+
+    res.json({ success: true, message: 'Rollback successful' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 创建分支
+ */
+router.post('/time-travel/:treeId/branches', (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const { checkpointId, branchName } = req.body;
+
+    const branch = timeTravelManager.createBranch(treeId, checkpointId, branchName);
+
+    res.json({ success: true, data: branch });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 对比两个检查点
+ */
+router.get('/time-travel/:treeId/compare', (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const { from, to } = req.query;
+
+    if (!from || !to) {
+      return res.status(400).json({ success: false, error: 'Missing from or to parameter' });
+    }
+
+    const result = timeTravelManager.compare(treeId, from as string, to as string);
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 蓝图编辑 API（对话式修改）
+// ============================================================================
+
+/**
+ * 对话式修改蓝图
+ * 用户可以用自然语言描述修改需求
+ */
+router.post('/blueprints/:id/chat-edit', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+
+    const blueprint = blueprintManager.getBlueprint(id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+    }
+
+    // 使用 AI 解析修改请求并应用
+    const { getDefaultClient } = await import('../../../core/client.js');
+    const client = getDefaultClient();
+
+    const response = await client.createMessage(
+      [{
+        role: 'user',
+        content: `用户想要修改以下蓝图：
+
+蓝图名称：${blueprint.name}
+蓝图描述：${blueprint.description}
+系统模块：${blueprint.modules.map(m => m.name).join('、')}
+业务流程：${blueprint.businessProcesses.map(p => p.name).join('、')}
+非功能要求：${blueprint.nfrs.map(n => n.name).join('、')}
+
+用户的修改请求：${message}
+
+请分析用户的请求，返回 JSON 格式的修改指令：
+{
+  "action": "add_module" | "remove_module" | "update_module" | "add_process" | "remove_process" | "update_process" | "add_nfr" | "remove_nfr" | "update_description",
+  "target": "目标项名称（如果有）",
+  "data": { ... 新数据 ... },
+  "explanation": "修改说明"
+}`,
+      }],
+      undefined,
+      '你是一个蓝图编辑助手。分析用户的修改请求，返回 JSON 格式的修改指令。'
+    );
+
+    let text = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        text += block.text;
+      }
+    }
+
+    // 解析 JSON
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return res.json({
+        success: true,
+        data: {
+          modified: false,
+          explanation: '无法解析修改请求，请尝试更明确地描述你想要的修改。',
+        },
+      });
+    }
+
+    const instruction = JSON.parse(jsonMatch[0]);
+
+    // 应用修改
+    let modified = false;
+    switch (instruction.action) {
+      case 'add_module':
+        if (instruction.data) {
+          blueprintManager.addModule(id, instruction.data);
+          modified = true;
+        }
+        break;
+      case 'add_process':
+        if (instruction.data) {
+          blueprintManager.addBusinessProcess(id, instruction.data);
+          modified = true;
+        }
+        break;
+      case 'add_nfr':
+        if (instruction.data) {
+          blueprintManager.addNFR(id, instruction.data);
+          modified = true;
+        }
+        break;
+      case 'update_description':
+        if (instruction.data?.description) {
+          const current = blueprintManager.getBlueprint(id);
+          if (current) {
+            blueprintManager.modifyDuringExecution(id, { description: instruction.data.description });
+            modified = true;
+          }
+        }
+        break;
+      // 可以添加更多操作类型
+    }
+
+    const updatedBlueprint = blueprintManager.getBlueprint(id);
+
+    res.json({
+      success: true,
+      data: {
+        modified,
+        explanation: instruction.explanation,
+        blueprint: updatedBlueprint,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -30,6 +30,11 @@ import type {
   SystemModule,
   AcceptanceTest,
 } from './types.js';
+import {
+  AcceptanceTestGenerator,
+  createAcceptanceTestGenerator,
+  type AcceptanceTestContext,
+} from './acceptance-test-generator.js';
 
 // ============================================================================
 // 持久化路径
@@ -54,10 +59,32 @@ const getTaskTreeFilePath = (id: string): string => {
 export class TaskTreeManager extends EventEmitter {
   private taskTrees: Map<string, TaskTree> = new Map();
   private currentTreeId: string | null = null;
+  private acceptanceTestGenerator: AcceptanceTestGenerator | null = null;
+  private currentBlueprint: Blueprint | null = null;
 
   constructor() {
     super();
     this.loadAllTaskTrees();
+    // 初始化验收测试生成器
+    this.acceptanceTestGenerator = createAcceptanceTestGenerator({
+      projectRoot: process.cwd(),
+      testFramework: 'vitest',
+      testDirectory: '__tests__',
+    });
+  }
+
+  /**
+   * 设置当前蓝图（用于测试生成时的上下文）
+   */
+  setCurrentBlueprint(blueprint: Blueprint): void {
+    this.currentBlueprint = blueprint;
+  }
+
+  /**
+   * 获取当前蓝图
+   */
+  getCurrentBlueprint(): Blueprint | null {
+    return this.currentBlueprint;
   }
 
   // --------------------------------------------------------------------------
@@ -69,6 +96,9 @@ export class TaskTreeManager extends EventEmitter {
    * 这是核心函数：将蓝图的系统模块转化为可执行的任务树
    */
   generateFromBlueprint(blueprint: Blueprint): TaskTree {
+    // 保存蓝图引用
+    this.currentBlueprint = blueprint;
+
     // 创建根任务节点
     const rootTask = this.createRootTask(blueprint);
 
@@ -99,7 +129,88 @@ export class TaskTreeManager extends EventEmitter {
 
     this.emit('task-tree:created', taskTree);
 
+    // TDD 核心：任务创建时立即触发验收测试生成（异步执行）
+    // 这确保了"测试先行"的原则
+    this.generateAllAcceptanceTests(taskTree, blueprint).catch(err => {
+      console.error('生成验收测试失败:', err);
+    });
+
     return taskTree;
+  }
+
+  /**
+   * 为任务树中的所有任务生成验收测试（蜂王先行）
+   * 这是 TDD 的核心：测试在任务创建时就生成，而不是在执行时
+   */
+  private async generateAllAcceptanceTests(taskTree: TaskTree, blueprint: Blueprint): Promise<void> {
+    if (!this.acceptanceTestGenerator) return;
+
+    this.emit('acceptance-tests:generation-started', { treeId: taskTree.id });
+
+    // 收集所有需要生成测试的叶子任务
+    const leafTasks: TaskNode[] = [];
+    this.collectLeafTasks(taskTree.root, leafTasks);
+
+    let generated = 0;
+    let failed = 0;
+
+    for (const task of leafTasks) {
+      try {
+        // 获取对应的模块
+        const module = blueprint.modules.find(m => m.id === task.blueprintModuleId);
+
+        // 获取父任务的验收测试作为参考
+        let parentAcceptanceTests: AcceptanceTest[] | undefined;
+        if (task.parentId) {
+          const parentTask = this.findTask(taskTree.root, task.parentId);
+          if (parentTask?.acceptanceTests?.length) {
+            parentAcceptanceTests = parentTask.acceptanceTests;
+          }
+        }
+
+        // 构建上下文
+        const context: AcceptanceTestContext = {
+          task,
+          blueprint,
+          module,
+          parentAcceptanceTests,
+        };
+
+        // 生成验收测试
+        const result = await this.acceptanceTestGenerator.generateAcceptanceTests(context);
+
+        if (result.success && result.tests.length > 0) {
+          // 保存到任务
+          task.acceptanceTests = result.tests;
+
+          // 写入测试文件
+          await this.acceptanceTestGenerator.writeTestFiles(result.tests);
+
+          generated++;
+          this.emit('acceptance-test:generated', {
+            treeId: taskTree.id,
+            taskId: task.id,
+            testCount: result.tests.length,
+          });
+        } else {
+          failed++;
+          console.warn(`任务 ${task.id} 验收测试生成失败:`, result.error);
+        }
+      } catch (error) {
+        failed++;
+        console.error(`任务 ${task.id} 验收测试生成异常:`, error);
+      }
+    }
+
+    // 保存任务树
+    this.saveTaskTree(taskTree);
+
+    this.emit('acceptance-tests:generation-completed', {
+      treeId: taskTree.id,
+      generated,
+      failed,
+      total: leafTasks.length,
+    });
   }
 
   /**
@@ -870,6 +981,7 @@ export class TaskTreeManager extends EventEmitter {
 
   /**
    * 动态添加子任务（Agent 在执行过程中细化任务）
+   * TDD 核心：任务创建时立即生成验收测试
    */
   addSubTask(
     treeId: string,
@@ -907,7 +1019,70 @@ export class TaskTreeManager extends EventEmitter {
 
     this.emit('task:added', { treeId, parentTaskId, task: newTask });
 
+    // TDD 核心：任务创建时立即触发验收测试生成（异步执行）
+    this.generateAcceptanceTestForTask(treeId, newTask).catch(err => {
+      console.error(`任务 ${newTask.id} 验收测试生成失败:`, err);
+    });
+
     return newTask;
+  }
+
+  /**
+   * 为单个任务生成验收测试
+   * TDD 核心：测试在任务创建时就生成
+   */
+  private async generateAcceptanceTestForTask(treeId: string, task: TaskNode): Promise<void> {
+    if (!this.acceptanceTestGenerator || !this.currentBlueprint) return;
+
+    // 如果任务已经有验收测试，跳过
+    if (task.acceptanceTests && task.acceptanceTests.length > 0) return;
+
+    const tree = this.getTaskTree(treeId);
+    if (!tree) return;
+
+    try {
+      // 获取对应的模块
+      const module = this.currentBlueprint.modules.find(m => m.id === task.blueprintModuleId);
+
+      // 获取父任务的验收测试作为参考
+      let parentAcceptanceTests: AcceptanceTest[] | undefined;
+      if (task.parentId) {
+        const parentTask = this.findTask(tree.root, task.parentId);
+        if (parentTask?.acceptanceTests?.length) {
+          parentAcceptanceTests = parentTask.acceptanceTests;
+        }
+      }
+
+      // 构建上下文
+      const context: AcceptanceTestContext = {
+        task,
+        blueprint: this.currentBlueprint,
+        module,
+        parentAcceptanceTests,
+      };
+
+      // 生成验收测试
+      const result = await this.acceptanceTestGenerator.generateAcceptanceTests(context);
+
+      if (result.success && result.tests.length > 0) {
+        // 保存到任务
+        task.acceptanceTests = result.tests;
+
+        // 写入测试文件
+        await this.acceptanceTestGenerator.writeTestFiles(result.tests);
+
+        // 更新并保存任务树
+        this.saveTaskTree(tree);
+
+        this.emit('acceptance-test:generated', {
+          treeId,
+          taskId: task.id,
+          testCount: result.tests.length,
+        });
+      }
+    } catch (error) {
+      console.error(`任务 ${task.id} 验收测试生成异常:`, error);
+    }
   }
 
   /**
