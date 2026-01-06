@@ -87,3 +87,36 @@ export {
   type AcceptanceTestContext,
   type AcceptanceTestResult,
 } from './acceptance-test-generator.js';
+
+// Worker 执行器
+export {
+  WorkerExecutor,
+  workerExecutor,
+  type WorkerExecutorConfig,
+  type ExecutionContext,
+  type PhaseResult,
+} from './worker-executor.js';
+
+// Worker 沙箱隔离
+export {
+  WorkerSandbox,
+  FileLockManager,
+  createWorkerSandbox,
+  getGlobalLockManager,
+  type SandboxConfig,
+  type SyncResult,
+  type LockInfo,
+} from './worker-sandbox.js';
+
+// 任务粒度控制
+export {
+  TaskGranularityController,
+  createTaskGranularityController,
+  defaultGranularityController,
+  DEFAULT_GRANULARITY_CONFIG,
+  type GranularityConfig,
+  type ComplexityScore,
+  type SplitSuggestion,
+  type MergeSuggestion,
+  type AdjustmentResult,
+} from './task-granularity.js';

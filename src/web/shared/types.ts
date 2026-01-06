@@ -114,7 +114,10 @@ export type ClientMessage =
   | { type: 'auth_status' }
   | { type: 'auth_set_key'; payload: AuthSetKeyPayload }
   | { type: 'auth_clear' }
-  | { type: 'auth_validate'; payload: AuthSetKeyPayload };
+  | { type: 'auth_validate'; payload: AuthSetKeyPayload }
+  // 蜂群相关消息
+  | { type: 'swarm:subscribe'; payload: { blueprintId: string } }
+  | { type: 'swarm:unsubscribe'; payload: { blueprintId: string } };
 
 /**
  * 服务端发送的消息类型
@@ -174,7 +177,15 @@ export type ServerMessage =
   | { type: 'auth_status_response'; payload: AuthStatusPayload }
   | { type: 'auth_key_set'; payload: { success: boolean; message?: string } }
   | { type: 'auth_cleared'; payload: { success: boolean } }
-  | { type: 'auth_validated'; payload: { valid: boolean; message?: string } };
+  | { type: 'auth_validated'; payload: { valid: boolean; message?: string } }
+  // 蜂群相关消息
+  | { type: 'swarm:state'; payload: any }
+  | { type: 'swarm:task_update'; payload: any }
+  | { type: 'swarm:worker_update'; payload: any }
+  | { type: 'swarm:queen_update'; payload: any }
+  | { type: 'swarm:timeline_event'; payload: any }
+  | { type: 'swarm:completed'; payload: any }
+  | { type: 'swarm:error'; payload: { blueprintId: string; error: string; timestamp: string } };
 
 // ============ 消息负载类型 ============
 

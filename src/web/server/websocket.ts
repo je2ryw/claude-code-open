@@ -11,6 +11,10 @@ import { apiManager } from './api-manager.js';
 import { authManager } from './auth-manager.js';
 import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
+import { agentCoordinator } from '../../blueprint/agent-coordinator.js';
+import { blueprintManager } from '../../blueprint/blueprint-manager.js';
+import { taskTreeManager } from '../../blueprint/task-tree-manager.js';
+import type { WorkerAgent, QueenAgent, TimelineEvent, TaskNode } from '../../blueprint/types.js';
 
 interface ClientConnection {
   id: string;
@@ -18,6 +22,7 @@ interface ClientConnection {
   sessionId: string;
   model: string;
   isAlive: boolean;
+  swarmSubscriptions: Set<string>; // 订阅的 blueprint IDs
 }
 
 // 全局检查点管理器实例
@@ -29,18 +34,212 @@ export function setupWebSocket(
 ): void {
   const clients = new Map<string, ClientConnection>();
 
+  // 订阅管理：blueprintId -> Set of client IDs
+  const swarmSubscriptions = new Map<string, Set<string>>();
+
   // 心跳检测
   const heartbeatInterval = setInterval(() => {
     clients.forEach((client, id) => {
       if (!client.isAlive) {
         client.ws.terminate();
         clients.delete(id);
+        // 清理订阅
+        cleanupClientSubscriptions(id);
         return;
       }
       client.isAlive = false;
       client.ws.ping();
     });
   }, 30000);
+
+  // 清理客户端订阅
+  const cleanupClientSubscriptions = (clientId: string) => {
+    swarmSubscriptions.forEach((subscribers, blueprintId) => {
+      subscribers.delete(clientId);
+      if (subscribers.size === 0) {
+        swarmSubscriptions.delete(blueprintId);
+      }
+    });
+  };
+
+  // 广播消息给订阅了特定 blueprint 的客户端
+  const broadcastToSubscribers = (blueprintId: string, message: any) => {
+    const subscribers = swarmSubscriptions.get(blueprintId);
+    if (!subscribers || subscribers.size === 0) return;
+
+    const messageStr = JSON.stringify(message);
+    subscribers.forEach(clientId => {
+      const client = clients.get(clientId);
+      if (client && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(messageStr);
+      }
+    });
+  };
+
+  // ============================================================================
+  // 监听 AgentCoordinator 事件
+  // ============================================================================
+
+  // Queen 初始化
+  agentCoordinator.on('queen:initialized', (queen: QueenAgent) => {
+    console.log(`[Swarm] Queen initialized: ${queen.id} for blueprint ${queen.blueprintId}`);
+
+    const blueprint = blueprintManager.getBlueprint(queen.blueprintId);
+    const taskTree = taskTreeManager.getTaskTree(queen.taskTreeId);
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:state',
+      payload: {
+        blueprint: blueprint ? serializeBlueprint(blueprint) : null,
+        taskTree: taskTree ? serializeTaskTree(taskTree) : null,
+        queen: serializeQueen(queen),
+        workers: [],
+        timeline: agentCoordinator.getTimeline().map(serializeTimelineEvent),
+        stats: taskTree?.stats || null,
+      },
+    });
+  });
+
+  // Worker 创建
+  agentCoordinator.on('worker:created', (worker: WorkerAgent) => {
+    console.log(`[Swarm] Worker created: ${worker.id}`);
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: worker.id,
+        updates: serializeWorker(worker),
+      },
+    });
+  });
+
+  // Worker 任务完成
+  agentCoordinator.on('worker:task-completed', ({ workerId, taskId }: { workerId: string; taskId: string }) => {
+    console.log(`[Swarm] Worker ${workerId} completed task ${taskId}`);
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    const worker = agentCoordinator.getWorker(workerId);
+    if (!worker) return;
+
+    // 发送 Worker 更新
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: worker.id,
+        updates: serializeWorker(worker),
+      },
+    });
+
+    // 发送任务更新
+    const taskTree = taskTreeManager.getTaskTree(queen.taskTreeId);
+    if (taskTree) {
+      const task = taskTreeManager.findTask(taskTree.root, taskId);
+      if (task) {
+        broadcastToSubscribers(queen.blueprintId, {
+          type: 'swarm:task_update',
+          payload: {
+            taskId: task.id,
+            updates: serializeTaskNode(task),
+          },
+        });
+      }
+    }
+  });
+
+  // Worker 任务失败
+  agentCoordinator.on('worker:task-failed', ({ workerId, taskId, error }: { workerId: string; taskId: string; error: string }) => {
+    console.log(`[Swarm] Worker ${workerId} failed task ${taskId}: ${error}`);
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    const worker = agentCoordinator.getWorker(workerId);
+    if (!worker) return;
+
+    // 发送 Worker 更新
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: worker.id,
+        updates: serializeWorker(worker),
+      },
+    });
+
+    // 发送任务更新
+    const taskTree = taskTreeManager.getTaskTree(queen.taskTreeId);
+    if (taskTree) {
+      const task = taskTreeManager.findTask(taskTree.root, taskId);
+      if (task) {
+        broadcastToSubscribers(queen.blueprintId, {
+          type: 'swarm:task_update',
+          payload: {
+            taskId: task.id,
+            updates: serializeTaskNode(task),
+          },
+        });
+      }
+    }
+  });
+
+  // 时间线事件
+  agentCoordinator.on('timeline:event', (event: TimelineEvent) => {
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:timeline_event',
+      payload: serializeTimelineEvent(event),
+    });
+  });
+
+  // 执行完成
+  agentCoordinator.on('execution:completed', () => {
+    console.log('[Swarm] Execution completed');
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    const taskTree = taskTreeManager.getTaskTree(queen.taskTreeId);
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:completed',
+      payload: {
+        blueprintId: queen.blueprintId,
+        stats: taskTree?.stats || {
+          totalTasks: 0,
+          pendingTasks: 0,
+          runningTasks: 0,
+          passedTasks: 0,
+          failedTasks: 0,
+          blockedTasks: 0,
+          progressPercentage: 0,
+        },
+        completedAt: new Date().toISOString(),
+      },
+    });
+  });
+
+  // Queen 错误
+  agentCoordinator.on('queen:error', ({ error }: { error: any }) => {
+    console.error('[Swarm] Queen error:', error);
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:error',
+      payload: {
+        blueprintId: queen.blueprintId,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
 
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
@@ -56,6 +255,7 @@ export function setupWebSocket(
       sessionId,
       model: 'sonnet',
       isAlive: true,
+      swarmSubscriptions: new Set<string>(),
     };
 
     clients.set(clientId, client);
@@ -80,7 +280,7 @@ export function setupWebSocket(
     ws.on('message', async (data: Buffer) => {
       try {
         const message: ClientMessage = JSON.parse(data.toString());
-        await handleClientMessage(client, message, conversationManager);
+        await handleClientMessage(client, message, conversationManager, swarmSubscriptions);
       } catch (error) {
         console.error('[WebSocket] 消息处理错误:', error);
         sendMessage(ws, {
@@ -95,6 +295,8 @@ export function setupWebSocket(
     // 处理关闭
     ws.on('close', () => {
       console.log(`[WebSocket] 客户端断开: ${clientId}`);
+      // 清理订阅
+      cleanupClientSubscriptions(clientId);
       clients.delete(clientId);
     });
 
@@ -121,7 +323,8 @@ function sendMessage(ws: WebSocket, message: ServerMessage): void {
 async function handleClientMessage(
   client: ClientConnection,
   message: ClientMessage,
-  conversationManager: ConversationManager
+  conversationManager: ConversationManager,
+  swarmSubscriptions: Map<string, Set<string>>
 ): Promise<void> {
   const { ws } = client;
 
@@ -345,6 +548,15 @@ async function handleClientMessage(
 
     case 'auth_validate':
       await handleAuthValidate(client, message.payload);
+      break;
+
+    // ========== 蜂群相关消息 ==========
+    case 'swarm:subscribe':
+      await handleSwarmSubscribe(client, message.payload.blueprintId, swarmSubscriptions);
+      break;
+
+    case 'swarm:unsubscribe':
+      await handleSwarmUnsubscribe(client, message.payload.blueprintId, swarmSubscriptions);
       break;
 
     default:
@@ -2382,4 +2594,344 @@ async function processOfficeDocument(doc: OfficeAttachment): Promise<string> {
     console.error('[WebSocket] 保存 ' + type + ' 文档失败:', error);
     throw new Error('保存 ' + type + ' 文档失败: ' + (error instanceof Error ? error.message : '未知错误'));
   }
+}
+
+// ============================================================================
+// 蜂群相关处理函数
+// ============================================================================
+
+/**
+ * 处理蜂群订阅请求
+ */
+async function handleSwarmSubscribe(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws, id: clientId } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: {
+          message: '缺少 blueprintId',
+        },
+      });
+      return;
+    }
+
+    // 添加订阅
+    if (!swarmSubscriptions.has(blueprintId)) {
+      swarmSubscriptions.set(blueprintId, new Set());
+    }
+    swarmSubscriptions.get(blueprintId)!.add(clientId);
+    client.swarmSubscriptions.add(blueprintId);
+
+    console.log(`[Swarm] 客户端 ${clientId} 订阅 blueprint ${blueprintId}`);
+
+    // 发送当前状态
+    const blueprint = blueprintManager.getBlueprint(blueprintId);
+    if (!blueprint) {
+      sendMessage(ws, {
+        type: 'swarm:error',
+        payload: {
+          blueprintId,
+          error: 'Blueprint 不存在',
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    const queen = agentCoordinator.getQueen();
+    const workers = agentCoordinator.getWorkers();
+    const timeline = agentCoordinator.getTimeline();
+
+    let taskTree = null;
+    if (blueprint.taskTreeId) {
+      taskTree = taskTreeManager.getTaskTree(blueprint.taskTreeId);
+    }
+
+    sendMessage(ws, {
+      type: 'swarm:state',
+      payload: {
+        blueprint: serializeBlueprint(blueprint),
+        taskTree: taskTree ? serializeTaskTree(taskTree) : null,
+        queen: queen && queen.blueprintId === blueprintId ? serializeQueen(queen) : null,
+        workers: workers
+          .filter(w => queen && w.queenId === queen.id)
+          .map(serializeWorker),
+        timeline: timeline.map(serializeTimelineEvent),
+        stats: taskTree?.stats || null,
+      },
+    });
+  } catch (error) {
+    console.error('[Swarm] 订阅失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '订阅失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理蜂群取消订阅请求
+ */
+async function handleSwarmUnsubscribe(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { id: clientId } = client;
+
+  try {
+    if (!blueprintId) {
+      return;
+    }
+
+    // 移除订阅
+    const subscribers = swarmSubscriptions.get(blueprintId);
+    if (subscribers) {
+      subscribers.delete(clientId);
+      if (subscribers.size === 0) {
+        swarmSubscriptions.delete(blueprintId);
+      }
+    }
+    client.swarmSubscriptions.delete(blueprintId);
+
+    console.log(`[Swarm] 客户端 ${clientId} 取消订阅 blueprint ${blueprintId}`);
+  } catch (error) {
+    console.error('[Swarm] 取消订阅失败:', error);
+  }
+}
+
+// ============================================================================
+// 序列化函数（将后端类型转换为前端类型）
+// ============================================================================
+
+/**
+ * 序列化 Blueprint
+ */
+function serializeBlueprint(blueprint: any): any {
+  return {
+    id: blueprint.id,
+    name: blueprint.name,
+    description: blueprint.description,
+    requirement: blueprint.requirement,
+    createdAt: blueprint.createdAt.toISOString(),
+    updatedAt: blueprint.updatedAt.toISOString(),
+    status: mapBlueprintStatus(blueprint.status),
+  };
+}
+
+/**
+ * 映射 Blueprint 状态
+ */
+function mapBlueprintStatus(status: string): 'pending' | 'running' | 'paused' | 'completed' | 'failed' {
+  switch (status) {
+    case 'draft':
+    case 'pending':
+    case 'approved':
+      return 'pending';
+    case 'executing':
+      return 'running';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * 序列化 TaskTree
+ */
+function serializeTaskTree(taskTree: any): any {
+  return {
+    id: taskTree.id,
+    blueprintId: taskTree.blueprintId,
+    root: serializeTaskNode(taskTree.root),
+    stats: taskTree.stats,
+    createdAt: taskTree.createdAt.toISOString(),
+    updatedAt: taskTree.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * 序列化 TaskNode
+ */
+function serializeTaskNode(task: TaskNode): any {
+  return {
+    id: task.id,
+    title: task.name,
+    description: task.description,
+    status: mapTaskStatus(task.status),
+    assignedTo: task.agentId || null,
+    dependencies: task.dependencies,
+    children: task.children.map(serializeTaskNode),
+    result: task.codeArtifacts.length > 0 ? 'Code artifacts generated' : undefined,
+    error: task.status === 'test_failed' || task.status === 'rejected' ? 'Task failed' : undefined,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.createdAt.toISOString(), // TaskNode 没有 updatedAt 字段，使用 createdAt
+  };
+}
+
+/**
+ * 映射任务状态
+ */
+function mapTaskStatus(status: string): 'pending' | 'running' | 'passed' | 'failed' | 'blocked' {
+  switch (status) {
+    case 'pending':
+      return 'pending';
+    case 'running':
+    case 'test_writing':
+    case 'test_failed':
+    case 'implementing':
+      return 'running';
+    case 'passed':
+      return 'passed';
+    case 'failed':
+      return 'failed';
+    case 'blocked':
+      return 'blocked';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * 序列化 Queen
+ */
+function serializeQueen(queen: QueenAgent): any {
+  return {
+    id: queen.id,
+    blueprintId: queen.blueprintId,
+    status: mapQueenStatus(queen.status),
+    currentAction: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * 映射 Queen 状态
+ */
+function mapQueenStatus(status: string): 'idle' | 'planning' | 'coordinating' | 'monitoring' {
+  switch (status) {
+    case 'idle':
+      return 'idle';
+    case 'coordinating':
+      return 'coordinating';
+    case 'paused':
+      return 'idle';
+    default:
+      return 'monitoring';
+  }
+}
+
+/**
+ * 序列化 Worker
+ */
+function serializeWorker(worker: WorkerAgent): any {
+  // 获取任务信息
+  const queen = agentCoordinator.getQueen();
+  let taskTitle = null;
+  if (queen && worker.taskId) {
+    const taskTree = taskTreeManager.getTaskTree(queen.taskTreeId);
+    if (taskTree) {
+      const task = taskTreeManager.findTask(taskTree.root, worker.taskId);
+      if (task) {
+        taskTitle = task.name;
+      }
+    }
+  }
+
+  // 计算进度
+  const progress = calculateWorkerProgress(worker);
+
+  return {
+    id: worker.id,
+    blueprintId: queen?.blueprintId || '',
+    name: `Worker ${worker.id.substring(0, 8)}`,
+    status: mapWorkerStatus(worker.status),
+    currentTaskId: worker.taskId || null,
+    currentTaskTitle: taskTitle,
+    progress,
+    logs: worker.history.map(h => `[${h.type}] ${h.description}`),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * 映射 Worker 状态
+ */
+function mapWorkerStatus(status: string): 'idle' | 'working' | 'paused' | 'completed' | 'failed' {
+  switch (status) {
+    case 'idle':
+      return 'idle';
+    case 'test_writing':
+    case 'implementing':
+      return 'working';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'idle';
+  }
+}
+
+/**
+ * 计算 Worker 进度
+ */
+function calculateWorkerProgress(worker: WorkerAgent): number {
+  const cycle = worker.tddCycle;
+  if (!cycle) return 0;
+
+  // 基于 TDD 循环阶段计算进度
+  const phaseProgress: Record<string, number> = {
+    'write_test': 20,
+    'run_test_red': 40,
+    'implement': 60,
+    'run_test_green': 80,
+    'refactor': 90,
+    'done': 100,
+  };
+
+  return phaseProgress[cycle.phase] || 0;
+}
+
+/**
+ * 序列化时间线事件
+ */
+function serializeTimelineEvent(event: TimelineEvent): any {
+  return {
+    id: event.id,
+    timestamp: event.timestamp.toISOString(),
+    type: mapTimelineEventType(event.type),
+    actor: event.data?.workerId || event.data?.queenId || 'system',
+    message: event.description,
+    data: event.data,
+  };
+}
+
+/**
+ * 映射时间线事件类型
+ */
+function mapTimelineEventType(type: string): string {
+  const typeMap: Record<string, string> = {
+    'task_start': 'task_start',
+    'task_complete': 'task_complete',
+    'test_fail': 'task_fail',
+    'test_pass': 'task_complete',
+    'worker_created': 'worker_start',
+    'rollback': 'system',
+  };
+
+  return typeMap[type] || 'system';
 }
