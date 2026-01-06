@@ -2529,7 +2529,7 @@ function getInlineReactApp(port: number): string {
 
       const handleRenameStart = (session) => {
         setEditingId(session.id);
-        setNewTitle(session.name || '未命名会话);
+        setNewTitle(session.name || '未命名会话');
       };
 
       const handleRenameSubmit = (sessionId) => {

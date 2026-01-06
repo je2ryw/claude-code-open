@@ -833,15 +833,17 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
       blueprintManager.addBusinessProcess(blueprint.id, {
         name: process.name,
         description: process.description,
-        type: process.type,
+        type: 'to-be',  // Draft 中的 core/support/management 用于分类，这里统一标记为目标状态
         steps: process.steps.map((step, idx) => ({
           id: uuidv4(),
           order: idx + 1,
           name: step,
           description: step,
-          actors: ['user'],
+          actor: 'user',  // 单个执行角色
         })),
         actors: ['user'],
+        inputs: [],   // 流程输入，后续可扩展
+        outputs: [],  // 流程输出，后续可扩展
       });
     }
 
@@ -882,7 +884,7 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
         name: nfr.name,
         description: nfr.description,
         priority: nfr.priority,
-        metrics: nfr.metrics,
+        metric: nfr.metrics,  // Draft 使用 metrics(复数)，正式类型使用 metric(单数)
       });
     }
 

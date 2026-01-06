@@ -20,6 +20,34 @@
       ]
     },
     {
+      "name": "Debug Memory System",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/tsx",
+      "args": ["tests/memory/debug-memory.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "CLAUDE_DEBUG": "true"
+      }
+    },
+    {
+      "name": "Debug WebUI",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/tsx",
+      "args": ["src/web/index.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "CLAUDE_DEBUG": "true"
+      }
+    },
+    {
       "name": "Debug CLI (node --loader)",
       "type": "node",
       "request": "launch",

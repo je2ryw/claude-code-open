@@ -18,6 +18,7 @@ import type { SessionMetadata, SessionListOptions } from '../../session/index.js
 import { TaskManager } from './task-manager.js';
 import { McpConfigManager } from '../../mcp/config.js';
 import type { ExtendedMcpServerConfig } from '../../mcp/config.js';
+import { UnifiedMemory, getUnifiedMemory } from '../../memory/unified-memory.js';
 
 // ============================================================================
 // 工具输出截断常量和函数（参考官方 CLI 实现）
@@ -88,6 +89,7 @@ export class ConversationManager {
   private cwd: string;
   private defaultModel: string;
   private mcpConfigManager: McpConfigManager;
+  private unifiedMemory: UnifiedMemory;
 
   constructor(cwd: string, defaultModel: string = 'sonnet') {
     this.cwd = cwd;
@@ -97,6 +99,8 @@ export class ConversationManager {
       validateCommands: true,
       autoSave: true,
     });
+    // 初始化统一记忆系统
+    this.unifiedMemory = getUnifiedMemory(cwd);
   }
 
   /**
@@ -989,6 +993,17 @@ Respond in Chinese when the user writes in Chinese.`;
     // 如果有追加提示，添加到默认提示后
     if (config.useDefault && config.appendPrompt) {
       prompt += '\n\n' + config.appendPrompt;
+    }
+
+    // 注入记忆系统摘要
+    try {
+      const memorySummary = this.unifiedMemory.getMemorySummaryForPrompt();
+      if (memorySummary) {
+        prompt += '\n\n' + memorySummary;
+      }
+    } catch (error) {
+      // 记忆系统失败不影响主流程
+      console.warn('Failed to get memory summary:', error);
     }
 
     return prompt;

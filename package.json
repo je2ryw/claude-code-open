@@ -21,6 +21,7 @@
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
     "web": "tsx src/web-cli.ts",
+    "web:debug": "node --inspect --import tsx src/web-cli.ts",
     "web:start": "node dist/web-cli.js",
     "web:dev": "tsx watch src/web-cli.ts",
     "test": "vitest",
@@ -77,6 +78,7 @@
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2",
     "uuid": "^9.0.0",
+    "vectra": "^0.11.1",
     "web-tree-sitter": "0.22.6",
     "ws": "^8.18.3",
     "zod": "^3.22.0"
