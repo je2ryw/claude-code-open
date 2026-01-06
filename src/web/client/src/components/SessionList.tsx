@@ -43,9 +43,9 @@ export function SessionList({
 
   return (
     <div className="session-list">
-      {sessions.map(session => (
+      {sessions.map((session, index) => (
         <div
-          key={session.id}
+          key={session.id || `session-${index}`}
           className={`session-item ${session.id === currentSessionId ? 'active' : ''}`}
           onClick={() => editingId !== session.id && onSessionSelect(session.id)}
         >

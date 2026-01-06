@@ -154,12 +154,15 @@ export function loadSession(sessionId: string): SessionData | null {
 export function deleteSession(sessionId: string): boolean {
   const sessionPath = getSessionPath(sessionId);
 
+  // 如果文件不存在，仍然返回 true（会话已经不存在了，删除目标达成）
   if (!fs.existsSync(sessionPath)) {
-    return false;
+    console.log(`[Session] 会话文件不存在，视为删除成功: ${sessionId}`);
+    return true;
   }
 
   try {
     fs.unlinkSync(sessionPath);
+    console.log(`[Session] 会话已删除: ${sessionId}`);
     return true;
   } catch (err) {
     console.error(`Failed to delete session ${sessionId}:`, err);

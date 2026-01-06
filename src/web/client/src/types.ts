@@ -17,15 +17,20 @@ export interface ChatMessage {
 
 export type ChatContent =
   | { type: 'text'; text: string }
-  | { type: 'image'; source: ImageSource; fileName?: string; url?: string }
+  | { type: 'image'; source: MediaSource; fileName?: string; url?: string }
+  | { type: 'document'; source: MediaSource; fileName?: string }  // PDF 和其他文档
   | { type: 'tool_use'; id: string; name: string; input: unknown; status: ToolStatus; result?: ToolResult }
   | { type: 'thinking'; text: string };
 
-export interface ImageSource {
+// 媒体源（图片和文档通用）
+export interface MediaSource {
   type: 'base64';
   media_type: string;
   data: string;
 }
+
+// 兼容旧代码
+export type ImageSource = MediaSource;
 
 export type ToolStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -84,11 +89,14 @@ export interface QuestionOption {
   description?: string;
 }
 
+// 附件类型
+export type AttachmentType = 'image' | 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'text';
+
 // 附件
 export interface Attachment {
   id: string;
   name: string;
-  type: 'image' | 'text';
+  type: AttachmentType;
   mimeType: string;
   data: string;
 }
@@ -111,6 +119,7 @@ export type WSMessageType =
   | 'session_switched'
   | 'session_deleted'
   | 'session_renamed'
+  | 'history'
   | 'pong';
 
 export interface WSMessage {

@@ -14,13 +14,18 @@ export interface WSMessage {
 }
 
 /**
+ * 附件类型枚举
+ */
+export type AttachmentType = 'image' | 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'text';
+
+/**
  * 附件类型
  */
 export interface Attachment {
   name: string;
-  type: 'image' | 'text';
+  type: AttachmentType;
   mimeType: string;
-  data: string; // base64 for images, text content for text files
+  data: string; // base64 for images/pdf/office, text content for text files
 }
 
 // ============ 认证相关类型 ============

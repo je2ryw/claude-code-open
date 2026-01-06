@@ -56,8 +56,19 @@ export const TOOL_ICONS: Record<string, string> = {
 };
 
 // 格式化日期
-export function formatDate(timestamp: number): string {
+export function formatDate(timestamp: number | undefined | null): string {
+  // 处理无效输入
+  if (timestamp === undefined || timestamp === null || isNaN(timestamp)) {
+    return '未知时间';
+  }
+
   const date = new Date(timestamp);
+
+  // 检查是否是有效日期
+  if (isNaN(date.getTime())) {
+    return '未知时间';
+  }
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);

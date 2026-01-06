@@ -373,6 +373,7 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-end;
+  position: relative;
 }
 
 .input-wrapper {
@@ -495,6 +496,10 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 18px;
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
 }
 
 .attach-btn:hover {
@@ -503,8 +508,19 @@ body {
   background: rgba(122, 162, 247, 0.1);
 }
 
-.attach-btn input[type="file"] {
-  display: none;
+/* 隐藏的文件输入 */
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* 附件预览区域 */
@@ -780,6 +796,169 @@ body {
   border-color: var(--accent-primary);
 }
 
+/* 设置面板内部样式 */
+.settings-section h3 {
+  font-size: 16px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.settings-description {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.setting-item {
+  margin-bottom: 16px;
+}
+
+.setting-item label {
+  display: block;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.setting-select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.setting-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-info {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-card {
+  padding: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.model-card h4 {
+  font-size: 14px;
+  color: var(--accent-primary);
+  margin-bottom: 6px;
+}
+
+.model-card p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.about-info {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+}
+
+.about-info p {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.about-info p:last-child {
+  margin-bottom: 0;
+}
+
+.about-disclaimer {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(247, 118, 142, 0.1);
+  border-left: 3px solid var(--accent-error);
+  border-radius: 0 8px 8px 0;
+}
+
+.about-disclaimer p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.about-features {
+  margin-top: 20px;
+}
+
+.about-features h4 {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.about-features ul {
+  list-style: none;
+  padding: 0;
+}
+
+.about-features li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 6px 0;
+  padding-left: 16px;
+  position: relative;
+}
+
+.about-features li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--accent-success);
+}
+
+.about-links {
+  margin-top: 20px;
+}
+
+.about-links h4 {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.about-links a {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.about-links a:hover {
+  text-decoration: underline;
+}
+
+.about-links p {
+  margin: 8px 0;
+}
+
+/* 设置导航图标 */
+.settings-nav-icon {
+  margin-right: 8px;
+  font-size: 14px;
+}
+
 /* 加载动画 */
 .loading-dots {
   display: inline-flex;
@@ -830,6 +1009,995 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ============================================
+   MCP 管理面板样式
+   ============================================ */
+
+.mcp-panel {
+  padding: 16px;
+}
+
+.mcp-panel-header {
+  margin-bottom: 16px;
+}
+
+.mcp-panel-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.mcp-panel-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mcp-message {
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.mcp-message-success {
+  background: rgba(158, 206, 106, 0.15);
+  color: var(--accent-success);
+}
+
+.mcp-server-list {
+  margin-bottom: 20px;
+}
+
+.mcp-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 14px;
+}
+
+.mcp-list-item:hover,
+.mcp-list-item.selected {
+  background: var(--bg-tertiary);
+}
+
+.mcp-list-item-add {
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.mcp-list-icon {
+  width: 16px;
+  color: var(--accent-primary);
+}
+
+.mcp-list-index {
+  color: var(--text-muted);
+  min-width: 20px;
+}
+
+.mcp-list-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.mcp-list-status {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.mcp-list-status.mcp-status-connected {
+  color: var(--accent-success);
+}
+
+.mcp-list-status.mcp-status-disabled,
+.mcp-list-status.mcp-status-disconnected {
+  color: var(--text-muted);
+}
+
+.mcp-list-status.mcp-status-failed {
+  color: var(--accent-error);
+}
+
+.mcp-list-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.mcp-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mcp-config-info {
+  padding: 12px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.mcp-config-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.mcp-config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-left: 8px;
+}
+
+.mcp-config-path {
+  font-family: 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-left: 16px;
+}
+
+.mcp-tips {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mcp-tips p {
+  margin: 4px 0;
+}
+
+.mcp-tips a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.mcp-tips a:hover {
+  text-decoration: underline;
+}
+
+/* MCP 详情卡片 */
+.mcp-detail-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.mcp-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mcp-detail-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.mcp-detail-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mcp-detail-info {
+  margin-bottom: 16px;
+}
+
+.mcp-info-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.mcp-info-row.mcp-info-desc {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-info-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+
+.mcp-info-value {
+  color: var(--text-muted);
+}
+
+.mcp-info-code {
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+}
+
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.mcp-status-connected {
+  color: var(--accent-success);
+}
+
+.mcp-status-disabled,
+.mcp-status-disconnected,
+.mcp-status-pending {
+  color: var(--text-muted);
+}
+
+.mcp-status-failed {
+  color: var(--accent-error);
+}
+
+.mcp-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.mcp-tag-success {
+  background: rgba(158, 206, 106, 0.2);
+  color: var(--accent-success);
+}
+
+.mcp-tag-error {
+  background: rgba(247, 118, 142, 0.2);
+  color: var(--accent-error);
+}
+
+.mcp-tag-muted {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.mcp-detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-action-btn {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.mcp-action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.mcp-action-danger {
+  color: var(--accent-error);
+}
+
+.mcp-action-danger:hover {
+  background: rgba(247, 118, 142, 0.1);
+}
+
+.mcp-panel-hint {
+  padding-top: 8px;
+}
+
+.mcp-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mcp-btn-primary {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  border: none;
+}
+
+.mcp-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.mcp-btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.mcp-btn-secondary:hover {
+  background: var(--bg-tertiary);
+}
+
+/* MCP 添加表单 */
+.mcp-add-form {
+  padding: 4px;
+}
+
+.mcp-form-header {
+  margin-bottom: 16px;
+}
+
+.mcp-form-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.mcp-form-error {
+  padding: 10px 14px;
+  background: rgba(247, 118, 142, 0.15);
+  color: var(--accent-error);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.mcp-form-group {
+  margin-bottom: 14px;
+}
+
+.mcp-form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.mcp-form-input,
+.mcp-form-select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.mcp-form-input:focus,
+.mcp-form-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.mcp-form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.mcp-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* MCP 重连状态 */
+.mcp-reconnecting {
+  padding: 20px;
+  text-align: center;
+}
+
+.mcp-reconnecting-title {
+  font-size: 15px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.mcp-reconnecting-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--accent-primary);
+  margin-bottom: 8px;
+}
+
+.mcp-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.mcp-reconnecting-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* MCP 工具列表 */
+.mcp-tools-list .mcp-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ============================================
+   插件管理面板样式
+   ============================================ */
+
+.plugins-panel {
+  padding: 16px;
+}
+
+.plugins-panel-header {
+  margin-bottom: 16px;
+}
+
+.plugins-panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.plugins-panel-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Tab 栏 */
+.plugins-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.plugins-tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.plugins-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.plugins-tab.active {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.plugins-tab-content {
+  min-height: 200px;
+}
+
+.plugins-tab-content h4 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+/* 搜索框 */
+.plugins-search {
+  margin-bottom: 12px;
+}
+
+.plugins-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.plugins-search-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.plugins-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* 插件列表 */
+.plugins-list {
+  margin-bottom: 12px;
+}
+
+.plugins-list-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 4px;
+}
+
+.plugins-list-item:hover,
+.plugins-list-item.selected {
+  background: var(--bg-tertiary);
+}
+
+.plugins-list-item.installed {
+  opacity: 0.7;
+}
+
+.plugins-list-item-add {
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.plugins-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.plugins-item-icon {
+  width: 16px;
+  color: var(--accent-primary);
+}
+
+.plugins-item-checkbox {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.plugins-add-icon {
+  color: var(--accent-primary);
+  font-weight: bold;
+}
+
+.plugins-item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.plugins-item-marketplace,
+.plugins-item-count,
+.plugins-item-installs {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plugins-item-version {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plugins-item-desc {
+  padding-left: 48px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.plugins-item-source {
+  padding-left: 48px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'Fira Code', monospace;
+}
+
+.plugins-item-actions {
+  display: flex;
+  gap: 8px;
+  padding-left: 48px;
+  margin-top: 8px;
+}
+
+.plugins-action-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.plugins-action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.plugins-action-danger {
+  color: var(--accent-error);
+}
+
+.plugins-action-danger:hover {
+  background: rgba(247, 118, 142, 0.1);
+}
+
+/* 标签 */
+.plugins-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.plugins-tag-installed {
+  background: rgba(158, 206, 106, 0.2);
+  color: var(--accent-success);
+}
+
+.plugins-tag-disabled {
+  background: rgba(224, 175, 104, 0.2);
+  color: var(--accent-warning);
+}
+
+.plugins-tag-error {
+  background: rgba(247, 118, 142, 0.2);
+  color: var(--accent-error);
+}
+
+/* 状态信息 */
+.plugins-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.plugins-empty code {
+  display: block;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: 6px;
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--accent-primary);
+}
+
+.plugins-success {
+  padding: 20px;
+  text-align: center;
+  color: var(--accent-success);
+  font-size: 14px;
+}
+
+.plugins-warning {
+  padding: 10px 14px;
+  background: rgba(224, 175, 104, 0.15);
+  color: var(--accent-warning);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.plugins-no-results {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.plugins-more {
+  padding: 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plugins-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.plugins-install-btn {
+  padding: 6px 14px;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.plugins-install-btn:hover {
+  opacity: 0.9;
+}
+
+.plugins-clear-btn {
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.plugins-clear-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+/* 错误列表 */
+.plugins-errors-list {
+  margin-bottom: 12px;
+}
+
+.plugins-error-item {
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.plugins-error-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.plugins-error-icon {
+  color: var(--accent-error);
+}
+
+.plugins-error-plugin {
+  font-weight: 500;
+  color: var(--accent-error);
+}
+
+.plugins-error-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 20px;
+  margin-bottom: 4px;
+}
+
+.plugins-error-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-left: 20px;
+}
+
+/* 插件详情 */
+.plugins-details {
+  padding: 4px;
+}
+
+.plugins-details-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.plugins-details-header {
+  margin-bottom: 12px;
+}
+
+.plugins-details-header h4 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.plugins-details-info {
+  margin-bottom: 16px;
+}
+
+.plugins-details-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.plugins-details-from,
+.plugins-details-version,
+.plugins-details-author {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.plugins-details-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
+.plugins-warning-box {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(224, 175, 104, 0.1);
+  border-left: 3px solid var(--accent-warning);
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 16px;
+}
+
+.plugins-warning-icon {
+  color: var(--accent-warning);
+  flex-shrink: 0;
+}
+
+.plugins-warning-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.plugins-details-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.plugins-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.plugins-btn-primary {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  border: none;
+}
+
+.plugins-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.plugins-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plugins-btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.plugins-btn-secondary:hover {
+  background: var(--bg-tertiary);
+}
+
+.plugins-btn-danger {
+  background: rgba(247, 118, 142, 0.15);
+  color: var(--accent-error);
+  border: 1px solid rgba(247, 118, 142, 0.3);
+}
+
+.plugins-btn-danger:hover {
+  background: rgba(247, 118, 142, 0.25);
+}
+
+/* 添加 Marketplace */
+.plugins-add-marketplace {
+  padding: 4px;
+}
+
+.plugins-add-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.plugins-add-card h4 {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.plugins-form-error {
+  padding: 10px 14px;
+  background: rgba(247, 118, 142, 0.15);
+  color: var(--accent-error);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.plugins-form-group {
+  margin-bottom: 14px;
+}
+
+.plugins-form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.plugins-form-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.plugins-form-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.plugins-examples {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.plugins-examples-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.plugins-example {
+  font-size: 12px;
+  font-family: 'Fira Code', monospace;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.plugins-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.plugins-discover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.plugins-discover-header h4 {
+  margin: 0;
+}
+
+.plugins-count {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* 响应式 */

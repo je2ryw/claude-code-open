@@ -353,6 +353,25 @@ async function handleClientMessage(
 }
 
 /**
+ * 媒体附件信息（图片或 PDF）
+ */
+interface MediaAttachment {
+  data: string;
+  mimeType: string;
+  type: 'image' | 'pdf';
+}
+
+/**
+ * Office 文档附件信息
+ */
+interface OfficeAttachment {
+  name: string;
+  data: string;  // base64 数据
+  mimeType: string;
+  type: 'docx' | 'xlsx' | 'pptx';
+}
+
+/**
  * 处理聊天消息
  */
 async function handleChatMessage(
@@ -371,17 +390,34 @@ async function handleChatMessage(
 
   const messageId = randomUUID();
 
-  // 处理附件：转换为 images 数组（向后兼容）或增强内容
-  let images: string[] | undefined;
+  // 处理附件：转换为媒体附件数组（图片和 PDF）或增强内容
+  let mediaAttachments: MediaAttachment[] | undefined;
+  let officeAttachments: OfficeAttachment[] | undefined;
   let enhancedContent = content;
 
   if (attachments && Array.isArray(attachments)) {
     // 检查是否是新格式的附件
     if (attachments.length > 0 && typeof attachments[0] === 'object') {
       const typedAttachments = attachments as Attachment[];
-      images = typedAttachments
-        .filter(att => att.type === 'image')
-        .map(att => att.data); // 已经是 base64
+
+      // 提取图片和 PDF 附件（直接支持 Claude API）
+      mediaAttachments = typedAttachments
+        .filter(att => att.type === 'image' || att.type === 'pdf')
+        .map(att => ({
+          data: att.data,
+          mimeType: att.mimeType || (att.type === 'pdf' ? 'application/pdf' : 'image/png'),
+          type: att.type as 'image' | 'pdf',
+        }));
+
+      // 提取 Office 文档附件（需要通过 Skills 处理）
+      officeAttachments = typedAttachments
+        .filter(att => att.type === 'docx' || att.type === 'xlsx' || att.type === 'pptx')
+        .map(att => ({
+          name: att.name,
+          data: att.data,
+          mimeType: att.mimeType,
+          type: att.type as 'docx' | 'xlsx' | 'pptx',
+        }));
 
       // 将文本附件添加到内容中
       const textAttachments = typedAttachments.filter(att => att.type === 'text');
@@ -392,8 +428,32 @@ async function handleChatMessage(
         enhancedContent = textParts.join('\n\n') + (content ? '\n\n' + content : '');
       }
     } else {
-      // 旧格式：直接是 base64 字符串数组
-      images = attachments as string[];
+      // 旧格式：直接是 base64 字符串数组（默认图片 png）
+      mediaAttachments = (attachments as string[]).map(data => ({
+        data,
+        mimeType: 'image/png',
+        type: 'image' as const,
+      }));
+    }
+  }
+
+  // 处理 Office 文档附件（docx/xlsx/pptx）
+  // 这些文档需要通过 Skills 或解析库处理，Claude API 不直接支持
+  if (officeAttachments && officeAttachments.length > 0) {
+    const processedDocs: string[] = [];
+    for (const doc of officeAttachments) {
+      try {
+        const docContent = await processOfficeDocument(doc);
+        if (docContent) {
+          processedDocs.push(docContent);
+        }
+      } catch (error) {
+        console.error(`[WebSocket] 处理 Office 文档失败: ${doc.name}`, error);
+        processedDocs.push(`[${doc.type.toUpperCase()} 文档: ${doc.name}]\n（处理失败: ${error instanceof Error ? error.message : '未知错误'}）`);
+      }
+    }
+    if (processedDocs.length > 0) {
+      enhancedContent = processedDocs.join('\n\n') + (enhancedContent ? '\n\n' + enhancedContent : '');
     }
   }
 
@@ -410,8 +470,8 @@ async function handleChatMessage(
   });
 
   try {
-    // 调用对话管理器，传入流式回调
-    await conversationManager.chat(sessionId, enhancedContent, images, model, {
+    // 调用对话管理器，传入流式回调（媒体附件包含 mimeType 和类型）
+    await conversationManager.chat(sessionId, enhancedContent, mediaAttachments, model, {
       onThinkingStart: () => {
         sendMessage(ws, {
           type: 'thinking_start',
@@ -2258,5 +2318,68 @@ async function handleAuthValidate(
         message: error instanceof Error ? error.message : '验证 API 密钥失败',
       },
     });
+  }
+}
+
+/**
+ * 处理 Office 文档（docx/xlsx/pptx）
+ * 对齐官方 document-skills 的实现方式
+ *
+ * 官网处理方式：
+ * 1. 将文档保存到临时目录
+ * 2. 在消息中告诉 Claude 有这些文档及其路径
+ * 3. Claude 根据需要调用 document-skills 来处理文档
+ *
+ * 这样的好处是：
+ * - Skills 提供完整的文档处理能力（创建、编辑、分析）
+ * - Claude 可以根据上下文决定如何处理
+ * - 不需要在服务器端实现复杂的解析逻辑
+ */
+async function processOfficeDocument(doc: OfficeAttachment): Promise<string> {
+  const { name, data, type } = doc;
+  const fs = await import('fs');
+  const path = await import('path');
+  const os = await import('os');
+
+  try {
+    // 创建临时目录（如果不存在）
+    const tempDir = path.join(os.tmpdir(), 'claude-code-uploads');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // 生成唯一文件名（避免冲突）
+    const timestamp = Date.now();
+    const safeFileName = name.replace(/[^a-zA-Z0-9.-_一-龥]/g, '_');
+    const tempFilePath = path.join(tempDir, timestamp + '_' + safeFileName);
+
+    // 将 base64 数据解码并保存到临时文件
+    const buffer = Buffer.from(data, 'base64');
+    fs.writeFileSync(tempFilePath, buffer);
+
+    console.log('[WebSocket] Office 文档已保存到临时文件: ' + tempFilePath);
+
+    // 返回文档信息，告诉 Claude 文档的位置
+    // Claude 可以使用 document-skills 或 Read 工具来处理
+    const typeDescription: Record<string, string> = {
+      docx: 'Word 文档',
+      xlsx: 'Excel 电子表格',
+      pptx: 'PowerPoint 演示文稿',
+    };
+
+    const skillHint: Record<string, string> = {
+      docx: 'document-skills:docx',
+      xlsx: 'document-skills:xlsx',
+      pptx: 'document-skills:pptx',
+    };
+
+    const desc = typeDescription[type] || type.toUpperCase() + ' 文档';
+    const skill = skillHint[type] || '';
+    const skillNote = skill ? '\n如需读取或处理此文档，可使用 Skill: ' + skill : '';
+
+    return '[附件: ' + name + ']\n类型: ' + desc + '\n文件路径: ' + tempFilePath + skillNote;
+  } catch (error) {
+    console.error('[WebSocket] 保存 ' + type + ' 文档失败:', error);
+    throw new Error('保存 ' + type + ' 文档失败: ' + (error instanceof Error ? error.message : '未知错误'));
   }
 }

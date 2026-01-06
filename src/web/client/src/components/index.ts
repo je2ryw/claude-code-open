@@ -6,3 +6,6 @@ export { WelcomeScreen } from './WelcomeScreen';
 export { UserQuestionDialog } from './UserQuestionDialog';
 export { PermissionDialog } from './PermissionDialog';
 export { SessionList } from './SessionList';
+export { SettingsPanel } from './SettingsPanel';
+export { McpPanel } from './McpPanel';
+export { PluginsPanel } from './PluginsPanel';

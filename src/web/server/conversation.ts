@@ -276,12 +276,17 @@ export class ConversationManager {
   }
 
   /**
+   * 媒体附件信息（图片或 PDF）
+   */
+
+
+  /**
    * 发送聊天消息
    */
   async chat(
     sessionId: string,
     content: string,
-    images: string[] | undefined,
+    mediaAttachments: Array<{ data: string; mimeType: string; type: 'image' | 'pdf' }> | undefined,
     model: string,
     callbacks: StreamCallbacks
   ): Promise<void> {
@@ -295,19 +300,31 @@ export class ConversationManager {
         content: content,
       };
 
-      // 如果有图片，转换为多内容块格式
-      if (images && images.length > 0) {
+      // 如果有媒体附件（图片或 PDF），转换为多内容块格式
+      if (mediaAttachments && mediaAttachments.length > 0) {
         const contentBlocks: any[] = [{ type: 'text', text: content }];
-        for (const imageData of images) {
-          // 假设是 base64 格式
-          contentBlocks.push({
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/png',
-              data: imageData,
-            },
-          });
+        for (const attachment of mediaAttachments) {
+          if (attachment.type === 'image') {
+            // 图片使用 image 类型
+            contentBlocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType,
+                data: attachment.data,
+              },
+            });
+          } else if (attachment.type === 'pdf') {
+            // PDF 使用 document 类型（官方格式）
+            contentBlocks.push({
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: attachment.data,
+              },
+            });
+          }
         }
         userMessage.content = contentBlocks;
       }

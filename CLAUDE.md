@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.
 
 
-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions.
+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的
 
 ## Development Commands
 

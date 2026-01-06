@@ -7,6 +7,7 @@ import {
   UserQuestionDialog,
   PermissionDialog,
   SessionList,
+  SettingsPanel,
 } from './components';
 import type {
   ChatMessage,
@@ -43,7 +44,7 @@ function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { connected, sessionId, model, send, addMessageHandler } = useWebSocket(getWebSocketUrl());
+  const { connected, sessionId, model, setModel, send, addMessageHandler } = useWebSocket(getWebSocketUrl());
 
   // 当前正在构建的消息
   const currentMessageRef = useRef<ChatMessage | null>(null);
@@ -180,14 +181,27 @@ function App() {
           break;
 
         case 'session_switched':
+          // 清空消息列表，等待服务器发送历史消息
           setMessages([]);
-          send({ type: 'get_history' });
+          // 刷新会话列表以更新排序
           send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+          break;
+
+        case 'history':
+          // 处理历史消息加载
+          if (payload.messages && Array.isArray(payload.messages)) {
+            setMessages(payload.messages as ChatMessage[]);
+          }
           break;
 
         case 'session_deleted':
           if (payload.success) {
-            setSessions(prev => prev.filter(s => s.id !== payload.sessionId));
+            const deletedId = payload.sessionId as string;
+            setSessions(prev => prev.filter(s => s.id !== deletedId));
+            // 如果删除的是当前会话，清空消息列表
+            if (deletedId === sessionId) {
+              setMessages([]);
+            }
           }
           break;
 
@@ -251,14 +265,38 @@ function App() {
   // 文件处理
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    const MAX_PDF_SIZE = 32 * 1024 * 1024; // 32MB，与官方限制一致
+    const MAX_OFFICE_SIZE = 50 * 1024 * 1024; // 50MB Office 文档限制
+
     files.forEach(file => {
       const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      // Office 文档类型检测（完全对齐官方支持）
+      const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                     file.name.toLowerCase().endsWith('.docx');
+      const isXlsx = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                     file.name.toLowerCase().endsWith('.xlsx');
+      const isPptx = file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+                     file.name.toLowerCase().endsWith('.pptx');
+      const isOffice = isDocx || isXlsx || isPptx;
       const isText =
         file.type.startsWith('text/') ||
         /\.(txt|md|json|js|ts|tsx|jsx|py|java|c|cpp|h|css|html|xml|yaml|yml|sh|bat|sql|log)$/i.test(file.name);
 
-      if (!isImage && !isText) {
+      if (!isImage && !isPdf && !isOffice && !isText) {
         alert(`不支持的文件类型: ${file.name}`);
+        return;
+      }
+
+      // PDF 文件大小检查
+      if (isPdf && file.size > MAX_PDF_SIZE) {
+        alert(`PDF 文件过大: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大支持 32MB`);
+        return;
+      }
+
+      // Office 文件大小检查
+      if (isOffice && file.size > MAX_OFFICE_SIZE) {
+        alert(`Office 文件过大: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大支持 50MB`);
         return;
       }
 
@@ -272,6 +310,42 @@ function App() {
               name: file.name,
               type: 'image',
               mimeType: file.type,
+              data: event.target?.result as string,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else if (isPdf) {
+        // PDF 文件：读取为 base64
+        reader.onload = (event) => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: 'pdf',
+              mimeType: 'application/pdf',
+              data: event.target?.result as string,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      } else if (isOffice) {
+        // Office 文档：读取为 base64，通过 Skills 处理
+        const officeType = isDocx ? 'docx' : isXlsx ? 'xlsx' : 'pptx';
+        const mimeType = isDocx
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : isXlsx
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        reader.onload = (event) => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              type: officeType as 'docx' | 'xlsx' | 'pptx',
+              mimeType: mimeType,
               data: event.target?.result as string,
             },
           ]);
@@ -355,6 +429,24 @@ function App() {
           },
           fileName: att.name,
         });
+      } else if (att.type === 'pdf') {
+        // PDF 使用 document 类型
+        contentItems.push({
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: att.data.split(',')[1],
+          },
+          fileName: att.name,
+        });
+      } else if (att.type === 'docx' || att.type === 'xlsx' || att.type === 'pptx') {
+        // Office 文档：通过 Skills 处理，这里只添加文件信息提示
+        const typeLabel = att.type === 'docx' ? 'Word' : att.type === 'xlsx' ? 'Excel' : 'PowerPoint';
+        contentItems.push({
+          type: 'text',
+          text: `[${typeLabel} 文档: ${att.name}] - 将通过 document-skills 处理`,
+        });
       } else if (att.type === 'text') {
         contentItems.push({
           type: 'text',
@@ -385,7 +477,9 @@ function App() {
           name: att.name,
           type: att.type,
           mimeType: att.mimeType,
-          data: att.type === 'image' ? att.data.split(',')[1] : att.data,
+          // 所有二进制文件（图片、PDF、Office 文档）都需要去掉 data URL 前缀
+          // 只有 text 类型是纯文本，不需要处理
+          data: att.type !== 'text' ? att.data.split(',')[1] : att.data,
         })),
       },
     });
@@ -476,7 +570,12 @@ function App() {
       {/* 主内容区 */}
       <div className="main-content">
         <div className="chat-header">
-          <select className="model-selector" value={model} disabled>
+          <select
+            className="model-selector"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            disabled={status !== 'idle'}
+          >
             <option value="opus">Claude Opus</option>
             <option value="sonnet">Claude Sonnet</option>
             <option value="haiku">Claude Haiku</option>
@@ -496,7 +595,13 @@ function App() {
             <div className="attachments-preview">
               {attachments.map(att => (
                 <div key={att.id} className="attachment-item">
-                  <span className="file-icon">{att.type === 'image' ? '🖼️' : '📄'}</span>
+                  <span className="file-icon">
+                    {att.type === 'image' ? '🖼️' :
+                     att.type === 'pdf' ? '📕' :
+                     att.type === 'docx' ? '📘' :
+                     att.type === 'xlsx' ? '📗' :
+                     att.type === 'pptx' ? '📙' : '📄'}
+                  </span>
                   <span className="file-name">{att.name}</span>
                   <button className="remove-btn" onClick={() => handleRemoveAttachment(att.id)}>
                     ✕
@@ -506,15 +611,16 @@ function App() {
             </div>
           )}
           <div className="input-container">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden-file-input"
+              multiple
+              accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.json,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.css,.html,.xml,.yaml,.yml,.sh,.bat,.sql,.log"
+              onChange={handleFileSelect}
+            />
             <button className="attach-btn" onClick={() => fileInputRef.current?.click()}>
               📎
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,.txt,.md,.json,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.css,.html,.xml,.yaml,.yml,.sh,.bat,.sql,.log"
-                onChange={handleFileSelect}
-              />
             </button>
             <div className="input-wrapper">
               {showCommandPalette && (
@@ -553,6 +659,12 @@ function App() {
       {permissionRequest && (
         <PermissionDialog request={permissionRequest} onRespond={handlePermissionRespond} />
       )}
+      <SettingsPanel
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        model={model}
+        onModelChange={setModel}
+      />
     </>
   );
 }
