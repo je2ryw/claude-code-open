@@ -1,0 +1,257 @@
+/* 任务树容器 */
+.taskTree {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #e5e7eb;
+  background: #1a1a1a;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+/* 任务节点包装器 */
+.taskNodeWrapper {
+  margin: 0;
+}
+
+/* 任务节点 */
+.taskNode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  padding-right: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  position: relative;
+}
+
+.taskNode:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.taskNode.selected {
+  background: rgba(59, 130, 246, 0.2);
+  border-left: 3px solid #3b82f6;
+  padding-left: calc(12px - 3px);
+}
+
+/* 展开/折叠图标 */
+.expandIcon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.expandIcon:hover {
+  color: #e5e7eb;
+  transform: scale(1.2);
+}
+
+.expandIcon.noChildren {
+  cursor: default;
+  opacity: 0;
+}
+
+/* 文件夹/文件图标 */
+.folderIcon {
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* 任务名称 */
+.taskName {
+  flex: 1;
+  color: #e5e7eb;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 子任务统计 */
+.childStats {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 状态标签 */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.statusIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.statusLabel {
+  font-weight: 500;
+}
+
+/* 进度条 */
+.progressBar {
+  display: inline-flex;
+  font-size: 12px;
+  letter-spacing: -1px;
+  margin-left: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.progressFilled {
+  color: #3b82f6;
+}
+
+.progressHalf {
+  color: #60a5fa;
+}
+
+.progressEmpty {
+  color: #374151;
+}
+
+/* 子任务容器 */
+.children {
+  position: relative;
+}
+
+/* 树形连接线 */
+.children::before {
+  content: '';
+  position: absolute;
+  left: 28px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(156, 163, 175, 0.2);
+}
+
+/* 脉动动画 (用于 test_writing 和 coding 状态) */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.pulse .statusIcon {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 旋转动画 (用于 testing 状态) */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin .statusIcon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .taskTree {
+    font-size: 13px;
+    padding: 12px;
+  }
+
+  .taskNode {
+    gap: 6px;
+    padding: 4px 8px;
+  }
+
+  .statusLabel {
+    display: none;
+  }
+
+  .childStats {
+    font-size: 11px;
+    padding: 1px 6px;
+  }
+}
+
+/* 滚动条样式 */
+.taskTree::-webkit-scrollbar {
+  width: 8px;
+}
+
+.taskTree::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.taskTree::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 4px;
+}
+
+.taskTree::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* 暗色主题优化 */
+@media (prefers-color-scheme: dark) {
+  .taskTree {
+    background: #0f0f0f;
+    color: #f3f4f6;
+  }
+
+  .taskNode:hover {
+    background: rgba(59, 130, 246, 0.15);
+  }
+
+  .taskNode.selected {
+    background: rgba(59, 130, 246, 0.25);
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .taskTree {
+    background: white;
+    color: black;
+    font-size: 12px;
+  }
+
+  .taskNode {
+    break-inside: avoid;
+  }
+
+  .pulse .statusIcon,
+  .spin .statusIcon {
+    animation: none;
+  }
+}

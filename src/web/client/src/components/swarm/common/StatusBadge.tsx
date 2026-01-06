@@ -1,0 +1,64 @@
+import React from 'react';
+import styles from './animations.module.css';
+
+/**
+ * 状态徽章组件 Props
+ */
+export interface StatusBadgeProps {
+  /** 状态类型 */
+  status: 'pending' | 'running' | 'success' | 'error' | 'warning';
+  /** 显示文本（可选，不传则只显示状态点） */
+  label?: string;
+  /** 是否启用脉动动画 */
+  pulse?: boolean;
+  /** 自定义类名 */
+  className?: string;
+}
+
+/**
+ * 状态文本映射
+ */
+const STATUS_LABELS: Record<StatusBadgeProps['status'], string> = {
+  pending: '等待中',
+  running: '运行中',
+  success: '成功',
+  error: '错误',
+  warning: '警告',
+};
+
+/**
+ * StatusBadge - 状态徽章组件
+ *
+ * 功能：
+ * - 5 种状态类型，每种有独特的颜色
+ * - 状态指示点（running 状态有呼吸灯效果）
+ * - 可选的脉动动画
+ * - 支持自定义标签文本
+ *
+ * @example
+ * ```tsx
+ * <StatusBadge status="running" pulse />
+ * <StatusBadge status="success" label="任务完成" />
+ * ```
+ */
+export const StatusBadge: React.FC<StatusBadgeProps> = ({
+  status,
+  label,
+  pulse = false,
+  className = '',
+}) => {
+  const displayLabel = label ?? STATUS_LABELS[status];
+
+  return (
+    <span
+      className={`${styles.statusBadge} ${styles[status]} ${pulse ? styles.pulse : ''} ${className}`}
+      role="status"
+      aria-label={`状态: ${displayLabel}`}
+    >
+      <span className={styles.statusDot} aria-hidden="true" />
+      <span>{displayLabel}</span>
+    </span>
+  );
+};
+
+export default StatusBadge;
