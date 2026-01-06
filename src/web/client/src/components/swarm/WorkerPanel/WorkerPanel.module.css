@@ -1,0 +1,433 @@
+/* WorkerPanel 样式 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  background-color: #1e1e1e;
+}
+
+.panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+.panel::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+}
+
+.panel::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+/* Queen 状态卡片 */
+.queenCard {
+  padding: 16px;
+  background: linear-gradient(135deg, #3b3b7f 0%, #2d2d5f 100%);
+  border-radius: 8px;
+  border: 1px solid #4a4a9f;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.queenHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.queenTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.queenIcon {
+  font-size: 24px;
+}
+
+.queenStatusBadge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.queenStatusBadge.idle {
+  background-color: #4a4a4a;
+  color: #ffffff;
+}
+
+.queenStatusBadge.planning {
+  background-color: #2196f3;
+  color: #ffffff;
+  animation: pulse 2s infinite;
+}
+
+.queenStatusBadge.coordinating {
+  background-color: #ff9800;
+  color: #ffffff;
+  animation: pulse 2s infinite;
+}
+
+.queenStatusBadge.reviewing {
+  background-color: #9c27b0;
+  color: #ffffff;
+  animation: pulse 2s infinite;
+}
+
+.queenStatusBadge.paused {
+  background-color: #757575;
+  color: #ffffff;
+}
+
+.queenDecision {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 13px;
+  color: #e0e0e0;
+  line-height: 1.4;
+}
+
+/* Worker 卡片 */
+.workerCard {
+  padding: 16px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #3d3d3d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.workerCard:hover {
+  border-color: #4d4d4d;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.workerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.workerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.workerIcon {
+  font-size: 20px;
+}
+
+/* 呼吸灯效果 */
+.statusLight {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #757575;
+}
+
+.statusLight.idle {
+  background-color: #757575;
+}
+
+.statusLight.working {
+  background-color: #4caf50;
+  animation: breathing 2s infinite;
+}
+
+.statusLight.waiting {
+  background-color: #ff9800;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes breathing {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.8);
+    opacity: 0.8;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Worker 状态和任务信息 */
+.workerInfo {
+  margin-bottom: 16px;
+}
+
+.workerInfoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #b0b0b0;
+}
+
+.workerInfoLabel {
+  color: #808080;
+}
+
+.workerInfoValue {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.workerInfoValue.statusValue {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* TDD 阶段指示器 */
+.tddPhases {
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.tddPhasesTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a0a0a0;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tddPhasesList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tddPhaseItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.tddPhaseIndicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #4a4a4a;
+  background-color: transparent;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.tddPhaseItem.completed .tddPhaseIndicator {
+  background-color: #4caf50;
+  border-color: #4caf50;
+  position: relative;
+}
+
+.tddPhaseItem.completed .tddPhaseIndicator::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.tddPhaseItem.active .tddPhaseIndicator {
+  background-color: #2196f3;
+  border-color: #2196f3;
+  animation: pulse 1.5s infinite;
+}
+
+.tddPhaseItem.pending .tddPhaseIndicator {
+  border-color: #4a4a4a;
+}
+
+.tddPhaseName {
+  flex: 1;
+  color: #808080;
+  transition: color 0.2s ease;
+}
+
+.tddPhaseItem.completed .tddPhaseName {
+  color: #4caf50;
+}
+
+.tddPhaseItem.active .tddPhaseName {
+  color: #2196f3;
+  font-weight: 600;
+}
+
+.tddPhaseItem.active .tddPhaseArrow {
+  color: #2196f3;
+  font-weight: bold;
+}
+
+/* 进度条 */
+.progressSection {
+  margin-bottom: 12px;
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.progressLabel {
+  font-size: 12px;
+  color: #a0a0a0;
+}
+
+.progressValue {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background-color: #3d3d3d;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50 0%, #81c784 100%);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.progressFill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 元数据 */
+.workerMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #3d3d3d;
+  font-size: 12px;
+  color: #808080;
+}
+
+.retryInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.retryInfo.warning {
+  color: #ff9800;
+}
+
+.retryInfo.danger {
+  color: #f44336;
+}
+
+.duration {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 空状态 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #808080;
+  text-align: center;
+}
+
+.emptyStateIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.emptyStateText {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .panel {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .workerCard,
+  .queenCard {
+    padding: 12px;
+  }
+
+  .workerTitle,
+  .queenTitle {
+    font-size: 14px;
+  }
+}

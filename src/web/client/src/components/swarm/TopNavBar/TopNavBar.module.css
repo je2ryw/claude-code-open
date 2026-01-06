@@ -1,0 +1,109 @@
+/* 顶部导航栏 */
+.topNavBar {
+  height: 48px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+/* 导航标签容器 */
+.navTabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+/* 单个导航标签 */
+.navTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.navTab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.navTab.active {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.navTab .icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* 中央标题 */
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  flex: 1;
+  justify-content: center;
+}
+
+.logo {
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* 右侧操作区 */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.settingsButton {
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 18px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settingsButton:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .title {
+    display: none;
+  }
+
+  .navTab span:not(.icon) {
+    display: none;
+  }
+
+  .navTab {
+    padding: 8px 12px;
+  }
+}
