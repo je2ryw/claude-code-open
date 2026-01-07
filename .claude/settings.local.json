@@ -135,7 +135,9 @@
       "Bash(du:*)",
       "Bash(file:*)",
       "Bash(npx js-beautify:*)",
-      "Bash(npm run test:unit:*)"
+      "Bash(npm run test:unit:*)",
+      "Bash(git -C f:/claude-code-open rm:*)",
+      "Bash(awk:*)"
     ]
   }
 }

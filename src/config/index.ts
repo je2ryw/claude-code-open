@@ -102,6 +102,7 @@ const UserConfigSchema = z.object({
   promptSuggestionEnabled: z.boolean().default(false).optional(),
   fileCheckpointingEnabled: z.boolean().default(true).optional(),
   autoCompactEnabled: z.boolean().default(true).optional(),
+  sessionMemoryEnabled: z.boolean().default(false).optional(), // Session Memory 压缩功能（TJ1）
   autoUpdatesChannel: z.enum(['latest', 'disabled']).default('latest').optional(),
   claudeInChromeDefaultEnabled: z.boolean().default(true).optional(),
 

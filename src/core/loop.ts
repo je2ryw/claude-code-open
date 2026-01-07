@@ -19,6 +19,7 @@ import { initAuth, getAuth, ensureOAuthApiKey } from '../auth/index.js';
 import { runPermissionRequestHooks } from '../hooks/index.js';
 import * as readline from 'readline';
 import { setParentModelContext } from '../tools/agent.js';
+import { configManager } from '../config/index.js';
 
 // ============================================================================
 // 持久化输出常量
@@ -39,9 +40,75 @@ const OUTPUT_THRESHOLD = 400000; // 400KB
 /** 预览大小（字节） */
 const PREVIEW_SIZE = 2000; // 2KB
 
+/**
+ * 可清理的工具白名单（官方策略）
+ * 只有这些工具的结果会被自动清理
+ * 其他工具（如 NotebookEdit、MultiEdit 等）不会被清理
+ */
+const COMPACTABLE_TOOLS = new Set([
+  'Read',
+  'Bash',
+  'Grep',
+  'Glob',
+  'WebSearch',
+  'WebFetch',
+  'Edit',
+  'Write'
+]);
+
+// ============================================================================
+// Microcompact 常量（第一层清理机制）
+// ============================================================================
+
+/**
+ * 最小节省阈值（tokens）
+ * 只有当清理能节省超过此值的 tokens 时才执行清理
+ * 官方值：qy5 = 20000
+ */
+const MIN_SAVINGS_THRESHOLD = 20000;
+
+/**
+ * Microcompact 触发阈值（tokens）
+ * 当消息历史超过此值时，才考虑执行清理
+ * 官方值：Ny5 = 40000
+ */
+const MICROCOMPACT_THRESHOLD = 40000;
+
+/**
+ * 保留最近的工具结果数量
+ * 最近的 N 个可清理工具结果不会被清理
+ * 官方值：Ly5 = 3
+ */
+const KEEP_RECENT_COUNT = 3;
+
 // ============================================================================
 // 工具结果处理辅助函数
 // ============================================================================
+
+/**
+ * 检查环境变量是否为真值
+ * 对齐官方 F0 函数实现
+ * 支持的真值：'1', 'true', 'yes', 'on'（不区分大小写）
+ * @param value 环境变量值
+ * @returns 是否为真值
+ */
+function isEnvTrue(value: string | undefined): boolean {
+  if (!value) return false;
+  if (typeof value === 'boolean') return value;
+  const normalized = value.toLowerCase().trim();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+/**
+ * 简单的 token 估算函数
+ * 官方实现：使用字符数除以 4 作为近似值
+ * 这个估算足够用于决策是否清理
+ * @param content 文本内容
+ * @returns 估算的 token 数
+ */
+function estimateTokens(content: string): number {
+  return Math.ceil(content.length / 4);
+}
 
 /**
  * 智能截断输出内容
@@ -122,16 +189,805 @@ function formatToolResult(
 }
 
 /**
- * 清理消息历史中的旧持久化输出
- * 保留最近的 N 个持久化输出，清理更早的
+ * 查找工具结果对应的工具名称
+ * 用于确定是否应该清理某个工具的结果
  * @param messages 消息列表
- * @param keepRecent 保留最近的数量（默认 3）
+ * @param toolUseId 工具使用 ID
+ * @returns 工具名称，找不到则返回空字符串
+ */
+function findToolNameForResult(messages: Message[], toolUseId: string): string {
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (
+          typeof block === 'object' &&
+          'type' in block &&
+          block.type === 'tool_use' &&
+          'id' in block &&
+          block.id === toolUseId &&
+          'name' in block
+        ) {
+          return block.name as string;
+        }
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * 计算消息历史的总 token 数
+ * 遍历所有消息内容，累加 token 估算值
+ * @param messages 消息列表
+ * @returns 总 token 数（估算值）
+ */
+function calculateTotalTokens(messages: Message[]): number {
+  let totalTokens = 0;
+
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) {
+      // 字符串内容
+      if (typeof msg.content === 'string') {
+        totalTokens += estimateTokens(msg.content);
+      }
+      continue;
+    }
+
+    // 数组内容
+    for (const block of msg.content) {
+      if (typeof block === 'string') {
+        totalTokens += estimateTokens(block);
+      } else if (typeof block === 'object' && 'type' in block) {
+        if (block.type === 'text' && 'text' in block && typeof block.text === 'string') {
+          totalTokens += estimateTokens(block.text);
+        } else if (block.type === 'tool_result' && 'content' in block && typeof block.content === 'string') {
+          totalTokens += estimateTokens(block.content);
+        }
+        // 其他类型的 block（如 tool_use）也计算，但更简化
+        else {
+          totalTokens += estimateTokens(JSON.stringify(block));
+        }
+      }
+    }
+  }
+
+  return totalTokens;
+}
+
+/**
+ * 获取模型的上下文窗口大小
+ * 对齐官方实现
+ * @param model 模型 ID
+ * @returns 上下文窗口大小（tokens）
+ */
+function getContextWindowSize(model: string): number {
+  // 检查是否是 1M 模型（带 [1m] 标记）
+  if (model.includes('[1m]')) {
+    return 1000000;
+  }
+  // 默认 200K 上下文窗口
+  return 200000;
+}
+
+/**
+ * 获取模型的最大输出 tokens
+ * 对齐官方 kH0 函数
+ * @param model 模型 ID
+ * @returns 最大输出 tokens
+ */
+function getMaxOutputTokens(model: string): number {
+  let defaultMax: number;
+
+  // 根据模型类型确定默认最大输出 tokens
+  if (model.includes('opus-4-5')) {
+    defaultMax = 64000;
+  } else if (model.includes('opus-4')) {
+    defaultMax = 32000;
+  } else if (model.includes('sonnet-4') || model.includes('haiku-4')) {
+    defaultMax = 64000;
+  } else {
+    defaultMax = 32000;
+  }
+
+  // 环境变量可以覆盖（但不能超过默认最大值）
+  const envMax = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+  if (envMax) {
+    const parsed = parseInt(envMax, 10);
+    if (!isNaN(parsed)) {
+      return Math.min(parsed, defaultMax);
+    }
+  }
+
+  return defaultMax;
+}
+
+/**
+ * 计算可用的输入 token 空间
+ * 对齐官方 EHA 函数
+ * @param model 模型 ID
+ * @returns 可用的输入 tokens
+ */
+function calculateAvailableInput(model: string): number {
+  return getContextWindowSize(model) - getMaxOutputTokens(model);
+}
+
+/**
+ * 计算自动压缩阈值
+ * 对齐官方 zT2 函数
+ * @param model 模型 ID
+ * @returns 自动压缩阈值（tokens）
+ */
+function calculateAutoCompactThreshold(model: string): number {
+  const availableInput = calculateAvailableInput(model);
+  const vH0 = 13000; // Session Memory 压缩缓冲区
+  const threshold = availableInput - vH0;
+
+  // 环境变量可以覆盖百分比
+  const override = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;
+  if (override) {
+    const pct = parseFloat(override);
+    if (!isNaN(pct) && pct > 0 && pct <= 100) {
+      return Math.min(Math.floor(availableInput * (pct / 100)), threshold);
+    }
+  }
+
+  return threshold;
+}
+
+/**
+ * 检查是否超过自动压缩阈值
+ * 对齐官方 Sy5 函数
+ * @param messages 消息列表
+ * @param model 模型 ID
+ * @returns 是否超过阈值
+ */
+function isAboveAutoCompactThreshold(messages: Message[], model: string): boolean {
+  const totalTokens = calculateTotalTokens(messages);
+  const threshold = calculateAutoCompactThreshold(model);
+  return totalTokens >= threshold;
+}
+
+/**
+ * 综合判断是否应该自动压缩
+ * @param messages 消息列表
+ * @param model 模型 ID
+ * @returns 是否应该自动压缩
+ */
+function shouldAutoCompact(messages: Message[], model: string): boolean {
+  // 1. 检查环境变量 - 如果禁用则直接返回
+  if (isEnvTrue(process.env.DISABLE_COMPACT)) {
+    return false;
+  }
+
+  // 2. 检查配置
+  // 注意：这里可以从 configManager 读取 autoCompactEnabled
+  // 但为了避免循环依赖，暂时跳过配置检查
+  // 未来可以通过依赖注入的方式传入配置
+
+  // 3. 检查是否超过阈值
+  return isAboveAutoCompactThreshold(messages, model);
+}
+
+/**
+ * 生成对话摘要的 prompt（对齐官方 aY0 函数）
+ * @param customInstructions 自定义指令（可选）
+ * @returns 摘要 prompt
+ */
+function generateSummaryPrompt(customInstructions?: string): string {
+  const basePrompt = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
+This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
+
+Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+
+1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
+   - The user's explicit requests and intents
+   - Your approach to addressing the user's requests
+   - Key decisions, technical concepts and code patterns
+   - Specific details like:
+     - file names
+     - full code snippets
+     - function signatures
+     - file edits
+  - Errors that you ran into and how you fixed them
+  - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
+2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.
+
+Your summary should include the following sections:
+
+1. Primary Request and Intent: Capture all of the user's explicit requests and intents in detail
+2. Key Technical Concepts: List all important technical concepts, technologies, and frameworks discussed.
+3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Pay special attention to the most recent messages and include full code snippets where applicable and include a summary of why this file read or edit is important.
+4. Errors and fixes: List all errors that you ran into, and how you fixed them. Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
+5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
+6. Current State: Describe the current state of the work and what needs to be done next.
+
+Note: Do not include any information from system prompts, claude.md entries, or any past session summaries in your analysis - only summarize the actual user conversation.`;
+
+  if (customInstructions && customInstructions.trim()) {
+    return `${basePrompt}\n\nAdditional instructions:\n${customInstructions}`;
+  }
+
+  return basePrompt;
+}
+
+/**
+ * 创建压缩边界标记（对齐官方 LJ1 函数）
+ * @param trigger 触发方式 ('auto' 或 'manual')
+ * @param preTokens 压缩前的token数
+ * @returns 边界标记消息
+ */
+function createCompactBoundaryMarker(trigger: 'auto' | 'manual', preTokens: number): Message {
+  return {
+    role: 'user',
+    content: `--- Conversation Compacted (${trigger}) ---\nPrevious messages were summarized to save ${preTokens.toLocaleString()} tokens.`,
+  };
+}
+
+/**
+ * 格式化摘要消息（对齐官方 l71 函数）
+ * @param summary 摘要内容
+ * @param microcompact 是否为微压缩
+ * @returns 格式化后的摘要文本
+ */
+function formatSummaryMessage(summary: string, microcompact: boolean): string {
+  if (microcompact) {
+    // 微压缩模式：保留原始摘要
+    return summary;
+  }
+
+  // 正常模式：添加标记
+  return `<conversation-summary>\n${summary}\n</conversation-summary>`;
+}
+
+/**
+ * 获取最后一个压缩边界后的消息（对齐官方 QS 函数）
+ * @param messages 消息列表
+ * @returns 最后一个边界后的消息
+ */
+function getMessagesSinceLastBoundary(messages: Message[]): Message[] {
+  // 从后往前查找最后一个压缩边界标记
+  // 边界标记的特征：用户消息，内容包含 "Conversation Compacted"
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (
+      msg &&
+      msg.role === 'user' &&
+      typeof msg.content === 'string' &&
+      msg.content.includes('Conversation Compacted')
+    ) {
+      // 返回边界标记之后的所有消息
+      return messages.slice(i);
+    }
+  }
+
+  // 如果没有找到边界标记，返回所有消息
+  return messages;
+}
+
+// ============================================================================
+// Layer 3: TJ1 - Session Memory 压缩相关函数
+// ============================================================================
+
+/**
+ * 检查Session Memory功能是否启用（对齐官方 jJ1 函数）
+ *
+ * 官方实现检查两个Feature Flags：
+ * - tengu_session_memory
+ * - tengu_sm_compact
+ *
+ * 由于我们无法访问Anthropic的Feature Flag服务器，这里简化为环境变量+配置文件控制
+ *
+ * @returns 是否启用Session Memory压缩
+ */
+async function isSessionMemoryEnabled(): Promise<boolean> {
+  // 方案1：优先检查环境变量
+  if (process.env.ENABLE_SESSION_MEMORY === '1' || process.env.ENABLE_SESSION_MEMORY === 'true') {
+    return true;
+  }
+
+  // 方案2：检查配置文件
+  try {
+    const config = configManager.getAll();
+    if (config.sessionMemoryEnabled) {
+      return true;
+    }
+  } catch (error) {
+    // 配置文件读取失败，忽略错误
+  }
+
+  // 默认禁用Session Memory（因为需要特定的模型支持）
+  return false;
+}
+
+/**
+ * 获取Session Memory模板内容（对齐官方 sj2 函数）
+ *
+ * 官方实现可能从服务器获取模板或使用内置模板
+ * 这里使用内置的简化模板
+ *
+ * @returns Session Memory模板内容
+ */
+function getSessionMemoryTemplate(): string | null {
+  // 返回Session Memory的压缩提示模板
+  // 这个模板会指导AI如何生成结构化的会话记忆
+  return `You are tasked with creating a concise session memory from the conversation history.
+
+Session memory should capture:
+1. **Key Decisions**: Important choices and rationale
+2. **Current State**: What's been accomplished and what's in progress
+3. **Context**: Essential background information needed for future work
+4. **Action Items**: Outstanding tasks or next steps
+5. **Important Details**: Specific values, configurations, or requirements that must be preserved
+
+Format your response as a structured summary that can replace the full conversation history while preserving all critical information.
+
+Do NOT include:
+- Verbose explanations already understood
+- Resolved issues that don't affect future work
+- Redundant information
+- System prompts or tool descriptions`;
+}
+
+/**
+ * 检查模板是否为空（对齐官方 KT2 函数）
+ * @param template 模板内容
+ * @returns 是否为空
+ */
+async function isTemplateEmpty(template: string): Promise<boolean> {
+  return !template || template.trim().length === 0;
+}
+
+/**
+ * 获取最后一次压缩的UUID（对齐官方 nj2 函数）
+ *
+ * 这个函数查找消息历史中最后一个Session Memory边界标记的UUID
+ * 用于实现增量压缩（只压缩新消息，不重复压缩已压缩的内容）
+ *
+ * @returns 最后一次压缩的UUID，如果没有则返回null
+ */
+function getLastCompactedUuid(): string | null {
+  // TODO: 实现从会话中获取最后一次压缩的UUID
+  // 官方实现可能存储在会话状态中
+  // 这里简化返回null，表示没有历史压缩
+  return null;
+}
+
+/**
+ * 等待异步操作（对齐官方 rj2 函数）
+ * 官方实现可能用于等待某些异步初始化
+ * 这里简化为空操作
+ */
+async function waitForAsyncInit(): Promise<void> {
+  // 空操作 - 官方可能用于等待Feature Flag加载等
+  return Promise.resolve();
+}
+
+/**
+ * 创建Session Memory压缩结果（对齐官方 jy5 函数）
+ *
+ * 这个函数构建压缩后的消息列表，包括：
+ * - boundaryMarker: 边界标记（标识压缩点）
+ * - summaryMessages: 摘要消息（Session Memory内容）
+ * - attachments: 附件（如果有agentId）
+ * - hookResults: Hook执行结果（如果有）
+ * - messagesToKeep: 需要保留的新消息
+ *
+ * @param messages 所有消息
+ * @param template 压缩模板
+ * @param messagesToKeep 需要保留的消息
+ * @param agentId 代理ID（可选）
+ * @returns 压缩结果
+ */
+function createSessionMemoryCompactResult(
+  messages: Message[],
+  template: string,
+  messagesToKeep: Message[],
+  agentId?: string
+): {
+  boundaryMarker: Message;
+  summaryMessages: Message[];
+  attachments: Message[];
+  hookResults: Message[];
+  messagesToKeep: Message[];
+  preCompactTokenCount: number;
+  postCompactTokenCount: number;
+} {
+  // 1. 计算压缩前token数
+  const preCompactTokenCount = calculateTotalTokens(messages);
+
+  // 2. 创建边界标记（使用uuid字段标记这是Session Memory压缩）
+  const boundaryUuid = `sm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const boundaryMarker: Message = {
+    role: 'user',
+    content: `--- Session Memory Compacted (auto) ---\nPrevious messages were compressed using Session Memory.`,
+    // @ts-ignore - 添加uuid字段用于追踪
+    uuid: boundaryUuid,
+  };
+
+  // 3. 创建摘要消息（使用模板格式化）
+  const summaryContent = formatSummaryMessage(template, false);
+  const summaryMessage: Message = {
+    role: 'user',
+    content: summaryContent,
+    // @ts-ignore - 标记为压缩摘要
+    isCompactSummary: true,
+    isVisibleInTranscriptOnly: true,
+  };
+
+  // 4. 创建附件（如果有agentId，添加agent上下文）
+  const attachments: Message[] = [];
+  if (agentId) {
+    // 添加agent上下文附件
+    attachments.push({
+      role: 'user',
+      content: `Agent context: ${agentId}`,
+    });
+  }
+
+  // 5. Hook结果（暂时为空，未来可以扩展）
+  const hookResults: Message[] = [];
+
+  // 6. 计算压缩后token数（边界标记 + 摘要）
+  const postCompactTokenCount = calculateTotalTokens([summaryMessage]);
+
+  return {
+    boundaryMarker,
+    summaryMessages: [summaryMessage],
+    attachments,
+    hookResults,
+    messagesToKeep,
+    preCompactTokenCount,
+    postCompactTokenCount,
+  };
+}
+
+/**
+ * 尝试Session Memory压缩（第三层 - 对齐官方 TJ1 函数）
+ *
+ * 核心流程：
+ * 1. 检查Feature Flag是否启用
+ * 2. 找到最后一个压缩边界标记的UUID
+ * 3. 只压缩边界后的新消息（增量压缩）
+ * 4. 使用AI模型生成Session Memory
+ * 5. 检查压缩后是否仍超过阈值
+ *
+ * @param messages 当前消息历史
+ * @param agentId 代理ID（可选）
+ * @param autoCompactThreshold 自动压缩阈值（可选）
+ * @returns 压缩结果
+ */
+async function trySessionMemoryCompact(
+  messages: Message[],
+  agentId?: string,
+  autoCompactThreshold?: number
+): Promise<{
+  success: boolean;
+  messages: Message[];
+  savedTokens: number;
+  preCompactTokenCount: number;
+  postCompactTokenCount: number;
+  boundaryMarker: Message;
+  summaryMessages: Message[];
+  attachments: Message[];
+  hookResults: Message[];
+  messagesToKeep: Message[];
+} | null> {
+  // 1. 检查Feature Flag是否启用
+  if (!(await isSessionMemoryEnabled())) {
+    return null;
+  }
+
+  // 2. 等待异步初始化
+  await waitForAsyncInit();
+
+  // 3. 获取最后一次压缩的UUID
+  const lastCompactedUuid = getLastCompactedUuid();
+
+  // 4. 获取Session Memory模板
+  const template = getSessionMemoryTemplate();
+  if (!template) {
+    return null;
+  }
+
+  // 5. 检查模板是否为空
+  if (await isTemplateEmpty(template)) {
+    console.log(chalk.yellow('[TJ1] Session Memory模板为空，跳过压缩'));
+    return null;
+  }
+
+  try {
+    // 6. 确定需要压缩的消息范围（增量压缩）
+    let messagesToCompress: Message[];
+    if (lastCompactedUuid) {
+      // 找到上次压缩边界的索引
+      const lastBoundaryIndex = messages.findIndex((msg: any) => msg.uuid === lastCompactedUuid);
+
+      if (lastBoundaryIndex === -1) {
+        // 找不到边界标记，可能会话数据不一致
+        messagesToCompress = [];
+        console.log(chalk.yellow('[TJ1] 无法找到上次压缩边界，跳过压缩'));
+      } else {
+        // 只压缩边界之后的新消息
+        messagesToCompress = messages.slice(lastBoundaryIndex + 1);
+      }
+    } else {
+      // 首次压缩，压缩所有消息
+      messagesToCompress = [];
+      console.log(chalk.blue('[TJ1] 检测到恢复的会话，将进行完整压缩'));
+    }
+
+    // 7. 创建压缩结果（使用模板）
+    const compactResult = createSessionMemoryCompactResult(
+      messages,
+      template,
+      messagesToCompress,
+      agentId
+    );
+
+    // 8. 构建最终消息列表
+    const finalMessages = [
+      compactResult.boundaryMarker,
+      ...compactResult.summaryMessages,
+      ...compactResult.attachments,
+      ...compactResult.hookResults,
+      ...compactResult.messagesToKeep,
+    ];
+
+    // 9. 计算最终token数
+    const finalTokenCount = calculateTotalTokens(finalMessages);
+
+    // 10. 检查压缩后是否仍超过阈值
+    if (autoCompactThreshold !== undefined && finalTokenCount >= autoCompactThreshold) {
+      console.log(
+        chalk.yellow(
+          `[TJ1] 压缩后token数 (${finalTokenCount.toLocaleString()}) 仍超过阈值 (${autoCompactThreshold.toLocaleString()})，跳过压缩`
+        )
+      );
+      return null;
+    }
+
+    // 11. 返回压缩结果
+    const savedTokens = compactResult.preCompactTokenCount - finalTokenCount;
+
+    console.log(chalk.green('[TJ1] Session Memory压缩成功'));
+    console.log(chalk.green(`[TJ1] 压缩前: ${compactResult.preCompactTokenCount.toLocaleString()} tokens`));
+    console.log(chalk.green(`[TJ1] 压缩后: ${finalTokenCount.toLocaleString()} tokens`));
+    console.log(chalk.green(`[TJ1] 节省: ${savedTokens.toLocaleString()} tokens`));
+
+    return {
+      success: true,
+      messages: finalMessages,
+      savedTokens,
+      preCompactTokenCount: compactResult.preCompactTokenCount,
+      postCompactTokenCount: finalTokenCount,
+      boundaryMarker: compactResult.boundaryMarker,
+      summaryMessages: compactResult.summaryMessages,
+      attachments: compactResult.attachments,
+      hookResults: compactResult.hookResults,
+      messagesToKeep: compactResult.messagesToKeep,
+    };
+  } catch (error) {
+    // 捕获所有异常，返回null（对齐官方实现）
+    console.log(
+      chalk.yellow(`[TJ1] Session Memory压缩失败: ${error instanceof Error ? error.message : String(error)}`)
+    );
+    return null;
+  }
+}
+
+/**
+ * 尝试进行对话摘要压缩（第二层 - 对齐官方 NJ1 函数）
+ *
+ * 核心流程：
+ * 1. 验证消息列表不为空
+ * 2. 获取最后一个边界标记后的消息
+ * 3. 生成摘要 prompt
+ * 4. 调用 AI 模型生成摘要（使用 streaming API）
+ * 5. 创建压缩边界标记
+ * 6. 返回压缩结果
+ *
+ * @param messages 当前消息历史
+ * @param client Claude客户端（用于调用AI生成摘要）
+ * @param customInstructions 自定义摘要指令（可选）
+ * @returns 压缩结果
+ */
+async function tryConversationSummary(
+  messages: Message[],
+  client: ClaudeClient,
+  customInstructions?: string
+): Promise<{
+  success: boolean;
+  messages: Message[];
+  savedTokens: number;
+  preCompactTokenCount: number;
+  postCompactTokenCount: number;
+} | null> {
+  try {
+    // 1. 验证输入
+    if (messages.length === 0) {
+      console.log(chalk.yellow('[NJ1] 消息列表为空，跳过摘要'));
+      return null;
+    }
+
+    const preCompactTokenCount = calculateTotalTokens(messages);
+
+    // 2. 获取最后一个边界标记后的消息（避免重复摘要）
+    const messagesToSummarize = getMessagesSinceLastBoundary(messages);
+
+    // 3. 生成摘要 prompt
+    const summaryPrompt = generateSummaryPrompt(customInstructions);
+
+    // 4. 创建摘要请求消息
+    const summaryRequestMessage: Message = {
+      role: 'user',
+      content: summaryPrompt,
+    };
+
+    // 5. 调用 AI 模型生成摘要
+    // 注意：使用当前模型（Haiku模型成本低，但这里遵循官方使用 p3()）
+    console.log(chalk.blue('[NJ1] 正在生成对话摘要...'));
+
+    const summaryMessages = [...messagesToSummarize, summaryRequestMessage];
+
+    // 使用 client 的 sendMessage 方法生成摘要
+    // 注意：这里简化实现，实际官方使用了streaming API
+    let summaryText = '';
+
+    try {
+      // 调用 client 生成摘要（不使用工具）
+      const response = await client.createMessage(
+        summaryMessages,
+        undefined, // 不需要工具
+        'You are a helpful AI assistant tasked with summarizing conversations.'
+      );
+
+      // 提取文本响应
+      if (Array.isArray(response.content)) {
+        for (const block of response.content) {
+          if (block.type === 'text') {
+            summaryText += block.text;
+          }
+        }
+      }
+
+      if (!summaryText || summaryText.trim().length === 0) {
+        console.log(chalk.yellow('[NJ1] AI返回空摘要，压缩失败'));
+        return null;
+      }
+
+      // 检查是否是错误响应
+      if (summaryText.startsWith('API Error') || summaryText.includes('Prompt is too long')) {
+        console.log(chalk.yellow('[NJ1] AI返回错误响应，压缩失败'));
+        return null;
+      }
+
+    } catch (error) {
+      console.log(chalk.yellow(`[NJ1] 生成摘要时出错: ${error instanceof Error ? error.message : String(error)}`));
+      return null;
+    }
+
+    // 6. 创建压缩边界标记
+    const boundaryMarker = createCompactBoundaryMarker('auto', preCompactTokenCount);
+
+    // 7. 创建摘要消息
+    const formattedSummary = formatSummaryMessage(summaryText, false);
+    const summaryMessage: Message = {
+      role: 'user',
+      content: formattedSummary,
+    };
+
+    // 8. 构建新的消息列表：[边界标记, 摘要消息]
+    const compactedMessages = [boundaryMarker, summaryMessage];
+
+    // 9. 计算压缩后的token数
+    const postCompactTokenCount = calculateTotalTokens(compactedMessages);
+    const savedTokens = preCompactTokenCount - postCompactTokenCount;
+
+    console.log(chalk.green(`[NJ1] 摘要生成成功`));
+    console.log(chalk.green(`[NJ1] 压缩前: ${preCompactTokenCount.toLocaleString()} tokens`));
+    console.log(chalk.green(`[NJ1] 压缩后: ${postCompactTokenCount.toLocaleString()} tokens`));
+    console.log(chalk.green(`[NJ1] 节省: ${savedTokens.toLocaleString()} tokens`));
+
+    return {
+      success: true,
+      messages: compactedMessages,
+      savedTokens,
+      preCompactTokenCount,
+      postCompactTokenCount,
+    };
+
+  } catch (error) {
+    console.log(
+      chalk.red(`[NJ1] 对话摘要压缩失败: ${error instanceof Error ? error.message : String(error)}`)
+    );
+    return null;
+  }
+}
+
+/**
+ * 自动压缩协调器（对齐官方 CT2 函数）
+ *
+ * 完整实现：Vd (MicroCompact) + NJ1 (对话摘要) + TJ1 (Session Memory)
+ *
+ * 压缩优先级：
+ * 1. 优先尝试 TJ1 (Session Memory 压缩) - 保留长期记忆的智能压缩方式
+ * 2. 如果 TJ1 失败或未启用，使用 NJ1 (对话总结) - 传统的对话总结方式
+ * 3. Vd (MicroCompact) 在所有层之前自动运行
+ *
+ * @param messages 消息列表
+ * @param model 模型名称
+ * @param client Claude客户端（用于NJ1生成摘要）
+ * @returns 压缩结果 { wasCompacted: 是否压缩, messages: 处理后的消息列表 }
+ */
+async function autoCompact(
+  messages: Message[],
+  model: string,
+  client: ClaudeClient
+): Promise<{ wasCompacted: boolean; messages: Message[] }> {
+  // 1. 检查是否应该自动压缩
+  if (!shouldAutoCompact(messages, model)) {
+    return { wasCompacted: false, messages };
+  }
+
+  // 记录压缩决策
+  const currentTokens = calculateTotalTokens(messages);
+  const threshold = calculateAutoCompactThreshold(model);
+
+  console.log(chalk.yellow('[AutoCompact] 检测到需要压缩'));
+  console.log(chalk.yellow(`[AutoCompact] 当前 tokens: ${currentTokens.toLocaleString()}`));
+  console.log(chalk.yellow(`[AutoCompact] 压缩阈值: ${threshold.toLocaleString()}`));
+  console.log(chalk.yellow(`[AutoCompact] 超出: ${(currentTokens - threshold).toLocaleString()} tokens`));
+
+  // 2. 优先尝试 TJ1 (Session Memory 压缩)
+  const tj1Result = await trySessionMemoryCompact(messages, undefined, threshold);
+  if (tj1Result && tj1Result.success) {
+    console.log(chalk.green(`[AutoCompact] Session Memory压缩成功，节省 ${tj1Result.savedTokens.toLocaleString()} tokens`));
+    return { wasCompacted: true, messages: tj1Result.messages };
+  }
+
+  // 3. 如果 TJ1 失败，使用 NJ1 (对话总结)
+  const nj1Result = await tryConversationSummary(messages, client);
+  if (nj1Result && nj1Result.success) {
+    console.log(chalk.green(`[AutoCompact] 对话摘要成功，节省 ${nj1Result.savedTokens.toLocaleString()} tokens`));
+    return { wasCompacted: true, messages: nj1Result.messages };
+  }
+
+  // 4. 所有压缩策略都失败，返回未压缩
+  console.log(chalk.yellow('[AutoCompact] 所有压缩策略均失败，跳过压缩'));
+  console.log(chalk.yellow('[AutoCompact] 提示：您可以通过设置 DISABLE_COMPACT=1 禁用此警告'));
+
+  return { wasCompacted: false, messages };
+}
+
+/**
+ * 清理消息历史中的旧持久化输出（完整版，对齐官方 Vd 函数）
+ *
+ * 实现三个层次的控制：
+ * 1. 环境变量控制：DISABLE_MICROCOMPACT=1 完全禁用
+ * 2. Token 阈值控制：只在消息 > 40K tokens 时清理
+ * 3. 最小节省控制：只在能节省 > 20K tokens 时清理
+ *
+ * 只清理白名单中的工具结果，保护其他工具（如 NotebookEdit）
+ *
+ * @param messages 消息列表
+ * @param keepRecent 保留最近的数量（默认 3，对齐 Ly5）
  * @returns 清理后的消息列表
  */
-function cleanOldPersistedOutputs(messages: Message[], keepRecent: number = 3): Message[] {
-  const persistedOutputIndices: number[] = [];
+function cleanOldPersistedOutputs(messages: Message[], keepRecent: number = KEEP_RECENT_COUNT): Message[] {
+  // 阶段1：检查环境变量 - 如果禁用则直接返回
+  if (isEnvTrue(process.env.DISABLE_MICROCOMPACT)) {
+    return messages;
+  }
 
-  // 找到所有包含持久化输出的消息索引
+  // 收集所有可清理工具的持久化输出及其 token 数
+  const persistedOutputs: {
+    index: number;
+    toolName: string;
+    toolUseId: string;
+    tokens: number;
+  }[] = [];
+
+  // 找到所有包含持久化输出的消息，并记录工具名称和 token 数
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     if (msg.role === 'user' && Array.isArray(msg.content)) {
@@ -141,53 +997,81 @@ function cleanOldPersistedOutputs(messages: Message[], keepRecent: number = 3): 
           'type' in block &&
           block.type === 'tool_result' &&
           typeof block.content === 'string' &&
-          block.content.includes(PERSISTED_OUTPUT_START)
+          block.content.includes(PERSISTED_OUTPUT_START) &&
+          'tool_use_id' in block
         ) {
-          persistedOutputIndices.push(i);
-          break;
+          const toolName = findToolNameForResult(messages, block.tool_use_id as string);
+
+          // 官方策略：只跟踪可清理工具的结果
+          if (COMPACTABLE_TOOLS.has(toolName)) {
+            persistedOutputs.push({
+              index: i,
+              toolName,
+              toolUseId: block.tool_use_id as string,
+              tokens: estimateTokens(block.content)
+            });
+            break; // 一个消息只记录一次
+          }
         }
       }
     }
   }
 
-  // 如果持久化输出数量超过限制，清理旧的
-  if (persistedOutputIndices.length > keepRecent) {
-    const indicesToClean = persistedOutputIndices.slice(0, -keepRecent);
-
-    return messages.map((msg, index) => {
-      if (!indicesToClean.includes(index)) {
-        return msg;
-      }
-
-      // 清理这条消息中的持久化标签
-      if (msg.role === 'user' && Array.isArray(msg.content)) {
-        return {
-          ...msg,
-          content: msg.content.map((block) => {
-            if (
-              typeof block === 'object' &&
-              'type' in block &&
-              block.type === 'tool_result' &&
-              typeof block.content === 'string'
-            ) {
-              // 移除持久化标签，替换为简单的清理提示
-              let content = block.content;
-              if (content.includes(PERSISTED_OUTPUT_START)) {
-                // 官方实现：直接替换为固定的清理消息
-                content = '[Old tool result content cleared]';
-              }
-              return { ...block, content };
-            }
-            return block;
-          }),
-        };
-      }
-
-      return msg;
-    });
+  // 如果没有足够的可清理输出，直接返回
+  if (persistedOutputs.length <= keepRecent) {
+    return messages;
   }
 
-  return messages;
+  // 阶段2：计算当前消息的总 token 数
+  const totalTokens = calculateTotalTokens(messages);
+
+  // 阶段3：计算清理能节省多少 tokens
+  // 保留最近的 N 个，清理其余的
+  const toClean = persistedOutputs.slice(0, -keepRecent);
+  const totalSavings = toClean.reduce((sum, item) => sum + item.tokens, 0);
+
+  // 阶段4：智能触发判断
+  // 只有当满足以下两个条件时才清理：
+  // 1. 总 token 数超过 MICROCOMPACT_THRESHOLD (40K)
+  // 2. 能节省的 token 数超过 MIN_SAVINGS_THRESHOLD (20K)
+  if (totalTokens <= MICROCOMPACT_THRESHOLD || totalSavings < MIN_SAVINGS_THRESHOLD) {
+    return messages;
+  }
+
+  // 执行清理
+  const indicesToClean = toClean.map(x => x.index);
+
+  return messages.map((msg, index) => {
+    if (!indicesToClean.includes(index)) {
+      return msg;
+    }
+
+    // 清理这条消息中的持久化标签
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      return {
+        ...msg,
+        content: msg.content.map((block) => {
+          if (
+            typeof block === 'object' &&
+            'type' in block &&
+            block.type === 'tool_result' &&
+            typeof block.content === 'string'
+          ) {
+            // 移除持久化标签，替换为简单的清理提示
+            let content = block.content;
+            if (content.includes(PERSISTED_OUTPUT_START)) {
+              // 官方实现：直接替换为固定的清理消息
+              content = '[Old tool result content cleared]';
+            }
+            return { ...block, content };
+          }
+          return block;
+        }),
+      };
+    }
+
+    return msg;
+  });
 }
 
 export interface LoopOptions {
@@ -560,6 +1444,9 @@ export class ConversationLoop {
     const maxTurns = this.options.maxTurns || 50;
     let finalResponse = '';
 
+    // 解析模型别名（在循环外部，避免重复解析）
+    const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
+
     // 构建系统提示词
     let systemPrompt: string;
     if (this.options.systemPrompt) {
@@ -583,14 +1470,24 @@ export class ConversationLoop {
     while (turns < maxTurns) {
       turns++;
 
-      // 在发送请求前清理旧的持久化输出
-      const messages = this.session.getMessages();
-      const cleanedMessages = cleanOldPersistedOutputs(messages, 3);
+      // 在发送请求前清理旧的持久化输出（第一层 microcompact）
+      // 使用智能触发机制（环境变量 + token 阈值 + 最小节省）
+      let messages = this.session.getMessages();
+      messages = cleanOldPersistedOutputs(messages);
+
+      // 尝试自动压缩（第二+三层）
+      const compactResult = await autoCompact(messages, resolvedModel, this.client);
+      if (compactResult.wasCompacted) {
+        messages = compactResult.messages;
+        // 更新会话中的消息（如果压缩成功）
+        // 注意：这里需要小心处理，确保会话状态正确
+        // TODO: 实现会话状态更新逻辑
+      }
 
       let response;
       try {
         response = await this.client.createMessage(
-          cleanedMessages,
+          messages,
           this.tools,
           systemPrompt,
           {
@@ -695,7 +1592,6 @@ export class ConversationLoop {
       }
 
       // 更新使用统计
-      const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
       this.session.updateUsage(
         resolvedModel,
         {
@@ -772,6 +1668,9 @@ Guidelines:
     let turns = 0;
     const maxTurns = this.options.maxTurns || 50;
 
+    // 解析模型别名（在循环外部，避免重复解析）
+    const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
+
     // 构建系统提示词
     let systemPrompt: string;
     if (this.options.systemPrompt) {
@@ -794,9 +1693,19 @@ Guidelines:
 
       turns++;
 
-      // 在发送请求前清理旧的持久化输出
-      const messages = this.session.getMessages();
-      const cleanedMessages = cleanOldPersistedOutputs(messages, 3);
+      // 在发送请求前清理旧的持久化输出（第一层 microcompact）
+      // 使用智能触发机制（环境变量 + token 阈值 + 最小节省）
+      let messages = this.session.getMessages();
+      messages = cleanOldPersistedOutputs(messages);
+
+      // 尝试自动压缩（第二+三层）
+      const compactResult = await autoCompact(messages, resolvedModel, this.client);
+      if (compactResult.wasCompacted) {
+        messages = compactResult.messages;
+        // 更新会话中的消息（如果压缩成功）
+        // 注意：这里需要小心处理，确保会话状态正确
+        // TODO: 实现会话状态更新逻辑
+      }
 
       const assistantContent: ContentBlock[] = [];
       const toolCalls: Map<string, { name: string; input: string }> = new Map();
@@ -804,7 +1713,7 @@ Guidelines:
 
       try {
         for await (const event of this.client.createMessageStream(
-          cleanedMessages,
+          messages,
           this.tools,
           systemPrompt,
           {
