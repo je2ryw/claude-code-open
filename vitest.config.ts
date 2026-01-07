@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
     // 排除使用旧版自定义测试框架的文件（它们用 process.exit() 和自定义 test()）
     exclude: [
       '**/node_modules/**',

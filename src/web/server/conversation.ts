@@ -6,7 +6,7 @@
 import { ClaudeClient } from '../../core/client.js';
 import { Session } from '../../core/session.js';
 import { toolRegistry } from '../../tools/index.js';
-import { systemPromptBuilder } from '../../prompt/index.js';
+import { systemPromptBuilder, type PromptContext } from '../../prompt/index.js';
 import { modelConfig } from '../../models/index.js';
 import { initAuth, getAuth } from '../../auth/index.js';
 import type { Message, ContentBlock, ToolUseBlock, TextBlock } from '../../types/index.js';
@@ -19,32 +19,161 @@ import { TaskManager } from './task-manager.js';
 import { McpConfigManager } from '../../mcp/config.js';
 import type { ExtendedMcpServerConfig } from '../../mcp/config.js';
 import { UnifiedMemory, getUnifiedMemory } from '../../memory/unified-memory.js';
+import { oauthManager } from './oauth-manager.js';
 
 // ============================================================================
-// 工具输出截断常量和函数（参考官方 CLI 实现）
+// 工具输出截断常量和函数（与 CLI loop.ts 完全一致）
 // ============================================================================
 
-/** 工具输出阈值（字符数），超过此值进行截断 */
-const OUTPUT_THRESHOLD = 30000; // 30KB（官方默认值）
+/** 持久化输出起始标签 */
+const PERSISTED_OUTPUT_START = '<persisted-output>';
 
-/** 预览大小（字符数） */
+/** 持久化输出结束标签 */
+const PERSISTED_OUTPUT_END = '</persisted-output>';
+
+/** 最大输出行数限制 */
+const MAX_OUTPUT_LINES = 2000;
+
+/** 输出阈值（字符数），超过此值使用持久化标签 */
+const OUTPUT_THRESHOLD = 400000; // 400KB
+
+/** 预览大小（字节） */
 const PREVIEW_SIZE = 2000; // 2KB
 
 /**
  * 智能截断输出内容
  * 优先在换行符处截断，以保持内容的可读性
  */
-function truncateToolOutput(content: string): string {
+function truncateOutput(content: string, maxSize: number): { preview: string; hasMore: boolean } {
+  if (content.length <= maxSize) {
+    return { preview: content, hasMore: false };
+  }
+
+  // 找到最后一个换行符的位置
+  const lastNewline = content.slice(0, maxSize).lastIndexOf('\n');
+
+  // 如果换行符在前半部分（>50%），就在换行符处截断，否则直接截断
+  const cutoff = lastNewline > maxSize * 0.5 ? lastNewline : maxSize;
+
+  return {
+    preview: content.slice(0, cutoff),
+    hasMore: true,
+  };
+}
+
+/**
+ * 使用持久化标签包装大型输出
+ * 生成带预览的持久化格式
+ */
+function wrapPersistedOutput(content: string): string {
+  // 如果输出未超过阈值，直接返回
   if (content.length <= OUTPUT_THRESHOLD) {
     return content;
   }
 
-  // 找到最后一个换行符的位置（在预览大小范围内）
-  const lastNewline = content.slice(0, PREVIEW_SIZE).lastIndexOf('\n');
-  const cutoff = lastNewline > PREVIEW_SIZE * 0.5 ? lastNewline : PREVIEW_SIZE;
+  // 生成预览
+  const { preview, hasMore } = truncateOutput(content, PREVIEW_SIZE);
 
-  const preview = content.slice(0, cutoff);
-  return preview + '\n\n... [Output truncated. Total length: ' + content.length + ' characters. Showing first ' + cutoff + ' characters.]';
+  // 格式化持久化输出
+  let result = `${PERSISTED_OUTPUT_START}\n`;
+  result += `Preview (first ${PREVIEW_SIZE} bytes):\n`;
+  result += preview;
+  if (hasMore) {
+    result += '\n...\n';
+  } else {
+    result += '\n';
+  }
+  result += PERSISTED_OUTPUT_END;
+
+  return result;
+}
+
+/**
+ * 格式化工具结果
+ * 统一处理所有工具的输出，根据大小自动应用持久化
+ */
+function formatToolResult(
+  toolName: string,
+  result: { success: boolean; output?: string; error?: string }
+): string {
+  // 获取原始内容
+  let content: string;
+  if (!result.success) {
+    content = `Error: ${result.error}`;
+  } else {
+    content = result.output || '';
+  }
+
+  // 统一应用持久化处理（根据大小自动决定）
+  content = wrapPersistedOutput(content);
+
+  return content;
+}
+
+/**
+ * 清理消息历史中的旧持久化输出
+ * 保留最近的 N 个持久化输出，清理更早的
+ */
+function cleanOldPersistedOutputs(messages: Message[], keepRecent: number = 3): Message[] {
+  const persistedOutputIndices: number[] = [];
+
+  // 找到所有包含持久化输出的消息索引
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (
+          typeof block === 'object' &&
+          'type' in block &&
+          block.type === 'tool_result' &&
+          typeof block.content === 'string' &&
+          block.content.includes(PERSISTED_OUTPUT_START)
+        ) {
+          persistedOutputIndices.push(i);
+          break;
+        }
+      }
+    }
+  }
+
+  // 如果持久化输出数量超过限制，清理旧的
+  if (persistedOutputIndices.length > keepRecent) {
+    const indicesToClean = persistedOutputIndices.slice(0, -keepRecent);
+
+    return messages.map((msg, index) => {
+      if (!indicesToClean.includes(index)) {
+        return msg;
+      }
+
+      // 清理这条消息中的持久化标签
+      if (msg.role === 'user' && Array.isArray(msg.content)) {
+        return {
+          ...msg,
+          content: msg.content.map((block) => {
+            if (
+              typeof block === 'object' &&
+              'type' in block &&
+              block.type === 'tool_result' &&
+              typeof block.content === 'string'
+            ) {
+              // 移除持久化标签，替换为简单的清理提示
+              let content = block.content;
+              if (content.includes(PERSISTED_OUTPUT_START)) {
+                // 官方实现：直接替换为固定的清理消息
+                content = '[Old tool result content cleared]';
+              }
+              return { ...block, content };
+            }
+            return block;
+          }),
+        };
+      }
+
+      return msg;
+    });
+  }
+
+  return messages;
 }
 
 /**
@@ -90,10 +219,12 @@ export class ConversationManager {
   private defaultModel: string;
   private mcpConfigManager: McpConfigManager;
   private unifiedMemory: UnifiedMemory;
+  private options?: { verbose?: boolean };
 
-  constructor(cwd: string, defaultModel: string = 'sonnet') {
+  constructor(cwd: string, defaultModel: string = 'sonnet', options?: { verbose?: boolean }) {
     this.cwd = cwd;
     this.defaultModel = defaultModel;
+    this.options = options;
     this.sessionManager = new WebSessionManager(cwd);
     this.mcpConfigManager = new McpConfigManager({
       validateCommands: true,
@@ -152,6 +283,57 @@ export class ConversationManager {
     }
 
     return config;
+  }
+
+  /**
+   * 确保 OAuth token 有效（自动刷新）
+   * 这个方法在每次调用 API 之前被调用，检查 token 是否过期，如果过期则自动刷新
+   */
+  private async ensureValidOAuthToken(state: SessionState): Promise<void> {
+    const auth = getAuth();
+
+    // 只有 OAuth 模式才需要刷新
+    if (!auth || auth.type !== 'oauth') {
+      return;
+    }
+
+    // 检查 token 是否过期
+    if (!oauthManager.isTokenExpired()) {
+      // Token 还未过期，无需刷新
+      return;
+    }
+
+    console.log('[ConversationManager] OAuth token 已过期，正在刷新...');
+
+    try {
+      // 刷新 token
+      const refreshed = await oauthManager.refreshToken();
+
+      console.log('[ConversationManager] OAuth token 刷新成功，过期时间:', new Date(refreshed.expiresAt));
+
+      // 重新构建客户端配置并更新客户端
+      const newConfig = this.buildClientConfig(state.model);
+
+      // 更新客户端的 authToken
+      if (newConfig.authToken) {
+        // 创建新的客户端实例
+        state.client = new ClaudeClient({
+          apiKey: newConfig.apiKey,
+          authToken: newConfig.authToken,
+        });
+        console.log('[ConversationManager] 客户端已更新为新的 OAuth token');
+      } else if (newConfig.apiKey) {
+        // OAuth 用户可能使用 API Key
+        state.client = new ClaudeClient({
+          apiKey: newConfig.apiKey,
+          authToken: undefined,
+        });
+        console.log('[ConversationManager] 客户端已更新为 OAuth API Key');
+      }
+    } catch (error: any) {
+      console.error('[ConversationManager] OAuth token 刷新失败:', error.message);
+      throw new Error(`OAuth token 已过期，刷新失败: ${error.message}。请重新登录。`);
+    }
   }
 
   /**
@@ -360,16 +542,27 @@ export class ConversationManager {
     let totalOutputTokens = 0;
 
     while (continueLoop && !state.cancelled) {
+      // OAuth Token 自动刷新检查（在调用 API 之前）
+      try {
+        await this.ensureValidOAuthToken(state);
+      } catch (error: any) {
+        console.error('[ConversationManager] OAuth token 刷新失败:', error.message);
+        // 继续尝试，让 API 调用返回真实错误
+      }
+
       // 构建系统提示
       const systemPrompt = await this.buildSystemPrompt(state);
 
       // 获取工具定义（使用过滤后的工具列表）
       const tools = this.getFilteredTools(sessionId || '');
 
+      // 在发送请求前清理旧的持久化输出（与 CLI 完全一致）
+      const cleanedMessages = cleanOldPersistedOutputs(state.messages, 3);
+
       try {
         // 调用 Claude API（使用 createMessageStream）
         const stream = state.client.createMessageStream(
-          state.messages,
+          cleanedMessages,
           tools,
           systemPrompt
         );
@@ -482,22 +675,27 @@ export class ConversationManager {
         if (toolUseBlocks.length > 0 && stopReason === 'tool_use') {
           // 执行工具并收集结果
           const toolResults: any[] = [];
+          // 收集所有工具返回的 newMessages（对齐官网实现）
+          const allNewMessages: Array<{ role: 'user'; content: any[] }> = [];
 
           for (const toolUse of toolUseBlocks) {
             if (state.cancelled) break;
 
             const result = await this.executeTool(toolUse, state, callbacks);
-            // 截断过长的工具输出，避免上下文溢出
-            const toolContent = result.success
-              ? truncateToolOutput(result.output || '')
-              : `Error: ${result.error}`;
+
+            // 使用格式化函数处理工具结果（与 CLI 完全一致）
+            const formattedContent = formatToolResult(toolUse.name, result);
 
             toolResults.push({
               type: 'tool_result',
               tool_use_id: toolUse.id,
-              content: toolContent,
-              is_error: !result.success,
+              content: formattedContent,
             });
+
+            // 收集 newMessages（对齐官网实现）
+            if (result.newMessages && result.newMessages.length > 0) {
+              allNewMessages.push(...result.newMessages);
+            }
           }
 
           // 添加工具结果到消息
@@ -506,6 +704,11 @@ export class ConversationManager {
               role: 'user',
               content: toolResults,
             });
+
+            // 添加 newMessages（对齐官网实现：skill 内容作为独立的 user 消息）
+            for (const newMsg of allNewMessages) {
+              state.messages.push(newMsg);
+            }
           }
 
           // 继续循环
@@ -555,6 +758,45 @@ export class ConversationManager {
         continueLoop = false;
       }
     }
+
+    // 更新使用统计（与 CLI 完全一致）
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      const resolvedModel = modelConfig.resolveAlias(state.model);
+      state.session.updateUsage(
+        resolvedModel,
+        {
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          webSearchRequests: 0,
+        },
+        modelConfig.calculateCost(resolvedModel, {
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          thinkingTokens: 0,
+        }),
+        0,
+        0
+      );
+    }
+
+    // 自动保存会话（与 CLI 完全一致）
+    this.autoSaveSession(state);
+  }
+
+  /**
+   * 自动保存会话
+   */
+  private autoSaveSession(state: SessionState): void {
+    try {
+      state.session.save();
+    } catch (err) {
+      // 静默失败，不影响对话
+      console.warn('[ConversationManager] Failed to auto-save session:', err);
+    }
   }
 
   /**
@@ -564,7 +806,7 @@ export class ConversationManager {
     toolUse: ToolUseBlock,
     state: SessionState,
     callbacks: StreamCallbacks
-  ): Promise<{ success: boolean; output?: string; error?: string; data?: ToolResultData }> {
+  ): Promise<{ success: boolean; output?: string; error?: string; data?: ToolResultData; newMessages?: Array<{ role: 'user'; content: any[] }> }> {
     const tool = toolRegistry.get(toolUse.name);
 
     if (!tool) {
@@ -799,8 +1041,14 @@ export class ConversationManager {
         output = output.slice(0, maxOutputLength) + '\n... (输出已截断)';
       }
 
+      // 提取 newMessages（对齐官网实现：Skill 工具返回的额外消息）
+      const newMessages =
+        result && typeof result === 'object' && 'newMessages' in result
+          ? (result.newMessages as Array<{ role: 'user'; content: any[] }>)
+          : undefined;
+
       callbacks.onToolResult?.(toolUse.id, true, output, undefined, data);
-      return { success: true, output, data };
+      return { success: true, output, data, newMessages };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -954,7 +1202,7 @@ export class ConversationManager {
   }
 
   /**
-   * 构建系统提示
+   * 构建系统提示（与 CLI 完全一致，仅在末尾追加记忆单元）
    */
   private async buildSystemPrompt(state: SessionState): Promise<string> {
     const config = state.systemPromptConfig;
@@ -964,55 +1212,46 @@ export class ConversationManager {
       return config.customPrompt;
     }
 
-    // 构建默认提示
-    const gitInfo = state.session.getGitInfo();
+    let prompt: string;
 
-    const context = {
-      cwd: state.session.cwd,
-      platform: process.platform,
-      date: new Date().toISOString().split('T')[0],
-      gitBranch: gitInfo?.branchName,
-      gitStatus: state.session.getFormattedGitStatus(),
-    };
+    // 使用与 CLI 完全相同的系统提示构建逻辑
+    try {
+      // 检查是否为 Git 仓库
+      const isGitRepo = this.checkIsGitRepo(state.session.cwd);
 
-    // 使用简化的系统提示
-    let prompt = `You are Claude, an AI assistant created by Anthropic to help with programming tasks.
+      // 构建提示上下文（与 CLI loop.ts 保持一致）
+      const promptContext = {
+        workingDir: state.session.cwd,
+        model: this.getModelId(state.model),
+        permissionMode: undefined, // WebUI 不使用权限模式
+        planMode: false,
+        delegateMode: false,
+        ideType: undefined, // WebUI 没有 IDE 类型
+        platform: process.platform,
+        todayDate: new Date().toISOString().split('T')[0],
+        isGitRepo,
+        debug: false,
+      };
 
-## Environment
-- Working Directory: ${context.cwd}
-- Platform: ${context.platform}
-- Date: ${context.date}`;
+      // 使用官方的 SystemPromptBuilder
+      const buildResult = await systemPromptBuilder.build(promptContext);
+      prompt = buildResult.content;
 
-    if (context.gitBranch) {
-      prompt += `\n- Git Branch: ${context.gitBranch}`;
+      if (this.options?.verbose) {
+        console.log(`[SystemPrompt] Built in ${buildResult.buildTimeMs}ms, ${buildResult.hashInfo.estimatedTokens} tokens`);
+      }
+    } catch (error) {
+      console.warn('[ConversationManager] Failed to build system prompt, using default:', error);
+      // 降级到默认提示
+      prompt = this.getDefaultSystemPrompt();
     }
-
-    prompt += `
-
-## Guidelines
-1. Use the available tools to help users with their tasks
-2. Read files before editing them
-3. Be concise and helpful
-4. When using Bash, quote paths with spaces
-5. Use appropriate tools for each task:
-   - Read/Write/Edit for file operations
-   - Glob/Grep for searching
-   - Bash for system commands
-   - Task for complex multi-step operations
-   - TodoWrite for tracking progress
-
-## Available Tools
-You have access to the following tools:
-${toolRegistry.getAll().map(t => `- ${t.name}: ${t.description.slice(0, 100)}...`).join('\n')}
-
-Respond in Chinese when the user writes in Chinese.`;
 
     // 如果有追加提示，添加到默认提示后
     if (config.useDefault && config.appendPrompt) {
       prompt += '\n\n' + config.appendPrompt;
     }
 
-    // 注入记忆系统摘要
+    // 注入记忆系统摘要（WebUI 独有功能）
     try {
       const memorySummary = this.unifiedMemory.getMemorySummaryForPrompt();
       if (memorySummary) {
@@ -1020,10 +1259,45 @@ Respond in Chinese when the user writes in Chinese.`;
       }
     } catch (error) {
       // 记忆系统失败不影响主流程
-      console.warn('Failed to get memory summary:', error);
+      console.warn('[ConversationManager] Failed to get memory summary:', error);
     }
 
     return prompt;
+  }
+
+  /**
+   * 检查是否为 Git 仓库
+   */
+  private checkIsGitRepo(dir: string): boolean {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      let currentDir = dir;
+      while (currentDir !== path.dirname(currentDir)) {
+        if (fs.existsSync(path.join(currentDir, '.git'))) {
+          return true;
+        }
+        currentDir = path.dirname(currentDir);
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 获取默认系统提示词（降级使用）
+   */
+  private getDefaultSystemPrompt(): string {
+    return `You are Claude, an AI assistant made by Anthropic. You are an expert software engineer.
+
+You have access to tools to help complete tasks. Use them as needed.
+
+Guidelines:
+- Be concise and direct
+- Use tools to gather information before answering
+- Prefer editing existing files over creating new ones
+- Always verify your work`;
   }
 
   /**
@@ -1252,13 +1526,19 @@ Respond in Chinese when the user writes in Chinese.`;
       const clientConfig = this.buildClientConfig(sessionData.currentModel || this.defaultModel);
       const client = new ClaudeClient(clientConfig);
 
+      // 如果 chatHistory 为空但 messages 不为空，从 messages 构建 chatHistory
+      let chatHistory = sessionData.chatHistory || [];
+      if (chatHistory.length === 0 && sessionData.messages && sessionData.messages.length > 0) {
+        chatHistory = this.convertMessagesToChatHistory(sessionData.messages);
+      }
+
       const state: SessionState = {
         session,
         client,
         messages: sessionData.messages,
         model: sessionData.currentModel || sessionData.metadata.model,
         cancelled: false,
-        chatHistory: sessionData.chatHistory || [],
+        chatHistory,
         userInteractionHandler: new UserInteractionHandler(),
         taskManager: new TaskManager(),
         toolFilterConfig: (sessionData as any).toolFilterConfig || {
@@ -1270,12 +1550,59 @@ Respond in Chinese when the user writes in Chinese.`;
       };
 
       this.sessions.set(sessionId, state);
-      console.log(`[ConversationManager] 会话已恢复: ${sessionId}, 消息数: ${sessionData.messages.length}`);
+      console.log(`[ConversationManager] 会话已恢复: ${sessionId}, 消息数: ${sessionData.messages.length}, chatHistory: ${chatHistory.length}`);
       return true;
     } catch (error) {
       console.error(`[ConversationManager] 恢复会话失败:`, error);
       return false;
     }
+  }
+
+  /**
+   * 将 API 消息格式转换为 ChatHistory 格式
+   */
+  private convertMessagesToChatHistory(messages: Message[]): ChatMessage[] {
+    const chatHistory: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      // 跳过 tool_result 消息（它们会被合并到工具调用中）
+      if (Array.isArray(msg.content) && msg.content.some((c: any) => c.type === 'tool_result')) {
+        continue;
+      }
+
+      const chatMsg: ChatMessage = {
+        id: `${msg.role}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        role: msg.role as 'user' | 'assistant',
+        timestamp: Date.now(),
+        content: [],
+      };
+
+      // 转换内容
+      if (typeof msg.content === 'string') {
+        chatMsg.content.push({ type: 'text', text: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'text') {
+            chatMsg.content.push({ type: 'text', text: (block as TextBlock).text });
+          } else if (block.type === 'tool_use') {
+            const toolBlock = block as ToolUseBlock;
+            chatMsg.content.push({
+              type: 'tool_use',
+              id: toolBlock.id,
+              name: toolBlock.name,
+              input: toolBlock.input,
+              status: 'completed',
+            });
+          }
+        }
+      }
+
+      if (chatMsg.content.length > 0) {
+        chatHistory.push(chatMsg);
+      }
+    }
+
+    return chatHistory;
   }
 
   /**

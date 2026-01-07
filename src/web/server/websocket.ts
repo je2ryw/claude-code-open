@@ -9,6 +9,7 @@ import { ConversationManager } from './conversation.js';
 import { isSlashCommand, executeSlashCommand } from './slash-commands.js';
 import { apiManager } from './api-manager.js';
 import { authManager } from './auth-manager.js';
+import { oauthManager } from './oauth-manager.js';
 import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
 import { agentCoordinator } from '../../blueprint/agent-coordinator.js';
@@ -548,6 +549,27 @@ async function handleClientMessage(
 
     case 'auth_validate':
       await handleAuthValidate(client, message.payload);
+      break;
+
+    // ========== OAuth 相关消息 ==========
+    case 'oauth_login':
+      await handleOAuthLogin(client, message.payload);
+      break;
+
+    case 'oauth_refresh':
+      await handleOAuthRefresh(client, message.payload);
+      break;
+
+    case 'oauth_status':
+      await handleOAuthStatus(client);
+      break;
+
+    case 'oauth_logout':
+      await handleOAuthLogout(client);
+      break;
+
+    case 'oauth_get_auth_url':
+      await handleOAuthGetAuthUrl(client, message.payload);
       break;
 
     // ========== 蜂群相关消息 ==========
@@ -2528,6 +2550,234 @@ async function handleAuthValidate(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : '验证 API 密钥失败',
+      },
+    });
+  }
+}
+
+// ============================================================================
+// OAuth 相关处理函数
+// ============================================================================
+
+/**
+ * 处理 OAuth 登录请求（授权码交换）
+ */
+async function handleOAuthLogin(
+  client: ClientConnection,
+  payload: any
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const { code, redirectUri } = payload;
+
+    if (!code || typeof code !== 'string') {
+      sendMessage(ws, {
+        type: 'oauth_login_response',
+        payload: {
+          success: false,
+          message: '无效的授权码',
+        },
+      });
+      return;
+    }
+
+    if (!redirectUri || typeof redirectUri !== 'string') {
+      sendMessage(ws, {
+        type: 'oauth_login_response',
+        payload: {
+          success: false,
+          message: '无效的回调 URI',
+        },
+      });
+      return;
+    }
+
+    console.log('[WebSocket] 正在交换授权码获取 token...');
+
+    // 使用授权码交换 token
+    const token = await oauthManager.exchangeCodeForToken(code, redirectUri);
+
+    sendMessage(ws, {
+      type: 'oauth_login_response',
+      payload: {
+        success: true,
+        token,
+        message: 'OAuth 登录成功',
+      },
+    });
+
+    console.log('[WebSocket] OAuth 登录成功');
+  } catch (error) {
+    console.error('[WebSocket] OAuth 登录失败:', error);
+    sendMessage(ws, {
+      type: 'oauth_login_response',
+      payload: {
+        success: false,
+        message: error instanceof Error ? error.message : 'OAuth 登录失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理 OAuth token 刷新请求
+ */
+async function handleOAuthRefresh(
+  client: ClientConnection,
+  payload: any
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const { refreshToken } = payload || {};
+
+    console.log('[WebSocket] 正在刷新 OAuth token...');
+
+    // 刷新 token（如果没有提供 refreshToken，从配置读取）
+    const token = await oauthManager.refreshToken(refreshToken);
+
+    sendMessage(ws, {
+      type: 'oauth_refresh_response',
+      payload: {
+        success: true,
+        token,
+        message: 'Token 刷新成功',
+      },
+    });
+
+    console.log('[WebSocket] OAuth token 刷新成功');
+  } catch (error) {
+    console.error('[WebSocket] OAuth token 刷新失败:', error);
+    sendMessage(ws, {
+      type: 'oauth_refresh_response',
+      payload: {
+        success: false,
+        message: error instanceof Error ? error.message : 'Token 刷新失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理 OAuth 状态查询请求
+ */
+async function handleOAuthStatus(
+  client: ClientConnection
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const config = oauthManager.getOAuthConfig();
+
+    if (!config) {
+      sendMessage(ws, {
+        type: 'oauth_status_response',
+        payload: {
+          authenticated: false,
+          expired: true,
+        },
+      });
+      return;
+    }
+
+    const expired = oauthManager.isTokenExpired();
+
+    sendMessage(ws, {
+      type: 'oauth_status_response',
+      payload: {
+        authenticated: true,
+        expired,
+        expiresAt: config.expiresAt,
+        scopes: config.scopes,
+        subscriptionInfo: {
+          subscriptionType: config.subscriptionType || 'free',
+          rateLimitTier: config.rateLimitTier || 'standard',
+          organizationRole: config.organizationRole,
+          workspaceRole: config.workspaceRole,
+          organizationName: config.organizationName,
+          displayName: config.displayName,
+          hasExtraUsageEnabled: config.hasExtraUsageEnabled,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 获取 OAuth 状态失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '获取 OAuth 状态失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理 OAuth 登出请求
+ */
+async function handleOAuthLogout(
+  client: ClientConnection
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    oauthManager.logout();
+
+    sendMessage(ws, {
+      type: 'oauth_logout_response',
+      payload: {
+        success: true,
+      },
+    });
+
+    console.log('[WebSocket] OAuth 登出成功');
+  } catch (error) {
+    console.error('[WebSocket] OAuth 登出失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : 'OAuth 登出失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理获取 OAuth 授权 URL 请求
+ */
+async function handleOAuthGetAuthUrl(
+  client: ClientConnection,
+  payload: any
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const { redirectUri, state } = payload;
+
+    if (!redirectUri || typeof redirectUri !== 'string') {
+      sendMessage(ws, {
+        type: 'error',
+        payload: {
+          message: '无效的回调 URI',
+        },
+      });
+      return;
+    }
+
+    const url = oauthManager.generateAuthUrl(redirectUri, state);
+
+    sendMessage(ws, {
+      type: 'oauth_auth_url_response',
+      payload: {
+        url,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 生成 OAuth 授权 URL 失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '生成授权 URL 失败',
       },
     });
   }

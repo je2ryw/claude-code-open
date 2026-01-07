@@ -6,6 +6,13 @@
 import { useState } from 'react';
 import { McpPanel } from './McpPanel';
 import { PluginsPanel } from './PluginsPanel';
+import {
+  ApiConfigPanel,
+  PermissionsConfigPanel,
+  HooksConfigPanel,
+  SystemConfigPanel,
+  ConfigImportExport,
+} from './config';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -15,7 +22,17 @@ interface SettingsPanelProps {
   onSendMessage?: (message: any) => void;
 }
 
-type SettingsTab = 'general' | 'model' | 'mcp' | 'plugins' | 'about';
+type SettingsTab =
+  | 'general'
+  | 'model'
+  | 'api'
+  | 'permissions'
+  | 'hooks'
+  | 'system'
+  | 'import-export'
+  | 'mcp'
+  | 'plugins'
+  | 'about';
 
 // Tab 配置
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: string }[] = [

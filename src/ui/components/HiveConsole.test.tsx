@@ -73,7 +73,7 @@ describe('HiveConsole Component', () => {
 
   describe('Queen Agent状态', () => {
     it('当Queen处于working状态时应该显示working指示器', () => {
-      const props = { ...defaultProps, queenStatus: 'working' };
+      const props = { ...defaultProps, queenStatus: 'working' as const };
       const { lastFrame } = render(<HiveConsole {...props} />);
       const output = lastFrame();
       
@@ -81,7 +81,7 @@ describe('HiveConsole Component', () => {
     });
 
     it('当Queen处于idle状态时应该显示idle指示器', () => {
-      const props = { ...defaultProps, queenStatus: 'idle' };
+      const props = { ...defaultProps, queenStatus: 'idle' as const };
       const { lastFrame } = render(<HiveConsole {...props} />);
       const output = lastFrame();
       
@@ -89,7 +89,7 @@ describe('HiveConsole Component', () => {
     });
 
     it('当Queen处于waiting状态时应该显示waiting指示器', () => {
-      const props = { ...defaultProps, queenStatus: 'waiting' };
+      const props = { ...defaultProps, queenStatus: 'waiting' as const };
       const { lastFrame } = render(<HiveConsole {...props} />);
       const output = lastFrame();
       
@@ -97,7 +97,7 @@ describe('HiveConsole Component', () => {
     });
 
     it('当Queen处于error状态时应该显示error指示器', () => {
-      const props = { ...defaultProps, queenStatus: 'error' };
+      const props = { ...defaultProps, queenStatus: 'error' as const };
       const { lastFrame } = render(<HiveConsole {...props} />);
       const output = lastFrame();
       

@@ -381,6 +381,131 @@ async function loadSkillsFromDirectory(
 }
 
 /**
+ * 获取已启用的插件列表（对齐官网 u7 函数）
+ *
+ * enabledPlugins 格式：{ "plugin-name@marketplace": true/false }
+ * 返回格式：Set<"plugin-name@marketplace">
+ */
+function getEnabledPlugins(): Set<string> {
+  const enabledPlugins = new Set<string>();
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  const settingsPath = path.join(homeDir, '.claude', 'settings.json');
+
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const content = fs.readFileSync(settingsPath, { encoding: 'utf-8' });
+      const settings = JSON.parse(content);
+
+      if (settings.enabledPlugins && typeof settings.enabledPlugins === 'object') {
+        for (const [pluginId, enabled] of Object.entries(settings.enabledPlugins)) {
+          if (enabled === true) {
+            enabledPlugins.add(pluginId);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read enabledPlugins from settings:', error);
+  }
+
+  return enabledPlugins;
+}
+
+/**
+ * 从插件缓存目录加载 skills（对齐官网 sG0 函数）
+ *
+ * 官网实现：
+ * - 先通过 u7() 获取已启用的插件列表
+ * - 只加载已启用插件的 skills
+ * - 插件 skills 存储在 ~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/skills/{skill-name}/SKILL.md
+ * - 命名空间格式：{plugin-name}:{skill-name}
+ */
+async function loadSkillsFromPluginCache(): Promise<SkillDefinition[]> {
+  const results: SkillDefinition[] = [];
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  const pluginsCacheDir = path.join(homeDir, '.claude', 'plugins', 'cache');
+
+  // 获取已启用的插件列表（对齐官网 u7 函数）
+  const enabledPlugins = getEnabledPlugins();
+
+  try {
+    if (!fs.existsSync(pluginsCacheDir)) {
+      return [];
+    }
+
+    // 遍历 marketplace 目录
+    const marketplaces = fs.readdirSync(pluginsCacheDir, { withFileTypes: true });
+    for (const marketplace of marketplaces) {
+      if (!marketplace.isDirectory()) continue;
+
+      const marketplacePath = path.join(pluginsCacheDir, marketplace.name);
+      const plugins = fs.readdirSync(marketplacePath, { withFileTypes: true });
+
+      for (const plugin of plugins) {
+        if (!plugin.isDirectory()) continue;
+
+        // 检查插件是否启用（对齐官网实现）
+        // enabledPlugins 格式：{plugin-name}@{marketplace}
+        const pluginId = `${plugin.name}@${marketplace.name}`;
+        if (!enabledPlugins.has(pluginId)) {
+          continue; // 跳过未启用的插件
+        }
+
+        const pluginPath = path.join(marketplacePath, plugin.name);
+        const versions = fs.readdirSync(pluginPath, { withFileTypes: true });
+
+        for (const version of versions) {
+          if (!version.isDirectory()) continue;
+
+          // 检查 skills 目录
+          const skillsPath = path.join(pluginPath, version.name, 'skills');
+          if (!fs.existsSync(skillsPath)) continue;
+
+          const skillDirs = fs.readdirSync(skillsPath, { withFileTypes: true });
+          for (const skillDir of skillDirs) {
+            if (!skillDir.isDirectory()) continue;
+
+            // 查找 SKILL.md
+            const skillMdPath = path.join(skillsPath, skillDir.name, 'SKILL.md');
+            if (!fs.existsSync(skillMdPath)) continue;
+
+            try {
+              const content = fs.readFileSync(skillMdPath, { encoding: 'utf-8' });
+              const { frontmatter, content: markdownContent } = parseFrontmatter(content);
+
+              // 命名空间格式：{plugin-name}:{skill-name}（对齐官网格式）
+              const skillName = `${plugin.name}:${skillDir.name}`;
+
+              const skill = createSkillFromFile(
+                skillName,
+                {
+                  filePath: skillMdPath,
+                  baseDir: path.dirname(skillMdPath),
+                  frontmatter,
+                  content: markdownContent,
+                },
+                'plugin',
+                true // isSkillMode
+              );
+
+              if (skill) {
+                results.push(skill);
+              }
+            } catch (error) {
+              console.error(`Failed to load skill from ${skillMdPath}:`, error);
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to load skills from plugin cache:`, error);
+  }
+
+  return results;
+}
+
+/**
  * 初始化并加载所有 skills
  */
 export async function initializeSkills(): Promise<void> {
@@ -393,14 +518,20 @@ export async function initializeSkills(): Promise<void> {
   // 清空注册表
   skillRegistry.clear();
 
-  // 1. 加载用户级 skills
+  // 1. 加载插件 skills（优先级最低，会被同名的用户/项目 skills 覆盖）
+  const pluginSkills = await loadSkillsFromPluginCache();
+  for (const skill of pluginSkills) {
+    skillRegistry.set(skill.skillName, skill);
+  }
+
+  // 2. 加载用户级 skills
   const userSkillsDir = path.join(claudeDir, 'skills');
   const userSkills = await loadSkillsFromDirectory(userSkillsDir, 'user');
   for (const skill of userSkills) {
     skillRegistry.set(skill.skillName, skill);
   }
 
-  // 2. 加载项目级 skills（会覆盖同名的用户 skills）
+  // 3. 加载项目级 skills（会覆盖同名的用户 skills）
   const projectSkillsDir = path.join(projectDir, 'skills');
   const projectSkills = await loadSkillsFromDirectory(projectSkillsDir, 'project');
   for (const skill of projectSkills) {

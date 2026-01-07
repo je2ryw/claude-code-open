@@ -130,7 +130,10 @@
       "Bash(git -C f:/claude-code-open add .github/FUNDING.yml)",
       "Bash(git -C f:/claude-code-open commit -m \"$\\(cat <<''EOF''\nfeat: 启用 GitHub Sponsors 赞助功能\n\n添加 .github/FUNDING.yml 配置文件，支持通过 GitHub Sponsors 赞助项目。\n\nCloses #43\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git -C f:/claude-code-open push origin main)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(npm test:*)",
+      "Bash(du:*)",
+      "Bash(file:*)"
     ]
   }
 }

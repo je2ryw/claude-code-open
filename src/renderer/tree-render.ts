@@ -140,6 +140,20 @@ export class TreeNode {
   }
 
   /**
+   * 获取所有元数据
+   */
+  getAllMetadata(): Map<string, any> {
+    return this.metadata;
+  }
+
+  /**
+   * 检查是否有元数据
+   */
+  hasMetadata(): boolean {
+    return this.metadata.size > 0;
+  }
+
+  /**
    * 设置展开/折叠状态
    */
   setExpanded(expanded: boolean): this {
@@ -257,8 +271,8 @@ export class TreeRenderer {
       children: node.children.map(child => this.nodeToJSON(child)),
     };
 
-    if (node.metadata.size > 0) {
-      json.metadata = Object.fromEntries(node.metadata);
+    if (node.hasMetadata()) {
+      json.metadata = Object.fromEntries(node.getAllMetadata());
     }
 
     if (!node.isExpanded()) {

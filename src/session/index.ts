@@ -199,6 +199,18 @@ export function saveSession(session: SessionData): void {
 }
 
 /**
+ * 将官方格式转换为内部格式的完整会话数据
+ */
+function convertOfficialToSessionData(data: OfficialSessionData): SessionData {
+  return {
+    metadata: convertOfficialToMetadata(data),
+    messages: data.messages || [],
+    systemPrompt: undefined,
+    context: undefined,
+  };
+}
+
+/**
  * 加载会话
  */
 export function loadSession(sessionId: string): SessionData | null {
@@ -210,7 +222,14 @@ export function loadSession(sessionId: string): SessionData | null {
 
   try {
     const content = fs.readFileSync(sessionPath, 'utf-8');
-    return JSON.parse(content) as SessionData;
+    const data = JSON.parse(content);
+
+    // 兼容官方 Claude Code 格式
+    if (isOfficialFormat(data)) {
+      return convertOfficialToSessionData(data);
+    }
+
+    return data as SessionData;
   } catch (err) {
     console.error(`Failed to load session ${sessionId}:`, err);
     return null;
