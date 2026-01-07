@@ -1,0 +1,357 @@
+/* BlueprintCard 样式 */
+.card {
+  padding: 16px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 2px solid #3d3d3d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.card:hover {
+  border-color: #4d4d4d;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+.card.selected {
+  border-color: #2196f3;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+  background-color: #2d2d3d;
+}
+
+/* 状态相关样式 */
+.card.running {
+  border-left: 4px solid #4caf50;
+}
+
+.card.pending {
+  border-left: 4px solid #ff9800;
+}
+
+.card.paused {
+  border-left: 4px solid #9e9e9e;
+}
+
+.card.completed {
+  border-left: 4px solid #2196f3;
+}
+
+.card.failed {
+  border-left: 4px solid #f44336;
+}
+
+/* 卡片头部 */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.statusIcon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusBadge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.statusBadge.pending {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.statusBadge.running {
+  background-color: #4caf50;
+  color: #ffffff;
+  animation: pulse 2s infinite;
+}
+
+.statusBadge.paused {
+  background-color: #9e9e9e;
+  color: #ffffff;
+}
+
+.statusBadge.completed {
+  background-color: #2196f3;
+  color: #ffffff;
+}
+
+.statusBadge.failed {
+  background-color: #f44336;
+  color: #ffffff;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* 描述 */
+.description {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: #b0b0b0;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 统计信息 */
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #808080;
+  flex-wrap: wrap;
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.statIcon {
+  font-size: 14px;
+}
+
+.statSeparator {
+  color: #4a4a4a;
+  margin: 0 2px;
+}
+
+/* 进度部分 */
+.progressSection {
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progressLabel {
+  font-size: 12px;
+  color: #a0a0a0;
+  font-weight: 500;
+}
+
+.progressValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4caf50;
+}
+
+.progressBar {
+  margin-bottom: 8px;
+}
+
+/* Worker 统计 */
+.workerStats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #b0b0b0;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.workerStat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workerSeparator {
+  color: #4a4a4a;
+  margin: 0 4px;
+}
+
+/* 卡片底部 */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid #3d3d3d;
+  gap: 12px;
+}
+
+.timestamp {
+  font-size: 12px;
+  color: #808080;
+  flex-shrink: 0;
+}
+
+/* 操作按钮 */
+.actionButtons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actionButton {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.actionButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.actionButton:active {
+  transform: translateY(0);
+}
+
+/* 批准按钮 */
+.actionButton.approve {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.actionButton.approve:hover {
+  background-color: #45a049;
+}
+
+/* 拒绝按钮 */
+.actionButton.reject {
+  background-color: #f44336;
+  color: #ffffff;
+}
+
+.actionButton.reject:hover {
+  background-color: #da190b;
+}
+
+/* 暂停按钮 */
+.actionButton.pause {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.actionButton.pause:hover {
+  background-color: #e68900;
+}
+
+/* 恢复按钮 */
+.actionButton.resume {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.actionButton.resume:hover {
+  background-color: #45a049;
+}
+
+/* 停止按钮 */
+.actionButton.stop {
+  background-color: #f44336;
+  color: #ffffff;
+}
+
+.actionButton.stop:hover {
+  background-color: #da190b;
+}
+
+/* 查看蜂群按钮 */
+.actionButton.viewSwarm {
+  background-color: #2196f3;
+  color: #ffffff;
+}
+
+.actionButton.viewSwarm:hover {
+  background-color: #0b7dda;
+}
+
+/* 查看详情按钮 */
+.actionButton.viewDetail {
+  background-color: #2196f3;
+  color: #ffffff;
+}
+
+.actionButton.viewDetail:hover {
+  background-color: #0b7dda;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .card {
+    padding: 12px;
+  }
+
+  .title {
+    font-size: 14px;
+  }
+
+  .description {
+    font-size: 12px;
+  }
+
+  .stats {
+    font-size: 12px;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actionButtons {
+    width: 100%;
+  }
+
+  .actionButton {
+    flex: 1;
+  }
+}

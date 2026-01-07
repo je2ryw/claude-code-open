@@ -1,12 +1,14 @@
 import { MarkdownContent } from './MarkdownContent';
 import { ToolCall } from './ToolCall';
+import { BlueprintSummaryCard } from './BlueprintSummaryCard';
 import type { ChatMessage, ChatContent, ToolUse } from '../types';
 
 interface MessageProps {
   message: ChatMessage;
+  onNavigateToBlueprint?: (blueprintId: string) => void;
 }
 
-export function Message({ message }: MessageProps) {
+export function Message({ message, onNavigateToBlueprint }: MessageProps) {
   const { role, content } = message;
 
   const renderContent = (item: ChatContent, index: number) => {
@@ -41,6 +43,28 @@ export function Message({ message }: MessageProps) {
           <div className="thinking-header">💭 思考中</div>
           <div>{item.text}</div>
         </div>
+      );
+    }
+    if (item.type === 'blueprint') {
+      return (
+        <BlueprintSummaryCard
+          key={index}
+          content={{
+            blueprintId: item.blueprintId,
+            name: item.name,
+            moduleCount: item.moduleCount,
+            processCount: item.processCount,
+            nfrCount: item.nfrCount
+          }}
+          onViewDetails={(blueprintId) => {
+            console.log('[Blueprint] 查看完整蓝图:', blueprintId);
+            onNavigateToBlueprint?.(blueprintId);
+          }}
+          onStartExecution={async (blueprintId) => {
+            console.log('[Blueprint] 启动执行:', blueprintId);
+            // TODO: 实现启动蓝图执行的逻辑，后续需要调用 API 并跳转到蜂群页面
+          }}
+        />
       );
     }
     return null;

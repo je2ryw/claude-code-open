@@ -60,6 +60,15 @@ const UserConfigSchema = z.object({
   verbose: z.boolean().default(false),
   editMode: z.enum(['default', 'vim', 'emacs']).default('default'),
 
+  /** Diff 显示工具 (P0) */
+  diffTool: z.enum(['terminal', 'auto']).default('auto').optional(),
+
+  /** 输出样式 (P1) */
+  outputStyle: z.enum(['default', 'compact', 'verbose']).default('default').optional(),
+
+  /** 通知渠道 (P1) */
+  notifChannel: z.enum(['desktop', 'terminal', 'none']).default('terminal').optional(),
+
   // 终端配置（新增）
   terminal: z.object({
     type: z.enum(['auto', 'vscode', 'cursor', 'windsurf', 'zed', 'ghostty', 'wezterm', 'kitty', 'alacritty', 'warp']).optional(),
@@ -75,6 +84,30 @@ const UserConfigSchema = z.object({
   enableTelemetry: z.boolean().default(false),
   disableFileCheckpointing: z.boolean().default(false),
   enableAutoSave: z.boolean().default(true),
+
+  /** Extended Thinking 配置 (P0) */
+  thinking: z.object({
+    enabled: z.boolean().default(false),
+    budgetTokens: z.number().int().min(1024).max(128000).default(10000),
+    showThinking: z.boolean().default(false),
+    timeout: z.number().int().positive().default(120000), // 2分钟
+  }).optional(),
+
+  /** IDE 集成配置 (P0/P1) */
+  autoConnectIde: z.boolean().default(false).optional(),
+  autoInstallIdeExtension: z.boolean().default(true).optional(),
+
+  /** UI/UX 配置 (P1) */
+  respectGitignore: z.boolean().default(true).optional(),
+  promptSuggestionEnabled: z.boolean().default(false).optional(),
+  fileCheckpointingEnabled: z.boolean().default(true).optional(),
+  autoCompactEnabled: z.boolean().default(true).optional(),
+  autoUpdatesChannel: z.enum(['latest', 'disabled']).default('latest').optional(),
+  claudeInChromeDefaultEnabled: z.boolean().default(true).optional(),
+
+  /** UI 提示和进度 (P2) */
+  spinnerTipsEnabled: z.boolean().default(true).optional(),
+  terminalProgressBarEnabled: z.boolean().default(true).optional(),
 
   // Git 配置
   includeCoAuthoredBy: z.boolean().default(true), // 是否在 git commit 中添加 Claude 署名（已弃用，使用 attribution）
@@ -188,6 +221,20 @@ const UserConfigSchema = z.object({
       maxSize: z.number().int().positive().optional(),
     }).optional(),
   }).optional(),
+
+  // Session Manager 配置（新增，v2.0.76+）
+  sessionManager: z.object({
+    /** 自动保存开关 */
+    autoSave: z.boolean().default(true),
+    /** 自动保存间隔 (ms) */
+    autoSaveIntervalMs: z.number().int().positive().default(30000),
+    /** 会话存储目录（默认: ~/.claude/sessions） */
+    sessionDir: z.string().optional(),
+    /** 最大会话数 */
+    maxSessions: z.number().int().positive().default(100),
+    /** 会话过期天数 */
+    sessionExpiryDays: z.number().int().positive().default(30),
+  }).optional(),
 }).passthrough(); // 允许额外字段，便于扩展
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -211,6 +258,45 @@ const DEFAULT_CONFIG: Partial<UserConfig> = {
   requestTimeout: 300000,
   useBedrock: false,
   useVertex: false,
+
+  // ===== 新增默认值 (v2.0.76+) =====
+
+  /** Diff 工具 */
+  diffTool: 'auto',
+
+  /** Extended Thinking */
+  thinking: {
+    enabled: false,
+    budgetTokens: 10000,
+    showThinking: false,
+    timeout: 120000,
+  },
+
+  /** IDE 集成 */
+  autoConnectIde: false,
+  autoInstallIdeExtension: true,
+
+  /** UI/UX */
+  respectGitignore: true,
+  promptSuggestionEnabled: false,
+  fileCheckpointingEnabled: true,
+  autoCompactEnabled: true,
+  autoUpdatesChannel: 'latest',
+  claudeInChromeDefaultEnabled: true,
+  outputStyle: 'default',
+  notifChannel: 'terminal',
+
+  /** UI 提示和进度 */
+  spinnerTipsEnabled: true,
+  terminalProgressBarEnabled: true,
+
+  /** Session Manager */
+  sessionManager: {
+    autoSave: true,
+    autoSaveIntervalMs: 30000,
+    maxSessions: 100,
+    sessionExpiryDays: 30,
+  },
 };
 
 // ============ 环境变量解析 ============
@@ -231,38 +317,387 @@ function parseEnvNumber(value: string | undefined): number | undefined {
 
 function getEnvConfig(): Partial<UserConfig> {
   const config: Partial<UserConfig> = {
+    // ===== ANTHROPIC_* 和 CLAUDE_API_KEY =====
     apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
     oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+
+    // ===== 后端选择 =====
     useBedrock: parseEnvBoolean(process.env.CLAUDE_CODE_USE_BEDROCK),
     useVertex: parseEnvBoolean(process.env.CLAUDE_CODE_USE_VERTEX),
+
+    // ===== 性能配置 =====
     maxTokens: parseEnvNumber(process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS),
     maxRetries: parseEnvNumber(process.env.CLAUDE_CODE_MAX_RETRIES),
     debugLogsDir: process.env.CLAUDE_CODE_DEBUG_LOGS_DIR,
-    enableTelemetry: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_TELEMETRY),
+
+    // ===== 功能开关 =====
+    enableTelemetry: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_TELEMETRY) ?? parseEnvBoolean(process.env.DISABLE_TELEMETRY) === false,
     disableFileCheckpointing: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING),
+
+    // ===== Agent 系统 =====
     agentId: process.env.CLAUDE_CODE_AGENT_ID,
+
+    // ===== IDE 集成 =====
+    autoConnectIde: parseEnvBoolean(process.env.CLAUDE_CODE_AUTO_CONNECT_IDE),
+
+    // ===== UI/UX =====
+    promptSuggestionEnabled: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION),
+    respectGitignore: parseEnvBoolean(process.env.CLAUDE_CODE_RESPECT_GITIGNORE),
+    autoCompactEnabled: parseEnvBoolean(process.env.DISABLE_COMPACT) === false,
+    spinnerTipsEnabled: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_SPINNER_TIPS),
+    terminalProgressBarEnabled: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_PROGRESS_BAR),
   };
 
-  // 处理 apiProvider（从布尔标志推导）
+  // ===== API Provider（从布尔标志推导）=====
   if (parseEnvBoolean(process.env.CLAUDE_CODE_USE_BEDROCK)) {
     config.apiProvider = 'bedrock';
   } else if (parseEnvBoolean(process.env.CLAUDE_CODE_USE_VERTEX)) {
     config.apiProvider = 'vertex';
+  } else if (parseEnvBoolean(process.env.CLAUDE_CODE_USE_FOUNDRY)) {
+    config.apiProvider = 'anthropic'; // Foundry 也使用 anthropic provider
   }
 
-  // 遥测配置
+  // ===== Extended Thinking 配置 =====
+  if (process.env.MAX_THINKING_TOKENS || process.env.DISABLE_INTERLEAVED_THINKING) {
+    config.thinking = {
+      enabled: parseEnvBoolean(process.env.DISABLE_INTERLEAVED_THINKING) !== true,
+      budgetTokens: parseEnvNumber(process.env.MAX_THINKING_TOKENS) ?? 10000,
+      showThinking: false,
+      timeout: 120000,
+    };
+  }
+
+  // ===== 遥测配置 =====
   if (process.env.CLAUDE_CODE_OTEL_SHUTDOWN_TIMEOUT_MS) {
     config.telemetry = {
       otelShutdownTimeoutMs: parseEnvNumber(process.env.CLAUDE_CODE_OTEL_SHUTDOWN_TIMEOUT_MS),
     };
   }
 
-  // 代理配置
+  // ===== 代理配置 =====
   if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
     config.proxy = {
       http: process.env.HTTP_PROXY,
       https: process.env.HTTPS_PROXY,
     };
+  }
+
+  // ========== 新增: 更多环境变量支持 (110+) ==========
+
+  // ===== ANTHROPIC_* 扩展配置 =====
+  if (process.env.ANTHROPIC_BASE_URL) {
+    if (!config.api) config.api = {};
+    (config as any).api.baseURL = process.env.ANTHROPIC_BASE_URL;
+  }
+  if (process.env.ANTHROPIC_MODEL) {
+    config.model = process.env.ANTHROPIC_MODEL as any;
+  }
+  if (process.env.ANTHROPIC_CUSTOM_HEADERS) {
+    try {
+      (config as any).customHeaders = JSON.parse(process.env.ANTHROPIC_CUSTOM_HEADERS);
+    } catch (e) {
+      console.warn('Failed to parse ANTHROPIC_CUSTOM_HEADERS:', e);
+    }
+  }
+
+  // ===== Git 集成 =====
+  if (process.env.CLAUDE_CODE_GIT_BASH_PATH) {
+    (config as any).git = {
+      bashPath: process.env.CLAUDE_CODE_GIT_BASH_PATH,
+    };
+  }
+
+  // ===== 会话管理扩展 =====
+  if (process.env.CLAUDE_CODE_SESSION_ID ||
+      process.env.CLAUDE_CODE_PARENT_SESSION_ID ||
+      process.env.CLAUDE_CODE_SESSION_ACCESS_TOKEN ||
+      process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY ||
+      process.env.CLAUDE_CODE_EXIT_AFTER_STOP_DELAY ||
+      process.env.CLAUDE_CODE_SSE_PORT) {
+    (config as any).session = {
+      id: process.env.CLAUDE_CODE_SESSION_ID,
+      parentId: process.env.CLAUDE_CODE_PARENT_SESSION_ID,
+      accessToken: process.env.CLAUDE_CODE_SESSION_ACCESS_TOKEN,
+      skipPromptHistory: parseEnvBoolean(process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY),
+      exitAfterStopDelay: parseEnvNumber(process.env.CLAUDE_CODE_EXIT_AFTER_STOP_DELAY),
+      ssePort: parseEnvNumber(process.env.CLAUDE_CODE_SSE_PORT),
+    };
+  }
+
+  // ===== Agent 系统扩展 =====
+  if (process.env.CLAUDE_CODE_AGENT_NAME ||
+      process.env.CLAUDE_CODE_AGENT_TYPE ||
+      process.env.CLAUDE_CODE_SUBAGENT_MODEL ||
+      process.env.CLAUDE_CODE_PLAN_V2_AGENT_COUNT ||
+      process.env.CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT ||
+      process.env.CLAUDE_CODE_EFFORT_LEVEL ||
+      process.env.CLAUDE_CODE_ACTION) {
+    (config as any).agent = {
+      id: config.agentId,
+      name: process.env.CLAUDE_CODE_AGENT_NAME,
+      type: process.env.CLAUDE_CODE_AGENT_TYPE,
+      subagentModel: process.env.CLAUDE_CODE_SUBAGENT_MODEL,
+      planV2AgentCount: parseEnvNumber(process.env.CLAUDE_CODE_PLAN_V2_AGENT_COUNT),
+      planV2ExploreAgentCount: parseEnvNumber(process.env.CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT),
+      effortLevel: process.env.CLAUDE_CODE_EFFORT_LEVEL as any,
+      action: process.env.CLAUDE_CODE_ACTION,
+    };
+  }
+
+  // ===== IDE 集成扩展 =====
+  if (process.env.CLAUDE_CODE_IDE_HOST_OVERRIDE ||
+      process.env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL ||
+      process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK) {
+    (config as any).ide = {
+      autoConnect: config.autoConnectIde,
+      hostOverride: process.env.CLAUDE_CODE_IDE_HOST_OVERRIDE,
+      skipAutoInstall: parseEnvBoolean(process.env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL),
+      skipValidCheck: parseEnvBoolean(process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK),
+    };
+  }
+
+  // ===== 安全配置 =====
+  if (process.env.CLAUDE_CODE_CLIENT_CERT ||
+      process.env.CLAUDE_CODE_CLIENT_KEY ||
+      process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE ||
+      process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION ||
+      process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK) {
+    (config as any).security = {
+      clientCert: process.env.CLAUDE_CODE_CLIENT_CERT,
+      clientKey: process.env.CLAUDE_CODE_CLIENT_KEY,
+      clientKeyPassphrase: process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE,
+      additionalProtection: parseEnvBoolean(process.env.CLAUDE_CODE_ADDITIONAL_PROTECTION),
+      disableCommandInjectionCheck: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK),
+    };
+  }
+
+  // ===== Prompt Caching =====
+  if (process.env.DISABLE_PROMPT_CACHING ||
+      process.env.DISABLE_PROMPT_CACHING_SONNET ||
+      process.env.DISABLE_PROMPT_CACHING_OPUS ||
+      process.env.DISABLE_PROMPT_CACHING_HAIKU) {
+    (config as any).promptCaching = {
+      enabled: !parseEnvBoolean(process.env.DISABLE_PROMPT_CACHING),
+      sonnet: !parseEnvBoolean(process.env.DISABLE_PROMPT_CACHING_SONNET),
+      opus: !parseEnvBoolean(process.env.DISABLE_PROMPT_CACHING_OPUS),
+      haiku: !parseEnvBoolean(process.env.DISABLE_PROMPT_CACHING_HAIKU),
+    };
+  }
+
+  // ===== MCP 配置扩展 =====
+  if (process.env.MCP_TIMEOUT ||
+      process.env.MCP_TOOL_TIMEOUT ||
+      process.env.MAX_MCP_OUTPUT_TOKENS ||
+      process.env.MCP_OAUTH_CALLBACK_PORT ||
+      process.env.MCP_SERVER_CONNECTION_BATCH_SIZE ||
+      process.env.ENABLE_MCP_CLI ||
+      process.env.ENABLE_MCP_CLI_ENDPOINT ||
+      process.env.ENABLE_EXPERIMENTAL_MCP_CLI ||
+      process.env.ENABLE_MCP_LARGE_OUTPUT_FILES) {
+    (config as any).mcp = {
+      timeout: parseEnvNumber(process.env.MCP_TIMEOUT),
+      toolTimeout: parseEnvNumber(process.env.MCP_TOOL_TIMEOUT),
+      maxOutputTokens: parseEnvNumber(process.env.MAX_MCP_OUTPUT_TOKENS),
+      oauthCallbackPort: parseEnvNumber(process.env.MCP_OAUTH_CALLBACK_PORT),
+      serverConnectionBatchSize: parseEnvNumber(process.env.MCP_SERVER_CONNECTION_BATCH_SIZE),
+      enableCli: parseEnvBoolean(process.env.ENABLE_MCP_CLI),
+      enableCliEndpoint: parseEnvBoolean(process.env.ENABLE_MCP_CLI_ENDPOINT),
+      enableExperimentalCli: parseEnvBoolean(process.env.ENABLE_EXPERIMENTAL_MCP_CLI),
+      enableLargeOutputFiles: parseEnvBoolean(process.env.ENABLE_MCP_LARGE_OUTPUT_FILES),
+    };
+  }
+
+  // ===== 认证跳过 =====
+  if (process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH ||
+      process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH ||
+      process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH) {
+    (config as any).skipAuth = {
+      bedrock: parseEnvBoolean(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH),
+      vertex: parseEnvBoolean(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH),
+      foundry: parseEnvBoolean(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH),
+    };
+  }
+
+  // ===== 远程会话 =====
+  if (process.env.CLAUDE_CODE_REMOTE ||
+      process.env.CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE ||
+      process.env.CLAUDE_CODE_REMOTE_SESSION_ID) {
+    (config as any).remote = {
+      enabled: parseEnvBoolean(process.env.CLAUDE_CODE_REMOTE),
+      environmentType: process.env.CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE,
+      sessionId: process.env.CLAUDE_CODE_REMOTE_SESSION_ID,
+    };
+  }
+
+  // ===== 沙箱配置 =====
+  if (process.env.CLAUDE_CODE_BUBBLEWRAP ||
+      process.env.CLAUDE_CODE_BASH_SANDBOX_SHOW_INDICATOR ||
+      process.env.CLAUDE_CODE_CONTAINER_ID ||
+      process.env.CLAUDE_CODE_SHELL ||
+      process.env.CLAUDE_CODE_SHELL_PREFIX ||
+      process.env.CLAUDE_CODE_DONT_INHERIT_ENV) {
+    (config as any).sandbox = {
+      bubblewrap: process.env.CLAUDE_CODE_BUBBLEWRAP,
+      showIndicator: parseEnvBoolean(process.env.CLAUDE_CODE_BASH_SANDBOX_SHOW_INDICATOR) ?? true,
+      containerId: process.env.CLAUDE_CODE_CONTAINER_ID,
+      shell: process.env.CLAUDE_CODE_SHELL,
+      shellPrefix: process.env.CLAUDE_CODE_SHELL_PREFIX,
+      dontInheritEnv: parseEnvBoolean(process.env.CLAUDE_CODE_DONT_INHERIT_ENV),
+    };
+  }
+
+  // ===== UI/UX 扩展 =====
+  if (process.env.CLAUDE_CODE_DISABLE_ATTACHMENTS ||
+      process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS ||
+      process.env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY ||
+      process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE ||
+      process.env.CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT ||
+      process.env.CLAUDE_CODE_FORCE_FULL_LOGO ||
+      process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT ||
+      process.env.DISABLE_MICROCOMPACT ||
+      process.env.DISABLE_COST_WARNINGS ||
+      process.env.ENABLE_INCREMENTAL_TUI) {
+    (config as any).ui = {
+      disableAttachments: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_ATTACHMENTS),
+      disableClaudeMds: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS),
+      disableFeedbackSurvey: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY),
+      disableTerminalTitle: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE),
+      enableTokenUsageAttachment: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT),
+      forceFullLogo: parseEnvBoolean(process.env.CLAUDE_CODE_FORCE_FULL_LOGO),
+      syntaxHighlight: parseEnvBoolean(process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT) ?? true,
+      microcompact: !parseEnvBoolean(process.env.DISABLE_MICROCOMPACT),
+      disableCostWarnings: parseEnvBoolean(process.env.DISABLE_COST_WARNINGS),
+      enableIncrementalTui: parseEnvBoolean(process.env.ENABLE_INCREMENTAL_TUI),
+    };
+  }
+
+  // ===== 调试配置扩展 =====
+  if (process.env.CLAUDE_CODE_DIAGNOSTICS_FILE ||
+      process.env.CLAUDE_CODE_PROFILE_QUERY ||
+      process.env.CLAUDE_CODE_PROFILE_STARTUP ||
+      process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING) {
+    (config as any).debug = {
+      diagnosticsFile: process.env.CLAUDE_CODE_DIAGNOSTICS_FILE,
+      profileQuery: parseEnvBoolean(process.env.CLAUDE_CODE_PROFILE_QUERY),
+      profileStartup: parseEnvBoolean(process.env.CLAUDE_CODE_PROFILE_STARTUP),
+      enableSdkFileCheckpointing: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING),
+    };
+  }
+
+  // ===== 网络配置 =====
+  if (process.env.CLAUDE_CODE_PROXY_RESOLVES_HOSTS ||
+      process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) {
+    (config as any).network = {
+      proxyResolvesHosts: parseEnvBoolean(process.env.CLAUDE_CODE_PROXY_RESOLVES_HOSTS),
+      disableNonessentialTraffic: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC),
+    };
+  }
+
+  // ===== 工具配置 =====
+  if (process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY ||
+      process.env.ENABLE_TOOL_SEARCH ||
+      process.env.CLAUDE_CODE_USE_NATIVE_FILE_SEARCH ||
+      process.env.ENABLE_BASH_ENV_VAR_MATCHING ||
+      process.env.ENABLE_BASH_WRAPPER_MATCHING) {
+    (config as any).tools = {
+      maxConcurrency: parseEnvNumber(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY),
+      enableSearch: parseEnvBoolean(process.env.ENABLE_TOOL_SEARCH),
+      useNativeFileSearch: parseEnvBoolean(process.env.CLAUDE_CODE_USE_NATIVE_FILE_SEARCH),
+      enableBashEnvVarMatching: parseEnvBoolean(process.env.ENABLE_BASH_ENV_VAR_MATCHING),
+      enableBashWrapperMatching: parseEnvBoolean(process.env.ENABLE_BASH_WRAPPER_MATCHING),
+    };
+  }
+
+  // ===== Beta 功能 =====
+  if (process.env.ENABLE_CODE_GUIDE_SUBAGENT ||
+      process.env.ENABLE_BETA_TRACING_DETAILED ||
+      process.env.ENABLE_ENHANCED_TELEMETRY_BETA ||
+      process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS) {
+    (config as any).beta = {
+      enableCodeGuideSubagent: parseEnvBoolean(process.env.ENABLE_CODE_GUIDE_SUBAGENT),
+      enableTracingDetailed: parseEnvBoolean(process.env.ENABLE_BETA_TRACING_DETAILED),
+      enableEnhancedTelemetry: parseEnvBoolean(process.env.ENABLE_ENHANCED_TELEMETRY_BETA),
+      disableExperimentalBetas: parseEnvBoolean(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS),
+    };
+  }
+
+  // ===== 杂项配置 =====
+  if (process.env.CLAUDE_CODE_TAGS) {
+    if (!(config as any).misc) (config as any).misc = {};
+    (config as any).misc.tags = process.env.CLAUDE_CODE_TAGS.split(',').map((s: string) => s.trim());
+  }
+  if (process.env.CLAUDE_CODE_TEAM_NAME) {
+    if (!(config as any).misc) (config as any).misc = {};
+    (config as any).misc.teamName = process.env.CLAUDE_CODE_TEAM_NAME;
+  }
+  if (process.env.CLAUDE_CODE_EXTRA_BODY) {
+    if (!(config as any).misc) (config as any).misc = {};
+    try {
+      (config as any).misc.extraBody = JSON.parse(process.env.CLAUDE_CODE_EXTRA_BODY);
+    } catch (e) {
+      console.warn('Failed to parse CLAUDE_CODE_EXTRA_BODY:', e);
+    }
+  }
+  if (process.env.CLAUDE_CODE_TEST_FIXTURES_ROOT ||
+      process.env.CLAUDE_CODE_ENTRYPOINT ||
+      process.env.DISABLE_ERROR_REPORTING ||
+      process.env.DISABLE_AUTOUPDATER ||
+      process.env.DISABLE_INSTALLATION_CHECKS ||
+      process.env.DISABLE_AUTO_MIGRATE_TO_NATIVE) {
+    if (!(config as any).misc) (config as any).misc = {};
+    (config as any).misc.testFixturesRoot = process.env.CLAUDE_CODE_TEST_FIXTURES_ROOT;
+    (config as any).misc.entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT;
+    (config as any).misc.disableErrorReporting = parseEnvBoolean(process.env.DISABLE_ERROR_REPORTING);
+    (config as any).misc.disableAutoUpdater = parseEnvBoolean(process.env.DISABLE_AUTOUPDATER);
+    (config as any).misc.disableInstallationChecks = parseEnvBoolean(process.env.DISABLE_INSTALLATION_CHECKS);
+    (config as any).misc.disableAutoMigrateToNative = parseEnvBoolean(process.env.DISABLE_AUTO_MIGRATE_TO_NATIVE);
+  }
+
+  // ===== 命令禁用 =====
+  if (process.env.DISABLE_LOGIN_COMMAND ||
+      process.env.DISABLE_LOGOUT_COMMAND ||
+      process.env.DISABLE_BUG_COMMAND ||
+      process.env.DISABLE_DOCTOR_COMMAND ||
+      process.env.DISABLE_FEEDBACK_COMMAND ||
+      process.env.DISABLE_INSTALL_GITHUB_APP_COMMAND ||
+      process.env.DISABLE_UPGRADE_COMMAND ||
+      process.env.DISABLE_EXTRA_USAGE_COMMAND) {
+    (config as any).disableCommands = {
+      login: parseEnvBoolean(process.env.DISABLE_LOGIN_COMMAND),
+      logout: parseEnvBoolean(process.env.DISABLE_LOGOUT_COMMAND),
+      bug: parseEnvBoolean(process.env.DISABLE_BUG_COMMAND),
+      doctor: parseEnvBoolean(process.env.DISABLE_DOCTOR_COMMAND),
+      feedback: parseEnvBoolean(process.env.DISABLE_FEEDBACK_COMMAND),
+      installGithubApp: parseEnvBoolean(process.env.DISABLE_INSTALL_GITHUB_APP_COMMAND),
+      upgrade: parseEnvBoolean(process.env.DISABLE_UPGRADE_COMMAND),
+      extraUsage: parseEnvBoolean(process.env.DISABLE_EXTRA_USAGE_COMMAND),
+    };
+  }
+
+  // ===== 文件描述符 =====
+  if (process.env.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR ||
+      process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR ||
+      process.env.CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR ||
+      process.env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS) {
+    (config as any).fileDescriptors = {
+      apiKey: parseEnvNumber(process.env.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR),
+      oauthToken: parseEnvNumber(process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR),
+      websocketAuth: parseEnvNumber(process.env.CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR),
+      apiKeyHelperTtlMs: parseEnvNumber(process.env.CLAUDE_CODE_API_KEY_HELPER_TTL_MS),
+    };
+  }
+
+  // ===== 最大重试和结构化输出 =====
+  if (process.env.MAX_STRUCTURED_OUTPUT_RETRIES) {
+    (config as any).maxStructuredOutputRetries = parseEnvNumber(process.env.MAX_STRUCTURED_OUTPUT_RETRIES);
+  }
+
+  // ===== 遥测配置扩展 =====
+  if (process.env.CLAUDE_CODE_OTEL_FLUSH_TIMEOUT_MS ||
+      process.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS) {
+    if (!config.telemetry) config.telemetry = {};
+    (config.telemetry as any).otelFlushTimeoutMs = parseEnvNumber(process.env.CLAUDE_CODE_OTEL_FLUSH_TIMEOUT_MS);
+    (config.telemetry as any).otelHeadersHelperDebounceMs = parseEnvNumber(process.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS);
   }
 
   return config;

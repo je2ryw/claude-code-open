@@ -10,8 +10,6 @@
  */
 
 import { Router, Request, Response } from 'express';
-import * as path from 'path';
-import * as fs from 'fs';
 import {
   blueprintManager,
   taskTreeManager,
@@ -45,9 +43,11 @@ router.get('/blueprints', (req: Request, res: Response) => {
         status: b.status,
         createdAt: b.createdAt,
         updatedAt: b.updatedAt,
-        moduleCount: b.modules.length,
-        processCount: b.businessProcesses.length,
+        moduleCount: b.modules?.length || 0,
+        processCount: b.businessProcesses?.length || 0,
+        nfrCount: b.nfrs?.length || 0,
       })),
+      total: blueprints.length,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -604,34 +604,6 @@ router.get('/time-travel/:treeId/ascii', (req: Request, res: Response) => {
   }
 });
 
-// ============================================================================
-// 页面路由
-// ============================================================================
-
-/**
- * 蓝图预览页面
- */
-router.get('/preview', (req: Request, res: Response) => {
-  const previewPath = path.join(__dirname, '../../../blueprint/blueprint-preview.html');
-  if (fs.existsSync(previewPath)) {
-    res.sendFile(previewPath);
-  } else {
-    res.status(404).send('Preview page not found');
-  }
-});
-
-/**
- * 仪表板页面
- */
-router.get('/dashboard', (req: Request, res: Response) => {
-  const dashboardPath = path.join(__dirname, '../../../blueprint/dashboard.html');
-  if (fs.existsSync(dashboardPath)) {
-    res.sendFile(dashboardPath);
-  } else {
-    res.status(404).send('Dashboard page not found');
-  }
-});
-
 /**
  * 获取当前/最新的蓝图（便捷接口）
  */
@@ -748,18 +720,6 @@ router.delete('/requirement-dialog/:sessionId', (req: Request, res: Response) =>
 // ============================================================================
 // 时光倒流 API
 // ============================================================================
-
-/**
- * 时光倒流可视化页面
- */
-router.get('/time-travel', (req: Request, res: Response) => {
-  const visualizerPath = path.join(__dirname, '../../../blueprint/time-travel-visualizer.html');
-  if (fs.existsSync(visualizerPath)) {
-    res.sendFile(visualizerPath);
-  } else {
-    res.status(404).send('Time travel visualizer not found');
-  }
-});
 
 /**
  * 获取时间线视图

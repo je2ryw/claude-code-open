@@ -683,6 +683,14 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       // 解析模型参数，支持 inherit 继承
       const resolvedModel = resolveAgentModel(agent.model, agentDef.model);
 
+      // 从配置管理器获取完整配置（包括环境变量）
+      const { configManager } = await import('../config/index.js');
+      const config = configManager.getAll();
+
+      // 类型断言：确保 TypeScript 正确识别配置类型
+      const fallbackModel = config.fallbackModel as string | undefined;
+      const debug = config.debug as boolean | undefined;
+
       // 构建 LoopOptions
       const loopOptions: LoopOptions = {
         model: resolvedModel,
@@ -694,6 +702,12 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         workingDir: agent.workingDirectory,
         // 使用代理定义的系统提示词
         systemPrompt: agentDef.getSystemPrompt?.(),
+        // 传递 Extended Thinking 配置
+        thinking: config.thinking,
+        // 传递回退模型配置
+        fallbackModel,
+        // 传递调试配置
+        debug,
       };
 
       // 创建子对话循环（动态导入避免循环依赖）

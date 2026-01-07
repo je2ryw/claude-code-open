@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
+import BlueprintPage from './pages/BlueprintPage';
 import TopNavBar from './components/swarm/TopNavBar';
 
 type Page = 'chat' | 'swarm' | 'blueprint';
@@ -11,6 +12,7 @@ type Page = 'chat' | 'swarm' | 'blueprint';
 export default function Root() {
   const [currentPage, setCurrentPage] = useState<Page>('chat');
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null);
 
   const handlePageChange = (page: Page) => {
     setCurrentPage(page);
@@ -20,28 +22,32 @@ export default function Root() {
     setShowSettings(true);
   };
 
+  // 跳转到蓝图页并选中指定蓝图
+  const navigateToBlueprintPage = (blueprintId?: string) => {
+    if (blueprintId) {
+      setSelectedBlueprintId(blueprintId);
+    }
+    setCurrentPage('blueprint');
+  };
+
+  // 跳转到蜂群页
+  const navigateToSwarmPage = () => {
+    setCurrentPage('swarm');
+  };
+
   // 渲染当前页面内容
   const renderPage = () => {
     switch (currentPage) {
       case 'chat':
-        return <App />;
+        return <App onNavigateToBlueprint={navigateToBlueprintPage} />;
       case 'swarm':
         return <SwarmConsole />;
       case 'blueprint':
         return (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: 'var(--text-muted)',
-            fontSize: '14px'
-          }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-              <p>蓝图管理功能开发中...</p>
-            </div>
-          </div>
+          <BlueprintPage
+            initialBlueprintId={selectedBlueprintId}
+            onNavigateToSwarm={navigateToSwarmPage}
+          />
         );
       default:
         return null;

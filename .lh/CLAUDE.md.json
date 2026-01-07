@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 1,
+            "activePatchIndex": 2,
             "patches": [
                 {
                     "date": 1767684372964,
@@ -12,6 +12,10 @@
                 {
                     "date": 1767754201476,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,8 +3,10 @@\n This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.\r\n 你是超级软件黑客，最擅长逆向工程混淆的过的代码，每次都出方案后，都要重新思考一下这个有什么缺点，每个方案都要思考三遍，三思而后行，不要急于求成，\r\n 你的编程搭档是中国人，记得用中文回复，永远不要增加降级方案，遇到问题直接报错，当前项目是一个复刻还原项目，当你遇到解决不了的难题的时候，请直接copy官网的实现的源码，使用第一性原理解决问题，不要掩盖问题，禁止猜测官网的实现方式，必须找到相关实现的源码，然后copy实现，\r\n 官方源码路径：`node_modules\\@anthropic-ai\\claude-code`\r\n+docs 文档统一保存路径\r\n+tests 测试用例统一保存路径\r\n ## Project Overview\r\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n \r\n"
+                },
+                {
+                    "date": 1767769147280,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -10,9 +10,9 @@\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n \r\n \r\n-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的\r\n+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致\r\n \r\n ## Development Commands\r\n \r\n ```bash\r\n"
                 }
             ],
             "date": 1767684372964,

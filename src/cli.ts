@@ -391,6 +391,9 @@ program
 
     // 打印模式 (JSON 格式支持) - 不使用 TUI
     if (options.print && prompt) {
+      // 从配置管理器获取完整配置（包括环境变量）
+      const config = configManager.getAll();
+
       const loop = new ConversationLoop({
         model: modelMap[options.model] || options.model,
         maxTokens: parseInt(options.maxTokens),
@@ -399,6 +402,12 @@ program
         permissionMode: options.permissionMode as PermissionMode,
         allowedTools: options.allowedTools,
         disallowedTools: options.disallowedTools,
+        // 传递 Extended Thinking 配置
+        thinking: config.thinking,
+        // 传递回退模型配置
+        fallbackModel: options.fallbackModel || config.fallbackModel,
+        // 传递调试配置
+        debug: options.debug || config.debug,
       });
 
       const outputFormat = options.outputFormat as OutputFormat;
@@ -492,6 +501,9 @@ async function runTextInterface(
 
   console.log(LOGO);
 
+  // 从配置管理器获取完整配置（包括环境变量）
+  const config = configManager.getAll();
+
   const loop = new ConversationLoop({
     model: modelMap[options.model] || options.model,
     maxTokens: parseInt(options.maxTokens),
@@ -500,6 +512,12 @@ async function runTextInterface(
     permissionMode: options.permissionMode as PermissionMode,
     allowedTools: options.allowedTools,
     disallowedTools: options.disallowedTools,
+    // 传递 Extended Thinking 配置
+    thinking: config.thinking,
+    // 传递回退模型配置
+    fallbackModel: options.fallbackModel || config.fallbackModel,
+    // 传递调试配置
+    debug: options.debug || config.debug,
   });
 
   // 恢复会话逻辑

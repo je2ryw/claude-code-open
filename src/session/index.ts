@@ -8,11 +8,31 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import type { Message, ContentBlock } from '../types/index.js';
+import { configManager } from '../config/index.js';
 
-// 会话存储目录
-const SESSION_DIR = path.join(os.homedir(), '.claude', 'sessions');
-const MAX_SESSIONS = 100; // 最多保存的会话数
-const SESSION_EXPIRY_DAYS = 30; // 会话过期天数
+/**
+ * 获取会话存储目录（从配置）
+ */
+function getSessionDir(): string {
+  const config = configManager.getAll();
+  return config.sessionManager?.sessionDir || path.join(os.homedir(), '.claude', 'sessions');
+}
+
+/**
+ * 获取最大会话数（从配置）
+ */
+function getMaxSessions(): number {
+  const config = configManager.getAll();
+  return config.sessionManager?.maxSessions ?? 100;
+}
+
+/**
+ * 获取会话过期天数（从配置）
+ */
+function getSessionExpiryDays(): number {
+  const config = configManager.getAll();
+  return config.sessionManager?.sessionExpiryDays ?? 30;
+}
 
 export interface SessionMetadata {
   id: string;
@@ -152,8 +172,8 @@ export interface MergeOptions {
  * 确保会话目录存在
  */
 function ensureSessionDir(): void {
-  if (!fs.existsSync(SESSION_DIR)) {
-    fs.mkdirSync(SESSION_DIR, { recursive: true });
+  if (!fs.existsSync(getSessionDir())) {
+    fs.mkdirSync(getSessionDir(), { recursive: true });
   }
 }
 
@@ -170,7 +190,7 @@ export function generateSessionId(): string {
  * 获取会话文件路径
  */
 function getSessionPath(sessionId: string): string {
-  return path.join(SESSION_DIR, `${sessionId}.json`);
+  return path.join(getSessionDir(), `${sessionId}.json`);
 }
 
 /**
@@ -279,12 +299,12 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     tags,
   } = options;
 
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
   const sessions: SessionMetadata[] = [];
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const data = JSON.parse(content);
 
       // 兼容官方 Claude Code 格式和内部格式
@@ -364,13 +384,13 @@ export function getRecentSession(): SessionData | null {
 export function getSessionForDirectory(directory: string): SessionData | null {
   ensureSessionDir();
 
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
   let latestSession: SessionData | null = null;
   let latestTime = 0;
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const session = JSON.parse(content) as SessionData;
 
       if (
@@ -453,19 +473,19 @@ export function updateSessionSummary(session: SessionData, summary: string): voi
 function cleanupOldSessions(): void {
   ensureSessionDir();
 
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
   const sessions: { file: string; updatedAt: number }[] = [];
 
-  const expiryTime = Date.now() - SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+  const expiryTime = Date.now() - getSessionExpiryDays() * 24 * 60 * 60 * 1000;
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const session = JSON.parse(content) as SessionData;
 
       // 删除过期会话
       if (session.metadata.updatedAt < expiryTime) {
-        fs.unlinkSync(path.join(SESSION_DIR, file));
+        fs.unlinkSync(path.join(getSessionDir(), file));
         continue;
       }
 
@@ -473,19 +493,19 @@ function cleanupOldSessions(): void {
     } catch {
       // 删除无法解析的文件
       try {
-        fs.unlinkSync(path.join(SESSION_DIR, file));
+        fs.unlinkSync(path.join(getSessionDir(), file));
       } catch {}
     }
   }
 
   // 如果超过最大数量，删除最旧的
-  if (sessions.length > MAX_SESSIONS) {
+  if (sessions.length > getMaxSessions()) {
     sessions.sort((a, b) => a.updatedAt - b.updatedAt);
-    const toDelete = sessions.slice(0, sessions.length - MAX_SESSIONS);
+    const toDelete = sessions.slice(0, sessions.length - getMaxSessions());
 
     for (const { file } of toDelete) {
       try {
-        fs.unlinkSync(path.join(SESSION_DIR, file));
+        fs.unlinkSync(path.join(getSessionDir(), file));
       } catch {}
     }
   }
@@ -798,12 +818,12 @@ export function getSessionBranchTree(sessionId: string): {
 export function getSessionStatistics(): SessionStatistics {
   ensureSessionDir();
 
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
   const sessions: SessionMetadata[] = [];
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const data = JSON.parse(content);
 
       // 兼容官方 Claude Code 格式和内部格式
@@ -1035,11 +1055,11 @@ export function searchSessionMessages(
   ensureSessionDir();
 
   // 如果指定了会话 ID，只搜索该会话
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const session = JSON.parse(content) as SessionData;
 
       // 如果指定了会话 ID，跳过其他会话
@@ -1151,14 +1171,14 @@ export function cleanupSessions(options: {
     invalid: [] as string[],
   };
 
-  const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith('.json'));
-  const expiryTime = Date.now() - SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
+  const expiryTime = Date.now() - getSessionExpiryDays() * 24 * 60 * 60 * 1000;
   const allSessionIds = new Set<string>();
 
   // 第一遍：收集所有有效的会话 ID
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(SESSION_DIR, file), 'utf-8');
+      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
       const session = JSON.parse(content) as SessionData;
       allSessionIds.add(session.metadata.id);
     } catch {
@@ -1168,7 +1188,7 @@ export function cleanupSessions(options: {
 
   // 第二遍：检查过期、孤立和无效的会话
   for (const file of files) {
-    const sessionPath = path.join(SESSION_DIR, file);
+    const sessionPath = path.join(getSessionDir(), file);
 
     try {
       const content = fs.readFileSync(sessionPath, 'utf-8');
@@ -1266,21 +1286,69 @@ export function getPlanHistory(session: SessionData): string[] {
 }
 
 /**
+ * SessionManager 配置接口
+ *
+ * 用于配置 SessionManager 的持久化和清理行为
+ */
+export interface SessionManagerConfig {
+  /** 自动保存开关 */
+  autoSave?: boolean;
+
+  /** 自动保存间隔 (ms) */
+  autoSaveIntervalMs?: number;
+
+  /** 会话目录 */
+  sessionDir?: string;
+
+  /** 最大会话数 */
+  maxSessions?: number;
+
+  /** 会话过期天数 */
+  sessionExpiryDays?: number;
+}
+
+/**
  * 会话管理器类
  */
 export class SessionManager {
   private currentSession: SessionData | null = null;
   private autoSave: boolean;
   private autoSaveInterval: NodeJS.Timeout | null = null;
+  private config: SessionManagerConfig;
 
-  constructor(options: { autoSave?: boolean; autoSaveIntervalMs?: number } = {}) {
-    this.autoSave = options.autoSave ?? true;
+  /**
+   * SessionManager 构造函数
+   *
+   * @param config - SessionManager 配置对象
+   *
+   * @example
+   * // 使用默认配置
+   * const manager = new SessionManager();
+   *
+   * @example
+   * // 自定义配置
+   * const manager = new SessionManager({
+   *   autoSave: true,
+   *   autoSaveIntervalMs: 60000, // 1分钟
+   *   maxSessions: 200,
+   *   sessionExpiryDays: 60,
+   * });
+   */
+  constructor(config: SessionManagerConfig = {}) {
+    this.config = {
+      autoSave: config.autoSave ?? true,
+      autoSaveIntervalMs: config.autoSaveIntervalMs ?? 30000,
+      sessionDir: config.sessionDir || path.join(os.homedir(), '.claude', 'sessions'),
+      maxSessions: config.maxSessions ?? 100,
+      sessionExpiryDays: config.sessionExpiryDays ?? 30,
+    };
+
+    this.autoSave = this.config.autoSave;
 
     if (this.autoSave) {
-      const interval = options.autoSaveIntervalMs ?? 30000; // 30 秒
       this.autoSaveInterval = setInterval(() => {
         this.save();
-      }, interval);
+      }, this.config.autoSaveIntervalMs);
     }
   }
 
@@ -1568,10 +1636,53 @@ export class SessionManager {
       branchCount: metadata.branches?.length || 0,
     };
   }
+
+  /**
+   * 获取会话目录
+   */
+  getSessionDir(): string {
+    return this.config.sessionDir!;
+  }
+
+  /**
+   * 获取最大会话数
+   */
+  getMaxSessions(): number {
+    return this.config.maxSessions!;
+  }
+
+  /**
+   * 获取会话过期天数
+   */
+  getSessionExpiryDays(): number {
+    return this.config.sessionExpiryDays!;
+  }
+
+  /**
+   * 获取自动保存间隔 (ms)
+   */
+  getAutoSaveIntervalMs(): number | undefined {
+    return this.config.autoSaveIntervalMs;
+  }
+
+  /**
+   * 是否启用自动保存
+   */
+  isAutoSaveEnabled(): boolean {
+    return this.autoSave;
+  }
+
+  /**
+   * 获取配置副本
+   */
+  getConfig(): SessionManagerConfig {
+    return { ...this.config };
+  }
 }
 
-// 默认实例
-export const sessionManager = new SessionManager();
+// 默认实例（从配置管理器读取配置）
+const config = configManager.getAll();
+export const sessionManager = new SessionManager(config.sessionManager || {});
 
 // 导出增强的列表功能
 export {

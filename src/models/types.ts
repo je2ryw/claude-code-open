@@ -79,7 +79,7 @@ export interface ModelPricing {
  */
 export interface ThinkingConfig {
   /** 是否启用 */
-  enabled: boolean;
+  enabled?: boolean;
   /** 思考预算 (tokens) */
   budgetTokens?: number;
   /** 是否显示思考过程 */

@@ -350,17 +350,20 @@ export function setupConfigApiRoutes(app: Express): void {
    */
   app.post('/api/config/export', async (req: Request, res: Response) => {
     try {
-      const { sections, format } = req.body;
+      const { maskSecrets = true, format = 'json' } = req.body;
 
-      const exportData = await webConfigService.exportConfig(sections, format);
+      const exportData = await webConfigService.exportConfig({
+        maskSecrets,
+        format,
+      });
 
-      if (format === 'file') {
+      if (req.body.asFile) {
         // 设置文件下载响应头
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="claude-config-${Date.now()}.json"`);
-        res.send(JSON.stringify(exportData, null, 2));
+        res.send(exportData);
       } else {
-        sendSuccess(res, exportData, '配置导出成功');
+        sendSuccess(res, JSON.parse(exportData), '配置导出成功');
       }
     } catch (error) {
       console.error('[Config API] 导出配置失败:', error);
@@ -374,15 +377,18 @@ export function setupConfigApiRoutes(app: Express): void {
    */
   app.post('/api/config/import', async (req: Request, res: Response) => {
     try {
-      const { config, merge } = req.body;
+      const { config } = req.body;
 
-      if (!config || typeof config !== 'object') {
+      if (!config) {
         return sendError(res, new Error('无效的配置数据'), 400);
       }
 
-      const result = await webConfigService.importConfig(config, merge);
+      // 如果 config 是对象，转换为 JSON 字符串
+      const configStr = typeof config === 'string' ? config : JSON.stringify(config);
 
-      sendSuccess(res, result, '配置导入成功');
+      const result = await webConfigService.importConfig(configStr);
+
+      sendSuccess(res, { imported: result }, '配置导入成功');
     } catch (error) {
       console.error('[Config API] 导入配置失败:', error);
       sendError(res, error);
@@ -395,13 +401,13 @@ export function setupConfigApiRoutes(app: Express): void {
    */
   app.post('/api/config/validate', async (req: Request, res: Response) => {
     try {
-      const { config, section } = req.body;
+      const { config } = req.body;
 
       if (!config || typeof config !== 'object') {
         return sendError(res, new Error('无效的配置数据'), 400);
       }
 
-      const validationResult = await webConfigService.validateConfig(config, section);
+      const validationResult = await webConfigService.validateConfig(config);
 
       if (validationResult.valid) {
         sendSuccess(res, validationResult, '配置验证通过');
@@ -424,16 +430,16 @@ export function setupConfigApiRoutes(app: Express): void {
    */
   app.post('/api/config/reset', async (req: Request, res: Response) => {
     try {
-      const { section, confirm } = req.body;
+      const { confirm } = req.body;
 
       if (!confirm) {
         return sendError(res, new Error('需要确认重置操作'), 400);
       }
 
-      const success = await webConfigService.resetConfig(section);
+      const success = await webConfigService.resetConfig();
 
       if (success) {
-        sendSuccess(res, { reset: true, section }, section ? `${section} 配置已重置为默认值` : '所有配置已重置为默认值');
+        sendSuccess(res, { reset: true }, '所有配置已重置为默认值');
       } else {
         sendError(res, new Error('重置配置失败'), 500);
       }

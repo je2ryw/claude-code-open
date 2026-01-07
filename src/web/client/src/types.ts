@@ -20,7 +20,15 @@ export type ChatContent =
   | { type: 'image'; source: MediaSource; fileName?: string; url?: string }
   | { type: 'document'; source: MediaSource; fileName?: string }  // PDF 和其他文档
   | { type: 'tool_use'; id: string; name: string; input: unknown; status: ToolStatus; result?: ToolResult }
-  | { type: 'thinking'; text: string };
+  | { type: 'thinking'; text: string }
+  | {
+      type: 'blueprint';
+      blueprintId: string;
+      name: string;
+      moduleCount: number;
+      processCount: number;
+      nfrCount: number;
+    };
 
 // 媒体源（图片和文档通用）
 export interface MediaSource {

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { ConversationManager } from './conversation.js';
 import { setupWebSocket } from './websocket.js';
 import { setupApiRoutes } from './routes/api.js';
+import { setupConfigApiRoutes } from './routes/config-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,9 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
 
   // API 路由
   setupApiRoutes(app, conversationManager);
+
+  // 配置管理 API 路由
+  setupConfigApiRoutes(app);
 
   // 检测开发模式
   const isDev = process.env.NODE_ENV !== 'production' && !process.argv[1]?.includes('dist');

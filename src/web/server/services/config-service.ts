@@ -72,7 +72,7 @@ export interface HooksConfig {
  * 日志配置
  */
 export interface LoggingConfig {
-  level: 'debug' | 'info' | 'warn' | 'error';
+  level?: 'debug' | 'info' | 'warn' | 'error';
   logPath?: string;
   maxSize?: number;
   maxFiles?: number;
@@ -94,7 +94,7 @@ export interface ProxyConfig {
  * 缓存配置
  */
 export interface CacheConfig {
-  enabled: boolean;
+  enabled?: boolean;
   location?: string;
   maxSize?: number;
   ttl?: number;
@@ -106,7 +106,7 @@ export interface CacheConfig {
 export interface SecurityConfig {
   sensitiveFiles?: string[];
   dangerousCommands?: string[];
-  allowSandboxEscape: boolean;
+  allowSandboxEscape?: boolean;
 }
 
 /**
@@ -115,7 +115,7 @@ export interface SecurityConfig {
 export interface TerminalConfig {
   type?: 'auto' | 'vscode' | 'cursor' | 'windsurf' | 'zed' | 'ghostty' | 'wezterm' | 'kitty' | 'alacritty' | 'warp';
   statusLine?: {
-    type: 'command' | 'text' | 'disabled';
+    type?: 'command' | 'text' | 'disabled';
     command?: string;
     text?: string;
   };

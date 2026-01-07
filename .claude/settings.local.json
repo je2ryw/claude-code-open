@@ -133,7 +133,9 @@
       "Bash(python -c:*)",
       "Bash(npm test:*)",
       "Bash(du:*)",
-      "Bash(file:*)"
+      "Bash(file:*)",
+      "Bash(npx js-beautify:*)",
+      "Bash(npm run test:unit:*)"
     ]
   }
 }

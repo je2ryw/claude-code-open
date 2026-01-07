@@ -56,6 +56,9 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     };
 
     ws.onmessage = (event) => {
+      // 如果组件已卸载，忽略消息
+      if (!isMountedRef.current) return;
+
       try {
         const message = JSON.parse(event.data) as WSMessage;
 
@@ -82,6 +85,9 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
     ws.onclose = () => {
       isConnectingRef.current = false;
+      // 如果组件已卸载，不输出日志和重连
+      if (!isMountedRef.current) return;
+
       console.log('WebSocket disconnected');
       setConnected(false);
 
@@ -92,16 +98,16 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       }
 
       // 只有在组件仍然挂载时才尝试重连
-      if (isMountedRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('Attempting to reconnect...');
-          connect();
-        }, 3000);
-      }
+      reconnectTimeoutRef.current = setTimeout(() => {
+        console.log('Attempting to reconnect...');
+        connect();
+      }, 3000);
     };
 
     ws.onerror = (error) => {
       isConnectingRef.current = false;
+      // 如果组件已卸载，不输出错误日志
+      if (!isMountedRef.current) return;
       console.error('WebSocket error:', error);
     };
   }, []); // 移除 url 依赖，使用 ref 代替
@@ -111,7 +117,11 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     connect();
 
     return () => {
+      // 标记组件为已卸载，阻止所有回调执行
       isMountedRef.current = false;
+      isConnectingRef.current = false;
+
+      // 清理定时器
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -120,8 +130,19 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
       }
+
+      // 清理 WebSocket 连接
       if (wsRef.current) {
-        wsRef.current.close();
+        const ws = wsRef.current;
+        // 移除所有事件监听器，防止回调被触发
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        // 关闭连接
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
         wsRef.current = null;
       }
     };

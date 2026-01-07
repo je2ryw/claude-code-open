@@ -29,7 +29,11 @@ function getWebSocketUrl(): string {
   return `${protocol}//${host}/ws`;
 }
 
-function App() {
+interface AppProps {
+  onNavigateToBlueprint?: (blueprintId: string) => void;
+}
+
+function App({ onNavigateToBlueprint }: AppProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -586,7 +590,13 @@ function App() {
           {messages.length === 0 ? (
             <WelcomeScreen />
           ) : (
-            messages.map(msg => <Message key={msg.id} message={msg} />)
+            messages.map(msg => (
+              <Message
+                key={msg.id}
+                message={msg}
+                onNavigateToBlueprint={onNavigateToBlueprint}
+              />
+            ))
           )}
         </div>
 

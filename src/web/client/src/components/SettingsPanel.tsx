@@ -38,8 +38,13 @@ type SettingsTab =
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: string }[] = [
   { id: 'general', label: 'General', icon: '⚙️' },
   { id: 'model', label: 'Model', icon: '🤖' },
+  { id: 'api', label: 'API Advanced', icon: '🔧' },
+  { id: 'permissions', label: 'Permissions', icon: '🔐' },
+  { id: 'hooks', label: 'Hooks', icon: '🪝' },
+  { id: 'system', label: 'System', icon: '💾' },
+  { id: 'import-export', label: 'Import/Export', icon: '📦' },
   { id: 'mcp', label: 'MCP', icon: '🔌' },
-  { id: 'plugins', label: 'Plugins', icon: '📦' },
+  { id: 'plugins', label: 'Plugins', icon: '🧩' },
   { id: 'about', label: 'About', icon: 'ℹ️' },
 ];
 
@@ -137,6 +142,50 @@ export function SettingsPanel({
             </div>
           </div>
         );
+
+      case 'api':
+        return (
+          <ApiConfigPanel
+            onSave={() => {
+              // 配置保存后刷新
+              console.log('API config saved');
+            }}
+            onClose={onClose}
+          />
+        );
+
+      case 'permissions':
+        return (
+          <PermissionsConfigPanel
+            onSave={() => {
+              console.log('Permissions config saved');
+            }}
+            onClose={onClose}
+          />
+        );
+
+      case 'hooks':
+        return (
+          <HooksConfigPanel
+            onSave={() => {
+              console.log('Hooks config saved');
+            }}
+            onClose={onClose}
+          />
+        );
+
+      case 'system':
+        return (
+          <SystemConfigPanel
+            onSave={() => {
+              console.log('System config saved');
+            }}
+            onClose={onClose}
+          />
+        );
+
+      case 'import-export':
+        return <ConfigImportExport onClose={onClose} />;
 
       case 'mcp':
         return <McpPanel onClose={onClose} onSendMessage={onSendMessage} />;
