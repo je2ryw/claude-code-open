@@ -65,6 +65,7 @@ export interface SystemModule {
   dependencies: string[];      // 依赖的其他模块 ID
   interfaces: ModuleInterface[];  // 对外接口
   techStack?: string[];        // 技术栈
+  rootPath?: string;           // 模块根目录路径
 }
 
 /**

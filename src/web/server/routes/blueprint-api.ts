@@ -10,6 +10,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import * as path from 'path';
 import {
   blueprintManager,
   taskTreeManager,
@@ -226,6 +227,73 @@ router.get('/analyze/status', (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 智能生成蓝图
+ *
+ * 根据当前项目状态选择合适的生成方式：
+ * - 有代码：分析现有代码库生成蓝图
+ * - 无代码：提示用户进行对话式需求调研
+ */
+router.post('/generate', async (req: Request, res: Response) => {
+  try {
+    const { projectRoot = '.' } = req.body;
+
+    // 将相对路径转为绝对路径，确保项目名称正确
+    const absoluteRoot = path.resolve(process.cwd(), projectRoot);
+
+    // 先设置配置，然后分析
+    codebaseAnalyzer.setRootDir(absoluteRoot);
+    const codebaseInfo = await codebaseAnalyzer.analyze();
+
+    // 判断是否有足够的代码（至少有一个模块和一些文件）
+    const hasCode = codebaseInfo.modules.length > 0 &&
+                    codebaseInfo.stats.totalFiles > 5;
+
+    if (!hasCode) {
+      // 没有代码，提示用户进行对话式需求调研
+      return res.json({
+        success: false,
+        needsDialog: true,
+        message: '当前目录没有检测到足够的代码。请通过对话方式描述您的项目需求，AI 将帮您生成蓝图。',
+        hint: '您可以开始一个新的需求对话来描述您想要构建的系统。',
+      });
+    }
+
+    // 有代码，使用代码库分析器生成蓝图
+    const result = await codebaseAnalyzer.analyzeAndGenerate({
+      rootDir: absoluteRoot,
+      projectName: codebaseInfo.name,
+      projectDescription: codebaseInfo.description,
+      granularity: 'medium',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        id: result.blueprint.id,
+        name: result.blueprint.name,
+        description: result.blueprint.description,
+        status: result.blueprint.status,
+        createdAt: result.blueprint.createdAt,
+        updatedAt: result.blueprint.updatedAt,
+        moduleCount: result.blueprint.modules.length,
+        processCount: result.blueprint.businessProcesses.length,
+        nfrCount: result.blueprint.nfrs?.length || 0,
+        codebaseStats: {
+          totalFiles: codebaseInfo.stats.totalFiles,
+          totalLines: codebaseInfo.stats.totalLines,
+          filesByType: codebaseInfo.stats.filesByType,
+        },
+        taskTreeId: result.taskTree?.id,
+      },
+      message: `成功从代码库生成蓝图！检测到 ${codebaseInfo.modules.length} 个模块，${codebaseInfo.stats.totalFiles} 个文件。`,
+    });
+  } catch (error: any) {
+    console.error('[Blueprint Generate] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

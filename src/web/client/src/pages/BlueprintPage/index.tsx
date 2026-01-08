@@ -8,8 +8,16 @@ import type {
   BlueprintQueryParams,
 } from './types';
 import { BLUEPRINT_STATUS_OPTIONS } from './types';
-import { BlueprintCard, BlueprintCardData } from '../../components/swarm/BlueprintCard';
+import { BlueprintCard, BlueprintCardData, type BlueprintCardVariant } from '../../components/swarm/BlueprintCard';
 import { BlueprintDetailPanel } from '../../components/swarm/BlueprintDetailPanel';
+
+/**
+ * 判断蓝图是否为活跃状态
+ * 活跃状态包括：待审核、执行中、已暂停、已批准
+ */
+function isActiveBlueprint(status: BlueprintStatus): boolean {
+  return ['review', 'executing', 'paused', 'approved'].includes(status);
+}
 
 /**
  * BlueprintPage Props
@@ -45,6 +53,14 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 生成蓝图的状态
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState<string>('');
+  const [generateResult, setGenerateResult] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
 
   // ============================================================================
   // 数据加载
@@ -152,11 +168,85 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   };
 
   /**
-   * 处理创建新蓝图
+   * 处理生成蓝图
+   * 根据是否有代码自动选择流程：
+   * - 有代码：分析代码库生成蓝图
+   * - 无代码：跳转到聊天进行需求调研
    */
-  const handleCreateBlueprint = () => {
-    // TODO: 打开创建蓝图对话框
-    console.log('创建新蓝图');
+  const handleCreateBlueprint = async () => {
+    if (!canCreateBlueprint || isGenerating) return;
+
+    // 清除之前的结果
+    setGenerateResult(null);
+    setIsGenerating(true);
+    setGenerateProgress('正在分析代码库...');
+
+    try {
+      // 模拟进度更新
+      const progressSteps = [
+        '正在扫描项目文件...',
+        '正在识别模块结构...',
+        '正在分析业务流程...',
+        '正在生成蓝图...',
+      ];
+
+      let stepIndex = 0;
+      const progressInterval = setInterval(() => {
+        if (stepIndex < progressSteps.length) {
+          setGenerateProgress(progressSteps[stepIndex]);
+          stepIndex++;
+        }
+      }, 1500);
+
+      // 调用 API 检测并生成蓝图
+      const response = await fetch('/api/blueprint/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectRoot: '.' }),
+      });
+
+      clearInterval(progressInterval);
+
+      const result = await response.json();
+
+      if (result.success) {
+        // 生成成功
+        setGenerateProgress('');
+        setGenerateResult({
+          type: 'success',
+          message: result.message || `蓝图生成成功！检测到 ${result.data?.moduleCount || 0} 个模块。`,
+        });
+
+        // 刷新列表
+        loadBlueprints();
+
+        // 自动选中新蓝图
+        if (result.data?.id) {
+          setSelectedId(result.data.id);
+        }
+
+        // 3 秒后清除成功提示
+        setTimeout(() => setGenerateResult(null), 5000);
+      } else if (result.needsDialog) {
+        // 没有代码，需要对话式调研
+        setGenerateProgress('');
+        setGenerateResult({
+          type: 'info',
+          message: result.message || '当前目录没有检测到代码，请在聊天中与 AI 进行需求调研来生成蓝图。',
+        });
+      } else {
+        throw new Error(result.error || result.message || '生成蓝图失败');
+      }
+    } catch (err) {
+      console.error('生成蓝图失败:', err);
+      setGenerateProgress('');
+      setGenerateResult({
+        type: 'error',
+        message: `生成蓝图失败: ${err instanceof Error ? err.message : '未知错误'}`,
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   /**
@@ -176,6 +266,27 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   const selectedBlueprint = useMemo(() => {
     return blueprints.find(bp => bp.id === selectedId) || null;
   }, [blueprints, selectedId]);
+
+  /**
+   * 当前活跃蓝图（单蓝图架构：最多一个）
+   */
+  const currentBlueprint = useMemo(() => {
+    return blueprints.find(bp => isActiveBlueprint(bp.status)) || null;
+  }, [blueprints]);
+
+  /**
+   * 历史蓝图列表（已完成或失败的蓝图）
+   */
+  const historyBlueprints = useMemo(() => {
+    return blueprints.filter(bp => !isActiveBlueprint(bp.status));
+  }, [blueprints]);
+
+  /**
+   * 是否允许创建新蓝图（单蓝图架构约束）
+   */
+  const canCreateBlueprint = useMemo(() => {
+    return currentBlueprint === null;
+  }, [currentBlueprint]);
 
   /**
    * 过滤后的蓝图列表
@@ -238,13 +349,57 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
             🔄 刷新
           </button>
           <button
-            className={styles.actionButton}
+            className={`${styles.actionButton} ${styles.generateButton} ${(!canCreateBlueprint || isGenerating) ? styles.disabled : ''}`}
             onClick={handleCreateBlueprint}
+            disabled={!canCreateBlueprint || isGenerating}
+            title={
+              isGenerating
+                ? '正在生成中...'
+                : canCreateBlueprint
+                  ? '分析代码库并生成蓝图'
+                  : '已有活跃蓝图，请先完成当前蓝图'
+            }
           >
-            + 新建蓝图
+            {isGenerating ? (
+              <>
+                <span className={styles.spinnerIcon}>⏳</span>
+                生成中...
+              </>
+            ) : (
+              <>🔍 生成蓝图</>
+            )}
           </button>
         </div>
       </header>
+
+      {/* 生成进度提示 */}
+      {isGenerating && generateProgress && (
+        <div className={styles.progressBanner}>
+          <div className={styles.progressContent}>
+            <span className={styles.progressSpinner}>⏳</span>
+            <span className={styles.progressText}>{generateProgress}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 生成结果提示 */}
+      {generateResult && (
+        <div className={`${styles.resultBanner} ${styles[generateResult.type]}`}>
+          <div className={styles.resultContent}>
+            <span className={styles.resultIcon}>
+              {generateResult.type === 'success' ? '✅' : generateResult.type === 'error' ? '❌' : 'ℹ️'}
+            </span>
+            <span className={styles.resultText}>{generateResult.message}</span>
+            <button
+              className={styles.dismissButton}
+              onClick={() => setGenerateResult(null)}
+              title="关闭"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 主内容区域 */}
       <div className={styles.mainContent}>
@@ -289,45 +444,83 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
                 <div className={styles.emptyStateHint}>
                   {searchQuery || statusFilter !== 'all'
                     ? '尝试调整筛选条件或搜索关键词'
-                    : '点击右上角的"新建蓝图"按钮开始创建'}
+                    : '点击右上角的"生成蓝图"按钮，或在聊天中说"帮我生成蓝图"'}
                 </div>
               </div>
             )}
 
-            {/* 蓝图列表 */}
+            {/* 蓝图列表 - 单蓝图架构 */}
             {!isLoading && !error && filteredBlueprints.length > 0 && (
               <div className={styles.blueprintList}>
-                {filteredBlueprints.map(blueprint => {
-                  // 将 BlueprintStatus 转换为 BlueprintCardData 的 status
+                {/* 当前活跃蓝图（置顶显示） */}
+                {currentBlueprint && (() => {
                   const cardStatus: BlueprintCardData['status'] =
-                    blueprint.status === 'review' ? 'pending' :
-                    blueprint.status === 'executing' ? 'running' :
-                    blueprint.status === 'paused' ? 'paused' :
-                    blueprint.status === 'completed' ? 'completed' :
-                    blueprint.status === 'approved' ? 'pending' :
+                    currentBlueprint.status === 'review' ? 'pending' :
+                    currentBlueprint.status === 'executing' ? 'running' :
+                    currentBlueprint.status === 'paused' ? 'paused' :
+                    currentBlueprint.status === 'completed' ? 'completed' :
+                    currentBlueprint.status === 'approved' ? 'pending' :
                     'failed';
 
                   const cardData: BlueprintCardData = {
-                    id: blueprint.id,
-                    name: blueprint.name,
-                    description: blueprint.description,
+                    id: currentBlueprint.id,
+                    name: currentBlueprint.name,
+                    description: currentBlueprint.description,
                     status: cardStatus,
-                    createdAt: blueprint.createdAt,
-                    updatedAt: blueprint.updatedAt,
-                    moduleCount: blueprint.moduleCount,
-                    processCount: blueprint.processCount,
-                    nfrCount: blueprint.nfrCount,
+                    createdAt: currentBlueprint.createdAt,
+                    updatedAt: currentBlueprint.updatedAt,
+                    moduleCount: currentBlueprint.moduleCount,
+                    processCount: currentBlueprint.processCount,
+                    nfrCount: currentBlueprint.nfrCount,
                   };
 
                   return (
-                    <BlueprintCard
-                      key={blueprint.id}
-                      blueprint={cardData}
-                      isSelected={blueprint.id === selectedId}
-                      onClick={() => handleBlueprintSelect(blueprint.id)}
-                    />
+                    <div className={styles.currentBlueprintSection}>
+                      <BlueprintCard
+                        key={currentBlueprint.id}
+                        blueprint={cardData}
+                        isSelected={currentBlueprint.id === selectedId}
+                        onClick={() => handleBlueprintSelect(currentBlueprint.id)}
+                        variant="current"
+                      />
+                    </div>
                   );
-                })}
+                })()}
+
+                {/* 历史蓝图列表 */}
+                {historyBlueprints.length > 0 && (
+                  <div className={styles.historySection}>
+                    <h3 className={styles.historySectionTitle}>📚 历史蓝图</h3>
+                    <div className={styles.historyList}>
+                      {historyBlueprints.map(blueprint => {
+                        const cardStatus: BlueprintCardData['status'] =
+                          blueprint.status === 'completed' ? 'completed' : 'failed';
+
+                        const cardData: BlueprintCardData = {
+                          id: blueprint.id,
+                          name: blueprint.name,
+                          description: blueprint.description,
+                          status: cardStatus,
+                          createdAt: blueprint.createdAt,
+                          updatedAt: blueprint.updatedAt,
+                          moduleCount: blueprint.moduleCount,
+                          processCount: blueprint.processCount,
+                          nfrCount: blueprint.nfrCount,
+                        };
+
+                        return (
+                          <BlueprintCard
+                            key={blueprint.id}
+                            blueprint={cardData}
+                            isSelected={blueprint.id === selectedId}
+                            onClick={() => handleBlueprintSelect(blueprint.id)}
+                            variant="history"
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

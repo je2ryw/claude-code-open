@@ -33,6 +33,7 @@ import {
   AcceptanceTestContext,
   createAcceptanceTestGenerator,
 } from './acceptance-test-generator.js';
+import { blueprintContext, setBlueprint, clearBlueprint, setActiveTask, clearActiveTask } from './blueprint-context.js';
 
 // ============================================================================
 // 协调器配置
@@ -438,6 +439,29 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   /**
+   * 根据技术栈获取允许的文件扩展名
+   */
+  private getExtensionsFromTechStack(techStack: string[]): string[] {
+    const mapping: Record<string, string[]> = {
+      'TypeScript': ['.ts', '.tsx'],
+      'JavaScript': ['.js', '.jsx'],
+      'React': ['.tsx', '.jsx'],
+      'Vue': ['.vue'],
+      'Python': ['.py'],
+      'Go': ['.go'],
+      'Rust': ['.rs'],
+    };
+
+    const exts: string[] = [];
+    for (const tech of techStack) {
+      if (mapping[tech]) {
+        exts.push(...mapping[tech]);
+      }
+    }
+    return [...new Set(exts)];
+  }
+
+  /**
    * 构建 Worker 任务提示词
    */
   private buildWorkerTaskPrompt(task: TaskNode): string {
@@ -450,10 +474,38 @@ export class AgentCoordinator extends EventEmitter {
     lines.push('');
 
     // =========================================================================
+    // 模块边界约束信息
+    // =========================================================================
+    const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+    const module = blueprint?.modules.find(m => m.id === task.blueprintModuleId);
+
+    if (module) {
+      lines.push('## 你的工作范围（严格遵守！）');
+      lines.push('');
+      lines.push(`### 所属模块: ${module.name}`);
+      const modulePath = module.rootPath || `src/${module.name.toLowerCase()}`;
+      lines.push(`- **根路径**: ${modulePath}`);
+      lines.push(`- **技术栈**: ${module.techStack?.join(' + ') || '未定义'}`);
+
+      const allowedExts = this.getExtensionsFromTechStack(module.techStack || []);
+      if (allowedExts.length > 0) {
+        lines.push(`- **允许的文件类型**: ${allowedExts.join(', ')}`);
+      }
+
+      lines.push('');
+      lines.push('### 边界约束');
+      lines.push(`⚠️ 你只能修改 ${modulePath}/ 目录下的文件`);
+      lines.push('⚠️ 不能修改其他模块的代码');
+      lines.push('⚠️ 不能修改 package.json、tsconfig.json 等配置文件');
+      lines.push('⚠️ 如果需要跨模块修改，请停止并报告给蜂王');
+      lines.push('');
+    }
+
+    // =========================================================================
     // 验收测试（由蜂王生成，Worker 不能修改）
     // =========================================================================
     if (task.acceptanceTests && task.acceptanceTests.length > 0) {
-      lines.push(`## 🎯 验收测试（由蜂王生成，你不能修改）`);
+      lines.push(`## 验收测试（由蜂王生成，你不能修改）`);
       lines.push('');
       lines.push('以下验收测试必须全部通过，任务才算完成：');
       lines.push('');
@@ -584,6 +636,9 @@ export class AgentCoordinator extends EventEmitter {
     const worker = this.workers.get(workerId);
     if (!worker) return;
 
+    // 清除活跃任务上下文
+    clearActiveTask(workerId);
+
     worker.status = 'idle';
     worker.tddCycle.testPassed = true;
 
@@ -602,6 +657,9 @@ export class AgentCoordinator extends EventEmitter {
   workerFailTask(workerId: string, error: string): void {
     const worker = this.workers.get(workerId);
     if (!worker) return;
+
+    // 清除活跃任务上下文
+    clearActiveTask(workerId);
 
     worker.status = 'idle';
 
@@ -749,21 +807,50 @@ export class AgentCoordinator extends EventEmitter {
 
     lines.push('# 项目全局上下文');
     lines.push('');
-    lines.push(`## 蓝图: ${blueprint.name}`);
+
+    lines.push(`## 蓝图: ${blueprint.name} (v${blueprint.version})`);
     lines.push(blueprint.description);
     lines.push('');
-    lines.push(`## 任务树统计`);
+
+    // 模块边界
+    lines.push('## 模块边界（你必须严格遵守）');
+    for (const module of blueprint.modules) {
+      lines.push(`### ${module.name}`);
+      lines.push(`- 类型: ${module.type}`);
+      lines.push(`- 职责: ${module.responsibilities?.slice(0, 3).join('、') || '未定义'}`);
+      lines.push(`- 技术栈: ${module.techStack?.join(' + ') || '未定义'}`);
+      lines.push(`- 根路径: ${module.rootPath || 'src/' + module.name.toLowerCase()}`);
+      lines.push(`- 依赖模块: ${module.dependencies?.join('、') || '无'}`);
+      lines.push('');
+    }
+
+    // NFR 要求
+    if (blueprint.nfrs && blueprint.nfrs.length > 0) {
+      lines.push('## NFR 要求（验收测试必须覆盖）');
+      const mustNfrs = blueprint.nfrs.filter(n => n.priority === 'must');
+      if (mustNfrs.length > 0) {
+        lines.push('### 必须满足 (Must)');
+        for (const nfr of mustNfrs) {
+          lines.push(`- [${nfr.category}] ${nfr.name}: ${nfr.metric}`);
+        }
+      }
+      lines.push('');
+    }
+
+    // 任务树统计
+    lines.push('## 任务树统计');
     lines.push(`- 总任务数: ${taskTree.stats.totalTasks}`);
     lines.push(`- 待执行: ${taskTree.stats.pendingTasks}`);
     lines.push(`- 执行中: ${taskTree.stats.runningTasks}`);
     lines.push(`- 已完成: ${taskTree.stats.passedTasks}`);
-    lines.push(`- 已失败: ${taskTree.stats.failedTasks}`);
     lines.push(`- 进度: ${taskTree.stats.progressPercentage.toFixed(1)}%`);
     lines.push('');
-    lines.push(`## 系统模块`);
-    for (const module of blueprint.modules) {
-      lines.push(`- ${module.name} (${module.type})`);
-    }
+
+    // 蜂王职责
+    lines.push('## 你的职责');
+    lines.push('1. 生成验收测试时，必须覆盖 NFR 要求');
+    lines.push('2. 分配任务时，明确告知 Worker 模块边界');
+    lines.push('3. 拒绝任何违反蓝图约束的操作');
 
     return lines.join('\n');
   }

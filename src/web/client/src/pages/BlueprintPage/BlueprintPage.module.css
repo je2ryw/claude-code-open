@@ -142,6 +142,124 @@
   opacity: 0.8;
 }
 
+.actionButton.disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.actionButton.disabled:hover {
+  opacity: 0.6;
+}
+
+/* 生成按钮特殊样式 */
+.generateButton {
+  min-width: 120px;
+  justify-content: center;
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+/* 进度提示横幅 */
+.progressBanner {
+  background: linear-gradient(90deg, var(--accent-primary), #6366f1);
+  padding: 12px 24px;
+  color: white;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.progressContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
+
+.progressSpinner {
+  animation: spin 1s linear infinite;
+  font-size: 18px;
+}
+
+.progressText {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 结果提示横幅 */
+.resultBanner {
+  padding: 12px 24px;
+  animation: slideDown 0.3s ease-out;
+}
+
+.resultBanner.success {
+  background: linear-gradient(90deg, #10b981, #059669);
+  color: white;
+}
+
+.resultBanner.error {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.resultBanner.info {
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.resultContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.resultIcon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.resultText {
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.dismissButton {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.dismissButton:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 /* 主内容区域 */
 .mainContent {
   flex: 1;
@@ -191,7 +309,35 @@
 .blueprintList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 24px;
+}
+
+/* 当前蓝图区域 */
+.currentBlueprintSection {
+  margin-bottom: 8px;
+}
+
+/* 历史蓝图区域 */
+.historySection {
+  margin-top: 8px;
+}
+
+.historySectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* 空状态 */

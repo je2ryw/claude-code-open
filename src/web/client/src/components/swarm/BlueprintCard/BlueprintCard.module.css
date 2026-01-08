@@ -324,6 +324,95 @@
   background-color: #0b7dda;
 }
 
+/* =============================================
+   Variant 样式 - 单蓝图架构
+   ============================================= */
+
+/* 当前活跃蓝图样式 */
+.variant-current {
+  padding: 20px;
+  background: linear-gradient(135deg, #1a3a5c 0%, #2d2d3d 100%);
+  border: 2px solid #2196f3;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.variant-current .header {
+  margin-bottom: 16px;
+}
+
+.variant-current .title {
+  font-size: 20px;
+  color: #fff;
+}
+
+.variant-current .statusIcon {
+  font-size: 24px;
+}
+
+.variant-current .description {
+  font-size: 14px;
+  -webkit-line-clamp: 3;
+  color: #c0c0c0;
+}
+
+.variant-current::before {
+  content: '👑 当前活跃蓝图';
+  position: absolute;
+  top: -12px;
+  left: 16px;
+  background: #2196f3;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 历史蓝图样式 */
+.variant-history {
+  padding: 12px 16px;
+  background-color: #252525;
+  border: 1px solid #333;
+  opacity: 0.85;
+}
+
+.variant-history:hover {
+  opacity: 1;
+  border-color: #444;
+}
+
+.variant-history .header {
+  margin-bottom: 8px;
+}
+
+.variant-history .title {
+  font-size: 14px;
+  color: #a0a0a0;
+}
+
+.variant-history .statusIcon {
+  font-size: 16px;
+}
+
+.variant-history .description {
+  font-size: 12px;
+  -webkit-line-clamp: 1;
+  margin-bottom: 8px;
+}
+
+.variant-history .stats {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.variant-history .footer {
+  padding-top: 8px;
+}
+
+.variant-history .progressSection {
+  display: none;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
   .card {

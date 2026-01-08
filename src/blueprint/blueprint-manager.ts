@@ -70,16 +70,20 @@ export class BlueprintManager extends EventEmitter {
     if (existingBlueprints.length > 0) {
       const existing = existingBlueprints[0];
 
-      // 如果已有蓝图处于 draft 状态，更新并返回
+      // 如果已有蓝图处于 draft 状态，清空并重新生成
       if (existing.status === 'draft') {
         existing.name = name;
         existing.description = description;
         existing.updatedAt = new Date();
+        // 清空已有数据，避免重复
+        existing.modules = [];
+        existing.businessProcesses = [];
+        existing.nfrs = [];
         existing.changeHistory.push({
           id: uuidv4(),
           timestamp: new Date(),
           type: 'update',
-          description: `蓝图更新：${name}`,
+          description: `蓝图重新生成：${name}`,
           author: 'agent',
         });
         this.saveBlueprint(existing);

@@ -1230,6 +1230,18 @@ ${context}
   }
 
   /**
+   * 设置根目录
+   *
+   * @param rootDir 新的根目录路径
+   */
+  setRootDir(rootDir: string): void {
+    this.config.rootDir = rootDir;
+    // 重新初始化 LSP 管理器
+    this.lspManager = new LSPManager(this.config.rootDir);
+    this.symbolExtractor = new LSPSymbolExtractor(this.lspManager);
+  }
+
+  /**
    * 清理资源
    */
   async cleanup(): Promise<void> {

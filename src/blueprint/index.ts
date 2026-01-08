@@ -120,3 +120,31 @@ export {
   type MergeSuggestion,
   type AdjustmentResult,
 } from './task-granularity.js';
+
+// 边界检查器
+export {
+  BoundaryChecker,
+  createBoundaryChecker,
+  type BoundaryCheckResult,
+} from './boundary-checker.js';
+
+// 蓝图上下文（工具层面的边界检查桥梁）
+export {
+  blueprintContext,
+  setBlueprint,
+  clearBlueprint,
+  setActiveTask,
+  clearActiveTask,
+  checkFileOperation,
+  enforceFileOperation,
+  type ActiveTaskContext,
+} from './blueprint-context.js';
+
+// 验收测试运行器（验证层）
+export {
+  AcceptanceTestRunner,
+  acceptanceTestRunner,
+  createAcceptanceTestRunner,
+  type AcceptanceTestRunResult,
+  type AcceptanceTestRunnerConfig,
+} from './acceptance-test-runner.js';

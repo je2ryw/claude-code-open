@@ -5,7 +5,7 @@
  */
 
 import { Blueprint, SystemModule } from './types.js';
-import path from 'path';
+import * as path from 'path';
 
 export interface BoundaryCheckResult {
   allowed: boolean;
@@ -174,7 +174,7 @@ export class BoundaryChecker {
         exts.push(...techExts);
       }
     }
-    return [...new Set(exts)];
+    return Array.from(new Set(exts));
   }
 
   /**

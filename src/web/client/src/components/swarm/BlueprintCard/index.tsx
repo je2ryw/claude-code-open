@@ -24,11 +24,21 @@ export interface BlueprintCardData {
   };
 }
 
+/**
+ * 卡片变体类型
+ * - current: 当前活跃蓝图（大卡片，醒目样式）
+ * - history: 历史蓝图（小卡片，淡化样式）
+ * - default: 默认样式
+ */
+export type BlueprintCardVariant = 'current' | 'history' | 'default';
+
 interface BlueprintCardProps {
   blueprint: BlueprintCardData;
   isSelected: boolean;
   onClick: (blueprintId: string) => void;
   onNavigateToSwarm?: () => void;
+  /** 卡片变体样式 */
+  variant?: BlueprintCardVariant;
 }
 
 /**
@@ -45,6 +55,7 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
   isSelected,
   onClick,
   onNavigateToSwarm,
+  variant = 'default',
 }) => {
   // 状态图标映射
   const statusIcons: Record<BlueprintCardData['status'], string> = {
@@ -223,9 +234,17 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
     }
   };
 
+  // 计算卡片的 className
+  const cardClassName = [
+    styles.card,
+    isSelected ? styles.selected : '',
+    styles[blueprint.status],
+    variant !== 'default' ? styles[`variant-${variant}`] : '',
+  ].filter(Boolean).join(' ');
+
   return (
     <div
-      className={`${styles.card} ${isSelected ? styles.selected : ''} ${styles[blueprint.status]}`}
+      className={cardClassName}
       onClick={handleCardClick}
     >
       {/* 卡片头部 */}

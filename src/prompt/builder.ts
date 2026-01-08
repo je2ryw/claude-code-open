@@ -23,6 +23,7 @@ import {
 } from './templates.js';
 import { AttachmentManager, attachmentManager as defaultAttachmentManager } from './attachments.js';
 import { PromptCache, promptCache, generateCacheKey } from './cache.js';
+import { blueprintManager } from '../blueprint/blueprint-manager.js';
 
 /**
  * 估算 tokens
@@ -164,7 +165,13 @@ export class SystemPromptBuilder {
       })
     );
 
-    // 12. 附件内容
+    // 11.5 蓝图上下文（如果有活跃蓝图）
+    const blueprintSummary = this.generateBlueprintSummary();
+    if (blueprintSummary) {
+      parts.push(blueprintSummary);
+    }
+
+        // 12. 附件内容
     for (const attachment of attachments) {
       if (attachment.content) {
         parts.push(attachment.content);
@@ -289,6 +296,59 @@ export class SystemPromptBuilder {
    */
   clearCache(): void {
     this.cache.clear();
+  }
+
+  /**
+   * 生成蓝图上下文摘要（用于系统提示）
+   * 让 AI 在每次对话中都能记住蓝图的核心约束
+   */
+  private generateBlueprintSummary(): string | null {
+    try {
+      // 获取当前活跃蓝图
+      const blueprint = blueprintManager.getCurrentBlueprint?.();
+      if (!blueprint) return null;
+
+      const lines: string[] = [];
+      lines.push('<blueprint-context>');
+      lines.push(`## 当前项目蓝图：${blueprint.name} (v${blueprint.version})`);
+      lines.push(`状态：${blueprint.status}`);
+      lines.push('');
+
+      // 核心模块边界
+      if (blueprint.modules && blueprint.modules.length > 0) {
+        lines.push('### 核心模块边界');
+        for (const m of blueprint.modules) {
+          const responsibilities = m.responsibilities?.slice(0, 2).join('、') || '未定义';
+          const rootPath = m.rootPath || `src/${m.name.toLowerCase()}`;
+          lines.push(`- **${m.name}** (${rootPath})：${responsibilities}`);
+        }
+        lines.push('');
+      }
+
+      // 非功能性要求（只显示 must 级别）
+      const mustNfrs = blueprint.nfrs?.filter(n => n.priority === 'must') || [];
+      if (mustNfrs.length > 0) {
+        lines.push('### 非功能性要求');
+        for (const nfr of mustNfrs) {
+          lines.push(`- ${nfr.name}：${nfr.metric || nfr.description}`);
+        }
+        lines.push('');
+      }
+
+      // 修改约束
+      lines.push('### 修改约束');
+      lines.push('- 所有代码修改必须符合模块边界');
+      lines.push('- 跨模块修改需要先进行影响分析');
+      lines.push('- 不能修改 package.json、tsconfig.json 等配置文件');
+      lines.push('');
+      lines.push('⚠️ 如果用户请求与蓝图冲突，请明确拒绝并说明原因。');
+      lines.push('</blueprint-context>');
+
+      return lines.join('\n');
+    } catch (error) {
+      // 蓝图系统不可用时静默失败
+      return null;
+    }
   }
 }
 

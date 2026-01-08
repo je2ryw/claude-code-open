@@ -23,6 +23,7 @@ import {
   isPdfSupported,
   isSvgRenderEnabled,
 } from '../media/index.js';
+import { blueprintContext } from '../blueprint/index.js';
 
 /**
  * 差异预览接口
@@ -590,6 +591,15 @@ Usage:
     const { file_path, content } = input;
 
     try {
+      // 蓝图边界检查（如果在蓝图执行上下文中）
+      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
+      if (!boundaryCheck.allowed) {
+        return {
+          success: false,
+          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
+        };
+      }
+
       // 确保目录存在
       const dir = path.dirname(file_path);
       if (!fs.existsSync(dir)) {
@@ -870,6 +880,17 @@ Usage:
         return {
           success: false,
           error: `File path must be absolute. Received: ${file_path}`,
+          errorCode: EditErrorCode.INVALID_PATH,
+        };
+      }
+
+
+      // 1.5 蓝图边界检查（如果在蓝图执行上下文中）
+      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
+      if (!boundaryCheck.allowed) {
+        return {
+          success: false,
+          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
           errorCode: EditErrorCode.INVALID_PATH,
         };
       }

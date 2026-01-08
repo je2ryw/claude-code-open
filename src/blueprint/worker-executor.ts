@@ -8,7 +8,8 @@
  */
 
 import { ClaudeClient } from '../core/client.js';
-import type { TaskNode, TestResult, AcceptanceTest } from './types.js';
+import type { TaskNode, TestResult, AcceptanceTest, Blueprint } from './types.js';
+import { BoundaryChecker, createBoundaryChecker, type BoundaryCheckResult } from './boundary-checker.js';
 import type { TDDPhase } from './tdd-executor.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -89,6 +90,8 @@ export interface PhaseResult {
 export class WorkerExecutor {
   private config: WorkerExecutorConfig;
   private client: ClaudeClient;
+  private boundaryChecker: BoundaryChecker | null = null;
+  private currentTaskModuleId: string | undefined;
 
   constructor(config?: Partial<WorkerExecutorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -99,6 +102,21 @@ export class WorkerExecutor {
       maxTokens: this.config.maxTokens,
       debug: this.config.debug,
     });
+  }
+
+
+  /**
+   * 设置蓝图（启用边界检查）
+   */
+  setBlueprint(blueprint: Blueprint): void {
+    this.boundaryChecker = createBoundaryChecker(blueprint);
+  }
+
+  /**
+   * 设置当前任务的模块 ID
+   */
+  setCurrentTaskModule(moduleId: string | undefined): void {
+    this.currentTaskModuleId = moduleId;
   }
 
   // --------------------------------------------------------------------------
@@ -779,6 +797,17 @@ ${file.content}
     const fullPath = path.isAbsolute(filePath)
       ? filePath
       : path.join(this.config.projectRoot, filePath);
+
+    // 边界检查
+    if (this.boundaryChecker) {
+      const checkResult = this.boundaryChecker.checkTaskBoundary(
+        this.currentTaskModuleId,
+        fullPath
+      );
+      if (!checkResult.allowed) {
+        throw new Error(`[边界检查失败] ${checkResult.reason}`);
+      }
+    }
 
     // 确保目录存在
     const dir = path.dirname(fullPath);
