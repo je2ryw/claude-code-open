@@ -167,6 +167,15 @@ export interface BackgroundAgent {
   metadata?: Record<string, any>;
   // 新增：对话历史
   messages?: Message[];
+  // 新增：进度追踪（对齐官方实现）
+  progress?: {
+    toolUseCount: number;
+    tokenCount: number;
+  };
+  lastActivity?: {
+    toolName: string;
+    input: any;
+  };
 }
 
 const backgroundAgents: Map<string, BackgroundAgent> = new Map();
@@ -724,8 +733,43 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         }
       }
 
-      // 执行代理任务（添加当前任务提示）
-      const response = await loop.processMessage(agent.prompt);
+      // 执行代理任务（使用 streaming API 以支持长时间运行的操作）
+      // 根据 Anthropic SDK 要求，超过10分钟的操作必须使用 streaming
+      let response = '';
+
+      // 初始化进度追踪（对齐官方实现）
+      if (!agent.progress) {
+        agent.progress = {
+          toolUseCount: 0,
+          tokenCount: 0
+        };
+      }
+
+      for await (const event of loop.processMessageStream(agent.prompt)) {
+        if (event.type === 'text' && event.content) {
+          response += event.content;
+          // 更新token计数（粗略估计，1 word ≈ 1.3 tokens）
+          agent.progress.tokenCount += Math.ceil(event.content.split(/\s+/).length * 1.3);
+          saveAgentState(agent);
+        } else if (event.type === 'tool_start') {
+          // 追踪工具使用（对齐官方实现）
+          agent.progress.toolUseCount++;
+          agent.lastActivity = {
+            toolName: event.toolName || 'unknown',
+            input: event.toolInput
+          };
+          saveAgentState(agent);
+        } else if (event.type === 'tool_end') {
+          // 工具执行完成，更新状态
+          saveAgentState(agent);
+        } else if (event.type === 'done') {
+          // Stream 完成
+          break;
+        } else if (event.type === 'interrupted') {
+          // 如果被中断，记录状态
+          throw new Error('Agent execution was interrupted');
+        }
+      }
 
       // 保存结果
       agent.result = {
@@ -832,6 +876,16 @@ Usage notes:
 
     if (agent.currentStep !== undefined && agent.totalSteps !== undefined) {
       output.push(`Progress: ${agent.currentStep}/${agent.totalSteps} steps`);
+    }
+
+    // 显示进度追踪（对齐官方实现）
+    if (agent.progress) {
+      output.push(`Tools used: ${agent.progress.toolUseCount}`);
+      output.push(`Tokens: ${agent.progress.tokenCount}`);
+    }
+
+    if (agent.lastActivity) {
+      output.push(`Last tool: ${agent.lastActivity.toolName}`);
     }
 
     if (agent.workingDirectory) {

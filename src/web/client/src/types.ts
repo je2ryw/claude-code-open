@@ -55,6 +55,24 @@ export interface ToolUse {
   input: unknown;
   status: ToolStatus;
   result?: ToolResult;
+  /** 子 agent 工具调用（仅 Task 工具使用） */
+  subagentToolCalls?: SubagentToolCall[];
+  /** 工具调用计数（仅 Task 工具使用） */
+  toolUseCount?: number;
+  /** 最后执行的工具信息（仅 Task 工具使用） */
+  lastToolInfo?: string;
+}
+
+// 子 agent 工具调用
+export interface SubagentToolCall {
+  id: string;
+  name: string;
+  input?: unknown;
+  status: 'running' | 'completed' | 'error';
+  result?: string;
+  error?: string;
+  startTime: number;
+  endTime?: number;
 }
 
 // 会话相关
@@ -128,7 +146,11 @@ export type WSMessageType =
   | 'session_deleted'
   | 'session_renamed'
   | 'history'
-  | 'pong';
+  | 'pong'
+  // 子 agent 相关消息类型
+  | 'task_status'
+  | 'subagent_tool_start'
+  | 'subagent_tool_end';
 
 export interface WSMessage {
   type: WSMessageType;

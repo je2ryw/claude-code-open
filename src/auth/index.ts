@@ -120,7 +120,7 @@ const ENCRYPTION_KEY = crypto
 const OAUTH_SCOPES = ['org:create_api_key', 'user:profile', 'user:inference', 'user:sessions:claude_code'];
 
 // OAuth 端点配置
-const OAUTH_ENDPOINTS: Record<'claude.ai' | 'console', OAuthConfig> = {
+export const OAUTH_ENDPOINTS: Record<'claude.ai' | 'console', OAuthConfig> = {
   'claude.ai': {
     clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
     authorizationEndpoint: 'https://claude.ai/oauth/authorize',
@@ -174,7 +174,7 @@ function decrypt(text: string): string {
 /**
  * 安全地保存认证数据（加密）
  */
-function saveAuthSecure(auth: AuthConfig): void {
+export function saveAuthSecure(auth: AuthConfig): void {
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
   }
@@ -283,6 +283,7 @@ export function initAuth(): AuthConfig | null {
             type: 'oauth',
             accountType: 'subscription',
             authToken: oauth.accessToken,
+            accessToken: oauth.accessToken,  // 添加 accessToken 字段
             refreshToken: oauth.refreshToken,
             expiresAt: oauth.expiresAt,
             scopes: scopes,
@@ -824,7 +825,7 @@ function waitForCallback(
  * 交换授权码获取 token (官方方式 - 使用 JSON)
  * 官方实现在 token 请求中包含 state 参数
  */
-async function exchangeAuthorizationCode(
+export async function exchangeAuthorizationCode(
   config: OAuthConfig,
   code: string,
   codeVerifier: string,

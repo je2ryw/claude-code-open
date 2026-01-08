@@ -359,6 +359,99 @@ body {
   font-size: 12px;
 }
 
+/* Task 工具特殊样式 */
+.tool-call.task-tool {
+  border-color: var(--accent-primary);
+}
+
+.tool-call.task-tool .tool-call-header {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(100, 108, 255, 0.15) 100%);
+}
+
+.task-progress {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: rgba(100, 108, 255, 0.2);
+  border-radius: 4px;
+}
+
+.expand-icon {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 8px;
+}
+
+/* 子 agent 工具调用列表 */
+.subagent-tools {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.subagent-tools-list {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent-primary);
+}
+
+.subagent-tool-item {
+  margin: 8px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.subagent-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+}
+
+.subagent-tool-header:hover {
+  background: #4a5178;
+}
+
+.subagent-tool-header .tool-icon {
+  font-size: 14px;
+}
+
+.subagent-tool-header .tool-name {
+  font-weight: 500;
+  color: var(--accent-secondary);
+}
+
+.subagent-tool-header .tool-status {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.tool-duration {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.subagent-tool-body {
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  font-size: 12px;
+}
+
+.subagent-tool-body .tool-input pre,
+.subagent-tool-body .tool-output pre {
+  padding: 8px;
+  font-size: 11px;
+}
+
 /* 输入区域 */
 .input-area {
   padding: 16px 20px;

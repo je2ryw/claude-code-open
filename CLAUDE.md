@@ -11,7 +11,7 @@ tests 测试用例统一保存路径
 This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.
 
 
-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致
+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致，不要有讨好型人格，要有批判性思维，并有敢于探索世界性难题的勇气
 
 ## Development Commands
 

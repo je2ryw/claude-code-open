@@ -9,6 +9,8 @@ import {
   SessionList,
   SettingsPanel,
 } from './components';
+import { AuthStatus } from './components/AuthStatus';
+import { AuthDialog } from './components/AuthDialog';
 import type {
   ChatMessage,
   ChatContent,
@@ -43,6 +45,7 @@ function App({ onNavigateToBlueprint }: AppProps) {
   const [userQuestion, setUserQuestion] = useState<UserQuestion | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -214,6 +217,84 @@ function App({ onNavigateToBlueprint }: AppProps) {
             setSessions(prev =>
               prev.map(s => (s.id === payload.sessionId ? { ...s, name: payload.name as string } : s))
             );
+          }
+          break;
+
+        // 子 agent 相关消息处理
+        case 'task_status':
+          // 更新 Task 工具的状态（包含 toolUseCount 和 lastToolInfo）
+          if (currentMessageRef.current && payload.taskId) {
+            const currentMsg = currentMessageRef.current;
+            const taskTool = currentMsg.content.find(
+              c => c.type === 'tool_use' && c.name === 'Task'
+            );
+            if (taskTool && taskTool.type === 'tool_use') {
+              taskTool.toolUseCount = payload.toolUseCount as number | undefined;
+              taskTool.lastToolInfo = payload.lastToolInfo as string | undefined;
+              if (payload.status === 'completed' || payload.status === 'failed') {
+                taskTool.status = payload.status === 'completed' ? 'completed' : 'error';
+                taskTool.result = {
+                  success: payload.status === 'completed',
+                  output: payload.result as string | undefined,
+                  error: payload.error as string | undefined,
+                };
+              }
+              setMessages(prev => {
+                const filtered = prev.filter(m => m.id !== currentMsg.id);
+                return [...filtered, { ...currentMsg }];
+              });
+            }
+          }
+          break;
+
+        case 'subagent_tool_start':
+          // 子 agent 工具开始
+          if (currentMessageRef.current && payload.taskId && payload.toolCall) {
+            const currentMsg = currentMessageRef.current;
+            const taskTool = currentMsg.content.find(
+              c => c.type === 'tool_use' && c.name === 'Task'
+            );
+            if (taskTool && taskTool.type === 'tool_use') {
+              if (!taskTool.subagentToolCalls) {
+                taskTool.subagentToolCalls = [];
+              }
+              const tc = payload.toolCall as { id: string; name: string; input?: unknown; status: 'running' | 'completed' | 'error'; startTime: number };
+              taskTool.subagentToolCalls.push({
+                id: tc.id,
+                name: tc.name,
+                input: tc.input,
+                status: tc.status,
+                startTime: tc.startTime,
+              });
+              setMessages(prev => {
+                const filtered = prev.filter(m => m.id !== currentMsg.id);
+                return [...filtered, { ...currentMsg }];
+              });
+            }
+          }
+          break;
+
+        case 'subagent_tool_end':
+          // 子 agent 工具结束
+          if (currentMessageRef.current && payload.taskId && payload.toolCall) {
+            const currentMsg = currentMessageRef.current;
+            const taskTool = currentMsg.content.find(
+              c => c.type === 'tool_use' && c.name === 'Task'
+            );
+            if (taskTool && taskTool.type === 'tool_use' && taskTool.subagentToolCalls) {
+              const tc = payload.toolCall as { id: string; name: string; status: 'running' | 'completed' | 'error'; result?: string; error?: string; endTime?: number };
+              const existingCall = taskTool.subagentToolCalls.find(c => c.id === tc.id);
+              if (existingCall) {
+                existingCall.status = tc.status;
+                existingCall.result = tc.result;
+                existingCall.error = tc.error;
+                existingCall.endTime = tc.endTime;
+              }
+              setMessages(prev => {
+                const filtered = prev.filter(m => m.id !== currentMsg.id);
+                return [...filtered, { ...currentMsg }];
+              });
+            }
           }
           break;
       }
@@ -561,6 +642,7 @@ function App({ onNavigateToBlueprint }: AppProps) {
           onSessionRename={handleSessionRename}
         />
         <div className="sidebar-footer">
+          <AuthStatus onLoginClick={() => setShowAuthDialog(true)} />
           <button className="settings-btn" onClick={() => setShowSettings(true)}>
             ⚙️ 设置
           </button>
@@ -674,6 +756,14 @@ function App({ onNavigateToBlueprint }: AppProps) {
         onClose={() => setShowSettings(false)}
         model={model}
         onModelChange={setModel}
+      />
+      <AuthDialog
+        isOpen={showAuthDialog}
+        onClose={() => setShowAuthDialog(false)}
+        onSuccess={() => {
+          // 登录成功后可以触发一些操作，比如刷新会话列表
+          console.log('Login successful!');
+        }}
       />
     </div>
   );

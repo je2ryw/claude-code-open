@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 2,
+            "activePatchIndex": 3,
             "patches": [
                 {
                     "date": 1767684372964,
@@ -16,6 +16,10 @@
                 {
                     "date": 1767769147280,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -10,9 +10,9 @@\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n \r\n \r\n-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的\r\n+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致\r\n \r\n ## Development Commands\r\n \r\n ```bash\r\n"
+                },
+                {
+                    "date": 1767839432003,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -10,9 +10,9 @@\n \r\n This is an educational reverse-engineering project that recreates Claude Code CLI v2.0.76. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.\r\n \r\n \r\n-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致\r\n+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致，不要有讨好型人格，要有批判性思维，并有敢于探索世界性难题的勇气\r\n \r\n ## Development Commands\r\n \r\n ```bash\r\n"
                 }
             ],
             "date": 1767684372964,

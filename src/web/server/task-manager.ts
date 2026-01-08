@@ -18,6 +18,20 @@ import {
 } from '../../hooks/index.js';
 
 /**
+ * 子 agent 工具调用信息
+ */
+export interface SubagentToolCall {
+  id: string;
+  name: string;
+  input?: unknown;
+  status: 'running' | 'completed' | 'error';
+  result?: string;
+  error?: string;
+  startTime: number;
+  endTime?: number;
+}
+
+/**
  * 任务信息
  */
 export interface TaskInfo {
@@ -38,6 +52,12 @@ export interface TaskInfo {
   };
   workingDirectory?: string;
   metadata?: Record<string, any>;
+  /** 子 agent 执行的工具调用列表 */
+  toolCalls?: SubagentToolCall[];
+  /** 工具调用计数 */
+  toolUseCount?: number;
+  /** 最后执行的工具信息 */
+  lastToolInfo?: string;
 }
 
 /**
@@ -80,10 +100,63 @@ export class TaskManager {
             result: task.result,
             error: task.error,
             progress: task.progress,
+            toolUseCount: task.toolUseCount,
+            lastToolInfo: task.lastToolInfo,
           },
         }));
       } catch (error) {
         console.error('[TaskManager] 发送任务状态失败:', error);
+      }
+    }
+  }
+
+  /**
+   * 发送子 agent 工具开始事件
+   */
+  private sendSubagentToolStart(taskId: string, toolCall: SubagentToolCall): void {
+    if (this.ws && this.ws.readyState === 1) {
+      try {
+        this.ws.send(JSON.stringify({
+          type: 'subagent_tool_start',
+          payload: {
+            taskId,
+            toolCall: {
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
+              status: toolCall.status,
+              startTime: toolCall.startTime,
+            },
+          },
+        }));
+      } catch (error) {
+        console.error('[TaskManager] 发送子 agent 工具开始事件失败:', error);
+      }
+    }
+  }
+
+  /**
+   * 发送子 agent 工具结束事件
+   */
+  private sendSubagentToolEnd(taskId: string, toolCall: SubagentToolCall): void {
+    if (this.ws && this.ws.readyState === 1) {
+      try {
+        this.ws.send(JSON.stringify({
+          type: 'subagent_tool_end',
+          payload: {
+            taskId,
+            toolCall: {
+              id: toolCall.id,
+              name: toolCall.name,
+              status: toolCall.status,
+              result: toolCall.result,
+              error: toolCall.error,
+              endTime: toolCall.endTime,
+            },
+          },
+        }));
+      } catch (error) {
+        console.error('[TaskManager] 发送子 agent 工具结束事件失败:', error);
       }
     }
   }
@@ -238,10 +311,18 @@ export class TaskManager {
   }
 
   /**
-   * 后台执行任务
+   * 后台执行任务（流式执行，实时推送子 agent 进度）
    */
   private async executeTaskInBackground(context: TaskExecutionContext): Promise<void> {
     const { task, agentDef, messages } = context;
+
+    // 初始化工具调用追踪
+    task.toolCalls = [];
+    task.toolUseCount = 0;
+
+    // 当前正在执行的工具调用（按 toolName 追踪，因为流式接口没有 id）
+    const activeToolCalls = new Map<string, SubagentToolCall>();
+    let toolCallCounter = 0;
 
     try {
       // 调用 SubagentStart Hook
@@ -271,16 +352,87 @@ export class TaskManager {
         }
       }
 
-      // 执行任务（传入最后一条消息即当前任务提示）
-      const response = await loop.processMessage(task.prompt);
+      // 收集文本输出
+      const textChunks: string[] = [];
+
+      // 使用流式执行，实时推送子 agent 进度
+      for await (const event of loop.processMessageStream(task.prompt)) {
+        switch (event.type) {
+          case 'text':
+            // 收集文本输出
+            if (event.content) {
+              textChunks.push(event.content);
+            }
+            break;
+
+          case 'tool_start':
+            // 工具开始执行
+            if (event.toolName) {
+              toolCallCounter++;
+              const toolCallId = `${task.id}-tool-${toolCallCounter}`;
+              const toolCall: SubagentToolCall = {
+                id: toolCallId,
+                name: event.toolName,
+                input: event.toolInput,
+                status: 'running',
+                startTime: Date.now(),
+              };
+
+              // 保存到追踪
+              activeToolCalls.set(event.toolName, toolCall);
+              task.toolCalls!.push(toolCall);
+              task.toolUseCount = toolCallCounter;
+              task.lastToolInfo = event.toolName;
+
+              // 推送到前端
+              this.sendSubagentToolStart(task.id, toolCall);
+
+              // 更新任务状态（带进度信息）
+              this.sendTaskStatus(task);
+            }
+            break;
+
+          case 'tool_end':
+            // 工具执行结束
+            if (event.toolName) {
+              const toolCall = activeToolCalls.get(event.toolName);
+              if (toolCall) {
+                toolCall.status = event.toolError ? 'error' : 'completed';
+                toolCall.result = event.toolResult;
+                toolCall.error = event.toolError;
+                toolCall.endTime = Date.now();
+
+                // 从活动列表移除
+                activeToolCalls.delete(event.toolName);
+
+                // 推送到前端
+                this.sendSubagentToolEnd(task.id, toolCall);
+              }
+            }
+            break;
+
+          case 'done':
+            // 流式处理完成
+            break;
+
+          case 'interrupted':
+            // 被中断
+            task.status = 'cancelled';
+            task.endTime = new Date();
+            task.error = event.content || 'Interrupted';
+            this.sendTaskStatus(task);
+            await runSubagentStopHooks(task.id, task.agentType);
+            return;
+        }
+      }
 
       // 任务完成
       task.status = 'completed';
       task.endTime = new Date();
-      task.result = response;
+      task.result = textChunks.join('');
 
       // 保存输出到缓冲区
-      this.outputBuffers.set(task.id, response);
+      this.outputBuffers.set(task.id, task.result);
 
       // 发送状态更新
       this.sendTaskStatus(task);

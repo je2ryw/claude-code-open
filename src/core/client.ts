@@ -329,7 +329,10 @@ export class ClaudeClient {
 
     // 根据模型能力设置 maxTokens
     const capabilities = modelConfig.getCapabilities(this.model);
-    this.maxTokens = config.maxTokens || Math.min(32000, capabilities.maxOutputTokens);
+    // SDK限制：maxTokens不能太大，否则会要求streaming
+    // 计算公式：3600 * maxTokens / 128000 <= 600，即 maxTokens <= 21333
+    // 使用21000作为安全默认值（留有余量）
+    this.maxTokens = config.maxTokens || Math.min(21000, capabilities.maxOutputTokens);
 
     this.maxRetries = config.maxRetries ?? 2;
     this.retryDelay = config.retryDelay ?? 1000;

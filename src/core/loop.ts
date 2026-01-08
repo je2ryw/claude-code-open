@@ -260,7 +260,7 @@ function calculateTotalTokens(messages: Message[]): number {
  * @param model 模型 ID
  * @returns 上下文窗口大小（tokens）
  */
-function getContextWindowSize(model: string): number {
+export function getContextWindowSize(model: string): number {
   // 检查是否是 1M 模型（带 [1m] 标记）
   if (model.includes('[1m]')) {
     return 1000000;
@@ -275,7 +275,7 @@ function getContextWindowSize(model: string): number {
  * @param model 模型 ID
  * @returns 最大输出 tokens
  */
-function getMaxOutputTokens(model: string): number {
+export function getMaxOutputTokens(model: string): number {
   let defaultMax: number;
 
   // 根据模型类型确定默认最大输出 tokens
@@ -307,7 +307,7 @@ function getMaxOutputTokens(model: string): number {
  * @param model 模型 ID
  * @returns 可用的输入 tokens
  */
-function calculateAvailableInput(model: string): number {
+export function calculateAvailableInput(model: string): number {
   return getContextWindowSize(model) - getMaxOutputTokens(model);
 }
 
@@ -317,7 +317,7 @@ function calculateAvailableInput(model: string): number {
  * @param model 模型 ID
  * @returns 自动压缩阈值（tokens）
  */
-function calculateAutoCompactThreshold(model: string): number {
+export function calculateAutoCompactThreshold(model: string): number {
   const availableInput = calculateAvailableInput(model);
   const vH0 = 13000; // Session Memory 压缩缓冲区
   const threshold = availableInput - vH0;
@@ -341,7 +341,7 @@ function calculateAutoCompactThreshold(model: string): number {
  * @param model 模型 ID
  * @returns 是否超过阈值
  */
-function isAboveAutoCompactThreshold(messages: Message[], model: string): boolean {
+export function isAboveAutoCompactThreshold(messages: Message[], model: string): boolean {
   const totalTokens = calculateTotalTokens(messages);
   const threshold = calculateAutoCompactThreshold(model);
   return totalTokens >= threshold;
@@ -353,7 +353,7 @@ function isAboveAutoCompactThreshold(messages: Message[], model: string): boolea
  * @param model 模型 ID
  * @returns 是否应该自动压缩
  */
-function shouldAutoCompact(messages: Message[], model: string): boolean {
+export function shouldAutoCompact(messages: Message[], model: string): boolean {
   // 1. 检查环境变量 - 如果禁用则直接返回
   if (isEnvTrue(process.env.DISABLE_COMPACT)) {
     return false;

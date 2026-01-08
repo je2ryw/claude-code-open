@@ -4,14 +4,14 @@
  */
 
 import { TreeNode, TreeRenderer, TreeRenderStyle, TreeRenderOptions } from '../../src/renderer/tree-render.js';
-import * as assert from 'assert';
+import { describe, it, expect } from 'vitest';
 
 describe('TreeNode', () => {
   it('应该创建一个树节点', () => {
     const node = new TreeNode('root');
-    assert.strictEqual(node.label, 'root');
-    assert.strictEqual(node.children.length, 0);
-    assert.strictEqual(node.parent, null);
+    expect(node.label).toBe('root');
+    expect(node.children.length).toBe(0);
+    expect(node.parent).toBe(null);
   });
 
   it('应该添加子节点', () => {
@@ -22,11 +22,11 @@ describe('TreeNode', () => {
     root.addChild(child1);
     root.addChild(child2);
 
-    assert.strictEqual(root.children.length, 2);
-    assert.strictEqual(root.children[0], child1);
-    assert.strictEqual(root.children[1], child2);
-    assert.strictEqual(child1.parent, root);
-    assert.strictEqual(child2.parent, root);
+    expect(root.children.length).toBe(2);
+    expect(root.children[0]).toBe(child1);
+    expect(root.children[1]).toBe(child2);
+    expect(child1.parent).toBe(root);
+    expect(child2.parent).toBe(root);
   });
 
   it('应该支持链式调用添加子节点', () => {
@@ -34,7 +34,7 @@ describe('TreeNode', () => {
     const child = new TreeNode('child');
 
     const result = root.addChild(child);
-    assert.strictEqual(result, root);
+    expect(result).toBe(root);
   });
 
   it('应该获取节点深度', () => {
@@ -45,9 +45,9 @@ describe('TreeNode', () => {
     root.addChild(child);
     child.addChild(grandchild);
 
-    assert.strictEqual(root.getDepth(), 0);
-    assert.strictEqual(child.getDepth(), 1);
-    assert.strictEqual(grandchild.getDepth(), 2);
+    expect(root.getDepth()).toBe(0);
+    expect(child.getDepth()).toBe(1);
+    expect(grandchild.getDepth()).toBe(2);
   });
 
   it('应该获取节点层级', () => {
@@ -58,9 +58,9 @@ describe('TreeNode', () => {
     root.addChild(child);
     child.addChild(grandchild);
 
-    assert.deepStrictEqual(root.getPath(), ['root']);
-    assert.deepStrictEqual(child.getPath(), ['root', 'child']);
-    assert.deepStrictEqual(grandchild.getPath(), ['root', 'child', 'grandchild']);
+    expect(root.getPath()).toEqual(['root']);
+    expect(child.getPath()).toEqual(['root', 'child']);
+    expect(grandchild.getPath()).toEqual(['root', 'child', 'grandchild']);
   });
 
   it('应该计算树的大小（节点总数）', () => {
@@ -73,22 +73,22 @@ describe('TreeNode', () => {
     root.addChild(child2);
     child1.addChild(grandchild);
 
-    assert.strictEqual(root.getSize(), 4);
-    assert.strictEqual(child1.getSize(), 2);
-    assert.strictEqual(child2.getSize(), 1);
+    expect(root.getSize()).toBe(4);
+    expect(child1.getSize()).toBe(2);
+    expect(child2.getSize()).toBe(1);
   });
 
   it('应该计算树的高度', () => {
     const root = new TreeNode('root');
-    assert.strictEqual(root.getHeight(), 0);
+    expect(root.getHeight()).toBe(0);
 
     const child = new TreeNode('child');
     root.addChild(child);
-    assert.strictEqual(root.getHeight(), 1);
+    expect(root.getHeight()).toBe(1);
 
     const grandchild = new TreeNode('grandchild');
     child.addChild(grandchild);
-    assert.strictEqual(root.getHeight(), 2);
+    expect(root.getHeight()).toBe(2);
   });
 
   it('应该查找节点', () => {
@@ -99,10 +99,10 @@ describe('TreeNode', () => {
     root.addChild(child);
     child.addChild(grandchild);
 
-    assert.strictEqual(root.find('root'), root);
-    assert.strictEqual(root.find('child'), child);
-    assert.strictEqual(root.find('grandchild'), grandchild);
-    assert.strictEqual(root.find('notfound'), null);
+    expect(root.find('root')).toBe(root);
+    expect(root.find('child')).toBe(child);
+    expect(root.find('grandchild')).toBe(grandchild);
+    expect(root.find('notfound')).toBe(null);
   });
 
   it('应该设置节点元数据', () => {
@@ -110,20 +110,20 @@ describe('TreeNode', () => {
     node.setMetadata('key1', 'value1');
     node.setMetadata('key2', 42);
 
-    assert.strictEqual(node.getMetadata('key1'), 'value1');
-    assert.strictEqual(node.getMetadata('key2'), 42);
-    assert.strictEqual(node.getMetadata('notexist'), undefined);
+    expect(node.getMetadata('key1')).toBe('value1');
+    expect(node.getMetadata('key2')).toBe(42);
+    expect(node.getMetadata('notexist')).toBe(undefined);
   });
 
   it('应该支持节点展开/折叠状态', () => {
     const node = new TreeNode('test');
-    assert.strictEqual(node.isExpanded(), true); // 默认展开
+    expect(node.isExpanded()).toBe(true); // 默认展开
 
     node.setExpanded(false);
-    assert.strictEqual(node.isExpanded(), false);
+    expect(node.isExpanded()).toBe(false);
 
     node.setExpanded(true);
-    assert.strictEqual(node.isExpanded(), true);
+    expect(node.isExpanded()).toBe(true);
   });
 });
 
@@ -139,9 +139,9 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root);
     const output = renderer.render();
 
-    assert(output.includes('root'));
-    assert(output.includes('child1'));
-    assert(output.includes('child2'));
+    expect(output.includes('root')).toBe(true);
+    expect(output.includes('child1')).toBe(true);
+    expect(output.includes('child2')).toBe(true);
   });
 
   it('应该使用树形样式渲染树', () => {
@@ -158,8 +158,8 @@ describe('TreeRenderer', () => {
     const output = renderer.render();
 
     // 树形样式应该包含特定的连接符
-    assert(output.includes('├'));
-    assert(output.includes('└'));
+    expect(output.includes('├')).toBe(true);
+    expect(output.includes('└')).toBe(true);
   });
 
   it('应该使用缩进样式渲染树', () => {
@@ -170,7 +170,7 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root, { style: 'indent' as TreeRenderStyle });
     const output = renderer.render();
 
-    assert(output.includes('  '));
+    expect(output.includes('  ')).toBe(true);
   });
 
   it('应该使用自定义前缀', () => {
@@ -181,7 +181,7 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root, { prefix: '> ' });
     const output = renderer.render();
 
-    assert(output.includes('> '));
+    expect(output.includes('> ')).toBe(true);
   });
 
   it('应该返回JSON格式的树', () => {
@@ -192,9 +192,9 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root);
     const json = renderer.toJSON();
 
-    assert.strictEqual(json.label, 'root');
-    assert.strictEqual(json.children.length, 1);
-    assert.strictEqual(json.children[0].label, 'child');
+    expect(json.label).toBe('root');
+    expect(json.children.length).toBe(1);
+    expect(json.children[0].label).toBe('child');
   });
 
   it('应该过滤树中的节点', () => {
@@ -212,9 +212,9 @@ describe('TreeRenderer', () => {
 
     // 过滤后的树应该只包含包含 'child' 的节点
     const output = new TreeRenderer(filtered).render();
-    assert(output.includes('child1'));
-    assert(output.includes('child2'));
-    assert(!output.includes('grandchild'));
+    expect(output.includes('child1')).toBe(true);
+    expect(output.includes('child2')).toBe(true);
+    expect(output.includes('grandchild')).toBe(false);
   });
 
   it('应该映射树中的节点', () => {
@@ -229,8 +229,8 @@ describe('TreeRenderer', () => {
     });
 
     const output = new TreeRenderer(mapped).render();
-    assert(output.includes('ROOT'));
-    assert(output.includes('CHILD'));
+    expect(output.includes('ROOT')).toBe(true);
+    expect(output.includes('CHILD')).toBe(true);
   });
 
   it('应该计算树的统计信息', () => {
@@ -246,10 +246,10 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root);
     const stats = renderer.getStats();
 
-    assert.strictEqual(stats.totalNodes, 4);
-    assert.strictEqual(stats.totalLeaves, 2);
-    assert.strictEqual(stats.maxDepth, 2);
-    assert.strictEqual(stats.avgChildren, 1);
+    expect(stats.totalNodes).toBe(4);
+    expect(stats.totalLeaves).toBe(2);
+    expect(stats.maxDepth).toBe(2);
+    expect(stats.avgChildren).toBe(1);
   });
 
   it('应该处理空树', () => {
@@ -257,8 +257,8 @@ describe('TreeRenderer', () => {
     const renderer = new TreeRenderer(root);
     const output = renderer.render();
 
-    assert(output.includes('empty'));
-    assert.strictEqual(root.children.length, 0);
+    expect(output.includes('empty')).toBe(true);
+    expect(root.children.length).toBe(0);
   });
 });
 
@@ -271,10 +271,10 @@ describe('SVG Tree Rendering', () => {
     const renderer = new TreeRenderer(root);
     const svg = renderer.toSVG();
 
-    assert(svg.includes('<svg'));
-    assert(svg.includes('</svg>'));
-    assert(svg.includes('root'));
-    assert(svg.includes('child'));
+    expect(svg.includes('<svg')).toBe(true);
+    expect(svg.includes('</svg>')).toBe(true);
+    expect(svg.includes('root')).toBe(true);
+    expect(svg.includes('child')).toBe(true);
   });
 
   it('应该生成带自定义选项的SVG树', () => {
@@ -288,8 +288,8 @@ describe('SVG Tree Rendering', () => {
     });
     const svg = renderer.toSVG();
 
-    assert(svg.includes('width="400"'));
-    assert(svg.includes('height="300"'));
+    expect(svg.includes('width="400"')).toBe(true);
+    expect(svg.includes('height="300"')).toBe(true);
   });
 
   it('应该处理深层树的SVG渲染', () => {
@@ -304,9 +304,9 @@ describe('SVG Tree Rendering', () => {
     const renderer = new TreeRenderer(root);
     const svg = renderer.toSVG();
 
-    assert(svg.includes('root'));
-    assert(svg.includes('level1'));
-    assert(svg.includes('level5'));
+    expect(svg.includes('root')).toBe(true);
+    expect(svg.includes('level1')).toBe(true);
+    expect(svg.includes('level5')).toBe(true);
   });
 
   it('应该支持SVG节点样式定制', () => {
@@ -320,7 +320,7 @@ describe('SVG Tree Rendering', () => {
     const renderer = new TreeRenderer(root);
     const svg = renderer.toSVG();
 
-    assert(svg.includes('FF0000'));
+    expect(svg.includes('FF0000')).toBe(true);
   });
 });
 
@@ -340,7 +340,7 @@ describe('Render Options', () => {
     const renderer = new TreeRenderer(root, options);
     const output = renderer.render();
 
-    assert(output.includes('>>> '));
+    expect(output.includes('>>> ')).toBe(true);
   });
 
   it('应该支持缩进大小自定义', () => {
@@ -353,7 +353,7 @@ describe('Render Options', () => {
 
     // 缩进应该是6个空格
     const lines = output.split('\n');
-    assert(lines.length >= 2);
+    expect(lines.length >= 2).toBe(true);
   });
 
   it('应该支持颜色化选项', () => {
@@ -366,7 +366,7 @@ describe('Render Options', () => {
 
     // 颜色化的输出应该包含ANSI颜色代码
     // 或者可能不包含，取决于实现
-    assert(typeof output === 'string');
+    expect(typeof output === 'string').toBe(true);
   });
 });
 
@@ -379,7 +379,7 @@ describe('Edge Cases', () => {
     const renderer = new TreeRenderer(root);
     const output = renderer.render();
 
-    assert(output.includes('root-with-dash_and_underscore'));
+    expect(output.includes('root-with-dash_and_underscore')).toBe(true);
   });
 
   it('应该处理非常大的树', () => {
@@ -391,9 +391,9 @@ describe('Edge Cases', () => {
     const renderer = new TreeRenderer(root);
     const output = renderer.render();
 
-    assert.strictEqual(root.children.length, 100);
-    assert(output.includes('child0'));
-    assert(output.includes('child99'));
+    expect(root.children.length).toBe(100);
+    expect(output.includes('child0')).toBe(true);
+    expect(output.includes('child99')).toBe(true);
   });
 
   it('应该处理循环节点引用（限制深度）', () => {
@@ -405,7 +405,7 @@ describe('Edge Cases', () => {
     const renderer = new TreeRenderer(root);
     const output = renderer.render();
 
-    assert(typeof output === 'string');
+    expect(typeof output === 'string').toBe(true);
   });
 
   it('应该正确处理折叠的节点', () => {
@@ -424,6 +424,6 @@ describe('Edge Cases', () => {
     const output = renderer.render();
 
     // 折叠的节点应该显示某种标记
-    assert(output.includes('child1'));
+    expect(output.includes('child1')).toBe(true);
   });
 });

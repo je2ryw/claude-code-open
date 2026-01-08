@@ -78,6 +78,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   // 配置管理 API 路由
   setupConfigApiRoutes(app);
 
+  // OAuth 认证路由
+  const authRouter = await import('./routes/auth.js');
+  app.use('/api/auth/oauth', authRouter.default);
+
   // 检测开发模式
   const isDev = process.env.NODE_ENV !== 'production' && !process.argv[1]?.includes('dist');
   const clientPath = path.join(__dirname, '../client');

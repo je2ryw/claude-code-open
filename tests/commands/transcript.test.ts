@@ -2,11 +2,15 @@
  * /transcript 命令测试
  */
 
+import { describe, it, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { transcriptCommand } from '../../src/commands/session.js';
 import { CommandContext, CommandResult } from '../../src/commands/types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+// Vitest 兼容 jest API
+const jest = vi;
 
 describe('/transcript command', () => {
   let mockContext: CommandContext;

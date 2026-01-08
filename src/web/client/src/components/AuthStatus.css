@@ -1,0 +1,146 @@
+.auth-status {
+  padding: 10px 12px;
+  border-top: 1px solid #2a2a2a;
+  background: #1a1a1a;
+}
+
+.auth-status.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #cc785c;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 已认证状态 */
+.auth-status.authenticated {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
+}
+
+.auth-user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.user-avatar {
+  font-size: 20px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2a2a2a;
+  border-radius: 50%;
+  border: 1px solid #3a3a3a;
+}
+
+.user-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-type {
+  font-size: 10px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.btn-logout-small {
+  padding: 4px 8px;
+  font-size: 14px;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  color: #999;
+}
+
+.btn-logout-small:hover {
+  background: #3a3a3a;
+  border-color: #4a4a4a;
+  color: #e0e0e0;
+}
+
+/* 未认证状态 */
+.auth-status.not-authenticated {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
+}
+
+.auth-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #999;
+  flex: 1;
+}
+
+.warning-icon {
+  font-size: 14px;
+  color: #ff9800;
+}
+
+.btn-login-small {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #2a2a2a;
+  color: #e0e0e0;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-login-small:hover {
+  background: #3a3a3a;
+  border-color: #4a4a4a;
+  color: #fff;
+}
+
+.btn-login-small:active {
+  transform: scale(0.98);
+}
+
+/* 移除了 Dark mode 媒体查询，因为默认已是暗色主题 */

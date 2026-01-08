@@ -7,8 +7,8 @@
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { describe, it, expect } from 'vitest';
-import { WorkerCard } from './WorkerCard';
-import type { WorkerAgent } from '../../blueprint/types';
+import { WorkerCard } from '../src/web/client/src/components/swarm/WorkerPanel/WorkerCard';
+import type { WorkerAgent } from '../src/blueprint/types';
 
 describe('WorkerCard Component', () => {
   // 创建 Mock WorkerAgent 对象的辅助函数

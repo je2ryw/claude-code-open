@@ -297,6 +297,13 @@ export class ConversationManager {
       return;
     }
 
+    // 首先检查是否有 OAuth 配置
+    const oauthConfig = oauthManager.getOAuthConfig();
+    if (!oauthConfig) {
+      // 没有 OAuth 配置（可能使用 API Key），无需刷新
+      return;
+    }
+
     // 检查 token 是否过期
     if (!oauthManager.isTokenExpired()) {
       // Token 还未过期，无需刷新
