@@ -65,6 +65,7 @@ interface BlueprintDetail {
   updatedAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  source?: 'requirement' | 'codebase';  // 蓝图来源
 }
 
 interface BlueprintDetailPanelProps {
@@ -129,6 +130,14 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
           if (reason) {
             await blueprintApi.rejectBlueprint(blueprintId, reason);
             console.log('[BlueprintDetailPanel] 蓝图已拒绝');
+            await fetchBlueprint();
+          }
+          break;
+
+        case 'submit-review':
+          if (confirm('确定要提交审核吗？提交后将无法再编辑蓝图。')) {
+            await blueprintApi.submitForReview(blueprintId);
+            console.log('[BlueprintDetailPanel] 蓝图已提交审核');
             await fetchBlueprint();
           }
           break;
@@ -474,6 +483,25 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
 
       {/* 底部操作按钮 */}
       <div className={styles.footer}>
+        {/* draft 状态：提交审核 + 删除 */}
+        {blueprint.status === 'draft' && (
+          <>
+            <button
+              className={`${styles.footerButton} ${styles.submit}`}
+              onClick={() => handleAction('submit-review')}
+            >
+              提交审核
+            </button>
+            <button
+              className={`${styles.footerButton} ${styles.delete}`}
+              onClick={() => handleAction('delete')}
+            >
+              删除
+            </button>
+          </>
+        )}
+
+        {/* review 状态：批准 + 拒绝 + 删除 */}
         {blueprint.status === 'review' && (
           <>
             <button
@@ -488,9 +516,17 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             >
               拒绝
             </button>
+            <button
+              className={`${styles.footerButton} ${styles.delete}`}
+              onClick={() => handleAction('delete')}
+            >
+              删除
+            </button>
           </>
         )}
-        {blueprint.status === 'approved' && (
+
+        {/* approved 状态：启动执行（仅对需求生成的蓝图显示） */}
+        {blueprint.status === 'approved' && blueprint.source !== 'codebase' && (
           <button
             className={`${styles.footerButton} ${styles.start}`}
             onClick={() => handleAction('start-execution')}
@@ -498,13 +534,12 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             启动执行
           </button>
         )}
-        {(blueprint.status === 'draft' || blueprint.status === 'review') && (
-          <button
-            className={`${styles.footerButton} ${styles.delete}`}
-            onClick={() => handleAction('delete')}
-          >
-            删除
-          </button>
+
+        {/* approved 状态且从代码生成：显示说明 */}
+        {blueprint.status === 'approved' && blueprint.source === 'codebase' && (
+          <div className={styles.infoMessage}>
+            ✅ 此蓝图从现有代码生成，作为项目文档和后续开发的基础
+          </div>
         )}
       </div>
     </div>

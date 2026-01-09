@@ -91,6 +91,8 @@ export interface CodebaseInfo {
 export interface DetectedModule {
   name: string;
   path: string;
+  /** 相对于项目根目录的路径（用于蓝图约束） */
+  rootPath: string;
   type: 'frontend' | 'backend' | 'database' | 'service' | 'infrastructure' | 'other';
   files: string[];
   exports: string[];
@@ -101,6 +103,12 @@ export interface DetectedModule {
   symbols?: CodeSymbol[];
   /** AI 分析的功能描述 */
   aiDescription?: string;
+  /** AI 分析的核心功能列表 */
+  coreFeatures?: string[];
+  /** AI 分析的边界约束 */
+  boundaryConstraints?: string[];
+  /** 受保护的核心文件 */
+  protectedFiles?: string[];
 }
 
 export interface DirectoryNode {
@@ -131,6 +139,28 @@ export interface ExtractedSymbols {
   byFile: Map<string, CodeSymbol[]>;
 }
 
+/** AI 分析的模块详细信息 */
+export interface AIModuleAnalysis {
+  /** 模块名称 */
+  name: string;
+  /** 模块用途 */
+  purpose: string;
+  /** 职责列表 */
+  responsibilities: string[];
+  /** 依赖的其他模块 */
+  dependencies: string[];
+  /** 核心功能列表（用于生成验收测试） */
+  coreFeatures: string[];
+  /** 边界约束（不应修改的规则） */
+  boundaryConstraints: string[];
+  /** 受保护的核心文件（不应随意修改） */
+  protectedFiles: string[];
+  /** 对外暴露的主要接口 */
+  publicInterfaces: string[];
+  /** 内部实现细节（可以重构的部分） */
+  internalDetails: string[];
+}
+
 /** AI 分析结果 */
 export interface AIAnalysisResult {
   /** 项目概述 */
@@ -139,19 +169,18 @@ export interface AIAnalysisResult {
   architecturePattern: string;
   /** 核心功能列表 */
   coreFeatures: string[];
-  /** 模块分析 */
-  moduleAnalysis: Array<{
-    name: string;
-    purpose: string;
-    responsibilities: string[];
-    dependencies: string[];
-  }>;
+  /** 模块分析（增强版） */
+  moduleAnalysis: AIModuleAnalysis[];
   /** 业务流程 */
   businessFlows: Array<{
     name: string;
     description: string;
     steps: string[];
   }>;
+  /** 架构决策记录 */
+  architectureDecisions: string[];
+  /** 技术债务 */
+  technicalDebts: string[];
 }
 
 // ============================================================================
@@ -373,12 +402,11 @@ export class CodebaseAnalyzer extends EventEmitter {
     const context = this.buildAIContext(codebase);
 
     // 调用 AI 分析
-    // 这里需要调用 Claude API
-    // 暂时使用模拟实现，实际应该调用 src/core/client.ts
+    // 使用 getDefaultClient() 获取已认证的客户端
 
     try {
-      const { ClaudeClient } = await import('../core/client.js');
-      const client = new ClaudeClient();
+      const { getDefaultClient } = await import('../core/client.js');
+      const client = getDefaultClient();
 
       const prompt = this.buildAIPrompt(context);
       const response = await client.createMessage([{
@@ -392,6 +420,7 @@ export class CodebaseAnalyzer extends EventEmitter {
       return this.parseAIResponse(responseText);
     } catch (error) {
       // AI 分析失败，返回基于规则的分析结果
+      console.warn('AI analysis failed, falling back to rule-based analysis:', error);
       return this.generateRuleBasedAnalysis(codebase);
     }
   }
@@ -449,33 +478,69 @@ export class CodebaseAnalyzer extends EventEmitter {
 
   /**
    * 构建 AI 分析提示词
+   *
+   * 增强版：要求 AI 输出更丰富的语义信息
+   * - 核心功能（用于生成验收测试）
+   * - 边界约束（不应修改的规则）
+   * - 受保护文件（不应随意修改的核心文件）
    */
   private buildAIPrompt(context: string): string {
-    return `你是一个代码分析专家。请分析以下代码库信息，输出 JSON 格式的分析结果。
+    return `你是一个资深软件架构师和代码分析专家。请深入分析以下代码库信息，输出详细的语义分析结果。
+
+你的分析将用于：
+1. 生成项目"蓝图"（Blueprint）- 帮助人类程序员快速理解项目
+2. 生成验收测试 - 确保功能不被意外破坏
+3. 设置修改边界 - 防止 AI 助手随意修改核心文件
 
 ${context}
 
 请以 JSON 格式输出分析结果，包含以下字段：
 {
-  "overview": "项目整体概述（2-3句话）",
-  "architecturePattern": "架构模式（如 MVC, 微服务, 单体等）",
+  "overview": "项目整体概述（2-3句话，说明项目目标和主要功能）",
+  "architecturePattern": "架构模式（如 前后端分离, 微服务, 分层架构, MVC 等）",
   "coreFeatures": ["核心功能1", "核心功能2", ...],
   "moduleAnalysis": [
     {
-      "name": "模块名",
-      "purpose": "模块用途",
+      "name": "模块名（如 web/client, core, blueprint）",
+      "purpose": "模块用途（一句话说明）",
       "responsibilities": ["职责1", "职责2"],
-      "dependencies": ["依赖的其他模块"]
+      "dependencies": ["依赖的其他模块名"],
+      "coreFeatures": ["该模块的核心功能1（可测试的）", "核心功能2", ...],
+      "boundaryConstraints": [
+        "不应违反的规则1（如：不应直接访问数据库）",
+        "不应违反的规则2"
+      ],
+      "protectedFiles": [
+        "核心文件1（如：index.ts）",
+        "核心文件2（如：types.ts）"
+      ],
+      "publicInterfaces": ["对外暴露的主要接口/函数名"],
+      "internalDetails": ["可以安全重构的内部实现"]
     }
   ],
   "businessFlows": [
     {
-      "name": "业务流程名",
+      "name": "业务流程名（如：用户登录流程）",
       "description": "流程描述",
       "steps": ["步骤1", "步骤2"]
     }
+  ],
+  "architectureDecisions": [
+    "重要的架构决策1（如：为什么选择 X 框架）",
+    "架构决策2"
+  ],
+  "technicalDebts": [
+    "已知的技术债务1",
+    "技术债务2"
   ]
 }
+
+分析要求：
+1. 模块分析要具体，不要泛泛而谈
+2. coreFeatures 应该是可以编写自动化测试验证的功能点
+3. boundaryConstraints 应该是明确的、可验证的规则
+4. protectedFiles 只列出真正重要的核心文件（不超过 10 个）
+5. 如果信息不足无法判断，留空数组即可
 
 只输出 JSON，不要其他内容。`;
   }
@@ -501,6 +566,8 @@ ${context}
       coreFeatures: [],
       moduleAnalysis: [],
       businessFlows: [],
+      architectureDecisions: [],
+      technicalDebts: [],
     };
   }
 
@@ -534,10 +601,81 @@ ${context}
         name: m.name,
         purpose: `${m.type} 模块`,
         responsibilities: m.responsibilities,
-        dependencies: [],
+        dependencies: m.imports || [],
+        coreFeatures: m.responsibilities.slice(0, 3),
+        boundaryConstraints: this.inferBoundaryConstraints(m),
+        protectedFiles: this.inferProtectedFiles(m),
+        publicInterfaces: m.exports || [],
+        internalDetails: [],
       })),
       businessFlows: [],
+      architectureDecisions: [],
+      technicalDebts: [],
     };
+  }
+
+  /**
+   * 推断模块的边界约束
+   */
+  private inferBoundaryConstraints(module: DetectedModule): string[] {
+    const constraints: string[] = [];
+
+    switch (module.type) {
+      case 'frontend':
+        constraints.push('不应直接访问数据库');
+        constraints.push('业务逻辑应通过 API 调用后端');
+        break;
+      case 'backend':
+        constraints.push('不应包含 UI 渲染逻辑');
+        constraints.push('数据验证应在 API 边界完成');
+        break;
+      case 'database':
+        constraints.push('不应包含业务逻辑');
+        constraints.push('数据模型变更需要迁移脚本');
+        break;
+      case 'service':
+        constraints.push('应保持无状态');
+        constraints.push('不应依赖特定框架');
+        break;
+      case 'infrastructure':
+        constraints.push('配置不应硬编码');
+        constraints.push('敏感信息应使用环境变量');
+        break;
+    }
+
+    return constraints;
+  }
+
+  /**
+   * 推断受保护的核心文件
+   */
+  private inferProtectedFiles(module: DetectedModule): string[] {
+    const protectedFiles: string[] = [];
+
+    // 寻找核心文件
+    for (const file of module.files) {
+      const fileName = path.basename(file);
+      const relativePath = file.replace(/\\/g, '/');
+
+      // index 文件通常是模块入口，需要保护
+      if (fileName.startsWith('index.')) {
+        protectedFiles.push(relativePath);
+      }
+      // 类型定义文件
+      if (fileName === 'types.ts' || fileName.endsWith('.d.ts')) {
+        protectedFiles.push(relativePath);
+      }
+      // 配置文件
+      if (fileName.includes('config') || fileName.includes('constants')) {
+        protectedFiles.push(relativePath);
+      }
+      // 核心类文件
+      if (fileName.includes('manager') || fileName.includes('service') || fileName.includes('client')) {
+        protectedFiles.push(relativePath);
+      }
+    }
+
+    return protectedFiles.slice(0, 10); // 最多返回 10 个
   }
 
   /**
@@ -560,24 +698,122 @@ ${context}
 
   /**
    * 用 AI 分析结果增强模块信息
+   *
+   * 增强版：填充核心功能、边界约束、受保护文件等语义信息
    */
   private enhanceModulesWithAI(codebase: CodebaseInfo): void {
     if (!codebase.aiAnalysis) return;
 
     for (const module of codebase.modules) {
-      const aiModule = codebase.aiAnalysis.moduleAnalysis.find(
-        m => m.name.toLowerCase() === module.name.toLowerCase()
-      );
+      // 尝试匹配 AI 分析的模块（支持模糊匹配）
+      const aiModule = this.findMatchingAIModule(module.name, codebase.aiAnalysis.moduleAnalysis);
 
       if (aiModule) {
+        // 基本信息
         module.aiDescription = aiModule.purpose;
+
         // 合并职责
         module.responsibilities = [...new Set([
           ...module.responsibilities,
           ...aiModule.responsibilities,
         ])];
+
+        // 核心功能（用于生成验收测试）
+        module.coreFeatures = aiModule.coreFeatures.length > 0
+          ? aiModule.coreFeatures
+          : module.responsibilities.slice(0, 3);
+
+        // 边界约束
+        module.boundaryConstraints = aiModule.boundaryConstraints.length > 0
+          ? aiModule.boundaryConstraints
+          : this.inferBoundaryConstraints(module);
+
+        // 受保护文件（结合 AI 分析和规则推断）
+        const aiProtectedFiles = aiModule.protectedFiles.map(f =>
+          this.resolveProtectedFilePath(module, f)
+        ).filter(Boolean) as string[];
+
+        const inferredProtectedFiles = this.inferProtectedFiles(module);
+
+        module.protectedFiles = [...new Set([
+          ...aiProtectedFiles,
+          ...inferredProtectedFiles,
+        ])].slice(0, 10);
+
+        // 合并导出信息
+        if (aiModule.publicInterfaces.length > 0) {
+          module.exports = [...new Set([
+            ...module.exports,
+            ...aiModule.publicInterfaces,
+          ])];
+        }
+      } else {
+        // AI 没有分析到这个模块，使用规则推断
+        module.coreFeatures = module.responsibilities.slice(0, 3);
+        module.boundaryConstraints = this.inferBoundaryConstraints(module);
+        module.protectedFiles = this.inferProtectedFiles(module);
       }
     }
+  }
+
+  /**
+   * 查找匹配的 AI 模块分析结果
+   *
+   * 支持模糊匹配：
+   * - 完全匹配：web/client === web/client
+   * - 部分匹配：client 匹配 web/client
+   * - 忽略大小写
+   */
+  private findMatchingAIModule(
+    moduleName: string,
+    aiModules: AIModuleAnalysis[]
+  ): AIModuleAnalysis | undefined {
+    const normalizedName = moduleName.toLowerCase();
+
+    // 1. 尝试完全匹配
+    const exactMatch = aiModules.find(
+      m => m.name.toLowerCase() === normalizedName
+    );
+    if (exactMatch) return exactMatch;
+
+    // 2. 尝试部分匹配（模块名的最后一部分）
+    const lastPart = normalizedName.split('/').pop() || normalizedName;
+    const partialMatch = aiModules.find(m => {
+      const aiLastPart = m.name.toLowerCase().split('/').pop() || m.name.toLowerCase();
+      return aiLastPart === lastPart;
+    });
+    if (partialMatch) return partialMatch;
+
+    // 3. 尝试包含匹配
+    const containsMatch = aiModules.find(m =>
+      m.name.toLowerCase().includes(lastPart) ||
+      lastPart.includes(m.name.toLowerCase().split('/').pop() || '')
+    );
+
+    return containsMatch;
+  }
+
+  /**
+   * 解析受保护文件的完整路径
+   *
+   * AI 可能只返回文件名，需要解析为完整路径
+   */
+  private resolveProtectedFilePath(module: DetectedModule, fileName: string): string | null {
+    // 如果已经是完整路径
+    if (fileName.includes('/') || fileName.includes('\\')) {
+      return fileName;
+    }
+
+    // 在模块文件中查找匹配的文件
+    for (const file of module.files) {
+      const baseName = path.basename(file);
+      if (baseName === fileName || baseName.startsWith(fileName.replace(/\.\w+$/, ''))) {
+        return file.replace(/\\/g, '/');
+      }
+    }
+
+    // 如果找不到，返回 null
+    return null;
   }
 
   // --------------------------------------------------------------------------
@@ -739,59 +975,128 @@ ${context}
   }
 
   /**
-   * 检测模块
+   * 检测模块（递归版本）
+   *
+   * 改进：支持递归识别子模块，如 src/web/client, src/blueprint 等
    */
   private detectModules(rootDir: string, structure: DirectoryNode): DetectedModule[] {
     const modules: DetectedModule[] = [];
 
-    // 常见的模块目录模式
-    const modulePatterns = [
-      { pattern: /^src$/i, type: 'backend' as const },
-      { pattern: /^lib$/i, type: 'backend' as const },
-      { pattern: /^api$/i, type: 'backend' as const },
-      { pattern: /^server$/i, type: 'backend' as const },
-      { pattern: /^client$/i, type: 'frontend' as const },
-      { pattern: /^web$/i, type: 'frontend' as const },
-      { pattern: /^app$/i, type: 'frontend' as const },
-      { pattern: /^pages$/i, type: 'frontend' as const },
-      { pattern: /^components$/i, type: 'frontend' as const },
-      { pattern: /^ui$/i, type: 'frontend' as const },
-      { pattern: /^database$/i, type: 'database' as const },
-      { pattern: /^db$/i, type: 'database' as const },
-      { pattern: /^models$/i, type: 'database' as const },
-      { pattern: /^services$/i, type: 'service' as const },
-      { pattern: /^utils$/i, type: 'service' as const },
-      { pattern: /^helpers$/i, type: 'service' as const },
-      { pattern: /^config$/i, type: 'infrastructure' as const },
-      { pattern: /^infra$/i, type: 'infrastructure' as const },
-      { pattern: /^deploy$/i, type: 'infrastructure' as const },
+    // 模块识别模式（支持嵌套路径）
+    const modulePatterns: Array<{
+      pattern: RegExp;
+      type: DetectedModule['type'];
+      isLeaf?: boolean; // 是否是叶子模块（不再递归）
+    }> = [
+      // 前端模块
+      { pattern: /^client$/i, type: 'frontend', isLeaf: true },
+      { pattern: /^frontend$/i, type: 'frontend', isLeaf: true },
+      { pattern: /^pages$/i, type: 'frontend', isLeaf: true },
+      { pattern: /^components$/i, type: 'frontend', isLeaf: true },
+      { pattern: /^ui$/i, type: 'frontend', isLeaf: true },
+      // 后端模块
+      { pattern: /^server$/i, type: 'backend', isLeaf: true },
+      { pattern: /^api$/i, type: 'backend', isLeaf: true },
+      { pattern: /^routes$/i, type: 'backend', isLeaf: true },
+      // 数据库模块
+      { pattern: /^database$/i, type: 'database', isLeaf: true },
+      { pattern: /^db$/i, type: 'database', isLeaf: true },
+      { pattern: /^models$/i, type: 'database', isLeaf: true },
+      // 服务/工具模块
+      { pattern: /^services$/i, type: 'service', isLeaf: true },
+      { pattern: /^utils$/i, type: 'service', isLeaf: true },
+      { pattern: /^helpers$/i, type: 'service', isLeaf: true },
+      { pattern: /^tools$/i, type: 'service', isLeaf: true },
+      // 基础设施模块
+      { pattern: /^config$/i, type: 'infrastructure', isLeaf: true },
+      { pattern: /^infra$/i, type: 'infrastructure', isLeaf: true },
+      { pattern: /^deploy$/i, type: 'infrastructure', isLeaf: true },
+      // 核心/通用模块（需要继续递归）
+      { pattern: /^core$/i, type: 'backend', isLeaf: true },
+      { pattern: /^lib$/i, type: 'backend', isLeaf: false },
+      { pattern: /^src$/i, type: 'backend', isLeaf: false },
+      { pattern: /^web$/i, type: 'frontend', isLeaf: false },
+      // 特殊模块（直接识别为独立模块）
+      { pattern: /^blueprint$/i, type: 'service', isLeaf: true },
+      { pattern: /^parser$/i, type: 'service', isLeaf: true },
+      { pattern: /^hooks$/i, type: 'service', isLeaf: true },
+      { pattern: /^plugins$/i, type: 'service', isLeaf: true },
+      { pattern: /^mcp$/i, type: 'service', isLeaf: true },
+      { pattern: /^streaming$/i, type: 'service', isLeaf: true },
+      { pattern: /^context$/i, type: 'service', isLeaf: true },
+      { pattern: /^session$/i, type: 'service', isLeaf: true },
+      { pattern: /^prompt$/i, type: 'service', isLeaf: true },
     ];
 
-    // 扫描顶层目录
-    if (structure.children) {
-      for (const child of structure.children) {
-        if (child.type !== 'directory') continue;
+    // 递归扫描函数
+    const scanDirectory = (node: DirectoryNode, depth: number, parentPath: string) => {
+      if (node.type !== 'directory' || !node.children) return;
+      if (depth > 3) return; // 最多递归 3 层
 
-        // 匹配模块模式
-        for (const { pattern, type } of modulePatterns) {
+      for (const child of node.children) {
+        if (child.type !== 'directory') continue;
+        if (this.config.ignoreDirs.includes(child.name)) continue;
+
+        // 检查是否匹配模块模式
+        let matched = false;
+        for (const { pattern, type, isLeaf } of modulePatterns) {
           if (pattern.test(child.name)) {
-            const module = this.analyzeModule(child, type);
-            if (module) {
-              modules.push(module);
+            matched = true;
+
+            if (isLeaf) {
+              // 叶子模块：直接添加
+              const module = this.analyzeModuleDeep(child, type, parentPath);
+              if (module && module.files.length > 0) {
+                modules.push(module);
+              }
+            } else {
+              // 非叶子模块：继续递归
+              scanDirectory(child, depth + 1, parentPath ? `${parentPath}/${child.name}` : child.name);
             }
             break;
           }
         }
+
+        // 如果没有匹配但有大量代码文件，也识别为模块
+        if (!matched && depth > 0) {
+          const files = this.collectFiles(child);
+          const codeFiles = files.filter(f =>
+            f.endsWith('.ts') || f.endsWith('.tsx') ||
+            f.endsWith('.js') || f.endsWith('.jsx') ||
+            f.endsWith('.py') || f.endsWith('.go')
+          );
+
+          // 如果有足够多的代码文件（>5个），识别为模块
+          if (codeFiles.length >= 5) {
+            const type = this.inferModuleType(child.name, codeFiles);
+            const module = this.analyzeModuleDeep(child, type, parentPath);
+            if (module) {
+              modules.push(module);
+            }
+          }
+        }
+      }
+    };
+
+    // 从根目录开始扫描
+    scanDirectory(structure, 0, '');
+
+    // 如果仍然没有检测到模块，尝试从 src 目录递归
+    if (modules.length === 0) {
+      const srcDir = structure.children?.find(c => c.name === 'src');
+      if (srcDir && srcDir.children) {
+        scanDirectory(srcDir, 1, 'src');
       }
     }
 
-    // 如果没有检测到标准模块结构，将整个 src 作为一个模块
+    // 如果还是没有，把 src 整体作为一个模块
     if (modules.length === 0) {
       const srcDir = structure.children?.find(c => c.name === 'src');
       if (srcDir) {
         modules.push({
           name: 'main',
           path: srcDir.path,
+          rootPath: 'src',
           type: 'backend',
           files: this.collectFiles(srcDir),
           exports: [],
@@ -806,12 +1111,45 @@ ${context}
   }
 
   /**
-   * 分析单个模块
+   * 根据文件内容推断模块类型
    */
-  private analyzeModule(node: DirectoryNode, type: DetectedModule['type']): DetectedModule | null {
-    const files = this.collectFiles(node);
+  private inferModuleType(name: string, files: string[]): DetectedModule['type'] {
+    // 检查文件扩展名和路径特征
+    const hasReactFiles = files.some(f => f.endsWith('.tsx') || f.endsWith('.jsx'));
+    const hasVueFiles = files.some(f => f.endsWith('.vue'));
+    const hasRoutes = files.some(f => f.includes('route') || f.includes('api'));
+    const hasModels = files.some(f => f.includes('model') || f.includes('schema'));
+    const hasConfig = files.some(f => f.includes('config') || f.includes('.env'));
 
+    if (hasReactFiles || hasVueFiles) return 'frontend';
+    if (hasModels) return 'database';
+    if (hasRoutes) return 'backend';
+    if (hasConfig) return 'infrastructure';
+
+    return 'service';
+  }
+
+  /**
+   * 深度分析模块（增强版）
+   *
+   * 改进：
+   * - 生成语义化的模块名称（如 web/client 而不是 client）
+   * - 设置正确的 rootPath
+   * - 提取更详细的文件结构信息
+   */
+  private analyzeModuleDeep(
+    node: DirectoryNode,
+    type: DetectedModule['type'],
+    parentPath: string
+  ): DetectedModule | null {
+    const files = this.collectFiles(node);
     if (files.length === 0) return null;
+
+    // 生成语义化的模块名称
+    const moduleName = parentPath ? `${parentPath}/${node.name}` : node.name;
+
+    // 计算相对于项目根目录的路径
+    const rootPath = node.path.replace(this.config.rootDir, '').replace(/^[\\\/]/, '').replace(/\\/g, '/');
 
     // 生成职责描述
     const responsibilities = this.inferResponsibilities(node.name, type, files);
@@ -819,16 +1157,89 @@ ${context}
     // 生成建议任务
     const suggestedTasks = this.generateSuggestedTasks(type, files);
 
+    // 提取导出的主要符号（从 index 文件）
+    const exports = this.extractExportsFromIndex(node);
+
+    // 提取依赖的其他模块
+    const imports = this.extractImportsFromFiles(files);
+
     return {
-      name: node.name,
+      name: moduleName,
       path: node.path,
+      rootPath,
       type,
       files,
-      exports: [],
-      imports: [],
+      exports,
+      imports,
       responsibilities,
       suggestedTasks,
     };
+  }
+
+  /**
+   * 从 index 文件提取导出的符号
+   */
+  private extractExportsFromIndex(node: DirectoryNode): string[] {
+    const exports: string[] = [];
+
+    if (!node.children) return exports;
+
+    // 查找 index 文件
+    const indexFile = node.children.find(c =>
+      c.type === 'file' &&
+      (c.name === 'index.ts' || c.name === 'index.js' || c.name === 'index.tsx')
+    );
+
+    if (indexFile) {
+      try {
+        const content = fs.readFileSync(indexFile.path, 'utf-8');
+        // 简单提取 export 语句
+        const exportMatches = content.matchAll(/export\s+(?:const|function|class|type|interface|enum)\s+(\w+)/g);
+        for (const match of exportMatches) {
+          exports.push(match[1]);
+        }
+        // 提取 export { xxx } from 语句
+        const reExportMatches = content.matchAll(/export\s*\{([^}]+)\}/g);
+        for (const match of reExportMatches) {
+          const names = match[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0].trim());
+          exports.push(...names.filter(n => n && !n.includes('*')));
+        }
+      } catch {
+        // 忽略读取错误
+      }
+    }
+
+    return [...new Set(exports)].slice(0, 20); // 最多返回 20 个
+  }
+
+  /**
+   * 从文件中提取导入的模块
+   */
+  private extractImportsFromFiles(files: string[]): string[] {
+    const imports = new Set<string>();
+
+    // 只检查前 10 个文件
+    for (const file of files.slice(0, 10)) {
+      if (!file.endsWith('.ts') && !file.endsWith('.tsx') && !file.endsWith('.js')) continue;
+
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+        // 提取相对路径导入
+        const importMatches = content.matchAll(/import\s+.*from\s+['"](\.[^'"]+)['"]/g);
+        for (const match of importMatches) {
+          const importPath = match[1];
+          // 提取模块名（如 ../core -> core, ../../web/client -> web/client）
+          const parts = importPath.split('/').filter(p => p !== '.' && p !== '..');
+          if (parts.length > 0) {
+            imports.add(parts[0]);
+          }
+        }
+      } catch {
+        // 忽略读取错误
+      }
+    }
+
+    return [...imports];
   }
 
   /**
@@ -1155,6 +1566,16 @@ ${context}
       priority: 'must',
     });
 
+    // 重要：从代码逆向生成的蓝图，直接标记为 approved 状态
+    // - approved 表示"已批准作为当前系统的正式文档"
+    // - 这样蓝图会显示为"当前活跃蓝图"，可以作为后续开发的基础
+    // - 与从需求正向生成的蓝图不同（后者需要 draft → review → approved 流程）
+    blueprint.status = 'approved';
+    blueprint.approvedAt = new Date();
+    blueprint.approvedBy = 'system'; // 系统自动批准
+    blueprint.source = 'codebase';   // 标记为代码逆向生成
+    blueprintManager.saveBlueprint(blueprint);
+
     return blueprintManager.getBlueprint(blueprint.id)!;
   }
 
@@ -1271,4 +1692,200 @@ export async function quickAnalyze(rootDir?: string): Promise<{
 }> {
   const analyzer = new CodebaseAnalyzer({ rootDir: rootDir || process.cwd() });
   return analyzer.analyzeAndGenerate();
+}
+
+// ============================================================================
+// 验收测试生成集成
+// ============================================================================
+
+import {
+  generateModuleAcceptanceTests,
+  type ModuleAcceptanceTestResult,
+  type AcceptanceTestGeneratorConfig,
+} from './acceptance-test-generator.js';
+import type { AcceptanceTest } from './types.js';
+
+/**
+ * 为代码库的所有模块生成验收测试
+ *
+ * 这是蓝图驱动开发的核心功能之一：
+ * - 基于模块的核心功能生成测试
+ * - 验收测试一旦生成，子 Agent 不能修改
+ * - 确保功能不被意外破坏
+ */
+export async function generateAllModuleAcceptanceTests(
+  codebase: CodebaseInfo,
+  options?: {
+    /** 测试框架 */
+    testFramework?: string;
+    /** 测试目录 */
+    testDirectory?: string;
+    /** 是否写入文件 */
+    writeFiles?: boolean;
+    /** 进度回调 */
+    onProgress?: (moduleName: string, index: number, total: number) => void;
+  }
+): Promise<{
+  success: boolean;
+  results: ModuleAcceptanceTestResult[];
+  totalTests: number;
+  writtenFiles?: string[];
+}> {
+  const config: AcceptanceTestGeneratorConfig = {
+    projectRoot: codebase.rootDir,
+    testFramework: options?.testFramework || 'vitest',
+    testDirectory: options?.testDirectory || '__tests__',
+  };
+
+  const results: ModuleAcceptanceTestResult[] = [];
+  let totalTests = 0;
+  const writtenFiles: string[] = [];
+
+  // 为每个模块生成验收测试
+  for (let i = 0; i < codebase.modules.length; i++) {
+    const module = codebase.modules[i];
+
+    // 进度回调
+    if (options?.onProgress) {
+      options.onProgress(module.name, i, codebase.modules.length);
+    }
+
+    // 查找对应的 AI 分析结果
+    const aiModuleAnalysis = codebase.aiAnalysis?.moduleAnalysis.find(
+      m => m.name.toLowerCase() === module.name.toLowerCase() ||
+           m.name.toLowerCase().endsWith(module.name.toLowerCase().split('/').pop() || '')
+    );
+
+    try {
+      const result = await generateModuleAcceptanceTests({
+        module,
+        aiAnalysis: aiModuleAnalysis,
+        projectName: codebase.name,
+        projectDescription: codebase.description,
+      }, config);
+
+      results.push(result);
+      totalTests += result.tests.length;
+
+      // 写入文件（可选）
+      if (options?.writeFiles && result.success && result.tests.length > 0) {
+        const written = await writeAcceptanceTestFiles(result.tests, codebase.rootDir);
+        writtenFiles.push(...written);
+      }
+    } catch (error) {
+      results.push({
+        success: false,
+        moduleName: module.name,
+        tests: [],
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    success: results.every(r => r.success),
+    results,
+    totalTests,
+    writtenFiles: options?.writeFiles ? writtenFiles : undefined,
+  };
+}
+
+/**
+ * 写入验收测试文件
+ */
+async function writeAcceptanceTestFiles(
+  tests: AcceptanceTest[],
+  projectRoot: string
+): Promise<string[]> {
+  const written: string[] = [];
+
+  for (const test of tests) {
+    if (!test.testFilePath || !test.testCode) continue;
+
+    try {
+      const fullPath = path.join(projectRoot, test.testFilePath);
+      const dir = path.dirname(fullPath);
+
+      // 确保目录存在
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // 写入测试文件
+      fs.writeFileSync(fullPath, test.testCode, 'utf-8');
+      written.push(test.testFilePath);
+    } catch (error) {
+      console.error(`Failed to write test file ${test.testFilePath}:`, error);
+    }
+  }
+
+  return written;
+}
+
+/**
+ * 一键分析并生成蓝图和验收测试
+ *
+ * 完整的蓝图驱动开发初始化流程：
+ * 1. 分析代码库结构
+ * 2. 使用 AI 生成语义分析
+ * 3. 生成蓝图
+ * 4. 生成任务树
+ * 5. 为每个模块生成验收测试
+ */
+export async function quickAnalyzeWithAcceptanceTests(
+  rootDir?: string,
+  options?: {
+    testFramework?: string;
+    testDirectory?: string;
+    writeFiles?: boolean;
+    onProgress?: (stage: string, detail?: string) => void;
+  }
+): Promise<{
+  codebase: CodebaseInfo;
+  blueprint: Blueprint;
+  taskTree: TaskTree;
+  acceptanceTests: {
+    results: ModuleAcceptanceTestResult[];
+    totalTests: number;
+    writtenFiles?: string[];
+  };
+}> {
+  const analyzer = new CodebaseAnalyzer({ rootDir: rootDir || process.cwd() });
+
+  // 1-4: 分析并生成蓝图
+  if (options?.onProgress) {
+    options.onProgress('analyzing', '分析代码库...');
+  }
+  const { codebase, blueprint, taskTree } = await analyzer.analyzeAndGenerate();
+
+  // 5: 生成验收测试
+  if (options?.onProgress) {
+    options.onProgress('generating-tests', '生成验收测试...');
+  }
+
+  const acceptanceTestsResult = await generateAllModuleAcceptanceTests(codebase, {
+    testFramework: options?.testFramework,
+    testDirectory: options?.testDirectory,
+    writeFiles: options?.writeFiles,
+    onProgress: (moduleName, index, total) => {
+      if (options?.onProgress) {
+        options.onProgress('generating-tests', `生成 ${moduleName} 的验收测试 (${index + 1}/${total})`);
+      }
+    },
+  });
+
+  if (options?.onProgress) {
+    options.onProgress('complete', `完成！生成了 ${acceptanceTestsResult.totalTests} 个验收测试`);
+  }
+
+  return {
+    codebase,
+    blueprint,
+    taskTree,
+    acceptanceTests: {
+      results: acceptanceTestsResult.results,
+      totalTests: acceptanceTestsResult.totalTests,
+      writtenFiles: acceptanceTestsResult.writtenFiles,
+    },
+  };
 }

@@ -460,6 +460,15 @@
   transform: translateY(0);
 }
 
+.footerButton.submit {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.footerButton.submit:hover {
+  background-color: #f57c00;
+}
+
 .footerButton.approve {
   background-color: #4caf50;
   color: #ffffff;
@@ -494,6 +503,17 @@
 
 .footerButton.delete:hover {
   background-color: #616161;
+}
+
+.infoMessage {
+  flex: 1;
+  padding: 10px 16px;
+  background-color: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 6px;
+  color: #4caf50;
+  font-size: 14px;
+  text-align: center;
 }
 
 /* 加载状态 */

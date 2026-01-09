@@ -14,6 +14,7 @@ import {
   Blueprint,
 } from './types.js';
 import { ClaudeClient, getDefaultClient } from '../core/client.js';
+import type { DetectedModule, AIModuleAnalysis } from './codebase-analyzer.js';
 
 /**
  * 验收测试生成配置
@@ -231,33 +232,116 @@ ${truncatedContent}
   }
 
   /**
+   * 尝试修复截断的 JSON
+   */
+  private tryFixTruncatedJSON(jsonStr: string): string {
+    let fixed = jsonStr.trim();
+    
+    // 计算未闭合的括号
+    let braces = 0;
+    let brackets = 0;
+    let inString = false;
+    let escape = false;
+    
+    for (const char of fixed) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (char === '\\') {
+        escape = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (char === '{') braces++;
+        else if (char === '}') braces--;
+        else if (char === '[') brackets++;
+        else if (char === ']') brackets--;
+      }
+    }
+    
+    // 如果在字符串中被截断，先闭合字符串
+    if (inString) {
+      fixed += '"';
+    }
+    
+    // 闭合未闭合的括号
+    while (brackets > 0) {
+      fixed += ']';
+      brackets--;
+    }
+    while (braces > 0) {
+      fixed += '}';
+      braces--;
+    }
+    
+    return fixed;
+  }
+
+  /**
    * 解析 AI 生成的验收测试
    */
   private parseAcceptanceTests(responseText: string, taskId: string): AcceptanceTest[] {
     try {
       // 提取 JSON 内容
       const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-      const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+      let jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+      
+      // 清理可能的前导/尾随内容
+      jsonStr = jsonStr.trim();
+      
+      // 找到 JSON 对象的开始
+      const jsonStart = jsonStr.indexOf('{');
+      if (jsonStart > 0) {
+        jsonStr = jsonStr.slice(jsonStart);
+      }
 
-      const parsed = JSON.parse(jsonStr);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError) {
+        // 尝试修复截断的 JSON
+        console.warn('Initial JSON parse failed, attempting to fix truncated JSON...');
+        const fixedJson = this.tryFixTruncatedJSON(jsonStr);
+        try {
+          parsed = JSON.parse(fixedJson);
+          console.log('Successfully parsed fixed JSON');
+        } catch (fixError) {
+          // 如果修复失败，记录详细信息
+          console.error('Failed to parse acceptance tests:', parseError);
+          console.error('JSON length:', jsonStr.length);
+          console.error('JSON preview (first 500 chars):', jsonStr.slice(0, 500));
+          console.error('JSON end (last 200 chars):', jsonStr.slice(-200));
+          return [];
+        }
+      }
+      
       const tests: AcceptanceTest[] = [];
 
       if (parsed.tests && Array.isArray(parsed.tests)) {
         for (const test of parsed.tests) {
-          const acceptanceTest: AcceptanceTest = {
-            id: uuidv4(),
-            taskId,
-            name: test.name || 'Unnamed Test',
-            description: test.description || '',
-            testCode: test.testCode || '',
-            testFilePath: test.testFilePath || '',
-            testCommand: test.testCommand || 'npm test',
-            criteria: this.parseCriteria(test.criteria || []),
-            generatedBy: 'queen',
-            generatedAt: new Date(),
-            runHistory: [],
-          };
-          tests.push(acceptanceTest);
+          try {
+            const acceptanceTest: AcceptanceTest = {
+              id: uuidv4(),
+              taskId,
+              name: test.name || 'Unnamed Test',
+              description: test.description || '',
+              testCode: test.testCode || '',
+              testFilePath: test.testFilePath || '',
+              testCommand: test.testCommand || 'npm test',
+              criteria: this.parseCriteria(test.criteria || []),
+              generatedBy: 'queen',
+              generatedAt: new Date(),
+              runHistory: [],
+            };
+            tests.push(acceptanceTest);
+          } catch (testError) {
+            console.warn('Failed to parse individual test, skipping:', testError);
+          }
         }
       }
 
@@ -393,4 +477,330 @@ export function createAcceptanceTestGenerator(
   config: AcceptanceTestGeneratorConfig
 ): AcceptanceTestGenerator {
   return new AcceptanceTestGenerator(config);
+}
+
+// ============================================================================
+// 基于模块的验收测试生成（新增）
+// ============================================================================
+
+/**
+ * 模块验收测试上下文
+ */
+export interface ModuleAcceptanceTestContext {
+  /** 检测到的模块 */
+  module: DetectedModule;
+  /** AI 分析的模块信息（可选） */
+  aiAnalysis?: AIModuleAnalysis;
+  /** 项目名称 */
+  projectName: string;
+  /** 项目描述 */
+  projectDescription?: string;
+}
+
+/**
+ * 模块验收测试结果
+ */
+export interface ModuleAcceptanceTestResult {
+  success: boolean;
+  /** 模块名 */
+  moduleName: string;
+  /** 生成的测试 */
+  tests: AcceptanceTest[];
+  /** 错误信息 */
+  error?: string;
+}
+
+/**
+ * 为模块生成验收测试
+ *
+ * 基于模块的核心功能（coreFeatures）生成测试，确保功能不被意外破坏
+ */
+export async function generateModuleAcceptanceTests(
+  context: ModuleAcceptanceTestContext,
+  config: AcceptanceTestGeneratorConfig
+): Promise<ModuleAcceptanceTestResult> {
+  const generator = new AcceptanceTestGenerator(config);
+  return generator.generateModuleTests(context);
+}
+
+// 在 AcceptanceTestGenerator 类中添加方法
+declare module './acceptance-test-generator.js' {
+  interface AcceptanceTestGenerator {
+    generateModuleTests(context: ModuleAcceptanceTestContext): Promise<ModuleAcceptanceTestResult>;
+  }
+}
+
+// 扩展 AcceptanceTestGenerator 原型
+AcceptanceTestGenerator.prototype.generateModuleTests = async function(
+  context: ModuleAcceptanceTestContext
+): Promise<ModuleAcceptanceTestResult> {
+  const { module, aiAnalysis, projectName, projectDescription } = context;
+
+  // 构建模块测试 prompt
+  const prompt = buildModuleTestPrompt(module, aiAnalysis, projectName, projectDescription, this['config']);
+
+  try {
+    const client = this['ensureClient']();
+
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个专业的软件测试专家。你需要为模块的核心功能生成验收测试，确保这些功能不会被意外破坏。'
+    );
+
+    // 解析响应
+    let responseText = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        responseText += block.text;
+      }
+    }
+
+    if (!responseText) {
+      return {
+        success: false,
+        moduleName: module.name,
+        tests: [],
+        error: 'AI 返回空响应',
+      };
+    }
+
+    const tests = parseModuleAcceptanceTests(responseText, module.name);
+
+    return {
+      success: true,
+      moduleName: module.name,
+      tests,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      moduleName: module.name,
+      tests: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
+/**
+ * 构建模块测试 prompt
+ */
+function buildModuleTestPrompt(
+  module: DetectedModule,
+  aiAnalysis: AIModuleAnalysis | undefined,
+  projectName: string,
+  projectDescription: string | undefined,
+  config: AcceptanceTestGeneratorConfig
+): string {
+  const testFramework = config.testFramework || 'vitest';
+  const testDir = config.testDirectory || '__tests__';
+
+  // 合并核心功能
+  const coreFeatures = [
+    ...(module.coreFeatures || []),
+    ...(aiAnalysis?.coreFeatures || []),
+  ].filter((f, i, arr) => arr.indexOf(f) === i);
+
+  // 合并边界约束
+  const boundaryConstraints = [
+    ...(module.boundaryConstraints || []),
+    ...(aiAnalysis?.boundaryConstraints || []),
+  ].filter((c, i, arr) => arr.indexOf(c) === i);
+
+  // 受保护文件
+  const protectedFiles = [
+    ...(module.protectedFiles || []),
+    ...(aiAnalysis?.protectedFiles || []),
+  ].filter((f, i, arr) => arr.indexOf(f) === i);
+
+  let prompt = `你是一个专业的软件测试专家，负责为模块的核心功能生成验收测试。
+
+## 项目信息
+- **项目名称**: ${projectName}
+${projectDescription ? `- **项目描述**: ${projectDescription}` : ''}
+
+## 模块信息
+- **模块名称**: ${module.name}
+- **模块路径**: ${module.rootPath}
+- **模块类型**: ${module.type}
+- **职责**: ${module.responsibilities.join(', ')}
+${module.aiDescription ? `- **AI 描述**: ${module.aiDescription}` : ''}
+
+## 核心功能（必须测试）
+${coreFeatures.length > 0 ? coreFeatures.map((f, i) => `${i + 1}. ${f}`).join('\n') : '- 暂无明确的核心功能'}
+
+## 边界约束（测试应验证不违反）
+${boundaryConstraints.length > 0 ? boundaryConstraints.map((c, i) => `${i + 1}. ${c}`).join('\n') : '- 暂无明确的边界约束'}
+
+## 受保护文件（核心文件，不应随意修改）
+${protectedFiles.length > 0 ? protectedFiles.slice(0, 5).map(f => `- ${f}`).join('\n') : '- 暂无明确的受保护文件'}
+
+## 模块导出
+${module.exports.length > 0 ? module.exports.slice(0, 10).map(e => `- ${e}`).join('\n') : '- 暂无导出信息'}
+
+## 要求
+1. 使用 ${testFramework} 测试框架
+2. 测试文件放在 ${testDir}/acceptance/${module.name.replace(/\//g, '-')}.acceptance.test.ts
+3. **重点测试核心功能**，确保每个核心功能都有对应的测试
+4. 测试应该是**验收级别**的，关注功能的正确性而非实现细节
+5. 生成的测试应该可以直接运行（假设模块已正确实现）
+6. 对于边界约束，生成验证测试（确保不违反约束）
+
+## 输出格式
+请以 JSON 格式输出验收测试：
+\`\`\`json
+{
+  "moduleName": "${module.name}",
+  "tests": [
+    {
+      "name": "测试名称（描述核心功能）",
+      "description": "测试描述",
+      "testFilePath": "${testDir}/acceptance/${module.name.replace(/\//g, '-')}.acceptance.test.ts",
+      "testCommand": "npx vitest run ${testDir}/acceptance/${module.name.replace(/\//g, '-')}.acceptance.test.ts",
+      "testCode": "完整的测试代码（使用 ${testFramework}）",
+      "criteria": [
+        {
+          "description": "验收标准描述",
+          "checkType": "output|behavior|performance|error_handling",
+          "expectedResult": "期望结果"
+        }
+      ],
+      "coreFeature": "对应的核心功能（用于追溯）"
+    }
+  ]
+}
+\`\`\`
+
+请只输出 JSON，不要有其他内容。`;
+
+  return prompt;
+}
+
+/**
+ * 解析模块验收测试
+ */
+function parseModuleAcceptanceTests(responseText: string, moduleName: string): AcceptanceTest[] {
+  try {
+    // 提取 JSON 内容
+    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+    let jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+
+    // 清理
+    jsonStr = jsonStr.trim();
+    const jsonStart = jsonStr.indexOf('{');
+    if (jsonStart > 0) {
+      jsonStr = jsonStr.slice(jsonStart);
+    }
+
+    // 尝试解析
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      // 尝试修复截断的 JSON
+      parsed = JSON.parse(tryFixTruncatedJSON(jsonStr));
+    }
+
+    const tests: AcceptanceTest[] = [];
+
+    if (parsed.tests && Array.isArray(parsed.tests)) {
+      for (const test of parsed.tests) {
+        try {
+          const acceptanceTest: AcceptanceTest = {
+            id: uuidv4(),
+            taskId: `module:${moduleName}`,
+            name: test.name || 'Unnamed Test',
+            description: test.description || '',
+            testCode: test.testCode || '',
+            testFilePath: test.testFilePath || '',
+            testCommand: test.testCommand || 'npm test',
+            criteria: parseCriteria(test.criteria || []),
+            generatedBy: 'queen',
+            generatedAt: new Date(),
+            runHistory: [],
+          };
+          tests.push(acceptanceTest);
+        } catch {
+          // 跳过解析失败的测试
+        }
+      }
+    }
+
+    return tests;
+  } catch (error) {
+    console.error('Failed to parse module acceptance tests:', error);
+    return [];
+  }
+}
+
+/**
+ * 解析验收标准
+ */
+function parseCriteria(rawCriteria: any[]): AcceptanceCriterion[] {
+  return rawCriteria.map(c => ({
+    id: uuidv4(),
+    description: c.description || '',
+    checkType: validateCheckType(c.checkType),
+    expectedResult: c.expectedResult || '',
+  }));
+}
+
+/**
+ * 验证检查类型
+ */
+function validateCheckType(
+  type: string
+): 'output' | 'behavior' | 'performance' | 'error_handling' {
+  const validTypes = ['output', 'behavior', 'performance', 'error_handling'];
+  return validTypes.includes(type)
+    ? (type as 'output' | 'behavior' | 'performance' | 'error_handling')
+    : 'behavior';
+}
+
+/**
+ * 尝试修复截断的 JSON
+ */
+function tryFixTruncatedJSON(jsonStr: string): string {
+  let fixed = jsonStr.trim();
+
+  let braces = 0;
+  let brackets = 0;
+  let inString = false;
+  let escape = false;
+
+  for (const char of fixed) {
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') braces++;
+      else if (char === '}') braces--;
+      else if (char === '[') brackets++;
+      else if (char === ']') brackets--;
+    }
+  }
+
+  if (inString) {
+    fixed += '"';
+  }
+
+  while (brackets > 0) {
+    fixed += ']';
+    brackets--;
+  }
+  while (braces > 0) {
+    fixed += '}';
+    braces--;
+  }
+
+  return fixed;
 }

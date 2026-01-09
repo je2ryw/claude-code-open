@@ -161,6 +161,21 @@ router.post('/blueprints/:id/reject', (req: Request, res: Response) => {
   }
 });
 
+/**
+ * 删除蓝图
+ */
+router.delete('/blueprints/:id', (req: Request, res: Response) => {
+  try {
+    const success = blueprintManager.deleteBlueprint(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+    }
+    res.json({ success: true, message: '蓝图已删除' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============================================================================
 // 一键分析 API
 // ============================================================================
@@ -239,22 +254,47 @@ router.get('/analyze/status', (req: Request, res: Response) => {
  * - 无代码：提示用户进行对话式需求调研
  */
 router.post('/generate', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  console.log('\n========================================');
+  console.log('[Blueprint Generate] 🚀 开始生成蓝图');
+  console.log('========================================');
+
   try {
     const { projectRoot = '.' } = req.body;
 
     // 将相对路径转为绝对路径，确保项目名称正确
     const absoluteRoot = path.resolve(process.cwd(), projectRoot);
+    console.log(`[Blueprint Generate] 📁 项目根目录: ${absoluteRoot}`);
 
-    // 先设置配置，然后分析
+    // Step 1: 设置配置
+    console.log('[Blueprint Generate] ⚙️  Step 1: 设置代码库分析器配置...');
     codebaseAnalyzer.setRootDir(absoluteRoot);
-    const codebaseInfo = await codebaseAnalyzer.analyze();
 
-    // 判断是否有足够的代码（至少有一个模块和一些文件）
+    // Step 2: 分析代码库
+    console.log('[Blueprint Generate] 🔍 Step 2: 分析代码库结构...');
+    const analyzeStart = Date.now();
+    const codebaseInfo = await codebaseAnalyzer.analyze();
+    console.log(`[Blueprint Generate]    ✓ 分析完成，耗时 ${Date.now() - analyzeStart}ms`);
+    console.log(`[Blueprint Generate]    - 项目名称: ${codebaseInfo.name}`);
+    console.log(`[Blueprint Generate]    - 检测到模块: ${codebaseInfo.modules.length} 个`);
+    console.log(`[Blueprint Generate]    - 总文件数: ${codebaseInfo.stats.totalFiles}`);
+    console.log(`[Blueprint Generate]    - 总代码行: ${codebaseInfo.stats.totalLines}`);
+    if (codebaseInfo.modules.length > 0) {
+      console.log(`[Blueprint Generate]    - 模块列表: ${codebaseInfo.modules.map(m => m.name).join(', ')}`);
+    }
+
+    // Step 3: 判断是否有足够的代码
+    console.log('[Blueprint Generate] 📊 Step 3: 判断代码库是否满足要求...');
     const hasCode = codebaseInfo.modules.length > 0 &&
                     codebaseInfo.stats.totalFiles > 5;
 
     if (!hasCode) {
-      // 没有代码，提示用户进行对话式需求调研
+      console.log('[Blueprint Generate] ⚠️  代码不足，需要对话式调研');
+      console.log(`[Blueprint Generate]    - 模块数: ${codebaseInfo.modules.length} (需要 > 0)`);
+      console.log(`[Blueprint Generate]    - 文件数: ${codebaseInfo.stats.totalFiles} (需要 > 5)`);
+      console.log(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+      console.log('========================================\n');
+
       return res.json({
         success: false,
         needsDialog: true,
@@ -263,13 +303,28 @@ router.post('/generate', async (req: Request, res: Response) => {
       });
     }
 
-    // 有代码，使用代码库分析器生成蓝图
+    console.log('[Blueprint Generate]    ✓ 代码库满足要求');
+
+    // Step 4: 生成蓝图和任务树
+    console.log('[Blueprint Generate] 🏗️  Step 4: 生成蓝图和任务树...');
+    const generateStart = Date.now();
     const result = await codebaseAnalyzer.analyzeAndGenerate({
       rootDir: absoluteRoot,
       projectName: codebaseInfo.name,
       projectDescription: codebaseInfo.description,
       granularity: 'medium',
     });
+    console.log(`[Blueprint Generate]    ✓ 生成完成，耗时 ${Date.now() - generateStart}ms`);
+    console.log(`[Blueprint Generate]    - 蓝图 ID: ${result.blueprint.id}`);
+    console.log(`[Blueprint Generate]    - 蓝图名称: ${result.blueprint.name}`);
+    console.log(`[Blueprint Generate]    - 模块数: ${result.blueprint.modules.length}`);
+    console.log(`[Blueprint Generate]    - 业务流程数: ${result.blueprint.businessProcesses.length}`);
+    console.log(`[Blueprint Generate]    - NFR 数: ${result.blueprint.nfrs?.length || 0}`);
+    console.log(`[Blueprint Generate]    - 任务树 ID: ${result.taskTree?.id || 'N/A'}`);
+
+    console.log('[Blueprint Generate] ✅ 蓝图生成成功！');
+    console.log(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+    console.log('========================================\n');
 
     res.json({
       success: true,
@@ -293,7 +348,13 @@ router.post('/generate', async (req: Request, res: Response) => {
       message: `成功从代码库生成蓝图！检测到 ${codebaseInfo.modules.length} 个模块，${codebaseInfo.stats.totalFiles} 个文件。`,
     });
   } catch (error: any) {
-    console.error('[Blueprint Generate] Error:', error);
+    console.error('\n========================================');
+    console.error('[Blueprint Generate] ❌ 生成蓝图失败！');
+    console.error('========================================');
+    console.error(`[Blueprint Generate] 错误信息: ${error.message}`);
+    console.error(`[Blueprint Generate] 错误堆栈:\n${error.stack}`);
+    console.error(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+    console.error('========================================\n');
     res.status(500).json({ success: false, error: error.message });
   }
 });

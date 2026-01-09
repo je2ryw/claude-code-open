@@ -118,6 +118,9 @@ export interface Blueprint {
 
   // 关联的任务树
   taskTreeId?: string;
+
+  // 蓝图来源（新增）
+  source?: 'requirement' | 'codebase';    // 需求生成 or 代码逆向生成
 }
 
 /**

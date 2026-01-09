@@ -245,11 +245,16 @@ export const blueprintApi = {
   },
 
   /**
-   * 删除蓝图（注意：后端没有这个接口，但需求中要求提供）
+   * 删除蓝图
    */
   deleteBlueprint: async (id: string): Promise<void> => {
-    // 目前后端没有删除接口
-    throw new Error('deleteBlueprint API not implemented yet');
+    const response = await fetch(`/api/blueprint/blueprints/${id}`, {
+      method: 'DELETE',
+    });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || '删除蓝图失败');
+    }
   },
 
   /**
