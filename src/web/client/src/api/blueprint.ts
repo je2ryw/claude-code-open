@@ -344,6 +344,79 @@ export const taskTreeApi = {
 };
 
 /**
+ * 文件树节点
+ */
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: FileTreeNode[];
+}
+
+/**
+ * 反向依赖信息
+ */
+export interface ReverseDependency {
+  path: string;
+  imports: string[];
+}
+
+/**
+ * 节点分析结果
+ */
+export interface NodeAnalysis {
+  path: string;
+  name: string;
+  type: 'file' | 'directory';
+  summary: string;
+  description: string;
+  responsibilities?: string[];
+  exports?: string[];
+  dependencies?: string[];
+  reverseDependencies?: ReverseDependency[];
+  techStack?: string[];
+  keyPoints?: string[];
+  children?: { name: string; description: string }[];
+  analyzedAt: string;
+}
+
+/**
+ * 文件内容响应
+ */
+export interface FileContent {
+  path: string;
+  content: string;
+  language: string;
+  size: number;
+  modifiedAt: string;
+}
+
+/**
+ * 文件操作 API 封装
+ */
+export const fileApi = {
+  /**
+   * 读取文件内容
+   */
+  getContent: async (path: string): Promise<FileContent> => {
+    const response = await fetch(`/api/blueprint/file-content?path=${encodeURIComponent(path)}`);
+    return handleResponse<FileContent>(response);
+  },
+
+  /**
+   * 保存文件内容
+   */
+  saveContent: async (path: string, content: string): Promise<{ path: string; size: number; modifiedAt: string }> => {
+    const response = await fetch('/api/blueprint/file-content', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    });
+    return handleResponse(response);
+  },
+};
+
+/**
  * 代码库分析 API 封装
  */
 export const codebaseApi = {
@@ -373,6 +446,26 @@ export const codebaseApi = {
     message: string;
   }> => {
     const response = await fetch('/api/blueprint/analyze/status');
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取目录树结构
+   */
+  getFileTree: async (root: string = 'src'): Promise<FileTreeNode> => {
+    const response = await fetch(`/api/blueprint/file-tree?root=${encodeURIComponent(root)}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 分析单个节点（文件或目录）
+   */
+  analyzeNode: async (path: string, blueprintId?: string): Promise<NodeAnalysis> => {
+    const response = await fetch('/api/blueprint/analyze-node', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, blueprintId }),
+    });
     return handleResponse(response);
   },
 };
@@ -602,5 +695,66 @@ export const requirementDialogApi = {
       method: 'DELETE',
     });
     await handleResponse(response);
+  },
+};
+
+/**
+ * 缓存管理 API 封装
+ */
+export const cacheApi = {
+  /**
+   * 获取缓存统计
+   */
+  getStats: async (): Promise<{
+    total: number;
+    size: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+  }> => {
+    const response = await fetch('/api/blueprint/cache/stats');
+    return handleResponse(response);
+  },
+
+  /**
+   * 清除所有缓存
+   */
+  clearAll: async (): Promise<{ message: string }> => {
+    const response = await fetch('/api/blueprint/cache', {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 清除过期缓存
+   */
+  clearExpired: async (): Promise<{ message: string }> => {
+    const response = await fetch('/api/blueprint/cache/expired', {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 清除指定路径的缓存
+   */
+  clearPath: async (path: string): Promise<{ message: string }> => {
+    const response = await fetch('/api/blueprint/cache/path', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 重置缓存统计
+   */
+  resetStats: async (): Promise<{ message: string }> => {
+    const response = await fetch('/api/blueprint/cache/reset-stats', {
+      method: 'POST',
+    });
+    return handleResponse(response);
   },
 };

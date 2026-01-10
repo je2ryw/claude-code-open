@@ -9,6 +9,7 @@ import { apiManager } from '../api-manager.js';
 import { authManager } from '../auth-manager.js';
 import { CheckpointManager } from '../checkpoint-manager.js';
 import blueprintApiRouter from './blueprint-api.js';
+import agentApiRouter from './agent-api.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,6 +24,10 @@ export function setupApiRoutes(app: Express, conversationManager: ConversationMa
   // ============ 蓝图系统 API ============
   // 注册蓝图API路由（供 SwarmConsole 使用）
   app.use('/api/blueprint', blueprintApiRouter);
+
+  // ============ Agent 系统 API ============
+  // 注册 Agent API 路由（提供 agent 元数据）
+  app.use('/api/agents', agentApiRouter);
 
   // 健康检查
   app.get('/api/health', (req: Request, res: Response) => {

@@ -595,7 +595,7 @@ export class BlueprintManager extends EventEmitter {
   /**
    * 保存蓝图
    */
-  private saveBlueprint(blueprint: Blueprint): void {
+  public saveBlueprint(blueprint: Blueprint): void {
     try {
       const filePath = getBlueprintFilePath(blueprint.id);
       const data = {

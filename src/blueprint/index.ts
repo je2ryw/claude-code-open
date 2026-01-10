@@ -67,6 +67,14 @@ export {
   type CodebaseStats,
 } from './codebase-analyzer.js';
 
+// 分析缓存管理
+export {
+  AnalysisCache,
+  analysisCache,
+  type CacheEntry,
+  type CacheStats,
+} from './analysis-cache.js';
+
 // 需求对话流程
 export {
   RequirementDialogManager,

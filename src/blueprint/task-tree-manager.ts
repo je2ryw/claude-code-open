@@ -141,9 +141,19 @@ export class TaskTreeManager extends EventEmitter {
   /**
    * 为任务树中的所有任务生成验收测试（蜂王先行）
    * 这是 TDD 的核心：测试在任务创建时就生成，而不是在执行时
+   *
+   * 注意：从代码逆向生成的蓝图 (source: 'codebase') 不需要生成验收测试
+   * 因为代码已经存在，验收测试用于验证新开发的代码，而不是已有的代码
    */
   private async generateAllAcceptanceTests(taskTree: TaskTree, blueprint: Blueprint): Promise<void> {
     if (!this.acceptanceTestGenerator) return;
+
+    // 从代码逆向生成的蓝图不需要验收测试
+    // 验收测试是用于 TDD 开发新功能的，已有代码不需要
+    if (blueprint.source === 'codebase') {
+      console.log('[TaskTreeManager] 跳过验收测试生成：蓝图从现有代码生成，不需要 TDD 验收测试');
+      return;
+    }
 
     this.emit('acceptance-tests:generation-started', { treeId: taskTree.id });
 

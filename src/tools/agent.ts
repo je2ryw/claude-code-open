@@ -18,7 +18,7 @@ import {
   type HookInput
 } from '../hooks/index.js';
 import type { Message } from '../types/index.js';
-import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
+import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, CODE_ANALYZER_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
 
 // 代理类型定义（参照官方）
 export interface AgentTypeDefinition {
@@ -125,6 +125,14 @@ export const BUILT_IN_AGENT_TYPES: AgentTypeDefinition[] = [
     tools: ['*'],
     forkContext: false,
     getSystemPrompt: () => BLUEPRINT_WORKER_PROMPT,
+  },
+  {
+    agentType: 'code-analyzer',
+    whenToUse: 'Code analyzer agent for analyzing files and directories. Use this when you need to analyze code structure, dependencies, exports, and relationships. Returns structured JSON with semantic information.',
+    tools: ['Read', 'Grep', 'Glob', 'Bash','LSP'],
+    forkContext: false,
+    model: 'opus',  // 使用快速模型
+    getSystemPrompt: () => CODE_ANALYZER_PROMPT,
   },
 ];
 

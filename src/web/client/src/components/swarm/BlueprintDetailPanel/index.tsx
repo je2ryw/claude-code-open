@@ -547,3 +547,6 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
 };
 
 export default BlueprintDetailPanel;
+
+// 同时导出内容组件
+export { BlueprintDetailContent } from './BlueprintDetailContent';
