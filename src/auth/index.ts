@@ -1518,3 +1518,16 @@ export {
   migrateToKeychain,
   getKeychainStatus,
 } from './keychain.js';
+
+// ============ Help Improve Claude 设置 ============
+
+// 重新导出设置相关函数
+export {
+  fetchHelpImproveClaudeSetting,
+  isHelpImproveClaudeEnabled,
+  isCodeHaikuEnabled,
+  clearSettingsCache,
+  getCachedSettings,
+  fetchWithOAuthRetry,
+  type HelpImproveClaudeSettings,
+} from './settings.js';

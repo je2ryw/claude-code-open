@@ -8,11 +8,20 @@
  * - 权限记忆选项 (once, session, always, never)
  * - 危险操作警告
  * - 快捷键支持 (y/n/s/a/A/N)
+ *
+ * v2.1.0 改进:
+ * - Tab hint 移到底部 footer
+ * - 关闭对话框后恢复光标
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import * as path from 'path';
+import { restoreCursorAfterDialog } from '../utils/terminal.js';
+import type { QuickPermissionMode } from './Input.js';
+
+// 重新导出 QuickPermissionMode 类型以便其他模块使用
+export type { QuickPermissionMode };
 
 // 权限请求类型
 export type PermissionType =
@@ -58,6 +67,10 @@ export interface PermissionPromptProps {
   rememberedPatterns?: string[];
 }
 
+// Shift+Tab 双击检测间隔（毫秒）
+// 官方 v2.1.2: 一次 Shift+Tab = Auto-Accept Edits, 两次 = Plan Mode
+const SHIFT_TAB_DOUBLE_PRESS_INTERVAL = 500;
+
 export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
   toolName,
   type,
@@ -68,6 +81,19 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
   rememberedPatterns = [],
 }) => {
   const [selected, setSelected] = useState(0);
+
+  // Shift+Tab 快速模式状态
+  const [quickMode, setQuickMode] = useState<QuickPermissionMode>('default');
+  const lastShiftTabTimeRef = useRef<number>(0);
+  const shiftTabCountRef = useRef<number>(0);
+
+  // v2.1.0 改进：组件卸载时恢复光标
+  useEffect(() => {
+    return () => {
+      // 确保在对话框关闭后光标可见
+      restoreCursorAfterDialog();
+    };
+  }, []);
 
   // 定义可用选项
   const options = useMemo(() => {
@@ -111,8 +137,61 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
     return opts;
   }, []);
 
+  // 处理 Shift+Tab 快速模式切换
+  // 官方行为：一次 = Auto-Accept Edits, 两次 = Plan Mode
+  const handleShiftTab = useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastPress = now - lastShiftTabTimeRef.current;
+
+    if (timeSinceLastPress < SHIFT_TAB_DOUBLE_PRESS_INTERVAL) {
+      // 连续按下 - 增加计数
+      shiftTabCountRef.current += 1;
+    } else {
+      // 超时 - 重置计数
+      shiftTabCountRef.current = 1;
+    }
+
+    lastShiftTabTimeRef.current = now;
+
+    // 根据按下次数决定模式
+    if (shiftTabCountRef.current === 1) {
+      // 一次 Shift+Tab -> Auto-Accept Edits
+      setQuickMode('acceptEdits');
+      // 直接执行 acceptEdits 选项
+      onDecision({
+        allowed: true,
+        scope: 'session', // 会话级别的 acceptEdits
+        remember: false,
+        quickMode: 'acceptEdits',
+      } as PermissionDecision & { quickMode: QuickPermissionMode });
+    } else if (shiftTabCountRef.current >= 2) {
+      // 两次 Shift+Tab -> Plan Mode
+      setQuickMode('plan');
+      // 重置计数，避免继续累加
+      shiftTabCountRef.current = 0;
+      onDecision({
+        allowed: true,
+        scope: 'session',
+        remember: false,
+        quickMode: 'plan',
+      } as PermissionDecision & { quickMode: QuickPermissionMode });
+    }
+  }, [onDecision]);
+
   // 处理用户输入
   useInput((input, key) => {
+    // 检测 Shift+Tab (转义序列 \x1b[Z 或 key.tab && key.shift)
+    if (key.tab && key.shift) {
+      handleShiftTab();
+      return;
+    }
+
+    // 备用检测：某些终端发送 \x1b[Z 作为 Shift+Tab
+    if (input === '\x1b[Z') {
+      handleShiftTab();
+      return;
+    }
+
     if (key.upArrow || key.leftArrow) {
       setSelected((prev) => (prev > 0 ? prev - 1 : options.length - 1));
     } else if (key.downArrow || key.rightArrow) {
@@ -312,12 +391,36 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
         })}
       </Box>
 
-      {/* 提示 */}
-      <Box marginTop={1}>
-        <Text color="gray" dimColor>
-          ↑/↓ to navigate · enter to select · or type shortcut key
-        </Text>
+      {/* Footer 提示区域 - v2.1.0 改进：Tab hint 移到底部 */}
+      <Box marginTop={2} flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+        {/* 主操作提示 */}
+        <Box justifyContent="space-between">
+          <Text color="gray" dimColor>
+            ↑/↓ navigate · enter select · shortcut key
+          </Text>
+          <Text color="cyan" dimColor>
+            Tab: auto-complete
+          </Text>
+        </Box>
+        {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 功能 */}
+        <Box justifyContent="space-between">
+          <Text color="gray" dimColor>
+            y: allow once · n: deny · s: session
+          </Text>
+          <Text color="cyan" dimColor>
+            Shift+Tab: mode switch
+          </Text>
+        </Box>
       </Box>
+
+      {/* 当前快捷模式指示 */}
+      {quickMode !== 'default' && (
+        <Box marginTop={1}>
+          <Text color="green" bold>
+            {quickMode === 'acceptEdits' ? '✓ Auto-accept edits mode' : '✓ Plan mode'}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 };

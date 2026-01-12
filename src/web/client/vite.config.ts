@@ -21,10 +21,17 @@ export default defineConfig({
         ws: true,
       },
     },
+    fs: {
+      // 允许访问 client 目录外的 shared 目录
+      allow: [
+        path.resolve(__dirname, '..'),
+      ],
+    },
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      '@shared': path.resolve(__dirname, '../shared'),
     },
   },
 });

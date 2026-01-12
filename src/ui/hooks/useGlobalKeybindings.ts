@@ -6,6 +6,7 @@
 import { useInput } from 'ink';
 import { useCallback, useRef, useState } from 'react';
 import type { UserConfig } from '../../config/index.js';
+import { isBackgroundTasksDisabled } from '../../utils/env-check.js';
 
 export interface GlobalKeybinding {
   key: string;
@@ -123,6 +124,7 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
       handler: () => onBackgroundTask?.(),
       description: 'Move current task to background (Ctrl+B)',
       category: 'System',
+      enabled: () => !isBackgroundTasksDisabled(),
     },
   ];
 

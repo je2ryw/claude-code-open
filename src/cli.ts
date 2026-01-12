@@ -2,7 +2,7 @@
 
 /**
  * Claude Code CLI 入口点
- * 还原版本 2.0.76 - 完整功能版
+ * 还原版本 2.1.4 - 完整功能版
  */
 
 import { Command, Option } from 'commander';
@@ -24,18 +24,17 @@ import { runHooks } from './hooks/index.js';
 import { scheduleCleanup } from './session/cleanup.js';
 import { createPluginCommand } from './plugins/cli.js';
 import type { PermissionMode, OutputFormat, InputFormat } from './types/index.js';
+import { VERSION_FULL } from './version.js';
 
 // 工作目录列表
 const additionalDirectories: string[] = [];
-
-const VERSION = '2.0.76-restored';
 
 const program = new Command();
 
 program
   .name('claude')
   .description('Claude Code - starts an interactive session by default, use -p/--print for non-interactive output')
-  .version(VERSION, '-v, --version', 'Output the version number');
+  .version(VERSION_FULL, '-v, --version', 'Output the version number');
 
 // 主命令 - 交互模式
 program
@@ -487,7 +486,7 @@ async function runTextInterface(
   const LOGO = `
 ╭─────────────────────────────────────────────────────╮
 │                                                     │
-│   ${claudeColor('Claude Code')} ${chalk.gray('v' + VERSION)}                           │
+│   ${claudeColor('Claude Code')} ${chalk.gray('v' + VERSION_FULL)}                           │
 │                                                     │
 │        ${claudeColor('*')}       ${claudeColor('*')}                                 │
 │      ${claudeColor('*')}  ${claudeColor(' ▐')}${claudeColor.bgBlack('▛███▜')}${claudeColor('▌')}  ${claudeColor('*')}                            │
@@ -1069,7 +1068,7 @@ program
       }
 
       // 检查更新
-      console.log(chalk.cyan(`Current version: ${VERSION}\n`));
+      console.log(chalk.cyan(`Current version: ${VERSION_FULL}\n`));
       console.log(chalk.gray('Checking for updates...\n'));
 
       const updateInfo = await checkForUpdates({

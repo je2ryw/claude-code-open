@@ -8,6 +8,11 @@ import * as path from 'path';
 import * as os from 'os';
 import * as child_process from 'child_process';
 import { detectProvider, validateProviderConfig } from '../../providers/index.js';
+import {
+  permissionRuleManager,
+  formatRule,
+  formatRuleSource,
+} from '../../permissions/rule-parser.js';
 
 /**
  * 单个诊断检查结果
@@ -80,6 +85,9 @@ export async function runDiagnostics(options: DiagnosticsOptions = {}): Promise<
 
   // 配置检查
   results.push(await checkConfigurationFiles());
+
+  // 权限规则检查
+  results.push(await checkPermissionRules());
 
   // 网络检查
   results.push(await checkNetworkConnectivity());
@@ -455,6 +463,61 @@ async function checkConfigurationFiles(): Promise<DiagnosticResult> {
       name: '配置文件',
       status: 'pass',
       message: '使用默认配置',
+    };
+  }
+}
+
+/**
+ * 检查权限规则配置
+ */
+async function checkPermissionRules(): Promise<DiagnosticResult> {
+  try {
+    const stats = permissionRuleManager.getStats();
+    const result = permissionRuleManager.detectUnreachable();
+
+    // 如果没有配置规则
+    if (stats.totalRules === 0) {
+      return {
+        category: '配置',
+        name: '权限规则',
+        status: 'pass',
+        message: '使用默认权限设置',
+      };
+    }
+
+    // 如果发现不可达规则
+    if (result.hasUnreachable) {
+      const unreachableCount = result.unreachableRules.length;
+      const details = result.unreachableRules.map(ur => {
+        return `${formatRule(ur.rule)} (${ur.rule.type}) blocked by ${formatRule(ur.blockedBy)} from ${formatRuleSource(ur.blockedBy.source)}`;
+      }).join('; ');
+
+      const fixes = result.unreachableRules.map(ur => ur.fixSuggestion).join('; ');
+
+      return {
+        category: '配置',
+        name: '权限规则',
+        status: 'warn',
+        message: `发现 ${unreachableCount} 个不可达规则`,
+        details: details,
+        fix: fixes,
+      };
+    }
+
+    // 规则配置正常
+    return {
+      category: '配置',
+      name: '权限规则',
+      status: 'pass',
+      message: `${stats.totalRules} 个规则 (${stats.allowRules} 允许, ${stats.denyRules} 拒绝)`,
+    };
+  } catch (err) {
+    return {
+      category: '配置',
+      name: '权限规则',
+      status: 'warn',
+      message: '无法检查权限规则',
+      details: String(err),
     };
   }
 }

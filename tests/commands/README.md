@@ -143,7 +143,7 @@ function createMockContext(args: string[] = []): CommandContext {
       modelDisplayName: 'Claude Sonnet 4.5',
       apiType: 'anthropic',
       cwd: '/test/dir',
-      version: '2.0.76',
+      version: '2.1.4',
     },
     ui: {
       addMessage: vi.fn(),

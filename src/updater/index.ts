@@ -8,6 +8,14 @@ import * as path from 'path';
 import * as https from 'https';
 import * as child_process from 'child_process';
 import { EventEmitter } from 'events';
+import {
+  getPackageManagerInfo,
+  getUpdateInstructions,
+  detectPackageManager,
+  detectInstallationType,
+  type PackageManagerType,
+  type InstallationType,
+} from '../utils/package-manager.js';
 
 // 版本信息
 export interface VersionInfo {
@@ -47,6 +55,9 @@ export interface UpdateCheckResult {
   latestVersion: string;
   versionInfo?: VersionInfo;
   changelog?: string[];
+  packageManager?: PackageManagerType;
+  installationType?: InstallationType;
+  updateCommand?: string;
 }
 
 // 更新选项
@@ -66,6 +77,9 @@ export interface UpdateInfo {
   hasUpdate: boolean;
   changelog?: string[];
   versionInfo?: VersionInfo;
+  packageManager?: PackageManagerType;
+  installationType?: InstallationType;
+  updateCommand?: string;
 }
 
 // 自动更新管理器
@@ -156,12 +170,18 @@ export class UpdateManager extends EventEmitter {
         this.emit('update-not-available');
       }
 
+      // 获取包管理器信息
+      const pmInfo = getPackageManagerInfo();
+
       return {
         hasUpdate,
         currentVersion: this.currentVersion,
         latestVersion,
         versionInfo,
         changelog,
+        packageManager: pmInfo.packageManager,
+        installationType: pmInfo.installationType,
+        updateCommand: pmInfo.updateCommand,
       };
     } catch (err) {
       this.status = 'error';
@@ -493,6 +513,9 @@ export async function checkForUpdates(options: UpdateConfig = {}): Promise<Updat
     hasUpdate: result.hasUpdate,
     changelog: result.changelog,
     versionInfo: result.versionInfo,
+    packageManager: result.packageManager,
+    installationType: result.installationType,
+    updateCommand: result.updateCommand,
   };
 }
 
@@ -595,3 +618,63 @@ export async function installVersion(version: string): Promise<boolean> {
 
 // 默认实例
 export const updateManager = new UpdateManager();
+
+// ============================================================================
+// 包管理器相关导出
+// ============================================================================
+
+/**
+ * 获取当前安装的包管理器信息
+ * 对应官方的 UHA() 函数
+ */
+export function getInstallationInfo(): {
+  packageManager: PackageManagerType;
+  installationType: InstallationType;
+  updateCommand: string;
+  canAutoUpdate: boolean;
+} {
+  const info = getPackageManagerInfo();
+  return {
+    packageManager: info.packageManager,
+    installationType: info.installationType,
+    updateCommand: info.updateCommand,
+    canAutoUpdate: info.canAutoUpdate,
+  };
+}
+
+/**
+ * 检查是否为包管理器安装（homebrew/winget）
+ * 如果是，则不支持自动更新
+ */
+export function isPackageManagerInstall(): boolean {
+  const installationType = detectInstallationType();
+  return installationType === 'package-manager';
+}
+
+/**
+ * 获取适合当前安装方式的更新命令
+ * @deprecated 使用 getPackageManagerInfo().updateCommand 替代
+ */
+export function getUpdateCommandForInstallation(): string {
+  const info = getPackageManagerInfo();
+  return info.updateCommand;
+}
+
+/**
+ * 显示更新说明（用于 update 命令输出）
+ */
+export function showUpdateInstructions(): void {
+  const pmInfo = getPackageManagerInfo();
+  const instructions = getUpdateInstructions(pmInfo.packageManager);
+
+  console.log('');
+  console.log(`Claude is managed by ${instructions.managerName}.`);
+  console.log(instructions.description);
+  console.log('');
+  console.log('To update, run:');
+  console.log(`  ${instructions.command}`);
+  console.log('');
+}
+
+// 重新导出包管理器类型
+export type { PackageManagerType, InstallationType };

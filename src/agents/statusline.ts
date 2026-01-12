@@ -373,7 +373,7 @@ printf "Custom: %s in %s" "$model" "$dir"
         current_dir: process.cwd(),
         project_dir: process.cwd(),
       },
-      version: '2.0.76',
+      version: '2.1.4',
       output_style: {
         name: 'default',
       },

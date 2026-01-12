@@ -6,7 +6,7 @@
  * hooks, MCP servers, plugins, UI preferences, and more.
  *
  * @module types/config
- * @version 2.0.76
+ * @version 2.1.4
  */
 
 // ============================================================================
@@ -1162,7 +1162,7 @@ export interface ClaudeConfig {
 
   /**
    * Attribution settings for git commits and pull requests
-   * @since 2.0.76
+   * @since 2.1.4
    */
   attribution?: AttributionSettings;
 
@@ -1413,7 +1413,7 @@ export interface ConfigMigration {
  * Default configuration values
  */
 export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
-  version: '2.0.76',
+  version: '2.1.4',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,
@@ -1432,7 +1432,7 @@ export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
 /**
  * Environment variable names (完整的 130+ 个变量)
  *
- * 来源：从官方 @anthropic-ai/claude-code v2.0.76 提取
+ * 来源：从官方 @anthropic-ai/claude-code v2.1.4 提取
  * 提取日期：2026-01-07
  */
 export const ENV_VAR_NAMES = {

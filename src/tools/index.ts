@@ -29,7 +29,7 @@ import { NotebookEditTool } from './notebook.js';
 import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
 import { MCPSearchTool } from './mcp.js';
 import { AskUserQuestionTool } from './ask.js';
-import { SkillTool, initializeSkills } from './skill.js';
+import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
 import { LSPTool } from './lsp.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
@@ -67,7 +67,12 @@ export function registerAllTools(): void {
   toolRegistry.register(new AskUserQuestionTool());
 
   // 9. Skill 系统 (1个)
-  initializeSkills().catch(err => console.error('Failed to initialize skills:', err));
+  initializeSkills()
+    .then(() => {
+      // 启用技能热重载（2.1.0 新功能）
+      enableSkillHotReload();
+    })
+    .catch(err => console.error('Failed to initialize skills:', err));
   toolRegistry.register(new SkillTool());
 
   // 10. 代码智能 (1个)

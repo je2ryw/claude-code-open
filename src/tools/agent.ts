@@ -1,10 +1,11 @@
 /**
  * Agent 工具 (Task)
- * 子代理管理 - 参照官方 Claude Code CLI v2.0.76 实现
+ * 子代理管理 - 参照官方 Claude Code CLI v2.1.4 实现
  */
 
 import { BaseTool } from './base.js';
 import type { AgentInput, ToolResult, ToolDefinition } from '../types/index.js';
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,7 +66,7 @@ export function resolveAgentModel(
 ): string | undefined {
   // 如果指定了 inherit，使用父模型
   if (modelParam === 'inherit') {
-    return parentModelContext || agentDefaultModel || 'sonnet';
+    return parentModelContext || agentDefaultModel;
   }
 
   // 如果明确指定了模型，使用指定的
@@ -83,8 +84,8 @@ export function resolveAgentModel(
     return parentModelContext;
   }
 
-  // 最终默认使用 sonnet
-  return undefined; // 让 ConversationLoop 使用它自己的默认值
+  // 最终默认返回 undefined（让 ConversationLoop 使用它自己的默认值 'sonnet'）
+  return undefined;
 }
 
 // 内置代理类型
@@ -357,6 +358,18 @@ export function getAgentTypeDefinition(agentType: string): AgentTypeDefinition |
 // 初始化时加载所有代理
 loadAllAgents();
 
+/**
+ * 生成后台任务相关提示文本（条件性）
+ * 根据 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS 环境变量决定是否显示
+ */
+function getAgentBackgroundTasksPrompt(): string {
+  if (isBackgroundTasksDisabled()) {
+    return '';
+  }
+  return `
+- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will need to use TaskOutput to retrieve its results once it's done. You can continue to work while background agents run - When you need their results to continue you can use TaskOutput in blocking mode to pause and wait for their results.`;
+}
+
 export class TaskTool extends BaseTool<AgentInput, ToolResult> {
   name = 'Task';
   description = `Launch a new agent to handle complex, multi-step tasks autonomously.
@@ -378,8 +391,7 @@ When NOT to use the Task tool:
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
 - Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
-- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will need to use TaskOutput to retrieve its results once it's done. You can continue to work while background agents run - When you need their results to continue you can use TaskOutput in blocking mode to pause and wait for their results.
+- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.${getAgentBackgroundTasksPrompt()}
 - Agents can be resumed using the \`resume\` parameter by passing the agent ID from a previous invocation. When resumed, the agent continues with its full previous context preserved. When NOT resuming, each invocation starts fresh and you should provide a detailed task description with all necessary context.
 - When the agent is done, it will return a single message back to you along with its agent ID. You can use this ID to resume the agent later if needed for follow-up work.
 - Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.
@@ -725,6 +737,8 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         fallbackModel,
         // 传递调试配置
         debug,
+        // 标记为 sub-agent，防止覆盖全局父模型上下文
+        isSubAgent: true,
       };
 
       // 创建子对话循环（动态导入避免循环依赖）

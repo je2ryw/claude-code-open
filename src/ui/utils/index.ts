@@ -4,3 +4,4 @@
 
 export * from './syntaxHighlight.js';
 export * from './history-manager.js';
+export * from './terminal.js';

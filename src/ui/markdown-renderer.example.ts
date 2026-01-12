@@ -90,7 +90,7 @@ for i in range(10):
 \`\`\`json
 {
   "name": "claude-code-open",
-  "version": "2.0.76",
+  "version": "2.1.4",
   "description": "Open source Claude Code CLI",
   "dependencies": {
     "chalk": "^5.3.0",

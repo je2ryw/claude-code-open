@@ -97,12 +97,14 @@ export function applyCompletion(
   return { newText, newCursor };
 }
 
-// 重新导出类型
+// 重新导出类型和工具函数
 export type {
   CompletionItem,
   CompletionContext,
   CompletionResult,
 } from './types.js';
+
+export { truncateDescription } from './types.js';
 
 // 重新导出命令列表
 export { ALL_COMMANDS } from './commands.js';

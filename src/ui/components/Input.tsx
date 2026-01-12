@@ -6,12 +6,15 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { getCompletions, applyCompletion, type CompletionItem } from '../autocomplete/index.js';
+import { getCompletions, applyCompletion, type CompletionItem, truncateDescription } from '../autocomplete/index.js';
 import { getHistoryManager } from '../utils/history-manager.js';
 import { HistorySearch } from './HistorySearch.js';
 
 // 官方 claude 颜色
 const CLAUDE_COLOR = '#D77757';
+
+// 权限快捷模式类型 - 官方 v2.1.2
+export type QuickPermissionMode = 'default' | 'acceptEdits' | 'plan';
 
 interface InputProps {
   prompt?: string;
@@ -21,10 +24,17 @@ interface InputProps {
   suggestion?: string;
   /** 双击 ESC 触发 Rewind 的回调 */
   onRewindRequest?: () => void;
+  /** Shift+Tab 权限模式切换回调 - 官方 v2.1.2 */
+  onPermissionModeChange?: (mode: QuickPermissionMode) => void;
+  /** 当前权限模式 */
+  permissionMode?: QuickPermissionMode;
 }
 
 // 双击检测间隔（毫秒）
 const DOUBLE_PRESS_INTERVAL = 300;
+
+// Shift+Tab 双击检测间隔（毫秒）- 官方 v2.1.2
+const SHIFT_TAB_DOUBLE_PRESS_INTERVAL = 500;
 
 export const Input: React.FC<InputProps> = ({
   prompt = '> ',
@@ -33,6 +43,8 @@ export const Input: React.FC<InputProps> = ({
   disabled = false,
   suggestion,
   onRewindRequest,
+  onPermissionModeChange,
+  permissionMode = 'default',
 }) => {
   const [value, setValue] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -47,9 +59,10 @@ export const Input: React.FC<InputProps> = ({
   const [vimNormalMode, setVimNormalMode] = useState(vimModeEnabled);
   const [undoStack, setUndoStack] = useState<Array<{ value: string; cursor: number }>>([]);
   const [lastDeletedText, setLastDeletedText] = useState('');
-  const [pendingCommand, setPendingCommand] = useState(''); // For multi-key commands like dd
+  const [pendingCommand, setPendingCommand] = useState(''); // For multi-key commands like dd, >>, etc.
   const [yankRegister, setYankRegister] = useState<string>(''); // Yank register for y/p
   const [replaceMode, setReplaceMode] = useState(false); // For 'r' command
+  const [lastFind, setLastFind] = useState<{ type: 'f' | 'F' | 't' | 'T'; char: string } | null>(null); // For ; and , repeat
 
   // IME (输入法编辑器) 组合状态支持
   const [isComposing, setIsComposing] = useState(false);
@@ -62,6 +75,10 @@ export const Input: React.FC<InputProps> = ({
   const [searchIndex, setSearchIndex] = useState(0);
   // 双击 ESC 检测
   const lastEscPressTimeRef = React.useRef<number>(0);
+
+  // Shift+Tab 双击检测 - 官方 v2.1.2: 一次 = Auto-Accept, 两次 = Plan Mode
+  const lastShiftTabTimeRef = React.useRef<number>(0);
+  const shiftTabCountRef = React.useRef<number>(0);
 
   const [searchOriginalValue, setSearchOriginalValue] = useState('');
   const historyManager = useMemo(() => getHistoryManager(), []);
@@ -217,6 +234,151 @@ export const Input: React.FC<InputProps> = ({
     return Math.min(i - 1, text.length - 1);
   };
 
+  // f/F/t/T 字符查找
+  const findChar = (text: string, pos: number, char: string, forward: boolean, till: boolean): number => {
+    if (forward) {
+      // f or t - 向前查找
+      const startPos = pos + 1;
+      const foundIndex = text.indexOf(char, startPos);
+      if (foundIndex === -1) return pos;
+      return till ? foundIndex - 1 : foundIndex;
+    } else {
+      // F or T - 向后查找
+      const beforeText = text.slice(0, pos);
+      const foundIndex = beforeText.lastIndexOf(char);
+      if (foundIndex === -1) return pos;
+      return till ? foundIndex + 1 : foundIndex;
+    }
+  };
+
+  // Text object 查找
+  const findTextObject = (
+    text: string,
+    cursor: number,
+    type: 'i' | 'a', // inner or around
+    boundary: 'w' | 'W' | '"' | "'" | '(' | '[' | '{'
+  ): { start: number; end: number } | null => {
+    // 处理单词 text objects
+    if (boundary === 'w') {
+      // 查找当前单词边界
+      let start = cursor;
+      let end = cursor;
+
+      // 向前查找单词开始
+      while (start > 0 && /\S/.test(text[start - 1])) start--;
+      // 向后查找单词结束
+      while (end < text.length && /\S/.test(text[end])) end++;
+
+      if (type === 'a') {
+        // a word - 包括后面的空格
+        while (end < text.length && /\s/.test(text[end])) end++;
+      }
+
+      return { start, end };
+    }
+
+    if (boundary === 'W') {
+      // WORD (空格分隔)
+      let start = cursor;
+      let end = cursor;
+
+      while (start > 0 && !/\s/.test(text[start - 1])) start--;
+      while (end < text.length && !/\s/.test(text[end])) end++;
+
+      if (type === 'a') {
+        while (end < text.length && /\s/.test(text[end])) end++;
+      }
+
+      return { start, end };
+    }
+
+    // 处理引号和括号 text objects
+    const pairs: Record<string, { open: string; close: string }> = {
+      '"': { open: '"', close: '"' },
+      "'": { open: "'", close: "'" },
+      '(': { open: '(', close: ')' },
+      '[': { open: '[', close: ']' },
+      '{': { open: '{', close: '}' }
+    };
+
+    const pair = pairs[boundary];
+    if (!pair) return null;
+
+    // 查找匹配的括号/引号对
+    let start = -1;
+    let end = -1;
+
+    if (pair.open === pair.close) {
+      // 引号类型 - 找到包围光标的引号对
+      let firstQuote = -1;
+      let inQuote = false;
+
+      for (let i = 0; i <= cursor; i++) {
+        if (text[i] === pair.open) {
+          if (!inQuote) {
+            firstQuote = i;
+            inQuote = true;
+          } else {
+            inQuote = false;
+          }
+        }
+      }
+
+      if (inQuote) {
+        start = firstQuote;
+        // 查找匹配的结束引号
+        for (let i = start + 1; i < text.length; i++) {
+          if (text[i] === pair.close) {
+            end = i;
+            break;
+          }
+        }
+      }
+    } else {
+      // 括号类型 - 找到最近的包围光标的括号对
+      let depth = 0;
+      let found = false;
+
+      // 先向左查找开括号
+      for (let i = cursor; i >= 0; i--) {
+        if (text[i] === pair.close) depth++;
+        if (text[i] === pair.open) {
+          if (depth === 0) {
+            start = i;
+            found = true;
+            break;
+          }
+          depth--;
+        }
+      }
+
+      if (found) {
+        // 向右查找对应的闭括号
+        depth = 0;
+        for (let i = start + 1; i < text.length; i++) {
+          if (text[i] === pair.open) depth++;
+          if (text[i] === pair.close) {
+            if (depth === 0) {
+              end = i;
+              break;
+            }
+            depth--;
+          }
+        }
+      }
+    }
+
+    if (start === -1 || end === -1) return null;
+
+    if (type === 'i') {
+      // inner - 不包括括号/引号
+      return { start: start + 1, end };
+    } else {
+      // around - 包括括号/引号
+      return { start, end: end + 1 };
+    }
+  };
+
   useInput(
     (input, key) => {
       if (disabled) return;
@@ -232,6 +394,37 @@ export const Input: React.FC<InputProps> = ({
           return before + '\n' + after;
         });
         setCursor((prev) => prev + 1);
+        return;
+      }
+
+      // ===== Shift+Tab 权限模式快捷切换 (官方 v2.1.2) =====
+      // 检测 Shift+Tab (key.tab && key.shift 或转义序列 \x1b[Z)
+      if ((key.tab && key.shift) || input === '\x1b[Z') {
+        const now = Date.now();
+        const timeSinceLastPress = now - lastShiftTabTimeRef.current;
+
+        if (timeSinceLastPress < SHIFT_TAB_DOUBLE_PRESS_INTERVAL) {
+          // 连续按下 - 增加计数
+          shiftTabCountRef.current += 1;
+        } else {
+          // 超时 - 重置计数
+          shiftTabCountRef.current = 1;
+        }
+
+        lastShiftTabTimeRef.current = now;
+
+        // 根据按下次数决定模式，并触发回调
+        if (onPermissionModeChange) {
+          if (shiftTabCountRef.current === 1) {
+            // 一次 Shift+Tab -> Auto-Accept Edits
+            onPermissionModeChange('acceptEdits');
+          } else if (shiftTabCountRef.current >= 2) {
+            // 两次 Shift+Tab -> Plan Mode
+            onPermissionModeChange('plan');
+            // 重置计数
+            shiftTabCountRef.current = 0;
+          }
+        }
         return;
       }
 
@@ -376,7 +569,7 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
-        // 处理多键命令（如 dd, yy）
+        // 处理多键命令（如 dd, yy, diw, ci", 等）
         if (pendingCommand === 'd') {
           if (input === 'd') {
             // dd - 删除整行
@@ -386,6 +579,11 @@ export const Input: React.FC<InputProps> = ({
             setValue('');
             setCursor(0);
             setPendingCommand('');
+            return;
+          }
+          // d + i/a (text objects)
+          if (input === 'i' || input === 'a') {
+            setPendingCommand('d' + input);
             return;
           }
           setPendingCommand('');
@@ -398,6 +596,87 @@ export const Input: React.FC<InputProps> = ({
             setPendingCommand('');
             return;
           }
+          // y + i/a (text objects)
+          if (input === 'i' || input === 'a') {
+            setPendingCommand('y' + input);
+            return;
+          }
+          setPendingCommand('');
+        }
+
+        if (pendingCommand === 'c') {
+          if (input === 'c') {
+            // cc - 修改整行
+            saveToUndoStack();
+            setYankRegister(value);
+            setValue('');
+            setCursor(0);
+            setVimNormalMode(false);
+            setPendingCommand('');
+            return;
+          }
+          // c + i/a (text objects)
+          if (input === 'i' || input === 'a') {
+            setPendingCommand('c' + input);
+            return;
+          }
+          setPendingCommand('');
+        }
+
+        // 处理 text objects (diw, daw, di", da", ci(, ca[, etc.)
+        if (pendingCommand.startsWith('d') && (pendingCommand === 'di' || pendingCommand === 'da')) {
+          const type = pendingCommand[1] as 'i' | 'a';
+          const boundary = input as 'w' | 'W' | '"' | "'" | '(' | '[' | '{';
+
+          if (['w', 'W', '"', "'", '(', '[', '{'].includes(boundary)) {
+            const range = findTextObject(value, cursor, type, boundary);
+            if (range) {
+              saveToUndoStack();
+              const deletedText = value.slice(range.start, range.end);
+              setLastDeletedText(deletedText);
+              setYankRegister(deletedText);
+              setValue(value.slice(0, range.start) + value.slice(range.end));
+              setCursor(Math.max(0, Math.min(range.start, value.length - deletedText.length - 1)));
+            }
+            setPendingCommand('');
+            return;
+          }
+          setPendingCommand('');
+        }
+
+        if (pendingCommand.startsWith('y') && (pendingCommand === 'yi' || pendingCommand === 'ya')) {
+          const type = pendingCommand[1] as 'i' | 'a';
+          const boundary = input as 'w' | 'W' | '"' | "'" | '(' | '[' | '{';
+
+          if (['w', 'W', '"', "'", '(', '[', '{'].includes(boundary)) {
+            const range = findTextObject(value, cursor, type, boundary);
+            if (range) {
+              const yankedText = value.slice(range.start, range.end);
+              setYankRegister(yankedText);
+            }
+            setPendingCommand('');
+            return;
+          }
+          setPendingCommand('');
+        }
+
+        if (pendingCommand.startsWith('c') && (pendingCommand === 'ci' || pendingCommand === 'ca')) {
+          const type = pendingCommand[1] as 'i' | 'a';
+          const boundary = input as 'w' | 'W' | '"' | "'" | '(' | '[' | '{';
+
+          if (['w', 'W', '"', "'", '(', '[', '{'].includes(boundary)) {
+            const range = findTextObject(value, cursor, type, boundary);
+            if (range) {
+              saveToUndoStack();
+              const deletedText = value.slice(range.start, range.end);
+              setYankRegister(deletedText);
+              setValue(value.slice(0, range.start) + value.slice(range.end));
+              setCursor(range.start);
+              setVimNormalMode(false); // 进入插入模式
+            }
+            setPendingCommand('');
+            return;
+          }
           setPendingCommand('');
         }
 
@@ -406,6 +685,21 @@ export const Input: React.FC<InputProps> = ({
           if (input && input.length === 1 && cursor < value.length) {
             saveToUndoStack();
             setValue(value.slice(0, cursor) + input + value.slice(cursor + 1));
+            setPendingCommand('');
+          }
+          return;
+        }
+
+        // f/F/t/T 字符查找
+        if (pendingCommand === 'f' || pendingCommand === 'F' || pendingCommand === 't' || pendingCommand === 'T') {
+          if (input && input.length === 1) {
+            const forward = pendingCommand === 'f' || pendingCommand === 't';
+            const till = pendingCommand === 't' || pendingCommand === 'T';
+            const newPos = findChar(value, cursor, input, forward, till);
+            if (newPos !== cursor) {
+              setCursor(newPos);
+              setLastFind({ type: pendingCommand, char: input });
+            }
             setPendingCommand('');
           }
           return;
@@ -465,6 +759,72 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
+        // 字符查找 - f, F, t, T
+        if (input === 'f' || input === 'F' || input === 't' || input === 'T') {
+          setPendingCommand(input);
+          return;
+        }
+
+        // Indent/Dedent - >>, <<
+        if (input === '>') {
+          if (pendingCommand === '>') {
+            // >> - 向右缩进（添加2个空格）
+            saveToUndoStack();
+            setValue('  ' + value);
+            setCursor(cursor + 2);
+            setPendingCommand('');
+            return;
+          }
+          setPendingCommand('>');
+          return;
+        }
+        if (input === '<') {
+          if (pendingCommand === '<') {
+            // << - 向左缩进（删除最多2个前导空格）
+            saveToUndoStack();
+            let newValue = value;
+            let removed = 0;
+            if (value.startsWith('  ')) {
+              newValue = value.slice(2);
+              removed = 2;
+            } else if (value.startsWith(' ')) {
+              newValue = value.slice(1);
+              removed = 1;
+            } else if (value.startsWith('\t')) {
+              newValue = value.slice(1);
+              removed = 1;
+            }
+            setValue(newValue);
+            setCursor(Math.max(0, cursor - removed));
+            setPendingCommand('');
+            return;
+          }
+          setPendingCommand('<');
+          return;
+        }
+
+        // 重复字符查找 - ; 和 ,
+        if (input === ';' && lastFind) {
+          // 重复上一次查找（正向）
+          const forward = lastFind.type === 'f' || lastFind.type === 't';
+          const till = lastFind.type === 't' || lastFind.type === 'T';
+          const newPos = findChar(value, cursor, lastFind.char, forward, till);
+          if (newPos !== cursor) {
+            setCursor(newPos);
+          }
+          return;
+        }
+        if (input === ',' && lastFind) {
+          // 重复上一次查找（反向）
+          const forward = !(lastFind.type === 'f' || lastFind.type === 't');
+          const till = lastFind.type === 't' || lastFind.type === 'T';
+          const newPos = findChar(value, cursor, lastFind.char, forward, till);
+          if (newPos !== cursor) {
+            setCursor(newPos);
+          }
+          return;
+        }
+
         // 行导航 - 0, $, ^
         if (input === '0') {
           setCursor(0);
@@ -518,7 +878,29 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
-        // Change 操作 - C
+        // Join lines - J
+        if (input === 'J') {
+          // J - 合并当前行和下一行（如果有换行符）
+          const newlineIndex = value.indexOf('\n', cursor);
+          if (newlineIndex !== -1) {
+            saveToUndoStack();
+            // 删除换行符,并用空格连接
+            const before = value.slice(0, newlineIndex);
+            const after = value.slice(newlineIndex + 1);
+            // 删除下一行的前导空格
+            const afterTrimmed = after.replace(/^\s+/, '');
+            setValue(before + (afterTrimmed ? ' ' + afterTrimmed : ''));
+            setCursor(cursor);
+          }
+          return;
+        }
+
+        // Change 操作 - c, C
+        if (input === 'c') {
+          // c - 开始修改命令（等待第二个按键）
+          setPendingCommand('c');
+          return;
+        }
         if (input === 'C') {
           // C - 修改到行尾（删除到行尾并进入插入模式）
           saveToUndoStack();
@@ -748,6 +1130,13 @@ export const Input: React.FC<InputProps> = ({
   // IME 组合状态指示器
   const imeIndicator = isComposing ? '[组合中] ' : '';
 
+  // 权限模式指示器 - 官方 v2.1.2
+  const permissionModeIndicator = permissionMode !== 'default'
+    ? permissionMode === 'acceptEdits'
+      ? '[Auto-Accept] '
+      : '[Plan] '
+    : '';
+
   return (
     <Box flexDirection="column">
       {/* Ctrl+R 反向历史搜索界面 */}
@@ -776,7 +1165,7 @@ export const Input: React.FC<InputProps> = ({
                   <Text dimColor> ({item.aliases.join(', ')})</Text>
                 )}
                 {item.description && (
-                  <Text dimColor> - {item.description}</Text>
+                  <Text dimColor> - {truncateDescription(item.description)}</Text>
                 )}
               </Text>
             </Box>
@@ -802,6 +1191,12 @@ export const Input: React.FC<InputProps> = ({
         {imeIndicator && (
           <Text color="magenta" bold>
             {imeIndicator}
+          </Text>
+        )}
+        {/* 权限模式指示器 - 官方 v2.1.2 */}
+        {permissionModeIndicator && (
+          <Text color={permissionMode === 'acceptEdits' ? 'green' : 'cyan'} bold>
+            {permissionModeIndicator}
           </Text>
         )}
         <Text color="white" bold>

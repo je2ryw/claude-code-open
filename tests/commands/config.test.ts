@@ -79,7 +79,7 @@ describe('Config Get Command', () => {
     const version = manager.get('version');
 
     expect(model).toBeDefined();
-    expect(version).toBe('2.0.76');
+    expect(version).toBe('2.1.4');
   });
 
   it('应该获取嵌套配置项', () => {
@@ -230,7 +230,7 @@ describe('Config List Command', () => {
     const config = manager.getAll();
 
     expect(config).toBeDefined();
-    expect(config.version).toBe('2.0.76');
+    expect(config.version).toBe('2.1.4');
     expect(config.model).toBeDefined();
     expect(config.maxTokens).toBeDefined();
   });
@@ -242,7 +242,7 @@ describe('Config List Command', () => {
 
     const config = manager.getAll();
 
-    expect(config.version).toBe('2.0.76');
+    expect(config.version).toBe('2.1.4');
     expect(config.maxTokens).toBe(32000); // 默认值是 32000
     // enableTelemetry 的默认值可能是 false 或 undefined
     expect([false, undefined]).toContain(config.enableTelemetry);
@@ -674,7 +674,7 @@ describe('Config Export and Import', () => {
     });
 
     const configToImport = JSON.stringify({
-      version: '2.0.76',
+      version: '2.1.4',
       model: 'opus',
       maxTokens: 16384,
       verbose: true,
@@ -734,7 +734,7 @@ describe('Config Export and Import', () => {
   it('应该支持从文件导入', () => {
     const importPath = path.join(TEST_ROOT, 'import.json');
     const configData = {
-      version: '2.0.76',
+      version: '2.1.4',
       model: 'sonnet',
       maxTokens: 8192,
     };
@@ -981,7 +981,7 @@ describe('Config Reset', () => {
     const config = manager2.getAll();
 
     // 系统配置应该仍然存在
-    expect(config.version).toBe('2.0.76');
+    expect(config.version).toBe('2.1.4');
     // cwd 可能不在 UserConfig 中，检查工作目录相关配置
     expect(config.workingDirectory || TEST_PROJECT_DIR).toBeDefined();
   });

@@ -281,4 +281,4 @@ export { SPINNER_TYPES, STATUS_ICONS, STATUS_COLORS }
 
 **Last Updated**: 2025-12-24
 **Component Version**: 2.0 (Enhanced)
-**Compatibility**: Claude Code CLI v2.0.76+
+**Compatibility**: Claude Code CLI v2.1.4+

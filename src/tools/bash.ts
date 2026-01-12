@@ -15,6 +15,7 @@ import { executeInSandbox, isBubblewrapAvailable } from './sandbox.js';
 import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 import { processGitCommitCommand } from '../utils/git-helper.js';
 import { configManager } from '../config/index.js';
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -345,6 +346,18 @@ function cleanupTimedOutTasks(): number {
 // 向后兼容
 const cleanupTimedOutShells = cleanupTimedOutTasks;
 
+/**
+ * 生成后台任务相关提示文本（条件性）
+ * 根据 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS 环境变量决定是否显示
+ */
+function getBackgroundTasksPrompt(): string {
+  if (isBackgroundTasksDisabled()) {
+    return '';
+  }
+  return `
+  - You can use the \`run_in_background\` parameter to run the command in the background, which allows you to continue working while the command runs. You can monitor the output using the BashOutput tool as it becomes available. You do not need to use '&' at the end of the command when using this parameter.`;
+}
+
 export class BashTool extends BaseTool<BashInput, BashResult> {
   name = 'Bash';
   description = `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
@@ -371,8 +384,7 @@ Usage notes:
   - The command argument is required.
   - You can specify an optional timeout in milliseconds (up to ${MAX_TIMEOUT}ms / ${MAX_TIMEOUT / 60000} minutes). If not specified, commands will timeout after ${DEFAULT_TIMEOUT}ms (${DEFAULT_TIMEOUT / 60000} minutes).
   - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.
-  - If the output exceeds ${MAX_OUTPUT_LENGTH} characters, output will be truncated before being returned to you.
-  - You can use the \`run_in_background\` parameter to run the command in the background, which allows you to continue working while the command runs. You can monitor the output using the BashOutput tool as it becomes available. You do not need to use '&' at the end of the command when using this parameter.
+  - If the output exceeds ${MAX_OUTPUT_LENGTH} characters, output will be truncated before being returned to you.${getBackgroundTasksPrompt()}
   - Avoid using Bash with the \`find\`, \`grep\`, \`cat\`, \`head\`, \`tail\`, \`sed\`, \`awk\`, or \`echo\` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:
     - File search: Use Glob (NOT find or ls)
     - Content search: Use Grep (NOT grep or rg)
@@ -530,7 +542,33 @@ Important:
     const modelId = config.model;
 
     // 处理 git commit 命令以添加署名
-    command = processGitCommitCommand(command, modelId);
+    // 修复 2.1.3: 添加友好的错误处理，防止命令注入异常导致不友好的错误消息
+    try {
+      command = processGitCommitCommand(command, modelId);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Command injection detected')) {
+        // 返回友好的安全错误消息
+        const auditLog: AuditLog = {
+          timestamp: Date.now(),
+          command,
+          cwd: process.cwd(),
+          sandboxed: false,
+          success: false,
+          duration: 0,
+          outputSize: 0,
+          background: run_in_background,
+        };
+        recordAudit(auditLog);
+
+        return {
+          success: false,
+          error: `🛡️ 安全防护：Git commit 已被阻止\n\n原因：${error.message}\n\n这是为了保护您的系统安全。请使用安全的提交消息，避免包含特殊字符如 $()、\`、;、|、&&、||、<、> 等。`,
+          blocked: true,
+        };
+      }
+      // 其他错误向上传播
+      throw error;
+    }
 
     // 安全检查
     const safetyCheck = checkCommandSafety(command);

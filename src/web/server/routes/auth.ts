@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { OAUTH_ENDPOINTS, exchangeAuthorizationCode, saveAuthSecure, getAuth, isAuthenticated, logout, initAuth, type AuthConfig } from '../../../auth/index.js';
+import { isDemoMode } from '../../../utils/env-check.js';
 
 const router = Router();
 
@@ -419,13 +420,21 @@ router.get('/status', (req: Request, res: Response) => {
     });
   }
 
+  // IS_DEMO 模式下隐藏敏感信息 - 官网实现:
+  // if(A.organization&&!process.env.IS_DEMO)...
+  // if(A.email&&!process.env.IS_DEMO)...
+  const demoMode = isDemoMode();
+
   res.json({
     authenticated: true,
     type: auth.type,
     accountType: auth.accountType,
-    email: auth.email,
+    // IS_DEMO 模式下不返回 email
+    email: demoMode ? undefined : auth.email,
     expiresAt: auth.expiresAt,
     scopes: auth.scopes || auth.scope,
+    // 通知前端当前是否为 Demo 模式
+    isDemoMode: demoMode,
   });
 });
 

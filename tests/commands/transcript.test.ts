@@ -98,7 +98,7 @@ describe('/transcript command', () => {
         modelDisplayName: 'Claude Sonnet 4.5',
         apiType: 'anthropic',
         cwd: '/test/project',
-        version: '2.0.76',
+        version: '2.1.4',
       },
       ui: {
         addMessage: jest.fn(),

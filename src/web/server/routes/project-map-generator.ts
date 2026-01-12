@@ -228,9 +228,11 @@ export interface TreemapNode {
   path: string;
   value?: number;          // 代码行数（仅叶节点）
   children?: TreemapNode[];
-  type: 'directory' | 'file';
+  type: 'directory' | 'file' | 'symbol';
   fileCount?: number;      // 文件数量（仅目录）
   language?: string;       // 编程语言（仅文件）
+  symbolType?: 'class' | 'method' | 'function' | 'property' | 'interface' | 'type';  // 符号类型
+  signature?: string;      // 符号签名
 }
 
 /**
@@ -272,19 +274,139 @@ function getFileLanguage(filePath: string): string {
 }
 
 /**
- * 生成 Treemap 数据结构
+ * 提取文件内的符号并转换为 TreemapNode
+ * @param filePath 文件路径
+ * @param rootDir 项目根目录
+ * @returns 符号节点数组
+ */
+async function extractFileSymbols(filePath: string, rootDir: string): Promise<TreemapNode[]> {
+  const symbols: TreemapNode[] = [];
+
+  try {
+    // 只处理 TypeScript/JavaScript 文件
+    const ext = path.extname(filePath).toLowerCase();
+    if (!['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+      return symbols;
+    }
+
+    // 动态导入 LSP 分析器
+    const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
+    const lspAnalyzer = new TypeScriptLSPAnalyzer();
+
+    // 初始化程序（只分析当前文件）
+    lspAnalyzer.initProgram([filePath], rootDir);
+
+    // 分析文件
+    const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(filePath);
+
+    // 添加类符号
+    for (const cls of classes) {
+      const classChildren: TreemapNode[] = [];
+
+      // 添加方法
+      for (const method of cls.methods) {
+        classChildren.push({
+          name: method.name,
+          path: `${path.relative(rootDir, filePath)}::${cls.name}::${method.name}`,
+          value: 10, // 估算方法行数
+          type: 'symbol',
+          symbolType: 'method',
+          signature: method.signature,
+        });
+      }
+
+      // 添加属性
+      for (const prop of cls.properties) {
+        classChildren.push({
+          name: prop.name,
+          path: `${path.relative(rootDir, filePath)}::${cls.name}::${prop.name}`,
+          value: 1, // 属性占 1 行
+          type: 'symbol',
+          symbolType: 'property',
+        });
+      }
+
+      symbols.push({
+        name: cls.name,
+        path: `${path.relative(rootDir, filePath)}::${cls.name}`,
+        value: classChildren.reduce((sum, c) => sum + (c.value || 0), 0),
+        children: classChildren,
+        type: 'symbol',
+        symbolType: 'class',
+      });
+    }
+
+    // 添加函数符号
+    for (const func of functions) {
+      symbols.push({
+        name: func.name,
+        path: `${path.relative(rootDir, filePath)}::${func.name}`,
+        value: 10, // 估算函数行数
+        type: 'symbol',
+        symbolType: 'function',
+        signature: func.signature,
+      });
+    }
+
+    // 添加接口符号
+    for (const iface of interfaces) {
+      const ifaceChildren: TreemapNode[] = [];
+
+      // 添加接口方法签名
+      for (const method of iface.methods) {
+        ifaceChildren.push({
+          name: method.name,
+          path: `${path.relative(rootDir, filePath)}::${iface.name}::${method.name}`,
+          value: 1,
+          type: 'symbol',
+          symbolType: 'method',
+          signature: method.signature,
+        });
+      }
+
+      symbols.push({
+        name: iface.name,
+        path: `${path.relative(rootDir, filePath)}::${iface.name}`,
+        value: ifaceChildren.reduce((sum, c) => sum + (c.value || 0), 0) || 5,
+        children: ifaceChildren.length > 0 ? ifaceChildren : undefined,
+        type: 'symbol',
+        symbolType: 'interface',
+      });
+    }
+
+    // 添加类型别名
+    for (const type of types) {
+      symbols.push({
+        name: type.name,
+        path: `${path.relative(rootDir, filePath)}::${type.name}`,
+        value: 2,
+        type: 'symbol',
+        symbolType: 'type',
+      });
+    }
+  } catch (err) {
+    console.error(`[Treemap] 提取符号失败: ${filePath}`, err);
+  }
+
+  return symbols;
+}
+
+/**
+ * 生成 Treemap 数据结构（异步版本，支持符号级别）
  * @param rootDir 根目录
  * @param maxDepth 最大深度
  * @param excludePatterns 排除的目录/文件模式
+ * @param includeSymbols 是否包含符号级别数据
  */
-export function generateTreemapData(
+export async function generateTreemapDataAsync(
   rootDir: string,
   maxDepth: number = 4,
-  excludePatterns: string[] = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
-): TreemapNode {
+  excludePatterns: string[] = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__'],
+  includeSymbols: boolean = false
+): Promise<TreemapNode> {
   const rootName = path.basename(rootDir) || rootDir;
 
-  function buildTree(dirPath: string, depth: number): TreemapNode | null {
+  async function buildTree(dirPath: string, depth: number): Promise<TreemapNode | null> {
     const relativePath = path.relative(rootDir, dirPath);
     const name = path.basename(dirPath) || rootName;
 
@@ -307,12 +429,19 @@ export function generateTreemapData(
         const lines = getFileLines(dirPath);
         if (lines === 0) return null;
 
+        // 提取符号（如果启用）
+        let symbolChildren: TreemapNode[] | undefined = undefined;
+        if (includeSymbols && ['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+          symbolChildren = await extractFileSymbols(dirPath, rootDir);
+        }
+
         return {
           name,
           path: relativePath || name,
           value: lines,
           type: 'file',
           language: getFileLanguage(dirPath),
+          children: symbolChildren,
         };
       }
 
@@ -338,7 +467,7 @@ export function generateTreemapData(
 
         for (const entry of entries) {
           const childPath = path.join(dirPath, entry);
-          const childNode = buildTree(childPath, depth + 1);
+          const childNode = await buildTree(childPath, depth + 1);
           if (childNode) {
             children.push(childNode);
           }
@@ -375,7 +504,7 @@ export function generateTreemapData(
     return null;
   }
 
-  const result = buildTree(rootDir, 0);
+  const result = await buildTree(rootDir, 0);
   return result || {
     name: rootName,
     path: '',

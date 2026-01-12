@@ -1,0 +1,406 @@
+/**
+ * 洋葱导航器通用组件样式
+ * Onion Navigator Common Components Styles
+ */
+
+/* ============ 语义标注卡片 SemanticCard ============ */
+
+.semanticCard {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.semanticCard:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.cardTitle {
+  color: #e0e0e0;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.cardTitleEditable {
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.cardTitleEditable:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cardTitleInput {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 4px 8px;
+  width: 100%;
+  outline: none;
+}
+
+.cardTitleInput:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.aiBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #a78bfa;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.aiBadgeIcon {
+  font-size: 10px;
+}
+
+.cardDescription {
+  color: #a0a0a0;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 12px 0;
+}
+
+.cardDescriptionEditable {
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.cardDescriptionEditable:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cardDescriptionTextarea {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #a0a0a0;
+  font-size: 14px;
+  padding: 8px;
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.cardDescriptionTextarea:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.keyPointsSection {
+  margin-top: 12px;
+}
+
+.keyPointsTitle {
+  color: #808080;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+
+.keyPointsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.keyPoint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #c0c0c0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.keyPointBullet {
+  color: #606060;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.confidenceSection {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.confidenceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.confidenceLabel {
+  color: #707070;
+  font-size: 12px;
+}
+
+.confidenceValue {
+  color: #909090;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.confidenceBar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.confidenceFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.confidenceHigh {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.confidenceMedium {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.confidenceLow {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+/* ============ AI 分析指示器 AIAnalysisIndicator ============ */
+
+.analysisIndicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  gap: 16px;
+}
+
+.spinnerContainer {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(139, 92, 246, 0.2);
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinnerInner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgba(139, 92, 246, 0.15);
+  border-bottom-color: #a78bfa;
+  border-radius: 50%;
+  animation: spinReverse 0.8s linear infinite;
+}
+
+@keyframes spinReverse {
+  to {
+    transform: translate(-50%, -50%) rotate(-360deg);
+  }
+}
+
+.analysisMessage {
+  color: #a0a0a0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.progressContainer {
+  width: 100%;
+  max-width: 200px;
+}
+
+.progressBar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.progressText {
+  color: #707070;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* ============ 层级切换动画 LayerTransition ============ */
+
+.layerTransition {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.layerContent {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.layerContentEntering {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.layerContentExiting {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* 层级指示器 */
+.layerIndicator {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 12px;
+  font-size: 12px;
+  z-index: 10;
+  opacity: 0;
+  transform: translateY(-4px);
+  animation: layerIndicatorFadeIn 0.4s ease 0.2s forwards;
+}
+
+@keyframes layerIndicatorFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.layerIndicatorIcon {
+  font-size: 14px;
+}
+
+.layerIndicatorName {
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+/* 层级过渡遮罩 */
+.transitionOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.3) 100%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.transitionOverlayActive {
+  opacity: 1;
+}
+
+/* ============ 通用工具类 ============ */
+
+.fadeIn {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.slideUp {
+  animation: slideUp 0.3s ease forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}

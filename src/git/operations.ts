@@ -7,6 +7,8 @@ import { execSync } from 'child_process';
 import { GitUtils, GitStatus, PushStatus } from './core.js';
 import { GitAnalysis } from './analysis.js';
 import { GitSafety } from './safety.js';
+// 修复 2.1.2: 导入命令注入防护功能
+import { validateCommitMessage as validateCommitMessageSecurity } from '../utils/git-helper.js';
 
 /**
  * 提交和推送结果接口
@@ -136,6 +138,16 @@ export class GitOperations {
     cwd: string = process.cwd()
   ): Promise<CommitAndPushResult> {
     try {
+      // 0. 修复 2.1.2: 安全检查 - 验证提交消息，防止命令注入
+      try {
+        validateCommitMessageSecurity(message);
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Invalid commit message',
+        };
+      }
+
       // 1. 检查工作区是否干净
       const isClean = await GitUtils.isWorkingTreeClean(cwd);
 
@@ -264,14 +276,27 @@ Important:
 
   /**
    * 验证提交消息格式
+   * 修复 2.1.2: 增加命令注入安全检查
    * @param message 提交消息
    * @returns 验证结果
    */
   static validateCommitMessage(message: string): { valid: boolean; error?: string } {
+    // 0. 修复 2.1.2: 首先检查命令注入安全性
+    try {
+      validateCommitMessageSecurity(message);
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Security validation failed',
+      };
+    }
+
+    // 1. 检查消息是否为空
     if (!message || message.trim().length === 0) {
       return { valid: false, error: 'Commit message cannot be empty' };
     }
 
+    // 2. 检查消息长度
     if (message.length < 10) {
       return { valid: false, error: 'Commit message is too short (minimum 10 characters)' };
     }
@@ -280,7 +305,7 @@ Important:
       return { valid: false, error: 'Commit message is too long (maximum 500 characters)' };
     }
 
-    // 检查是否包含 fixup 或 squash
+    // 3. 检查是否包含 fixup 或 squash
     if (message.startsWith('fixup!') || message.startsWith('squash!')) {
       return { valid: false, error: 'Fixup and squash commits should be used with caution' };
     }

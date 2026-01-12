@@ -1,0 +1,374 @@
+/**
+ * KeyProcessLayer 样式
+ * 关键流程层（第三层）
+ *
+ * 布局：左右分栏
+ * - 左侧：流程列表（可选择）
+ * - 右侧：选中流程的详细流程图
+ */
+
+/* ============ 主容器 ============ */
+
+.layerContainer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+}
+
+/* ============ 分栏布局 ============ */
+
+.splitLayout {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============ 左侧面板：流程列表 ============ */
+
+.processListPanel {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.panelIcon {
+  font-size: 16px;
+}
+
+.panelTitle {
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.processCount {
+  color: #8b8fa3;
+  font-size: 12px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.processList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ============ 流程卡片 ============ */
+
+.processCard {
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.processCard:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateX(2px);
+}
+
+.processCardSelected {
+  background: rgba(69, 183, 209, 0.1);
+  border-color: rgba(69, 183, 209, 0.4);
+  box-shadow: 0 0 0 1px rgba(69, 183, 209, 0.2);
+}
+
+.processCardSelected:hover {
+  background: rgba(69, 183, 209, 0.15);
+}
+
+.processCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.processIcon {
+  font-size: 18px;
+}
+
+.processName {
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processCardSummary {
+  color: #8b8fa3;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.processCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #707070;
+}
+
+.processType {
+  color: #45b7d1;
+}
+
+.processSeparator {
+  color: #404050;
+}
+
+.processSteps,
+.processModules {
+  color: #8b8fa3;
+}
+
+/* ============ 右侧面板：流程详情 ============ */
+
+.processDetailPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.detailHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.detailTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.detailIcon {
+  font-size: 24px;
+}
+
+.detailTitle {
+  color: #e0e0e0;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.semanticCard {
+  margin-top: 12px;
+}
+
+/* ============ 涉及模块 ============ */
+
+.involvedModules {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.modulesLabel {
+  color: #707070;
+  font-size: 12px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.modulesTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.moduleTag {
+  padding: 4px 10px;
+  background: rgba(78, 205, 196, 0.1);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  border-radius: 4px;
+  color: #4ecdc4;
+  font-size: 11px;
+}
+
+/* ============ 流程图容器 ============ */
+
+.flowDiagramContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* ============ 无选择状态 ============ */
+
+.noSelection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.noSelectionIcon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.noSelectionText {
+  color: #8b8fa3;
+  font-size: 14px;
+}
+
+/* ============ 加载指示器 ============ */
+
+.loadingIndicator {
+  margin: auto;
+}
+
+/* ============ 错误状态 ============ */
+
+.errorState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+}
+
+.errorIcon {
+  font-size: 48px;
+}
+
+.errorMessage {
+  color: #f87171;
+  font-size: 14px;
+  text-align: center;
+  max-width: 400px;
+}
+
+.retryButton {
+  padding: 8px 20px;
+  background: #3178c6;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.retryButton:hover {
+  background: #4188d6;
+}
+
+/* ============ 空状态 ============ */
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.emptyTitle {
+  color: #e0e0e0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.emptyText {
+  color: #8b8fa3;
+  font-size: 14px;
+  text-align: center;
+}
+
+.refreshButton {
+  margin-top: 8px;
+  padding: 8px 20px;
+  background: #45b7d1;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.refreshButton:hover {
+  background: #5bc7e1;
+}
+
+/* ============ 响应式调整 ============ */
+
+@media (max-width: 900px) {
+  .splitLayout {
+    flex-direction: column;
+  }
+
+  .processListPanel {
+    width: 100%;
+    max-height: 250px;
+  }
+
+  .processList {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .processCard {
+    min-width: 260px;
+    flex-shrink: 0;
+  }
+}

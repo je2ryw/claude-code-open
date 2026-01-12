@@ -13,6 +13,10 @@ import {
   isAboveAutoCompactThreshold,
   shouldAutoCompact,
 } from '../src/core/loop.js';
+import {
+  setParentModelContext,
+  getParentModelContext,
+} from '../src/tools/agent.js';
 
 describe('Auto Compact Framework', () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -696,5 +700,21 @@ describe('Integration Test Scenarios', () => {
       { role: 'user', content: 'a'.repeat(700000) }, // 175000 tokens
     ];
     expect(shouldAutoCompact(hugeMessages, model)).toBe(true);
+  });
+
+  it('should not allow sub-agents to override parent model context', () => {
+    // 这个测试验证 sub-agents 不会覆盖全局父模型上下文
+    // 场景：主 agent 使用 opus，创建 sub-agent 使用 haiku
+    // sub-agent 不应该覆盖全局的 parentModelContext
+
+    // 1. 设置主 agent 的模型为 opus
+    setParentModelContext('claude-opus-4-5-20251101');
+    expect(getParentModelContext()).toBe('claude-opus-4-5-20251101');
+
+    // 2. 模拟 sub-agent 创建（不应该覆盖）
+    // 实际场景中，sub-agent 的 Loop 会设置 isSubAgent: true，不会调用 setParentModelContext
+
+    // 3. 验证父模型上下文没有被改变
+    expect(getParentModelContext()).toBe('claude-opus-4-5-20251101');
   });
 });

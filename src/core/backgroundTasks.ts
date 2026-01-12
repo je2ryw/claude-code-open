@@ -6,6 +6,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 
 // ============================================================================
 // 类型定义
@@ -75,7 +76,13 @@ function getTaskOutputPath(taskId: string): string {
 /**
  * 创建新的后台对话任务
  */
-export function createBackgroundTask(userInput: string): BackgroundConversationTask {
+export function createBackgroundTask(userInput: string): BackgroundConversationTask | null {
+  // 检查环境变量：CLAUDE_CODE_DISABLE_BACKGROUND_TASKS
+  if (isBackgroundTasksDisabled()) {
+    console.log('[BackgroundTasks] Background tasks disabled by environment variable');
+    return null;
+  }
+
   const taskId = uuidv4();
   const outputFile = getTaskOutputPath(taskId);
   const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });

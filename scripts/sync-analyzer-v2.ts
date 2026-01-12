@@ -444,7 +444,7 @@ class SyncAnalyzerV2 {
   private async saveDetailedReport(tools: ToolAnalysis[], modules: ModuleAnalysis[]) {
     const report = {
       timestamp: new Date().toISOString(),
-      version: '2.0.76',
+      version: '2.1.4',
       tools,
       modules,
       officialFeatures: {

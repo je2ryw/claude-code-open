@@ -2371,7 +2371,7 @@ export interface ClaudeConfig {
 
   /**
    * Git 提交和 Pull Request 的归属设置
-   * @since 2.0.76
+   * @since 2.1.4
    */
   attribution?: AttributionSettings;
 
@@ -2598,7 +2598,7 @@ export interface ConfigMigration {
  * 默认配置值
  */
 export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
-  version: '2.0.76',
+  version: '2.1.4',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,

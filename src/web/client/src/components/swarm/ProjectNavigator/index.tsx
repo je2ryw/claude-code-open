@@ -7,7 +7,7 @@ import { ShortcutsModal } from './ShortcutsModal';
 import { useKeyboardShortcuts, ShortcutConfig } from '../../../hooks/useKeyboardShortcuts';
 import { useNavigationHistory, NavigationItem } from '../../../hooks/useNavigationHistory';
 
-export type ViewMode = 'map' | 'symbol' | 'code';
+export type ViewMode = 'map' | 'symbol' | 'code' | 'onion';
 
 /**
  * ProjectNavigator - 项目导航主容器组件
@@ -116,6 +116,20 @@ export const ProjectNavigator: React.FC = () => {
       description: '切换到项目地图'
     },
     {
+      key: 'o',
+      meta: true,
+      handler: () => {
+        setViewMode('onion');
+        nav.push({
+          id: 'onion',
+          type: 'map',
+          label: '洋葱视图',
+          timestamp: Date.now()
+        });
+      },
+      description: '切换到洋葱视图'
+    },
+    {
       key: '/',
       meta: true,
       handler: () => setShowShortcuts(true),
@@ -175,6 +189,21 @@ export const ProjectNavigator: React.FC = () => {
               📍 项目地图
             </button>
             <button
+              className={viewMode === 'onion' ? styles.active : ''}
+              onClick={() => {
+                setViewMode('onion');
+                nav.push({
+                  id: 'onion',
+                  type: 'map',
+                  label: '洋葱视图',
+                  timestamp: Date.now()
+                });
+              }}
+              title="洋葱架构导航器 (Cmd+O)"
+            >
+              🧅 洋葱视图
+            </button>
+            <button
               className={viewMode === 'symbol' ? styles.active : ''}
               onClick={() => setViewMode('symbol')}
               disabled={!selectedSymbol}
@@ -194,6 +223,7 @@ export const ProjectNavigator: React.FC = () => {
         <CenterPanel
           viewMode={viewMode}
           selectedSymbol={selectedSymbol}
+          onSymbolSelect={handleSymbolSelect}
         />
         <RightPanel
           selectedSymbol={selectedSymbol}

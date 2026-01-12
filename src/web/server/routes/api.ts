@@ -34,7 +34,7 @@ export function setupApiRoutes(app: Express, conversationManager: ConversationMa
     res.json({
       status: 'ok',
       timestamp: Date.now(),
-      version: '2.0.76',
+      version: '2.1.4',
     });
   });
 

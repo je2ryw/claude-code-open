@@ -202,7 +202,7 @@ export function SettingsPanel({
             </p>
             <div className="about-info">
               <p>
-                <strong>Version:</strong> 2.0.76 (Educational)
+                <strong>Version:</strong> 2.1.4 (Educational)
               </p>
               <p>
                 <strong>Repository:</strong> github.com/kill136/claude-code-open

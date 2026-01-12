@@ -74,7 +74,7 @@ fn main() {
 // JSON 示例
 const jsonData = {
   name: 'Claude Code',
-  version: '2.0.76',
+  version: '2.1.4',
   features: ['syntax-highlighting', 'code-analysis', 'file-operations'],
   config: {
     theme: 'dark',

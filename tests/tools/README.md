@@ -4,7 +4,7 @@ Comprehensive unit test suite for the Claude Code tool system.
 
 ## Overview
 
-This directory contains unit tests for all core tool categories in the Claude Code CLI v2.0.76 project.
+This directory contains unit tests for all core tool categories in the Claude Code CLI v2.1.4 project.
 
 ## Test Statistics
 

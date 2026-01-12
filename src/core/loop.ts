@@ -1094,6 +1094,8 @@ export interface LoopOptions {
   fallbackModel?: string;
   thinking?: ThinkingConfig;
   debug?: boolean;
+  /** 是否为 sub-agent（用于防止覆盖全局父模型上下文） */
+  isSubAgent?: boolean;
 }
 
 export class ConversationLoop {
@@ -1222,8 +1224,11 @@ export class ConversationLoop {
     // 解析模型别名
     const resolvedModel = modelConfig.resolveAlias(options.model || 'sonnet');
 
-    // 设置父模型上下文，供子代理继承
-    setParentModelContext(resolvedModel);
+    // 只有在没有明确指定 isSubAgent 的情况下才设置父模型上下文
+    // Sub-agent 不应该覆盖全局的父模型上下文
+    if (!options.isSubAgent) {
+      setParentModelContext(resolvedModel);
+    }
 
     // 初始化认证并获取凭据
     initAuth();

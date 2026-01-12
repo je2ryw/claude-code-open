@@ -1,6 +1,10 @@
 /**
  * 认证页面
  * 包含OAuth登录和认证状态显示
+ *
+ * IS_DEMO 模式支持 (v2.1.0):
+ * 当 IS_DEMO 环境变量启用时，隐藏 email 和 organization 信息
+ * 用于直播或录制会话时保护隐私
  */
 
 import { useState, useEffect } from 'react';
@@ -11,6 +15,7 @@ export function AuthPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authInfo, setAuthInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   /**
    * 检查认证状态
@@ -22,6 +27,8 @@ export function AuthPage() {
         const data = await response.json();
         setAuthenticated(data.authenticated);
         setAuthInfo(data);
+        // 从服务端获取 IS_DEMO 模式状态
+        setIsDemoMode(data.isDemoMode === true);
       }
     } catch (error) {
       console.error('Failed to check auth status:', error);
@@ -84,7 +91,8 @@ export function AuthPage() {
               <value>{authInfo.accountType}</value>
             </div>
 
-            {authInfo.email && (
+            {/* IS_DEMO 模式下隐藏 email - 官网实现: if(A.email&&!process.env.IS_DEMO) */}
+            {authInfo.email && !isDemoMode && (
               <div className="detail-item">
                 <label>Email</label>
                 <value>{authInfo.email}</value>

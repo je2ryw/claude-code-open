@@ -18,6 +18,7 @@ import {
 } from '../models/index.js';
 import { initAuth, getAuth } from '../auth/index.js';
 import { v4 as uuidv4 } from 'uuid';
+import { VERSION_BASE } from '../version.js';
 import { randomBytes } from 'crypto';
 
 export interface ClientConfig {
@@ -274,7 +275,7 @@ export class ClaudeClient {
     // 通过抓包分析得到的官方请求头
     const defaultHeaders: Record<string, string> = {
       'x-app': 'cli',
-      'User-Agent': 'claude-cli/2.0.76 (external, claude-vscode, agent-sdk/0.1.75)',
+      'User-Agent': `claude-cli/${VERSION_BASE} (external, claude-vscode, agent-sdk/0.1.75)`,
       'anthropic-dangerous-direct-browser-access': 'true',
     };
 

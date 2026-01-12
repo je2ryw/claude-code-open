@@ -165,7 +165,14 @@ export class SystemPromptBuilder {
       })
     );
 
-    // 11.5 蓝图上下文（如果有活跃蓝图）
+    // 11.5 语言设置 (v2.1.0+)
+    // 官方格式：# Language\nAlways respond in ${language}...
+    if (context.language) {
+      parts.push(`# Language
+Always respond in ${context.language}. Use ${context.language} for all explanations, comments, and communications with the user. Technical terms and code identifiers should remain in their original form.`);
+    }
+
+    // 11.6 蓝图上下文（如果有活跃蓝图）
     const blueprintSummary = this.generateBlueprintSummary();
     if (blueprintSummary) {
       parts.push(blueprintSummary);

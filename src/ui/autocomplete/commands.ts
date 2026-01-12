@@ -4,7 +4,7 @@
 
 import type { CompletionItem } from './types.js';
 
-// 所有可用命令列表 (基于官方 Claude Code v2.0.76)
+// 所有可用命令列表 (基于官方 Claude Code v2.1.4)
 export const ALL_COMMANDS: CompletionItem[] = [
   {
     value: '/add-dir ',

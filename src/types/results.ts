@@ -97,6 +97,8 @@ export interface BashToolResult extends ToolResult {
   sandboxed?: boolean;
   /** Working directory where command was executed */
   cwd?: string;
+  /** Whether the command was blocked due to security reasons */
+  blocked?: boolean;
 }
 
 /**

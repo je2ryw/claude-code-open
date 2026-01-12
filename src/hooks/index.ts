@@ -1,7 +1,7 @@
 /**
  * Hooks 系统
  * 支持在工具调用前后执行自定义脚本或 URL 回调
- * 基于官方 Claude Code CLI v2.0.76 逆向分析
+ * 基于官方 Claude Code CLI v2.1.4 逆向分析
  */
 
 import { spawn } from 'child_process';
@@ -46,8 +46,9 @@ export type HookType = 'command' | 'mcp' | 'prompt' | 'agent' | 'url';
 
 /**
  * 默认超时时间（毫秒）
+ * 官方 Claude Code CLI v2.1.3+ 要求：Tool hook 超时为 10 分钟
  */
-export const DEFAULT_HOOK_TIMEOUT = 30000;
+export const DEFAULT_HOOK_TIMEOUT = 600000; // 10 minutes
 
 /**
  * Command Hook 配置
@@ -60,7 +61,7 @@ export interface CommandHookConfig {
   args?: string[];
   /** 环境变量 */
   env?: Record<string, string>;
-  /** 超时时间（毫秒，默认 30000） */
+  /** 超时时间（毫秒，默认 600000 = 10分钟） */
   timeout?: number;
   /** 是否阻塞（等待完成，默认 true） */
   blocking?: boolean;
@@ -77,7 +78,7 @@ export interface PromptHookConfig {
   prompt: string;
   /** 使用的模型（可选，默认使用当前会话模型） */
   model?: string;
-  /** 超时时间（毫秒，默认 30000） */
+  /** 超时时间（毫秒，默认 600000 = 10分钟） */
   timeout?: number;
   /** 是否阻塞（等待完成，默认 true） */
   blocking?: boolean;
@@ -94,7 +95,7 @@ export interface AgentHookConfig {
   agentType: string;
   /** 代理配置 */
   agentConfig?: Record<string, unknown>;
-  /** 超时时间（毫秒，默认 60000） */
+  /** 超时时间（毫秒，默认 600000 = 10分钟） */
   timeout?: number;
   /** 是否阻塞（等待完成，默认 true） */
   blocking?: boolean;
@@ -113,7 +114,7 @@ export interface McpHookConfig {
   tool: string;
   /** 工具参数（可选，会与 hook input 合并） */
   toolArgs?: Record<string, unknown>;
-  /** 超时时间（毫秒，默认 30000） */
+  /** 超时时间（毫秒，默认 600000 = 10分钟） */
   timeout?: number;
   /** 是否阻塞（等待完成，默认 true） */
   blocking?: boolean;
@@ -132,7 +133,7 @@ export interface UrlHookConfig {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
   /** 请求头 */
   headers?: Record<string, string>;
-  /** 超时时间（毫秒，默认 10000） */
+  /** 超时时间（毫秒，默认 600000 = 10分钟） */
   timeout?: number;
   /** 是否阻塞（等待完成，默认 false） */
   blocking?: boolean;
@@ -159,7 +160,7 @@ export interface LegacyHookConfig {
 }
 
 /**
- * Hook 输入数据（完整接口，符合官方 CLI v2.0.76）
+ * Hook 输入数据（完整接口，符合官方 CLI v2.1.4）
  */
 export interface HookInput {
   event: HookEvent;
@@ -408,7 +409,7 @@ async function executeCommandHook(
   input: HookInput
 ): Promise<HookResult> {
   return new Promise((resolve) => {
-    const timeout = hook.timeout || 30000;
+    const timeout = hook.timeout || DEFAULT_HOOK_TIMEOUT;
     let stdout = '';
     let stderr = '';
 
@@ -528,7 +529,7 @@ async function executePromptHook(
   hook: PromptHookConfig,
   input: HookInput
 ): Promise<HookResult> {
-  const timeout = hook.timeout || 30000;
+  const timeout = hook.timeout || DEFAULT_HOOK_TIMEOUT;
 
   try {
     // 构建提示词，替换变量（包含所有官方字段）
@@ -646,7 +647,7 @@ async function executeAgentHook(
   hook: AgentHookConfig,
   input: HookInput
 ): Promise<HookResult> {
-  const timeout = hook.timeout || 60000;
+  const timeout = hook.timeout || DEFAULT_HOOK_TIMEOUT;
 
   try {
     // 动态导入 Agent 相关模块以避免循环依赖
@@ -773,7 +774,7 @@ async function executeMcpHook(
   hook: McpHookConfig,
   input: HookInput
 ): Promise<HookResult> {
-  const timeout = hook.timeout || 30000;
+  const timeout = hook.timeout || DEFAULT_HOOK_TIMEOUT;
 
   try {
     // 动态导入 MCP 工具以避免循环依赖
@@ -923,7 +924,7 @@ async function executeUrlHook(
   hook: UrlHookConfig,
   input: HookInput
 ): Promise<HookResult> {
-  const timeout = hook.timeout || 10000;
+  const timeout = hook.timeout || DEFAULT_HOOK_TIMEOUT;
   const method = hook.method || 'POST';
 
   // URL Hook payload - 包含所有官方字段
@@ -1435,4 +1436,61 @@ export function unregisterHook(event: HookEvent, config: HookConfig): boolean {
  */
 export function clearEventHooks(event: HookEvent): void {
   delete registeredHooks[event];
+}
+
+/**
+ * 重新加载所有 hooks
+ * 用于在信任状态变化后重新加载项目 hooks
+ *
+ * 修复官方 v2.1.3 bug:
+ * "Fixed trust dialog acceptance when running from the home directory
+ *  not enabling trust-requiring features like hooks during the session"
+ *
+ * @param projectDir 项目目录，默认为当前工作目录
+ */
+export function reloadHooks(projectDir?: string): void {
+  const dir = projectDir || process.cwd();
+
+  console.log(`[Hooks] Reloading hooks for: ${dir}`);
+
+  // 清除现有 hooks
+  clearHooks();
+
+  // 重新加载项目 hooks
+  loadProjectHooks(dir);
+
+  // 加载全局 hooks（如果存在）
+  const globalSettingsPath = path.join(
+    process.env.HOME || process.env.USERPROFILE || '',
+    '.claude',
+    'settings.json'
+  );
+  loadHooksFromFile(globalSettingsPath);
+
+  console.log(`[Hooks] Reloaded ${getHookCount()} hooks`);
+}
+
+/**
+ * 检查 hooks 是否已加载
+ */
+export function areHooksLoaded(): boolean {
+  return getHookCount() > 0;
+}
+
+/**
+ * 获取 hooks 加载状态摘要
+ */
+export function getHooksLoadedSummary(): {
+  loaded: boolean;
+  count: number;
+  events: string[];
+} {
+  const count = getHookCount();
+  const events = Object.keys(registeredHooks);
+
+  return {
+    loaded: count > 0,
+    count,
+    events,
+  };
 }

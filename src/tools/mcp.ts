@@ -16,6 +16,7 @@ import type {
 } from '../types/index.js';
 import type { MCPSearchToolResult } from '../types/results.js';
 import { MAX_MCP_OUTPUT_TOKENS, truncateMcpOutput } from '../utils/index.js';
+import { persistLargeOutputSync } from './output-persistence.js';
 
 // MCP 服务器状态管理
 interface McpServerState {
@@ -265,7 +266,7 @@ export async function connectMcpServer(name: string, retry = true): Promise<bool
           capabilities: {},
           clientInfo: {
             name: 'claude-code-restored',
-            version: '2.0.76',
+            version: '2.1.4',
           },
         });
 
@@ -568,10 +569,16 @@ export async function callMcpTool(
       output = JSON.stringify(result, null, 2);
     }
 
-    // 应用 MCP 输出 Token 限制
-    output = truncateMcpOutput(output, MAX_MCP_OUTPUT_TOKENS());
+    // 使用统一的输出持久化机制（MCP 工具特殊处理：基于 token 限制）
+    const maxTokens = MAX_MCP_OUTPUT_TOKENS();
+    const maxChars = maxTokens * 4; // 大约 4 字符/token
 
-    return { success: true, output };
+    const persistResult = persistLargeOutputSync(output, {
+      toolName: 'MCP',
+      maxLength: maxChars,
+    });
+
+    return { success: true, output: persistResult.content };
   } catch (err) {
     return {
       success: false,

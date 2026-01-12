@@ -4,6 +4,7 @@
 
 import type { SlashCommand, CommandContext, CommandResult } from './types.js';
 import { commandRegistry } from './registry.js';
+import { VERSION_BASE } from '../version.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -61,7 +62,7 @@ export const upgradeCommand: SlashCommand = {
   description: 'Upgrade Claude Code to the latest version',
   category: 'settings',
   execute: (ctx: CommandContext): CommandResult => {
-    const currentVersion = '2.0.76';
+    const currentVersion = VERSION_BASE;
 
     const upgradeInfo = `╭─ Claude Code Upgrade ────────────────────────────────╮
 │                                                     │

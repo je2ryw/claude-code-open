@@ -36,7 +36,11 @@ const McpServerConfigSchema = z.object({
 
 const UserConfigSchema = z.object({
   // 版本控制
-  version: z.string().default('2.0.76'),
+  version: z.string().default('2.1.4'),
+
+  // 语言配置 (v2.1.0+) - 配置 Claude 的响应语言
+  // 官方格式：language: "japanese" 会添加到系统提示词
+  language: z.string().optional(),
 
   // API 配置
   apiKey: z.string().optional(),
@@ -113,7 +117,7 @@ const UserConfigSchema = z.object({
   // Git 配置
   includeCoAuthoredBy: z.boolean().default(true), // 是否在 git commit 中添加 Claude 署名（已弃用，使用 attribution）
 
-  // Git 署名配置（新增，v2.0.76+）
+  // Git 署名配置（新增，v2.1.4+）
   attribution: z.object({
     commit: z.string().optional(), // commit 消息署名（包含 Co-Authored-By trailer）
     pr: z.string().optional(),     // PR 描述署名（包含链接）
@@ -223,7 +227,7 @@ const UserConfigSchema = z.object({
     }).optional(),
   }).optional(),
 
-  // Session Manager 配置（新增，v2.0.76+）
+  // Session Manager 配置（新增，v2.1.4+）
   sessionManager: z.object({
     /** 自动保存开关 */
     autoSave: z.boolean().default(true),
@@ -243,7 +247,7 @@ export type UserConfig = z.infer<typeof UserConfigSchema>;
 // ============ 默认配置 ============
 
 const DEFAULT_CONFIG: Partial<UserConfig> = {
-  version: '2.0.76',
+  version: '2.1.4',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,
@@ -260,7 +264,7 @@ const DEFAULT_CONFIG: Partial<UserConfig> = {
   useBedrock: false,
   useVertex: false,
 
-  // ===== 新增默认值 (v2.0.76+) =====
+  // ===== 新增默认值 (v2.1.4+) =====
 
   /** Diff 工具 */
   diffTool: 'auto',
@@ -340,6 +344,9 @@ function getEnvConfig(): Partial<UserConfig> {
 
     // ===== IDE 集成 =====
     autoConnectIde: parseEnvBoolean(process.env.CLAUDE_CODE_AUTO_CONNECT_IDE),
+
+    // ===== 语言配置 =====
+    language: process.env.CLAUDE_CODE_LANGUAGE,
 
     // ===== UI/UX =====
     promptSuggestionEnabled: parseEnvBoolean(process.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION),
@@ -723,10 +730,10 @@ const MIGRATIONS: ConfigMigration[] = [
     },
   },
   {
-    version: '2.0.76',
+    version: '2.1.4',
     migrate: (config) => {
       // 添加新字段的默认值
-      if (!config.version) config.version = '2.0.76';
+      if (!config.version) config.version = '2.1.4';
       if (config.autoSave !== undefined) {
         config.enableAutoSave = config.autoSave;
         delete config.autoSave;
@@ -746,7 +753,7 @@ function migrateConfig(config: any): any {
     }
   }
 
-  migratedConfig.version = '2.0.76';
+  migratedConfig.version = '2.1.4';
   return migratedConfig;
 }
 
@@ -1779,7 +1786,15 @@ export const configManager = new ConfigManager();
 
 // ============ 导出其他模块 ============
 
-export { ClaudeMdParser, claudeMdParser } from './claude-md-parser.js';
+export {
+  ClaudeMdParser,
+  claudeMdParser,
+  // v2.1.2+ @include 二进制文件过滤辅助函数
+  isTextFile,
+  isBinaryFile,
+  getTextFileExtensions,
+  hasBinaryContent,
+} from './claude-md-parser.js';
 export { ConfigCommand, createConfigCommand } from './config-command.js';
 
 // ============ 重新导出环境变量模块 ============

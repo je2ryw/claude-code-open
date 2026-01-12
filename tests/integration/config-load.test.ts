@@ -27,7 +27,7 @@ describe('Config Loading Integration', () => {
       const config = new ConfigManager(env.configDir);
       const allConfig = config.getAll();
 
-      expect(allConfig.version).toBe('2.0.76');
+      expect(allConfig.version).toBe('2.1.4');
       expect(allConfig.model).toBe('sonnet');
       expect(allConfig.maxTokens).toBe(8192);
       expect(allConfig.temperature).toBe(1);
@@ -269,7 +269,7 @@ describe('Config Loading Integration', () => {
       const loaded = config.getAll();
 
       expect(loaded.model).toBe('opus');
-      expect(loaded.version).toBe('2.0.76');
+      expect(loaded.version).toBe('2.1.4');
     });
 
     it('should migrate deprecated settings', () => {
@@ -287,7 +287,7 @@ describe('Config Loading Integration', () => {
 
       expect(loaded.enableAutoSave).toBe(true);
       expect(loaded.maxTokens).toBe(16384);
-      expect(loaded.version).toBe('2.0.76');
+      expect(loaded.version).toBe('2.1.4');
     });
   });
 
@@ -327,7 +327,7 @@ describe('Config Loading Integration', () => {
       const config = new ConfigManager(env.configDir);
 
       const importData = JSON.stringify({
-        version: '2.0.76',
+        version: '2.1.4',
         model: 'opus',
         maxTokens: 16384,
         temperature: 0.7,

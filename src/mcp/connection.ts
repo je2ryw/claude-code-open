@@ -591,7 +591,7 @@ export class McpConnectionManager extends EventEmitter {
         capabilities: {},
         clientInfo: {
           name: 'claude-code-open',
-          version: '2.0.76',
+          version: '2.1.4',
         },
       },
     };

@@ -828,7 +828,7 @@ describe('配置导出和导入', () => {
     });
 
     const configToImport = JSON.stringify({
-      version: '2.0.76',
+      version: '2.1.4',
       model: 'opus',
       maxTokens: 16384,
       verbose: true,
@@ -987,7 +987,7 @@ describe('配置迁移', () => {
 
     const config = manager.getAll();
     expect(config.model).toBe('opus');
-    expect(config.version).toBe('2.0.76');
+    expect(config.version).toBe('2.1.4');
   });
 
   it('应该迁移 autoSave 到 enableAutoSave', () => {

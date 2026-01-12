@@ -825,6 +825,62 @@ export class PermissionRuleManager {
       byTool,
     };
   }
+
+  /**
+   * 检测不可达规则
+   *
+   * 分别检测 allow 规则和 deny 规则列表中的不可达规则，
+   * 以及 deny 规则对 allow 规则的阻塞。
+   *
+   * @returns 不可达规则检测结果
+   */
+  detectUnreachable(): UnreachableRuleDetectionResult {
+    const allUnreachable: UnreachableRule[] = [];
+
+    // 检测 allow 规则内部的不可达
+    const allowResult = detectUnreachableRules(this.allowRules);
+    allUnreachable.push(...allowResult.unreachableRules);
+
+    // 检测 deny 规则内部的不可达
+    const denyResult = detectUnreachableRules(this.denyRules);
+    allUnreachable.push(...denyResult.unreachableRules);
+
+    // 检测 deny 规则对 allow 规则的阻塞
+    // deny 规则先于 allow 规则执行，所以要检查是否有 deny 规则完全阻塞了 allow 规则
+    for (const allowRule of this.allowRules) {
+      for (const denyRule of this.denyRules) {
+        if (isBlocking(denyRule, allowRule)) {
+          allUnreachable.push({
+            rule: allowRule,
+            blockedBy: denyRule,
+            reason: generateBlockingReason(denyRule, allowRule),
+            source: allowRule.source,
+            fixSuggestion: generateFixSuggestion(denyRule, allowRule),
+          });
+          break; // 找到第一个阻塞的规则就停止
+        }
+      }
+    }
+
+    // 生成警告消息
+    const warnings = allUnreachable.map(ur => formatUnreachableWarning(ur));
+
+    return {
+      hasUnreachable: allUnreachable.length > 0,
+      unreachableRules: allUnreachable,
+      warnings,
+    };
+  }
+
+  /**
+   * 验证规则并返回警告消息
+   *
+   * @returns 警告消息字符串，如果没有警告则返回空字符串
+   */
+  validateRules(): string {
+    const result = this.detectUnreachable();
+    return formatUnreachableWarnings(result);
+  }
 }
 
 // ============ 便捷函数 ============
@@ -874,6 +930,303 @@ export function createPathRule(
   source: RuleSource = 'runtime'
 ): ParsedRule {
   return PermissionRuleParser.parse(`${tool}(${pathPattern})`, type, source);
+}
+
+// ============ 不可达规则检测 ============
+
+/**
+ * 不可达规则信息
+ */
+export interface UnreachableRule {
+  /** 被阻塞的规则 */
+  rule: ParsedRule;
+  /** 阻塞此规则的规则 */
+  blockedBy: ParsedRule;
+  /** 不可达原因 */
+  reason: string;
+  /** 规则来源信息 */
+  source: RuleSource;
+  /** 修复建议 */
+  fixSuggestion: string;
+}
+
+/**
+ * 不可达规则检测结果
+ */
+export interface UnreachableRuleDetectionResult {
+  /** 是否有不可达规则 */
+  hasUnreachable: boolean;
+  /** 不可达规则列表 */
+  unreachableRules: UnreachableRule[];
+  /** 警告消息列表 */
+  warnings: string[];
+}
+
+/**
+ * 格式化规则为可读字符串
+ */
+export function formatRule(rule: ParsedRule): string {
+  if (rule.hasParams && rule.paramPattern) {
+    return `${rule.tool}(${rule.paramPattern})`;
+  }
+  return rule.tool;
+}
+
+/**
+ * 格式化规则来源为可读字符串
+ */
+export function formatRuleSource(source: RuleSource): string {
+  const sourceLabels: Record<RuleSource, string> = {
+    cli: 'Command Line',
+    settings: 'User Settings (~/.claude/settings.json)',
+    project: 'Project Settings (.claude/settings.json)',
+    policy: 'Policy File',
+    session: 'Session Memory',
+    runtime: 'Runtime',
+  };
+  return sourceLabels[source] || source;
+}
+
+/**
+ * 检查规则 A 是否覆盖/阻塞规则 B
+ *
+ * 一个规则阻塞另一个规则的情况：
+ * 1. 规则 A 和规则 B 针对同一工具
+ * 2. 规则 A 的参数模式比规则 B 更宽泛或相同
+ * 3. 规则 A 的类型使得规则 B 永远不会被触发
+ */
+export function isBlocking(ruleA: ParsedRule, ruleB: ParsedRule): boolean {
+  // 不同工具的规则不会互相阻塞（除非是通配符）
+  if (ruleA.tool !== ruleB.tool && ruleA.tool !== '*') {
+    return false;
+  }
+
+  // 同类型规则（都是 allow 或都是 deny）
+  if (ruleA.type === ruleB.type) {
+    // 如果 A 没有参数限制，它覆盖所有同工具规则
+    if (!ruleA.hasParams || ruleA.matcher?.type === 'any') {
+      // B 有更具体的参数，A 会先匹配，B 不可达
+      if (ruleB.hasParams && ruleB.matcher?.type !== 'any') {
+        return true;
+      }
+    }
+
+    // 如果都有参数，检查 A 是否包含 B 的模式
+    if (ruleA.hasParams && ruleB.hasParams) {
+      return isPatternSubsumed(ruleA, ruleB);
+    }
+  }
+
+  // deny 规则在 allow 规则之前检查
+  // 如果有一个宽泛的 deny 规则，它可能会阻塞后面的 allow 规则
+  if (ruleA.type === 'deny' && ruleB.type === 'allow') {
+    // 如果 deny 没有参数限制，它会拒绝所有
+    if (!ruleA.hasParams || ruleA.matcher?.type === 'any') {
+      return true;
+    }
+
+    // 如果 deny 和 allow 有相同的精确模式，allow 不可达
+    if (ruleA.hasParams && ruleB.hasParams) {
+      return isPatternSubsumed(ruleA, ruleB);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 检查规则 A 的模式是否包含规则 B 的模式
+ */
+function isPatternSubsumed(ruleA: ParsedRule, ruleB: ParsedRule): boolean {
+  const matcherA = ruleA.matcher;
+  const matcherB = ruleB.matcher;
+
+  if (!matcherA || !matcherB) {
+    return false;
+  }
+
+  // any 模式包含所有其他模式
+  if (matcherA.type === 'any') {
+    return true;
+  }
+
+  // 精确匹配只包含完全相同的模式
+  if (matcherA.type === 'exact' && matcherB.type === 'exact') {
+    return matcherA.pattern === matcherB.pattern;
+  }
+
+  // 前缀匹配：如果 A 的前缀是 B 的前缀的子串
+  if (matcherA.type === 'prefix' && matcherB.type === 'prefix') {
+    const prefixA = matcherA.commandPrefix || '';
+    const prefixB = matcherB.commandPrefix || '';
+    // A 的前缀更短或相同，则 A 包含 B
+    return prefixB.startsWith(prefixA);
+  }
+
+  // 前缀匹配包含精确匹配（如果精确值以前缀开头）
+  if (matcherA.type === 'prefix' && matcherB.type === 'exact') {
+    const prefixA = matcherA.commandPrefix || '';
+    return matcherB.pattern.startsWith(prefixA);
+  }
+
+  // glob 模式：简单检查 ** 是否包含 *
+  if (matcherA.type === 'glob' && matcherB.type === 'glob') {
+    const patternA = matcherA.pattern;
+    const patternB = matcherB.pattern;
+
+    // ** 包含所有
+    if (patternA === '**' || patternA === '**/*') {
+      return true;
+    }
+
+    // 如果 A 的模式与 B 相同
+    if (patternA === patternB) {
+      return true;
+    }
+
+    // 简单的包含检查：如果 A 以 ** 结尾，B 以相同前缀开始
+    if (patternA.endsWith('**')) {
+      const prefix = patternA.slice(0, -2);
+      return patternB.startsWith(prefix);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 检测规则列表中的不可达规则
+ *
+ * @param rules 按优先级排序的规则列表
+ * @returns 检测结果
+ */
+export function detectUnreachableRules(rules: ParsedRule[]): UnreachableRuleDetectionResult {
+  const unreachableRules: UnreachableRule[] = [];
+
+  // 对于每个规则，检查是否被之前的规则阻塞
+  for (let i = 0; i < rules.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (isBlocking(rules[j], rules[i])) {
+        const blockedRule = rules[i];
+        const blockingRule = rules[j];
+
+        unreachableRules.push({
+          rule: blockedRule,
+          blockedBy: blockingRule,
+          reason: generateBlockingReason(blockingRule, blockedRule),
+          source: blockedRule.source,
+          fixSuggestion: generateFixSuggestion(blockingRule, blockedRule),
+        });
+
+        // 找到第一个阻塞的规则就停止（避免重复报告）
+        break;
+      }
+    }
+  }
+
+  // 生成警告消息
+  const warnings = unreachableRules.map(ur => formatUnreachableWarning(ur));
+
+  return {
+    hasUnreachable: unreachableRules.length > 0,
+    unreachableRules,
+    warnings,
+  };
+}
+
+/**
+ * 生成阻塞原因说明
+ */
+function generateBlockingReason(blockingRule: ParsedRule, blockedRule: ParsedRule): string {
+  const blockingStr = formatRule(blockingRule);
+  const blockedStr = formatRule(blockedRule);
+
+  if (blockingRule.type === 'deny' && blockedRule.type === 'allow') {
+    return `The deny rule "${blockingStr}" will always reject before the allow rule "${blockedStr}" can be evaluated`;
+  }
+
+  if (!blockingRule.hasParams || blockingRule.matcher?.type === 'any') {
+    return `The broader rule "${blockingStr}" will always match before the more specific rule "${blockedStr}"`;
+  }
+
+  if (blockingRule.matcher?.type === 'prefix' && blockedRule.matcher?.type === 'prefix') {
+    return `The prefix "${blockingRule.matcher.commandPrefix}" in "${blockingStr}" covers the prefix "${blockedRule.matcher?.commandPrefix}" in "${blockedStr}"`;
+  }
+
+  return `Rule "${blockingStr}" shadows rule "${blockedStr}"`;
+}
+
+/**
+ * 生成修复建议
+ */
+function generateFixSuggestion(blockingRule: ParsedRule, blockedRule: ParsedRule): string {
+  const blockingStr = formatRule(blockingRule);
+  const blockedStr = formatRule(blockedRule);
+
+  // 如果是同类型规则，建议重新排序或删除
+  if (blockingRule.type === blockedRule.type) {
+    if (blockingRule.hasParams && blockedRule.hasParams) {
+      return `Move "${blockedStr}" before "${blockingStr}", or remove it if redundant`;
+    }
+    return `Remove "${blockedStr}" as it is redundant with "${blockingStr}"`;
+  }
+
+  // 如果是 deny/allow 冲突
+  if (blockingRule.type === 'deny' && blockedRule.type === 'allow') {
+    return `Add a more specific deny rule after the allow rule "${blockedStr}", or make the deny rule "${blockingStr}" more specific`;
+  }
+
+  return `Review the rule order and consider reorganizing your permission rules`;
+}
+
+/**
+ * 格式化不可达规则警告消息
+ */
+export function formatUnreachableWarning(ur: UnreachableRule): string {
+  const lines: string[] = [];
+
+  lines.push(`Warning: Unreachable permission rule detected`);
+  lines.push(`  Rule: ${formatRule(ur.rule)} (${ur.rule.type})`);
+  lines.push(`  Source: ${formatRuleSource(ur.source)}`);
+  lines.push(`  Blocked by: ${formatRule(ur.blockedBy)} (${ur.blockedBy.type})`);
+  lines.push(`  Reason: ${ur.reason}`);
+  lines.push(`  Fix: ${ur.fixSuggestion}`);
+
+  return lines.join('\n');
+}
+
+/**
+ * 格式化所有不可达规则警告为终端输出
+ */
+export function formatUnreachableWarnings(result: UnreachableRuleDetectionResult): string {
+  if (!result.hasUnreachable) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  lines.push('');
+  lines.push('\x1b[33m' + '='.repeat(60) + '\x1b[0m');
+  lines.push('\x1b[33mPermission Rules Warning\x1b[0m');
+  lines.push('\x1b[33m' + '='.repeat(60) + '\x1b[0m');
+  lines.push('');
+  lines.push(`Found ${result.unreachableRules.length} unreachable rule(s):`);
+  lines.push('');
+
+  for (let i = 0; i < result.unreachableRules.length; i++) {
+    const ur = result.unreachableRules[i];
+    lines.push(`${i + 1}. \x1b[33mUnreachable Rule\x1b[0m`);
+    lines.push(`   Rule: \x1b[36m${formatRule(ur.rule)}\x1b[0m (${ur.rule.type})`);
+    lines.push(`   Source: ${formatRuleSource(ur.source)}`);
+    lines.push(`   Blocked by: \x1b[35m${formatRule(ur.blockedBy)}\x1b[0m (${ur.blockedBy.type})`);
+    lines.push(`   Reason: ${ur.reason}`);
+    lines.push(`   \x1b[32mFix:\x1b[0m ${ur.fixSuggestion}`);
+    lines.push('');
+  }
+
+  lines.push('\x1b[33m' + '='.repeat(60) + '\x1b[0m');
+  lines.push('');
+
+  return lines.join('\n');
 }
 
 // ============ 全局实例 ============

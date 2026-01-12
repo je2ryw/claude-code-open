@@ -350,17 +350,20 @@ router.get('/project-map', async (req: Request, res: Response) => {
  */
 router.get('/treemap', async (req: Request, res: Response) => {
   try {
-    const { maxDepth = '4' } = req.query;
+    const { maxDepth = '4', includeSymbols = 'false' } = req.query;
     const projectRoot = process.cwd();
+    const withSymbols = includeSymbols === 'true';
 
-    console.log('[Treemap] 开始生成 Treemap 数据...');
+    console.log(`[Treemap] 开始生成 Treemap 数据... (符号级别: ${withSymbols})`);
 
     // 动态导入 treemap 生成函数
-    const { generateTreemapData } = await import('./project-map-generator.js');
+    const { generateTreemapDataAsync } = await import('./project-map-generator.js');
 
-    const treemapData = generateTreemapData(
+    const treemapData = await generateTreemapDataAsync(
       projectRoot,
-      parseInt(maxDepth as string, 10)
+      parseInt(maxDepth as string, 10),
+      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__'],
+      withSymbols
     );
 
     console.log('[Treemap] Treemap 数据生成完成!');
@@ -3195,6 +3198,450 @@ router.get('/symbol-detail', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[Symbol Detail API] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取入口点的调用路径追踪
+ * 用于代码地图的数据流向可视化
+ */
+router.get('/call-paths', async (req: Request, res: Response) => {
+  try {
+    const { entryPoint, maxDepth = '5' } = req.query;
+    const depth = parseInt(maxDepth as string, 10) || 5;
+
+    console.log('[Call Paths API] 请求参数:', { entryPoint, maxDepth: depth });
+
+    const projectRoot = process.cwd();
+
+    // 1. 扫描TypeScript文件
+    const tsFiles: string[] = [];
+    const srcPath = path.join(projectRoot, 'src');
+
+    const scanDir = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const ent of entries) {
+        const fullPath = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          if (['node_modules', 'dist', '.git', '.lh'].includes(ent.name)) continue;
+          scanDir(fullPath);
+        } else if (ent.isFile()) {
+          const ext = path.extname(ent.name);
+          if (['.ts', '.tsx'].includes(ext)) {
+            tsFiles.push(fullPath);
+          }
+        }
+      }
+    };
+
+    scanDir(srcPath);
+    console.log(`[Call Paths API] 扫描到 ${tsFiles.length} 个TypeScript文件`);
+
+    // 2. 检测入口点
+    const { detectEntryPoints } = await import('./project-map-generator.js');
+    const entryPoints = await detectEntryPoints(tsFiles);
+
+    // 如果没有指定入口点，返回所有入口点列表
+    if (!entryPoint) {
+      return res.json({
+        success: true,
+        data: {
+          entryPoints,
+          message: '请选择一个入口点',
+        },
+      });
+    }
+
+    // 3. 找到指定的入口点
+    const entry = entryPoints.find(
+      (e: any) => e.id === entryPoint || e.moduleId === entryPoint
+    );
+
+    if (!entry) {
+      return res.status(404).json({
+        success: false,
+        error: `入口点 "${entryPoint}" 未找到`,
+      });
+    }
+
+    console.log('[Call Paths API] 入口点:', entry);
+
+    // 4. 初始化LSP分析器
+    if (!lspAnalyzer) {
+      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
+      lspAnalyzer = new TypeScriptLSPAnalyzer();
+      lspAnalyzer.initProgram(tsFiles, projectRoot);
+      console.log('[Call Paths API] LSP分析器已初始化');
+    }
+
+    // 5. 构建调用图（复用 /call-graph 的逻辑）
+    const allNodes: CallGraphNode[] = [];
+    const allEdges: CallGraphEdge[] = [];
+    const symbolMap = new Map<string, CallGraphNode>();
+
+    // 限制分析的文件数量（避免太慢）
+    const filesToAnalyze = tsFiles.slice(0, 100);
+    console.log(`[Call Paths API] 将分析 ${filesToAnalyze.length} 个文件`);
+
+    for (const file of filesToAnalyze) {
+      try {
+        const { functions, classes } = lspAnalyzer.analyzeFile(file);
+        const relativePath = path.relative(projectRoot, file);
+
+        // 添加函数节点
+        for (const func of functions) {
+          const node: CallGraphNode = {
+            id: func.id,
+            name: func.name,
+            type: 'function',
+            moduleId: relativePath,
+            signature: func.signature,
+          };
+          allNodes.push(node);
+          symbolMap.set(func.name, node);
+          symbolMap.set(func.id, node);
+        }
+
+        // 添加类方法节点
+        for (const cls of classes) {
+          for (const method of cls.methods) {
+            const node: CallGraphNode = {
+              id: method.id,
+              name: method.name,
+              type: method.name === 'constructor' ? 'constructor' : 'method',
+              moduleId: relativePath,
+              className: cls.name,
+              signature: method.signature,
+            };
+            allNodes.push(node);
+            symbolMap.set(`${cls.name}.${method.name}`, node);
+            symbolMap.set(method.id, node);
+          }
+        }
+
+        // 提取调用关系（简化版本，只提取直接调用）
+        for (const func of functions) {
+          if (func.calls) {
+            for (const call of func.calls) {
+              const targetNode = symbolMap.get(call);
+              if (targetNode) {
+                allEdges.push({
+                  source: func.id,
+                  target: targetNode.id,
+                  type: 'direct',
+                  count: 1,
+                  locations: [],
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[Call Paths API] 分析文件失败: ${file}`, error);
+      }
+    }
+
+    console.log(`[Call Paths API] 调用图: ${allNodes.length} 节点, ${allEdges.length} 边`);
+
+    // 6. 从入口点开始追踪调用路径
+    // 找到入口点对应的节点
+    const entryNodes = allNodes.filter(n => {
+      // 使用 moduleId 匹配入口点（moduleId 是相对路径）
+      return n.moduleId === entry.moduleId || n.moduleId.includes(entry.moduleId);
+    });
+
+    console.log(`[Call Paths API] 找到 ${entryNodes.length} 个入口节点`);
+
+    // 7. BFS 追踪所有可达节点
+    const filePathMap = new Map<string, { depth: number; callCount: number; paths: string[][] }>();
+    const visited = new Set<string>();
+    const queue: Array<{ nodeId: string; depth: number; path: string[] }> = [];
+
+    // 初始化队列
+    for (const node of entryNodes) {
+      queue.push({ nodeId: node.id, depth: 0, path: [node.moduleId] });
+      visited.add(node.id);
+
+      filePathMap.set(node.moduleId, { depth: 0, callCount: 1, paths: [[node.moduleId]] });
+    }
+
+    // BFS 遍历
+    while (queue.length > 0) {
+      const { nodeId, depth: currentDepth, path: currentPath } = queue.shift()!;
+
+      if (currentDepth >= depth) continue;
+
+      // 找到所有出边
+      const outEdges = allEdges.filter(e => e.source === nodeId);
+
+      for (const edge of outEdges) {
+        const targetNode = allNodes.find(n => n.id === edge.target);
+        if (!targetNode) continue;
+
+        const targetModuleId = targetNode.moduleId;
+        const newPath = [...currentPath, targetModuleId];
+
+        // 更新文件路径映射
+        if (!filePathMap.has(targetModuleId)) {
+          filePathMap.set(targetModuleId, { depth: currentDepth + 1, callCount: 0, paths: [] });
+        }
+
+        const fileInfo = filePathMap.get(targetModuleId)!;
+        fileInfo.callCount++;
+        fileInfo.paths.push(newPath);
+
+        // 更新深度（保留最短路径深度）
+        if (currentDepth + 1 < fileInfo.depth) {
+          fileInfo.depth = currentDepth + 1;
+        }
+
+        // 继续遍历
+        if (!visited.has(edge.target)) {
+          visited.add(edge.target);
+          queue.push({ nodeId: edge.target, depth: currentDepth + 1, path: newPath });
+        }
+      }
+    }
+
+    // 8. 构建返回数据
+    const paths = Array.from(filePathMap.entries()).map(([filePath, info]) => ({
+      file: filePath,
+      depth: info.depth,
+      callCount: info.callCount,
+      paths: info.paths.slice(0, 5), // 最多返回5条路径示例
+    }));
+
+    // 按深度和调用次数排序
+    paths.sort((a, b) => {
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      return b.callCount - a.callCount;
+    });
+
+    console.log(`[Call Paths API] 追踪到 ${paths.length} 个文件`);
+
+    res.json({
+      success: true,
+      data: {
+        entryPoint: {
+          id: entry.id,
+          name: entry.name,
+          moduleId: entry.moduleId,
+        },
+        paths,
+        stats: {
+          totalFiles: paths.length,
+          maxDepth: Math.max(...paths.map(p => p.depth), 0),
+          totalCalls: paths.reduce((sum, p) => sum + p.callCount, 0),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('[Call Paths API] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 洋葱架构导航器 API (Onion Navigator)
+// ============================================================================
+
+import {
+  analyzeProjectIntent,
+  analyzeBusinessDomains,
+  analyzeKeyProcesses,
+  analyzeImplementation,
+  generateAIAnnotation,
+} from './onion-analyzer.js';
+import { OnionLayer } from '../../shared/onion-types.js';
+
+/**
+ * 获取指定层级的洋葱数据
+ * GET /api/blueprint/onion/layer/:layer
+ *
+ * 路径参数:
+ * - layer: 1-4 (PROJECT_INTENT | BUSINESS_DOMAIN | KEY_PROCESS | IMPLEMENTATION)
+ *
+ * 查询参数:
+ * - context: JSON 字符串，包含 fromLayer 和 nodeId
+ * - forceRefresh: boolean
+ * - filePath: 第四层需要的文件路径
+ * - symbolId: 第四层可选的符号ID
+ */
+router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
+  try {
+    const layer = parseInt(req.params.layer, 10) as OnionLayer;
+    const contextStr = req.query.context as string;
+    const forceRefresh = req.query.forceRefresh === 'true';
+    const filePath = req.query.filePath as string;
+    const symbolId = req.query.symbolId as string;
+
+    if (layer < 1 || layer > 4) {
+      return res.status(400).json({
+        success: false,
+        error: '无效的层级，必须是 1-4',
+      });
+    }
+
+    const projectRoot = process.cwd();
+    const startTime = Date.now();
+
+    let data: any;
+    let context: any;
+
+    if (contextStr) {
+      try {
+        context = JSON.parse(contextStr);
+      } catch (e) {
+        console.warn('[Onion API] 无法解析 context:', contextStr);
+      }
+    }
+
+    switch (layer) {
+      case OnionLayer.PROJECT_INTENT:
+        data = await analyzeProjectIntent(projectRoot);
+        break;
+
+      case OnionLayer.BUSINESS_DOMAIN:
+        data = await analyzeBusinessDomains(projectRoot);
+        break;
+
+      case OnionLayer.KEY_PROCESS:
+        data = await analyzeKeyProcesses(projectRoot, context?.nodeId);
+        break;
+
+      case OnionLayer.IMPLEMENTATION:
+        if (!filePath) {
+          return res.status(400).json({
+            success: false,
+            error: '第四层需要提供 filePath 参数',
+          });
+        }
+        data = await analyzeImplementation(projectRoot, filePath, symbolId);
+        break;
+    }
+
+    const analysisTime = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      layer,
+      data,
+      analysisTime,
+      fromCache: false, // TODO: 从分析器返回缓存状态
+    });
+  } catch (error: any) {
+    console.error('[Onion API] 层级数据获取错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 触发 AI 分析生成语义标注
+ * POST /api/blueprint/onion/analyze
+ *
+ * 请求体:
+ * {
+ *   targetType: 'project' | 'module' | 'file' | 'symbol' | 'process',
+ *   targetId: string,
+ *   context?: { projectName, relatedModules }
+ * }
+ */
+router.post('/onion/analyze', async (req: Request, res: Response) => {
+  try {
+    const { targetType, targetId, context } = req.body;
+
+    if (!targetType || !targetId) {
+      return res.status(400).json({
+        success: false,
+        error: '需要提供 targetType 和 targetId',
+      });
+    }
+
+    const annotation = await generateAIAnnotation(targetType, targetId, context);
+
+    res.json({
+      success: true,
+      annotation,
+    });
+  } catch (error: any) {
+    console.error('[Onion API] AI 分析错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 获取特定流程的详细步骤
+ * GET /api/blueprint/onion/process-flow/:processId
+ */
+router.get('/onion/process-flow/:processId', async (req: Request, res: Response) => {
+  try {
+    const { processId } = req.params;
+    const projectRoot = process.cwd();
+
+    // 获取所有流程数据
+    const processData = await analyzeKeyProcesses(projectRoot);
+
+    // 查找指定流程
+    const targetProcess = processData.processes.find(p => p.id === processId);
+
+    if (!targetProcess) {
+      return res.status(404).json({
+        success: false,
+        error: '流程未找到',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: targetProcess,
+    });
+  } catch (error: any) {
+    console.error('[Onion API] 流程详情获取错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 用户修改语义标注
+ * PUT /api/blueprint/onion/annotation/:annotationId
+ *
+ * 请求体:
+ * {
+ *   summary?: string,
+ *   description?: string,
+ *   keyPoints?: string[]
+ * }
+ */
+router.put('/onion/annotation/:annotationId', async (req: Request, res: Response) => {
+  try {
+    const { annotationId } = req.params;
+    const { summary, description, keyPoints } = req.body;
+
+    // TODO: 实现标注更新和持久化
+    // 目前返回模拟成功
+
+    res.json({
+      success: true,
+      message: '标注已更新',
+      annotationId,
+    });
+  } catch (error: any) {
+    console.error('[Onion API] 标注更新错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
