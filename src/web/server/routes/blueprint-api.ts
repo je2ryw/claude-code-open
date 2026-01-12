@@ -25,6 +25,8 @@ import { timeTravelManager } from '../../../blueprint/time-travel.js';
 import { analysisCache } from '../../../blueprint/analysis-cache.js';
 import { CallGraphBuilder } from '../../../map/call-graph-builder.js';
 import type { ModuleNode, CallGraphNode, CallGraphEdge } from '../../../map/types.js';
+import { classifySymbol, canGenerateCallGraph } from './symbol-classifier.js';
+import { calculateTotalLines, groupByDirectory, detectEntryPoints, getCoreSymbols } from './project-map-generator.js';
 
 const router = Router();
 
@@ -176,6 +178,199 @@ router.delete('/blueprints/:id', (req: Request, res: Response) => {
     }
     res.json({ success: true, message: '蓝图已删除' });
   } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 项目地图 API
+// ============================================================================
+
+/**
+ * GET /api/blueprint/project-map
+ *
+ * 返回项目概览信息
+ */
+router.get('/project-map', async (req: Request, res: Response) => {
+  try {
+    const projectRoot = process.cwd();
+    console.log('[Project Map] 开始生成项目地图...');
+
+    // 1. 扫描 TypeScript 文件
+    const tsFiles: string[] = [];
+    const srcPath = path.join(projectRoot, 'src');
+
+    const scanDir = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (['node_modules', 'dist', '.git', '.lh', 'coverage'].includes(entry.name)) continue;
+          scanDir(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+          if (['.ts', '.tsx'].includes(ext)) {
+            tsFiles.push(fullPath);
+          }
+        }
+      }
+    };
+
+    scanDir(srcPath);
+    console.log(`[Project Map] 扫描到 ${tsFiles.length} 个 TypeScript 文件`);
+
+    // 2. 模块统计
+    const totalLines = await calculateTotalLines(tsFiles);
+    const byDirectory = groupByDirectory(tsFiles);
+
+    const moduleStats = {
+      totalFiles: tsFiles.length,
+      totalLines,
+      byDirectory,
+      languages: { typescript: tsFiles.length },
+    };
+
+    console.log(`[Project Map] 模块统计: ${moduleStats.totalFiles} 文件, ${moduleStats.totalLines} 行代码`);
+
+    // 3. 架构分层（如果存在 layer-classifier）
+    let layers = null;
+    try {
+      const { LayerClassifier } = await import('../../../map/layer-classifier.js');
+      const { CodeMapAnalyzer } = await import('../../../map/analyzer.js');
+
+      // 使用 analyzer 提取模块信息
+      const modules: ModuleNode[] = [];
+      const analyzer = new CodeMapAnalyzer(projectRoot);
+
+      for (const file of tsFiles.slice(0, 100)) { // 限制数量避免太慢
+        try {
+          const module = await analyzer.analyzeFile(file);
+          if (module) {
+            modules.push(module);
+          }
+        } catch (err) {
+          // 忽略分析失败的文件
+        }
+      }
+
+      // 分类
+      const classifier = new LayerClassifier();
+      const classifications = classifier.classifyAll(modules);
+
+      // 统计每层的模块数
+      const layerStats: Record<string, number> = {};
+      for (const [, result] of classifications) {
+        layerStats[result.layer] = (layerStats[result.layer] || 0) + 1;
+      }
+
+      layers = {
+        total: classifications.size,
+        distribution: layerStats,
+      };
+
+      console.log(`[Project Map] 架构分层: ${JSON.stringify(layerStats)}`);
+    } catch (err) {
+      console.log(`[Project Map] 架构分层分析跳过: ${err}`);
+      // Layer classifier 不存在或分析失败时跳过
+    }
+
+    // 4. 入口点检测
+    const entryPoints = await detectEntryPoints(tsFiles);
+    console.log(`[Project Map] 检测到 ${entryPoints.length} 个入口点`);
+
+    // 5. 核心符号 (简化版本，从文件中提取符号)
+    const allSymbols: any[] = [];
+    try {
+      // 使用 LSP 分析器提取符号
+      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
+      const lspAnalyzer = new TypeScriptLSPAnalyzer();
+      lspAnalyzer.initProgram(tsFiles.slice(0, 50), projectRoot); // 限制数量
+
+      for (const file of tsFiles.slice(0, 50)) {
+        try {
+          const { functions, classes } = lspAnalyzer.analyzeFile(file);
+          const relativePath = path.relative(projectRoot, file);
+
+          for (const func of functions) {
+            allSymbols.push({
+              name: func.name,
+              kind: 'function',
+              moduleId: relativePath,
+            });
+          }
+
+          for (const cls of classes) {
+            allSymbols.push({
+              name: cls.name,
+              kind: 'class',
+              moduleId: relativePath,
+            });
+
+            for (const method of cls.methods) {
+              allSymbols.push({
+                name: method.name,
+                kind: 'method',
+                moduleId: relativePath,
+              });
+            }
+          }
+        } catch (err) {
+          // 忽略分析失败的文件
+        }
+      }
+    } catch (err) {
+      console.log(`[Project Map] LSP 符号提取失败: ${err}`);
+      // LSP 分析器不存在时跳过
+    }
+
+    const coreSymbols = await getCoreSymbols(allSymbols);
+    console.log(`[Project Map] 核心符号: ${coreSymbols.classes.length} 类, ${coreSymbols.functions.length} 函数`);
+
+    console.log('[Project Map] 项目地图生成完成!');
+
+    res.json({
+      success: true,
+      data: { moduleStats, layers, entryPoints, coreSymbols },
+    });
+  } catch (error: any) {
+    console.error('[Project Map] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/blueprint/treemap
+ *
+ * 返回项目 Treemap 数据（矩形树图）
+ *
+ * 查询参数:
+ * - maxDepth: 最大深度 (默认 4)
+ */
+router.get('/treemap', async (req: Request, res: Response) => {
+  try {
+    const { maxDepth = '4' } = req.query;
+    const projectRoot = process.cwd();
+
+    console.log('[Treemap] 开始生成 Treemap 数据...');
+
+    // 动态导入 treemap 生成函数
+    const { generateTreemapData } = await import('./project-map-generator.js');
+
+    const treemapData = generateTreemapData(
+      projectRoot,
+      parseInt(maxDepth as string, 10)
+    );
+
+    console.log('[Treemap] Treemap 数据生成完成!');
+
+    res.json({
+      success: true,
+      data: treemapData,
+    });
+  } catch (error: any) {
+    console.error('[Treemap] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1760,10 +1955,10 @@ router.get('/call-graph', async (req: Request, res: Response) => {
 
     for (const file of filesToAnalyze) {
       try {
-        const { functions, classes } = lspAnalyzer.analyzeFile(file);
+        const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(file);
         const relativePath = path.relative(projectRoot, file);
 
-        console.log(`[Call Graph API] 分析文件: ${relativePath}, 函数: ${functions.length}, 类: ${classes.length}`);
+        console.log(`[Call Graph API] 分析文件: ${relativePath}, 函数: ${functions.length}, 类: ${classes.length}, 接口: ${interfaces.length}, 类型: ${types.length}`);
 
         // 添加函数节点
         for (const func of functions) {
@@ -1779,15 +1974,15 @@ router.get('/call-graph', async (req: Request, res: Response) => {
           symbolMap.set(func.id, node);
         }
 
-        // 添加类/接口/类型节点
+        // 添加类节点
         for (const cls of classes) {
-          // 添加类本身作为节点（如果是interface或type会有isAbstract标记）
+          // 添加类本身作为节点
           const clsNode: CallGraphNode = {
             id: cls.id,
             name: cls.name,
-            type: cls.isAbstract ? 'function' : 'method', // interface/type显示为function类型
+            type: cls.isAbstract ? 'function' : 'method', // 抽象类显示为 function 类型
             moduleId: relativePath,
-            signature: cls.isAbstract ? `${cls.isExported ? 'export ' : ''}interface/type ${cls.name}` : `class ${cls.name}`,
+            signature: `${cls.isExported ? 'export ' : ''}${cls.isAbstract ? 'abstract ' : ''}class ${cls.name}`,
           };
           allNodes.push(clsNode);
           symbolMap.set(cls.name, clsNode);
@@ -1808,6 +2003,50 @@ router.get('/call-graph', async (req: Request, res: Response) => {
             symbolMap.set(`${cls.name}.${method.name}`, node);
             symbolMap.set(method.id, node);
           }
+        }
+
+        // 添加接口节点
+        for (const iface of interfaces) {
+          // 添加接口本身作为节点
+          const ifaceNode: CallGraphNode = {
+            id: iface.id,
+            name: iface.name,
+            type: 'function', // 接口显示为 function 类型
+            moduleId: relativePath,
+            signature: `${iface.isExported ? 'export ' : ''}interface ${iface.name}`,
+          };
+          allNodes.push(ifaceNode);
+          symbolMap.set(iface.name, ifaceNode);
+          symbolMap.set(iface.id, ifaceNode);
+
+          // 添加接口方法签名
+          for (const method of iface.methods) {
+            const node: CallGraphNode = {
+              id: `${iface.id}::${method.name}`,
+              name: method.name,
+              type: 'method',
+              moduleId: relativePath,
+              className: iface.name,
+              signature: method.signature,
+            };
+            allNodes.push(node);
+            symbolMap.set(`${iface.name}.${method.name}`, node);
+            symbolMap.set(node.id, node);
+          }
+        }
+
+        // 添加类型别名节点
+        for (const type of types) {
+          const typeNode: CallGraphNode = {
+            id: type.id,
+            name: type.name,
+            type: 'function', // 类型别名显示为 function 类型
+            moduleId: relativePath,
+            signature: `${type.isExported ? 'export ' : ''}type ${type.name} = ${type.definition.substring(0, 50)}...`,
+          };
+          allNodes.push(typeNode);
+          symbolMap.set(type.name, typeNode);
+          symbolMap.set(type.id, typeNode);
         }
       } catch (error) {
         console.error(`[Call Graph API] 分析文件失败: ${file}`, error);
@@ -1922,9 +2161,39 @@ router.get('/call-graph', async (req: Request, res: Response) => {
     // 5. 如果指定了文件或符号，过滤调用图
     let filteredNodes = callGraph.nodes;
     let filteredEdges = callGraph.edges;
-    const targetNodes = new Set<string>(); // 目标节点集合（用于后续调用链追踪）
+    const originalTargetNodes = new Set<string>(); // 原始目标节点（用户选中的符号）
+    const targetNodes = new Set<string>(); // 扩展后的节点集合
 
     if (filePath || symbol) {
+
+      // 如果指定了符号，先检查它是否为静态符号（不支持调用图）
+      if (symbol) {
+        const symbolName = symbol as string;
+
+        // 从 symbolMap 中查找符号
+        const symbolNode = symbolMap.get(symbolName);
+
+        if (symbolNode && (symbolNode as any).isStatic) {
+          // 这是一个静态符号（interface/type/property），不支持调用图
+          const signature = symbolNode.signature || symbolName;
+          const kind = signature.includes('interface') ? 'interface' :
+                       signature.includes('type') ? 'type' : 'static symbol';
+
+          console.log(`[Call Graph API] 符号 "${symbolName}" 是静态符号 (${kind})，不支持调用图`);
+
+          return res.json({
+            success: false,
+            error: `符号 "${symbolName}" 是 ${kind}，不支持调用图分析`,
+            suggestion: 'references',
+            hint: `${kind} 是类型定义，建议使用"引用查找"视图查看它在哪些地方被使用`,
+            data: {
+              symbol: symbolName,
+              type: kind,
+              supportedViews: ['definition', 'references', 'type-hierarchy'],
+            },
+          });
+        }
+      }
 
       // 查找目标节点
       for (const node of callGraph.nodes) {
@@ -1950,12 +2219,13 @@ router.get('/call-graph', async (req: Request, res: Response) => {
         }
 
         if (matched) {
+          originalTargetNodes.add(node.id); // 保存原始目标
           targetNodes.add(node.id);
           console.log(`[Call Graph API] 匹配到目标节点: ${node.name} (${node.id})`);
         }
       }
 
-      console.log(`[Call Graph API] 找到 ${targetNodes.size} 个目标节点`);
+      console.log(`[Call Graph API] 找到 ${originalTargetNodes.size} 个原始目标节点`);
 
       // 扩展到相关节点（基于depth）
       const expandNodes = (nodeIds: Set<string>, currentDepth: number) => {
@@ -2082,11 +2352,40 @@ router.get('/call-graph', async (req: Request, res: Response) => {
         moduleId.includes('server.ts')          // server入口
       ) {
         entryPoints.push(node.id);
+        console.log(`[Call Graph API] 检测到入口点: ${node.name} (${moduleId})`);
       }
     }
 
-    // 如果找到入口点且有目标节点，查找调用链
-    if (entryPoints.length > 0 && targetNodes.size > 0) {
+    console.log(`[Call Graph API] 共找到 ${entryPoints.length} 个入口点`);
+
+    // 如果没有找到传统入口点，使用入度为0的节点（没有被调用的节点）
+    if (entryPoints.length === 0 && filteredNodes.length > 0) {
+      console.log('[Call Graph API] 未找到传统入口点，使用入度为0的节点');
+      const inDegree = new Map<string, number>();
+      filteredNodes.forEach(n => inDegree.set(n.id, 0));
+      filteredEdges.forEach(e => {
+        inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+      });
+
+      for (const node of filteredNodes) {
+        if (inDegree.get(node.id) === 0) {
+          entryPoints.push(node.id);
+          console.log(`[Call Graph API] 入度为0的节点作为入口: ${node.name}`);
+        }
+      }
+
+      // 限制入口点数量
+      if (entryPoints.length > 10) {
+        entryPoints.splice(10);
+      }
+
+      console.log(`[Call Graph API] 使用 ${entryPoints.length} 个入度为0的节点作为入口点`);
+    }
+
+    // 如果找到入口点且有原始目标节点，查找调用链
+    if (entryPoints.length > 0 && originalTargetNodes.size > 0) {
+      console.log(`[Call Graph API] 从 ${entryPoints.length} 个入口点搜索到 ${originalTargetNodes.size} 个目标的调用链`);
+
       const findPaths = (startId: string, targetId: string): string[][] => {
         const paths: string[][] = [];
         const visited = new Set<string>();
@@ -2103,8 +2402,8 @@ router.get('/call-graph', async (req: Request, res: Response) => {
           visited.add(nodeId);
           currentPath.push(nodeId);
 
-          // 查找所有出边
-          for (const edge of filteredEdges) {
+          // 查找所有出边（使用完整的callGraph而不是filteredEdges，以找到更完整的路径）
+          for (const edge of callGraph.edges) {
             if (edge.source === nodeId) {
               dfs(edge.target);
             }
@@ -2118,10 +2417,13 @@ router.get('/call-graph', async (req: Request, res: Response) => {
         return paths;
       };
 
-      // 为每个目标节点查找从所有入口点的路径
-      for (const targetId of targetNodes) {
+      // 为每个原始目标节点查找从所有入口点的路径
+      for (const targetId of originalTargetNodes) {
         for (const entryId of entryPoints) {
           const paths = findPaths(entryId, targetId);
+          if (paths.length > 0) {
+            console.log(`[Call Graph API] 找到 ${paths.length} 条从 ${entryId} 到 ${targetId} 的路径`);
+          }
           callChains.push(...paths);
         }
       }
@@ -2173,6 +2475,725 @@ router.get('/call-graph', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[Call Graph API] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 模块依赖图 API
+// ============================================================================
+
+/**
+ * GET /api/blueprint/dependency-graph?module=src/core/client.ts
+ *
+ * 生成模块依赖图
+ *
+ * 参数:
+ *   - module: 模块路径（可选）。如果提供，只分析该模块及其依赖；否则分析整个项目
+ *   - depth: 依赖深度（默认：3）
+ *   - includeTypeOnly: 是否包含纯类型导入（默认：false）
+ *
+ * 返回:
+ *   - nodes: 模块节点列表，包含导入/导出信息
+ *   - edges: 依赖边列表，表示模块间的导入关系
+ *   - cycles: 循环依赖列表（如果存在）
+ *   - stats: 依赖统计信息
+ */
+router.get('/dependency-graph', async (req: Request, res: Response) => {
+  try {
+    const { module, depth = '3', includeTypeOnly = 'false' } = req.query;
+    const maxDepth = parseInt(depth as string) || 3;
+    const includeTypeOnlyImports = includeTypeOnly === 'true';
+
+    console.log('[Dependency Graph API] 请求参数:', { module, maxDepth, includeTypeOnlyImports });
+
+    const projectRoot = process.cwd();
+    const srcPath = path.join(projectRoot, 'src');
+
+    // 1. 扫描所有 TypeScript/JavaScript 文件
+    const allFiles: string[] = [];
+
+    const scanDir = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          // 跳过不需要的目录
+          if (['node_modules', 'dist', '.git', '.lh', 'coverage'].includes(entry.name)) continue;
+          scanDir(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+          if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+            allFiles.push(fullPath);
+          }
+        }
+      }
+    };
+
+    scanDir(srcPath);
+    console.log(`[Dependency Graph API] 扫描到 ${allFiles.length} 个文件`);
+
+    if (allFiles.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          nodes: [],
+          edges: [],
+          cycles: [],
+          stats: {
+            totalEdges: 0,
+            internalDeps: 0,
+            typeOnlyDeps: 0,
+            dynamicDeps: 0,
+            mostDependent: [],
+            mostDepended: [],
+          },
+        },
+        message: '未找到任何源文件',
+      });
+    }
+
+    // 2. 解析所有文件的导入/导出
+    const { CodeMapAnalyzer } = await import('../../../map/analyzer.js');
+    const fileAnalyzer = new CodeMapAnalyzer(projectRoot);
+
+    const modules: ModuleNode[] = [];
+
+    // 限制文件数量（避免太慢），优先分析 src 目录
+    const filesToAnalyze = allFiles.slice(0, 200);
+    console.log(`[Dependency Graph API] 将分析 ${filesToAnalyze.length} 个文件`);
+
+    for (const file of filesToAnalyze) {
+      try {
+        const moduleNode = await fileAnalyzer.analyzeFile(file);
+        modules.push(moduleNode);
+      } catch (error) {
+        console.error(`[Dependency Graph API] 解析文件失败: ${file}`, error);
+      }
+    }
+
+    console.log(`[Dependency Graph API] 成功解析 ${modules.length} 个模块`);
+
+    // 3. 使用 DependencyAnalyzer 分析依赖关系
+    const { DependencyAnalyzer } = await import('../../../map/dependency-analyzer.js');
+    const analyzer = new DependencyAnalyzer();
+
+    let dependencyGraph = analyzer.analyzeDependencies(modules);
+
+    // 4. 如果指定了模块，过滤依赖图
+    let filteredModules = modules;
+    let filteredEdges = dependencyGraph.edges;
+
+    if (module && typeof module === 'string') {
+      console.log(`[Dependency Graph API] 过滤模块: ${module}`);
+
+      // 规范化模块路径
+      const normalizedModulePath = module.replace(/\\/g, '/');
+
+      // 查找目标模块
+      const targetModules = modules.filter(m => {
+        const normalizedId = m.id.replace(/\\/g, '/');
+        return normalizedId.includes(normalizedModulePath) || normalizedModulePath.includes(normalizedId);
+      });
+
+      if (targetModules.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `未找到模块: ${module}`,
+        });
+      }
+
+      console.log(`[Dependency Graph API] 找到 ${targetModules.length} 个匹配的模块`);
+
+      // 扩展到相关模块（基于 depth）
+      const targetModuleIds = new Set(targetModules.map(m => m.id));
+      const relatedModuleIds = new Set<string>(targetModuleIds);
+
+      const expandModules = (moduleIds: Set<string>, currentDepth: number) => {
+        if (currentDepth >= maxDepth) return;
+
+        const newModuleIds = new Set<string>();
+
+        // 查找所有相关的依赖
+        for (const edge of dependencyGraph.edges) {
+          if (moduleIds.has(edge.source)) {
+            newModuleIds.add(edge.target);
+          }
+          if (moduleIds.has(edge.target)) {
+            newModuleIds.add(edge.source);
+          }
+        }
+
+        newModuleIds.forEach(id => relatedModuleIds.add(id));
+
+        if (newModuleIds.size > 0) {
+          expandModules(newModuleIds, currentDepth + 1);
+        }
+      };
+
+      expandModules(targetModuleIds, 0);
+
+      // 过滤模块和边
+      filteredModules = modules.filter(m => relatedModuleIds.has(m.id));
+      filteredEdges = dependencyGraph.edges.filter(e =>
+        relatedModuleIds.has(e.source) && relatedModuleIds.has(e.target)
+      );
+
+      console.log(`[Dependency Graph API] 过滤后模块数: ${filteredModules.length}, 边数: ${filteredEdges.length}`);
+    }
+
+    // 5. 过滤纯类型导入（如果需要）
+    if (!includeTypeOnlyImports) {
+      const beforeCount = filteredEdges.length;
+      filteredEdges = filteredEdges.filter(e => !e.isTypeOnly);
+      console.log(`[Dependency Graph API] 排除纯类型导入: ${beforeCount} -> ${filteredEdges.length}`);
+    }
+
+    // 6. 检测循环依赖
+    const cycles = analyzer.detectCircularDependencies({ edges: filteredEdges });
+    console.log(`[Dependency Graph API] 检测到 ${cycles.length} 个循环依赖`);
+
+    // 7. 获取统计信息
+    const stats = analyzer.getDependencyStats({ edges: filteredEdges });
+
+    // 8. 构建返回数据（简化版）
+    const nodes = filteredModules.map(m => ({
+      id: m.id,
+      name: m.name,
+      path: m.path,
+      language: m.language,
+      lines: m.lines,
+      imports: m.imports.map(imp => ({
+        source: imp.source,
+        symbols: imp.symbols,
+        isDefault: imp.isDefault,
+        isDynamic: imp.isDynamic,
+      })),
+      exports: m.exports.map(exp => ({
+        name: exp.name,
+        type: exp.type,
+      })),
+    }));
+
+    const edges = filteredEdges.map(e => ({
+      source: e.source,
+      target: e.target,
+      type: e.type,
+      symbols: e.symbols,
+      isTypeOnly: e.isTypeOnly,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        nodes,
+        edges,
+        cycles: cycles.length > 0 ? cycles : undefined,
+        stats,
+      },
+      metadata: {
+        totalModules: modules.length,
+        filteredModules: filteredModules.length,
+        totalEdges: dependencyGraph.edges.length,
+        filteredEdges: filteredEdges.length,
+        analysisTime: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error('[Dependency Graph API] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 数据流分析 API
+// ============================================================================
+
+/**
+ * GET /api/blueprint/data-flow/:symbolId
+ *
+ * 获取数据流分析结果
+ *
+ * 追踪属性/变量的所有读写位置
+ *
+ * 参数:
+ *   - symbolId: 符号ID，格式为 "filePath::symbolName" 或 "filePath::className::propertyName"
+ *
+ * 返回:
+ *   - symbolId: 符号ID
+ *   - symbolName: 符号名称
+ *   - reads: 读取位置列表
+ *   - writes: 写入位置列表
+ *   - dataFlowGraph: 数据流图（可选）
+ */
+router.get('/data-flow', async (req: Request, res: Response) => {
+  try {
+    const symbolId = req.query.symbolId as string;
+
+    if (!symbolId) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需的参数: symbolId',
+      });
+    }
+
+    // 解码符号 ID
+    const decodedId = decodeURIComponent(symbolId);
+
+    console.log('[Data Flow API] 分析符号:', decodedId);
+
+    // 执行数据流分析
+    const { DataFlowAnalyzer } = await import('./data-flow-analyzer.js');
+    const analyzer = new DataFlowAnalyzer();
+    const dataFlow = await analyzer.analyzeDataFlow(decodedId);
+
+    console.log('[Data Flow API] 分析完成:', {
+      symbolName: dataFlow.symbolName,
+      reads: dataFlow.reads.length,
+      writes: dataFlow.writes.length,
+    });
+
+    res.json({
+      success: true,
+      data: dataFlow,
+    });
+  } catch (error) {
+    console.error('[Data Flow API] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+    });
+  }
+});
+
+
+// ============================================================================
+// 符号浏览 API (LSP)
+// ============================================================================
+
+// 符号缓存（避免每次都扫描所有文件）
+let symbolsCache: {
+  data: Array<{
+    id: string;
+    name: string;
+    type: string;
+    moduleId: string;
+    signature?: string;
+    className?: string;
+  }>;
+  timestamp: number;
+} | null = null;
+
+const SYMBOLS_CACHE_TTL = 10 * 60 * 1000; // 10分钟
+
+/**
+ * 获取符号列表（支持过滤）
+ * GET /api/blueprint/symbols?type=function&module=src/core&search=handler
+ *
+ * 查询参数：
+ * - type: 符号类型 (function/method/class/interface/type)
+ * - module: 模块路径（支持部分匹配）
+ * - search: 搜索词（匹配符号名称）
+ */
+
+/**
+ * 获取文件内容 API
+ * GET /api/blueprint/file-content?path=xxx
+ */
+router.get('/file-content', async (req: Request, res: Response) => {
+  try {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需的参数: path',
+      });
+    }
+
+    const projectRoot = process.cwd();
+    let absolutePath: string;
+
+    // 处理相对路径和绝对路径
+    if (path.isAbsolute(filePath)) {
+      absolutePath = filePath;
+    } else {
+      absolutePath = path.join(projectRoot, filePath);
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `文件不存在: ${filePath}`,
+      });
+    }
+
+    const content = fs.readFileSync(absolutePath, 'utf-8');
+    const stats = fs.statSync(absolutePath);
+
+    res.json({
+      success: true,
+      data: {
+        path: filePath,
+        absolutePath,
+        content,
+        size: stats.size,
+        modified: stats.mtime.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error('[File Content API] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '读取文件失败',
+    });
+  }
+});
+
+router.get('/symbols', async (req: Request, res: Response) => {
+  try {
+    const { type, module, search } = req.query;
+
+    console.log('[Symbols API] 查询参数:', { type, module, search });
+
+    // 检查缓存
+    if (symbolsCache && Date.now() - symbolsCache.timestamp < SYMBOLS_CACHE_TTL) {
+      console.log('[Symbols API] 使用缓存的符号列表');
+    } else {
+      console.log('[Symbols API] 重新扫描符号...');
+
+      const projectRoot = process.cwd();
+      const tsFiles: string[] = [];
+      const srcPath = path.join(projectRoot, 'src');
+
+      // 扫描 TypeScript 文件
+      const scanDir = (dir: string) => {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (['node_modules', 'dist', '.git', '.lh'].includes(entry.name)) continue;
+            scanDir(fullPath);
+          } else if (entry.isFile()) {
+            const ext = path.extname(entry.name);
+            if (['.ts', '.tsx'].includes(ext)) {
+              tsFiles.push(fullPath);
+            }
+          }
+        }
+      };
+
+      scanDir(srcPath);
+      console.log(`[Symbols API] 扫描到 ${tsFiles.length} 个 TypeScript 文件`);
+
+      // 初始化 LSP 分析器（复用全局实例）
+      if (!lspAnalyzer) {
+        const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
+        lspAnalyzer = new TypeScriptLSPAnalyzer();
+        lspAnalyzer.initProgram(tsFiles, projectRoot);
+        console.log('[Symbols API] LSP 分析器已初始化');
+      }
+
+      // 提取所有符号
+      const allSymbols: Array<{
+        id: string;
+        name: string;
+        type: string;
+        moduleId: string;
+        signature?: string;
+        className?: string;
+      }> = [];
+
+      for (const file of tsFiles) {
+        try {
+          const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(file);
+          const relativePath = path.relative(projectRoot, file);
+
+          // 添加函数
+          for (const func of functions) {
+            allSymbols.push({
+              id: func.id,
+              name: func.name,
+              type: 'function',
+              moduleId: relativePath,
+              signature: func.signature,
+            });
+          }
+
+          // 添加类和类方法
+          for (const cls of classes) {
+            // 添加类本身
+            const exportStr = cls.isExported ? 'export ' : '';
+            const abstractStr = cls.isAbstract ? 'abstract ' : '';
+            allSymbols.push({
+              id: cls.id,
+              name: cls.name,
+              type: 'class',
+              moduleId: relativePath,
+              signature: `${exportStr}${abstractStr}class ${cls.name}`,
+            });
+
+            // 添加类方法
+            for (const method of cls.methods) {
+              allSymbols.push({
+                id: method.id,
+                name: method.name,
+                type: method.name === 'constructor' ? 'constructor' : 'method',
+                moduleId: relativePath,
+                className: cls.name,
+                signature: method.signature,
+              });
+            }
+          }
+
+          // 添加接口
+          for (const iface of interfaces) {
+            const exportStr = iface.isExported ? 'export ' : '';
+            allSymbols.push({
+              id: iface.id,
+              name: iface.name,
+              type: 'interface',
+              moduleId: relativePath,
+              signature: `${exportStr}interface ${iface.name}`,
+            });
+          }
+
+          // 添加类型别名
+          for (const typeNode of types) {
+            const exportStr = typeNode.isExported ? 'export ' : '';
+            allSymbols.push({
+              id: typeNode.id,
+              name: typeNode.name,
+              type: 'type',
+              moduleId: relativePath,
+              signature: `${exportStr}type ${typeNode.name}`,
+            });
+          }
+        } catch (error) {
+          console.error(`[Symbols API] 分析文件失败: ${file}`, error);
+        }
+      }
+
+      // 更新缓存
+      symbolsCache = {
+        data: allSymbols,
+        timestamp: Date.now(),
+      };
+
+      console.log(`[Symbols API] 提取到 ${allSymbols.length} 个符号`);
+    }
+
+    // 应用过滤
+    let filteredSymbols = symbolsCache.data;
+
+    // 过滤：按类型
+    if (type && typeof type === 'string') {
+      filteredSymbols = filteredSymbols.filter(s => s.type === type);
+    }
+
+    // 过滤：按模块
+    if (module && typeof module === 'string') {
+      const normalizedModule = (module as string).replace(/\\/g, '/');
+      filteredSymbols = filteredSymbols.filter(s =>
+        s.moduleId.replace(/\\/g, '/').includes(normalizedModule)
+      );
+    }
+
+    // 过滤：按搜索词
+    if (search && typeof search === 'string') {
+      const searchLower = (search as string).toLowerCase();
+      filteredSymbols = filteredSymbols.filter(s =>
+        s.name.toLowerCase().includes(searchLower) ||
+        (s.className && s.className.toLowerCase().includes(searchLower))
+      );
+    }
+
+    console.log(`[Symbols API] 过滤后剩余 ${filteredSymbols.length} 个符号`);
+
+    res.json({
+      success: true,
+      data: filteredSymbols,
+      count: filteredSymbols.length,
+      cached: symbolsCache !== null,
+    });
+  } catch (error: any) {
+    console.error('[Symbols API] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取符号详情
+ * GET /api/blueprint/symbol/:id/detail
+ *
+ * 符号 ID 格式:
+ * - 函数/类/接口/类型: "file.ts::symbolName"
+ * - 类方法: "file.ts::ClassName::methodName"
+ */
+router.get('/symbol-detail', async (req: Request, res: Response) => {
+  try {
+    const id = req.query.id as string;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必需的参数: id',
+      });
+    }
+
+    console.log(`[Symbol Detail API] 查询符号: ${id}`);
+
+    // 解析符号 ID
+    // ID 格式: "file.ts::symbolName" 或 "file.ts::ClassName::methodName"
+    const parts = id.split('::');
+    if (parts.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: `无效的符号 ID 格式: ${id}`,
+        hint: 'ID 格式应为 "file.ts::symbolName" 或 "file.ts::ClassName::methodName"',
+      });
+    }
+
+    const filePath = parts[0];
+    const symbolName = parts[parts.length - 1];
+
+    console.log(`[Symbol Detail API] 文件: ${filePath}, 符号: ${symbolName}`);
+
+    // 构建绝对路径（处理相对路径和绝对路径两种情况）
+    const projectRoot = process.cwd();
+    let absolutePath: string;
+
+    // 检查是否为绝对路径
+    if (path.isAbsolute(filePath)) {
+      absolutePath = filePath;
+    } else {
+      absolutePath = path.join(projectRoot, filePath);
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `文件不存在: ${filePath}`,
+      });
+    }
+
+    // 初始化 LSP 分析器（复用全局实例）
+    if (!lspAnalyzer) {
+      const tsFiles: string[] = [];
+      const srcPath = path.join(projectRoot, 'src');
+
+      const scanDir = (dir: string) => {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (['node_modules', 'dist', '.git', '.lh'].includes(entry.name)) continue;
+            scanDir(fullPath);
+          } else if (entry.isFile()) {
+            const ext = path.extname(entry.name);
+            if (['.ts', '.tsx'].includes(ext)) {
+              tsFiles.push(fullPath);
+            }
+          }
+        }
+      };
+
+      scanDir(srcPath);
+
+      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
+      lspAnalyzer = new TypeScriptLSPAnalyzer();
+      lspAnalyzer.initProgram(tsFiles, projectRoot);
+      console.log('[Symbol Detail API] LSP 分析器已初始化');
+    }
+
+    // 分析文件
+    const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(absolutePath);
+
+    console.log(`[Symbol Detail API] 分析结果 - 函数: ${functions.length}, 类: ${classes.length}, 接口: ${interfaces.length}, 类型: ${types.length}`);
+
+    // 查找符号
+    let detail: any = null;
+    let symbolType = 'unknown';
+
+    // 在 functions 中查找
+    const func = functions.find(f => f.name === symbolName);
+    if (func) {
+      detail = func;
+      symbolType = 'function';
+    }
+
+    // 在 classes 中查找
+    if (!detail) {
+      const cls = classes.find(c => c.name === symbolName);
+      if (cls) {
+        detail = cls;
+        symbolType = 'class';
+      } else {
+        // 查找类的方法
+        for (const cls of classes) {
+          const method = cls.methods.find(m => m.name === symbolName);
+          if (method) {
+            detail = { ...method, className: cls.name };
+            symbolType = 'method';
+            break;
+          }
+        }
+      }
+    }
+
+    // 在 interfaces 中查找
+    if (!detail) {
+      const iface = interfaces.find(i => i.name === symbolName);
+      if (iface) {
+        detail = iface;
+        symbolType = 'interface';
+      }
+    }
+
+    // 在 types 中查找
+    if (!detail) {
+      const typeNode = types.find(t => t.name === symbolName);
+      if (typeNode) {
+        detail = typeNode;
+        symbolType = 'type';
+      }
+    }
+
+    if (!detail) {
+      return res.status(404).json({
+        success: false,
+        error: `符号 "${symbolName}" 未在文件 "${filePath}" 中找到`,
+        hint: `可用符号: ${[
+          ...functions.map(f => f.name),
+          ...classes.map(c => c.name),
+          ...interfaces.map(i => i.name),
+          ...types.map(t => t.name),
+        ].join(', ')}`,
+      });
+    }
+
+    // 获取符号分类信息
+    const classification = classifySymbol(symbolType);
+
+    console.log(`[Symbol Detail API] 找到符号: ${symbolName} (${symbolType})`);
+
+    res.json({
+      success: true,
+      data: {
+        ...detail,
+        symbolType,
+        classification,
+        availableViews: classification.supportedViews,
+      },
+    });
+  } catch (error: any) {
+    console.error('[Symbol Detail API] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

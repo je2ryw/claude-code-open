@@ -10,7 +10,17 @@
 import * as ts from 'typescript';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { FunctionNode, ClassNode, MethodNode, LocationInfo } from '../../../map/types.js';
+import type {
+  FunctionNode,
+  ClassNode,
+  MethodNode,
+  LocationInfo,
+  InterfaceNode,
+  TypeNode,
+  PropertySignature,
+  MethodSignature,
+  ParameterInfo
+} from '../../../map/types.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 // ============================================================================
@@ -63,6 +73,8 @@ export class TypeScriptLSPAnalyzer {
   analyzeFile(filePath: string): {
     functions: FunctionNode[];
     classes: ClassNode[];
+    interfaces: InterfaceNode[];
+    types: TypeNode[];
   } {
     if (!this.program || !this.checker) {
       throw new Error('LSP Program 未初始化');
@@ -70,11 +82,13 @@ export class TypeScriptLSPAnalyzer {
 
     const sourceFile = this.program.getSourceFile(filePath);
     if (!sourceFile) {
-      return { functions: [], classes: [] };
+      return { functions: [], classes: [], interfaces: [], types: [] };
     }
 
     const functions: FunctionNode[] = [];
     const classes: ClassNode[] = [];
+    const interfaces: InterfaceNode[] = [];
+    const types: TypeNode[] = [];
 
     const visit = (node: ts.Node) => {
       // 函数声明
@@ -101,16 +115,16 @@ export class TypeScriptLSPAnalyzer {
         if (cls) classes.push(cls);
       }
 
-      // 接口声明（将接口作为特殊的类处理）
+      // 接口声明
       if (ts.isInterfaceDeclaration(node) && node.name) {
         const interfaceNode = this.extractInterface(node, filePath);
-        if (interfaceNode) classes.push(interfaceNode);
+        if (interfaceNode) interfaces.push(interfaceNode);
       }
 
-      // 类型别名（将类型作为特殊的类处理）
+      // 类型别名
       if (ts.isTypeAliasDeclaration(node) && node.name) {
         const typeNode = this.extractTypeAlias(node, filePath);
-        if (typeNode) classes.push(typeNode);
+        if (typeNode) types.push(typeNode);
       }
 
       ts.forEachChild(node, visit);
@@ -118,7 +132,7 @@ export class TypeScriptLSPAnalyzer {
 
     visit(sourceFile);
 
-    return { functions, classes };
+    return { functions, classes, interfaces, types };
   }
 
   /**
@@ -322,7 +336,7 @@ export class TypeScriptLSPAnalyzer {
     return text.substring(0, Math.min(150, text.length));
   }
 
-  private extractParameters(node: ts.SignatureDeclaration): any[] {
+  private extractParameters(node: ts.SignatureDeclaration): ParameterInfo[] {
     return node.parameters.map(param => ({
       name: param.name.getText(),
       type: param.type ? param.type.getText() : undefined,
@@ -334,7 +348,7 @@ export class TypeScriptLSPAnalyzer {
   /**
    * 提取接口信息
    */
-  private extractInterface(node: ts.InterfaceDeclaration, filePath: string): ClassNode | null {
+  private extractInterface(node: ts.InterfaceDeclaration, filePath: string): InterfaceNode | null {
     if (!node.name || !this.checker) return null;
 
     const interfaceName = node.name.text;
@@ -342,49 +356,52 @@ export class TypeScriptLSPAnalyzer {
     const start = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart());
     const end = ts.getLineAndCharacterOfPosition(sourceFile, node.getEnd());
 
-    const methods: MethodNode[] = [];
+    const properties: PropertySignature[] = [];
+    const methods: MethodSignature[] = [];
 
-    // 提取接口成员（属性和方法）
+    // 提取接口成员（区分属性和方法）
     node.members.forEach(member => {
+      // 属性签名
       if (ts.isPropertySignature(member) && ts.isIdentifier(member.name)) {
-        // 属性签名作为方法处理
         const propName = member.name.text;
-        const propStart = ts.getLineAndCharacterOfPosition(sourceFile, member.getStart());
-        const propEnd = ts.getLineAndCharacterOfPosition(sourceFile, member.getEnd());
+        const propType = member.type ? member.type.getText() : undefined;
+
+        properties.push({
+          name: propName,
+          type: propType,
+          isOptional: !!member.questionToken,
+          isReadonly: !!(member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)),
+        });
+      }
+
+      // 方法签名
+      if (ts.isMethodSignature(member) && ts.isIdentifier(member.name)) {
+        const methodName = member.name.text;
+        const parameters = this.extractParameters(member);
+        const returnType = member.type ? member.type.getText() : undefined;
 
         methods.push({
-          id: `${filePath}::${interfaceName}::${propName}`,
-          name: propName,
-          className: interfaceName,
-          signature: member.getText().substring(0, 100),
-          parameters: [],
-          isAsync: false,
-          isGenerator: false,
-          isExported: false,
-          visibility: 'public',
-          isStatic: false,
-          isAbstract: false,
-          isOverride: false,
-          location: {
-            file: filePath,
-            startLine: propStart.line + 1,
-            startColumn: propStart.character,
-            endLine: propEnd.line + 1,
-            endColumn: propEnd.character,
-          },
-          calls: [],
-          calledBy: [],
+          name: methodName,
+          signature: member.getText().substring(0, 150),
+          parameters,
+          returnType,
+          isOptional: !!member.questionToken,
         });
       }
     });
 
+    // 提取继承的接口
+    const extendsInterfaces = node.heritageClauses
+      ?.filter(clause => clause.token === ts.SyntaxKind.ExtendsKeyword)
+      ?.flatMap(clause => clause.types.map(type => type.expression.getText()));
+
     return {
       id: `${filePath}::${interfaceName}`,
       name: interfaceName,
-      isAbstract: true, // 接口视为抽象类
+      extends: extendsInterfaces && extendsInterfaces.length > 0 ? extendsInterfaces : undefined,
       isExported: !!(node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)),
+      properties,
       methods,
-      properties: [],
       location: {
         file: filePath,
         startLine: start.line + 1,
@@ -398,7 +415,7 @@ export class TypeScriptLSPAnalyzer {
   /**
    * 提取类型别名信息
    */
-  private extractTypeAlias(node: ts.TypeAliasDeclaration, filePath: string): ClassNode | null {
+  private extractTypeAlias(node: ts.TypeAliasDeclaration, filePath: string): TypeNode | null {
     if (!node.name || !this.checker) return null;
 
     const typeName = node.name.text;
@@ -406,13 +423,14 @@ export class TypeScriptLSPAnalyzer {
     const start = ts.getLineAndCharacterOfPosition(sourceFile, node.getStart());
     const end = ts.getLineAndCharacterOfPosition(sourceFile, node.getEnd());
 
+    // 提取类型定义内容
+    const definition = node.type.getText();
+
     return {
       id: `${filePath}::${typeName}`,
       name: typeName,
-      isAbstract: true,
+      definition,
       isExported: !!(node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)),
-      methods: [],
-      properties: [],
       location: {
         file: filePath,
         startLine: start.line + 1,

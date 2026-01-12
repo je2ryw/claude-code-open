@@ -1,0 +1,252 @@
+/**
+ * TreemapView 样式
+ * 项目代码地图（矩形树图）
+ */
+
+.treemapView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e2e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 导航栏 */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #252536;
+  border-bottom: 1px solid #333;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.breadcrumbItem {
+  background: transparent;
+  border: none;
+  color: #8b8fa3;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.breadcrumbItem:hover:not(:disabled) {
+  background: #3a3a4d;
+  color: #fff;
+}
+
+.breadcrumbItem:disabled {
+  color: #fff;
+  font-weight: 500;
+}
+
+.breadcrumbSeparator {
+  color: #555;
+  font-size: 12px;
+}
+
+.backButton {
+  background: #3178c6;
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.backButton:hover {
+  background: #4188d6;
+}
+
+/* 统计信息 */
+.stats {
+  display: flex;
+  gap: 24px;
+  padding: 12px 16px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #333;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 600;
+  color: #4e7bdf;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: #8b8fa3;
+  margin-top: 2px;
+}
+
+/* 图例 */
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #252536;
+  border-bottom: 1px solid #333;
+  flex-wrap: wrap;
+}
+
+.legendTitle {
+  font-size: 12px;
+  color: #8b8fa3;
+  margin-right: 4px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendColor {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.legendItem span:last-child {
+  font-size: 11px;
+  color: #ccc;
+}
+
+/* Treemap 容器 */
+.treemapContainer {
+  flex: 1;
+  padding: 16px;
+  min-height: 400px;
+  overflow: hidden;
+}
+
+/* Tooltip */
+.tooltip {
+  background: #2a2a3d;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 300px;
+}
+
+.tooltipHeader {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #444;
+  padding-bottom: 6px;
+}
+
+.tooltipContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tooltipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.tooltipRow span:first-child {
+  color: #8b8fa3;
+}
+
+.tooltipRow span:last-child {
+  color: #fff;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* 提示 */
+.hint {
+  padding: 10px 16px;
+  background: #1a1a2e;
+  border-top: 1px solid #333;
+  font-size: 12px;
+  color: #8b8fa3;
+  text-align: center;
+}
+
+/* 加载状态 */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #333;
+  border-top-color: #4e7bdf;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading p {
+  color: #8b8fa3;
+  font-size: 14px;
+}
+
+/* 错误状态 */
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+}
+
+.error p {
+  color: #f87171;
+  font-size: 14px;
+}
+
+/* 空状态 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.emptyState p {
+  color: #8b8fa3;
+  font-size: 14px;
+}

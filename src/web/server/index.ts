@@ -82,6 +82,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const authRouter = await import('./routes/auth.js');
   app.use('/api/auth/oauth', authRouter.default);
 
+  // 蓝图 API 路由（项目导航、符号浏览、调用图等）
+  const blueprintRouter = await import('./routes/blueprint-api.js');
+  app.use('/api/blueprint', blueprintRouter.default);
+
   // 检测开发模式
   const isDev = process.env.NODE_ENV !== 'production' && !process.argv[1]?.includes('dist');
   const clientPath = path.join(__dirname, '../client');

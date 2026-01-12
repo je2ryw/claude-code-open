@@ -3,8 +3,9 @@ import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
 import TopNavBar from './components/swarm/TopNavBar';
+import { ProjectNavigator } from './components/swarm/ProjectNavigator';
 
-type Page = 'chat' | 'swarm' | 'blueprint';
+type Page = 'chat' | 'swarm' | 'blueprint' | 'navigator';
 
 /**
  * 根组件 - 处理顶层导航和页面路由
@@ -49,6 +50,8 @@ export default function Root() {
             onNavigateToSwarm={navigateToSwarmPage}
           />
         );
+      case 'navigator':
+        return <ProjectNavigator />;
       default:
         return null;
     }

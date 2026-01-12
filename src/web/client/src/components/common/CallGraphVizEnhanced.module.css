@@ -152,6 +152,52 @@
   text-align: center;
 }
 
+/* 空状态 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #888;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.emptyState p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.emptyState p:first-child {
+  font-size: 18px;
+  font-weight: 500;
+  color: #ff8800;
+}
+
+.staticSymbolsList {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(40, 40, 40, 0.5);
+  border: 1px solid #333;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  color: #aaa;
+  text-align: left;
+  max-width: 500px;
+}
+
+.staticSymbolsList div {
+  padding: 4px 0;
+}
+
+.suggestion {
+  margin-top: 16px !important;
+  color: #64b5f6 !important;
+  font-size: 13px !important;
+}
+
 /* 提示 */
 .hint {
   position: absolute;
@@ -189,6 +235,28 @@
 .cycleCount {
   color: #ff8800;
   font-weight: 500;
+}
+
+/* 过滤信息提示 */
+.filterInfo {
+  padding: 8px 12px;
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  color: #64b5f6;
+  font-size: 12px;
+  margin: 0 12px 12px 12px;
+  text-align: center;
+}
+
+/* 工具栏提示 */
+.toolbarHint {
+  font-size: 11px;
+  color: #888;
+  padding: 4px 8px;
+  background: rgba(40, 40, 40, 0.5);
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 /* SVG 全局样式 */

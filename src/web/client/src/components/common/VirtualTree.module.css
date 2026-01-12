@@ -1,0 +1,94 @@
+/* VirtualTree 样式 */
+
+.virtualTree {
+  /* react-window 的列表容器 */
+  outline: none;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+/* 滚动条样式 */
+.virtualTree::-webkit-scrollbar {
+  width: 8px;
+}
+
+.virtualTree::-webkit-scrollbar-track {
+  background: var(--bg-secondary, #1e1e1e);
+}
+
+.virtualTree::-webkit-scrollbar-thumb {
+  background: var(--border-color, #3e3e3e);
+  border-radius: 4px;
+}
+
+.virtualTree::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover, #4e4e4e);
+}
+
+/* 行样式 */
+.row {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+  border-bottom: 1px solid var(--border-subtle, #2a2a2a);
+}
+
+.row:hover {
+  background-color: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+
+.row.selected {
+  background-color: var(--bg-selected, rgba(37, 99, 235, 0.2));
+  border-left: 2px solid var(--accent-color, #2563eb);
+}
+
+.row.selected:hover {
+  background-color: var(--bg-selected-hover, rgba(37, 99, 235, 0.25));
+}
+
+/* 展开/折叠按钮 */
+.expandButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  font-size: 10px;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.expandButton:hover {
+  color: var(--text-primary, #fff);
+  transform: scale(1.1);
+}
+
+.expandPlaceholder {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* 节点内容 */
+.nodeContent {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 空状态 */
+.virtualTree:empty::after {
+  content: '暂无数据';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted, #888);
+  font-size: 14px;
+}

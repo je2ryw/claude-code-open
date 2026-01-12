@@ -3,7 +3,7 @@ import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import styles from './BlueprintDetailContent.module.css';
 import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent } from '../../../api/blueprint';
-import { CallGraphVizEnhanced, CallGraphData } from '../../common/CallGraphVizEnhanced';
+
 
 interface BlueprintDetailContentProps {
   blueprintId: string;
@@ -13,7 +13,7 @@ interface BlueprintDetailContentProps {
 }
 
 // 视图模式类型
-type ViewMode = 'analysis' | 'code' | 'callgraph';
+type ViewMode = 'analysis' | 'code';
 
 // 代码符号类型
 interface CodeSymbol {
@@ -87,10 +87,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     moduleCount: number;
   } | null>(null);
 
-  // 调用图相关状态
-  const [callGraphData, setCallGraphData] = useState<CallGraphData | null>(null);
-  const [loadingCallGraph, setLoadingCallGraph] = useState(false);
-  const [callGraphError, setCallGraphError] = useState<string | null>(null);
 
   // 加载目录树
   useEffect(() => {
@@ -184,36 +180,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   }, [blueprintId, analysisCache]);
 
-  // 加载调用图
-  const loadCallGraph = useCallback(async (filePath?: string, symbolName?: string) => {
-    setLoadingCallGraph(true);
-    setCallGraphError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (filePath) params.append('path', filePath);
-      if (symbolName) params.append('symbol', symbolName);
-      params.append('depth', '2'); // 默认深度为2
-      params.append('detectCycles', 'true'); // 启用循环检测
-
-      const response = await fetch(`/api/blueprint/call-graph?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error('加载调用图失败');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || '加载调用图失败');
-      }
-
-      setCallGraphData(result.data);
-    } catch (err: any) {
-      setCallGraphError(err.message);
-      setCallGraphData(null);
-    } finally {
-      setLoadingCallGraph(false);
-    }
-  }, []);
 
   // 解析代码符号
   const parseCodeSymbols = useCallback((content: string, filePath: string): CodeSymbol[] => {
@@ -864,107 +830,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     executing: '执行中', completed: '已完成', paused: '已暂停', modified: '已修改',
   };
 
-  // 渲染调用图谱视图
-  const renderCallGraphView = () => {
-    if (!selectedSymbol || !selectedPath) {
-      return (
-        <div className={styles.welcomePage}>
-          <h2 className={styles.welcomeTitle}>未选中符号</h2>
-          <p className={styles.welcomeDesc}>请先在语义tab中选择一个符号（函数、类、方法等）</p>
-        </div>
-      );
-    }
-
-    if (loadingCallGraph) {
-      return (
-        <div className={styles.callGraphLoading}>
-          <div className={styles.spinner}></div>
-          <h3>正在分析调用关系...</h3>
-          <p>LSP正在提取符号，AI正在理解语义</p>
-        </div>
-      );
-    }
-
-    if (callGraphError) {
-      return (
-        <div className={styles.callGraphError}>
-          <h3>❌ 加载失败</h3>
-          <p>{callGraphError}</p>
-          <button
-            className={styles.retryButton}
-            onClick={() => loadCallGraph(selectedPath, selectedSymbol.name)}
-          >
-            🔄 重试
-          </button>
-        </div>
-      );
-    }
-
-    if (!callGraphData) {
-      return (
-        <div className={styles.welcomePage}>
-          <h2 className={styles.welcomeTitle}>调用图谱</h2>
-          <p className={styles.welcomeDesc}>
-            为 <code>{selectedSymbol.name}</code> 生成调用关系图谱
-          </p>
-          <button
-            className={styles.loadGraphBtn}
-            onClick={() => loadCallGraph(selectedPath, selectedSymbol.name)}
-            style={{ marginTop: '20px', padding: '12px 24px', fontSize: '16px' }}
-          >
-            🔄 加载调用图谱
-          </button>
-          <div className={styles.welcomeStats} style={{ marginTop: '30px' }}>
-            <div className={styles.statCard}>
-              <div className={styles.statIcon}>🕸️</div>
-              <div className={styles.statLabel}>可视化调用关系</div>
-            </div>
-            <div className={styles.statCard}>
-              <div className={styles.statIcon}>🔍</div>
-              <div className={styles.statLabel}>循环依赖检测</div>
-            </div>
-            <div className={styles.statCard}>
-              <div className={styles.statIcon}>📊</div>
-              <div className={styles.statLabel}>调用链追踪</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // 计算全屏高度（减去header和statusbar的高度）
-    const graphHeight = window.innerHeight - 180;
-
-    return (
-      <div className={styles.callGraphFullscreen}>
-        {/* 顶部提示 */}
-        <div className={styles.callGraphHeader}>
-          <div className={styles.callGraphTitle}>
-            <span className={styles.callGraphIcon}>🕸️</span>
-            <span>调用图谱：{selectedSymbol.name}</span>
-          </div>
-          <div className={styles.callGraphMeta}>
-            <span>文件: {selectedPath}</span>
-            <span>类型: {selectedSymbol.kind}</span>
-          </div>
-        </div>
-
-        {/* 调用图谱组件 */}
-        <CallGraphVizEnhanced
-          data={callGraphData}
-          height={graphHeight}
-          centerNodeId={selectedSymbol.name}
-          onNodeClick={(node) => {
-            // 点击节点时跳转到对应代码
-            if (node.moduleId) {
-              handleSelectNode(node.moduleId, true);
-              setViewMode('code');
-            }
-          }}
-        />
-      </div>
-    );
-  };
 
   // 渲染代码视图
   const renderCodeView = () => {
@@ -1584,22 +1449,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
                     {hasUnsavedChanges && <span className={styles.unsavedDot}>●</span>}
                   </div>
                 )}
-                {/* 调用图谱tab - 只有在选中符号时显示 */}
-                {selectedSymbol && selectedPath && (
-                  <div
-                    className={`${styles.tab} ${viewMode === 'callgraph' ? styles.activeTab : ''}`}
-                    onClick={() => {
-                      setViewMode('callgraph');
-                      // 自动加载调用图
-                      if (!callGraphData && !loadingCallGraph) {
-                        loadCallGraph(selectedPath, selectedSymbol.name);
-                      }
-                    }}
-                  >
-                    <span className={styles.tabIcon}>🕸️</span>
-                    <span className={styles.tabName}>调用图谱</span>
-                  </div>
-                )}
               </>
             ) : (
               <div className={`${styles.tab} ${styles.activeTab}`}>
@@ -1618,9 +1467,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
           {/* 编辑区内容 */}
           <div className={styles.editorContent}>
-            {viewMode === 'code' && selectedIsFile ? renderCodeView() :
-             viewMode === 'callgraph' ? renderCallGraphView() :
-             renderAnalysisView()}
+            {viewMode === 'code' && selectedIsFile ? renderCodeView() : renderAnalysisView()}
           </div>
         </div>
       </div>

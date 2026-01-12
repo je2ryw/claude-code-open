@@ -1,8 +1,8 @@
 import styles from './TopNavBar.module.css';
 
 export interface TopNavBarProps {
-  currentPage: 'chat' | 'swarm' | 'blueprint';
-  onPageChange: (page: 'chat' | 'swarm' | 'blueprint') => void;
+  currentPage: 'chat' | 'swarm' | 'blueprint' | 'navigator';
+  onPageChange: (page: 'chat' | 'swarm' | 'blueprint' | 'navigator') => void;
   onSettingsClick?: () => void;
 }
 
@@ -35,6 +35,13 @@ export default function TopNavBar({ currentPage, onPageChange, onSettingsClick }
         >
           <span className={styles.icon}>📋</span>
           <span>蓝图</span>
+        </button>
+        <button
+          className={`${styles.navTab} ${currentPage === 'navigator' ? styles.active : ''}`}
+          onClick={() => onPageChange('navigator')}
+        >
+          <span className={styles.icon}>🗺️</span>
+          <span>项目导航</span>
         </button>
       </div>
 

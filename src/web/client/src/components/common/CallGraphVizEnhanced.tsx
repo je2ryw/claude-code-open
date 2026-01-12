@@ -13,6 +13,36 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import styles from './CallGraphVizEnhanced.module.css';
 
+// 符号分类函数（简化版，前端使用）
+interface SymbolClassification {
+  canHaveCallGraph: boolean;
+}
+
+function classifySymbolForGraph(type: string): SymbolClassification {
+  const typeLower = (type || '').toLowerCase();
+
+  // 可执行符号
+  if (typeLower.includes('function') ||
+      typeLower.includes('method') ||
+      typeLower.includes('constructor') ||
+      typeLower.includes('arrow')) {
+    return { canHaveCallGraph: true };
+  }
+
+  // 静态符号（不应出现在调用图中）
+  if (typeLower.includes('interface') ||
+      typeLower.includes('type') ||
+      typeLower.includes('property') ||
+      typeLower.includes('variable') ||
+      typeLower.includes('enum') ||
+      typeLower.includes('namespace')) {
+    return { canHaveCallGraph: false };
+  }
+
+  // 默认允许（向后兼容）
+  return { canHaveCallGraph: true };
+}
+
 // 类型定义
 export interface CallGraphNode {
   id: string;
@@ -68,6 +98,13 @@ export const CallGraphVizEnhanced: React.FC<CallGraphVizEnhancedProps> = ({
   // 过滤数据
   const filteredData = React.useMemo(() => {
     let nodes = data.nodes.filter(n => {
+      // ✅ 新增：符号类型过滤（最优先）
+      const classification = classifySymbolForGraph(n.type);
+      if (!classification.canHaveCallGraph) {
+        console.log(`[CallGraph] Filtered out static symbol: ${n.name} (${n.type})`);
+        return false; // 移除 interface/type/property 节点
+      }
+
       // 类型过滤
       if (!nodeTypeFilter.has(n.type)) return false;
       // 模块过滤
@@ -82,6 +119,27 @@ export const CallGraphVizEnhanced: React.FC<CallGraphVizEnhancedProps> = ({
 
     return { nodes, edges, cycles: data.cycles };
   }, [data, nodeTypeFilter, moduleFilter, searchQuery]);
+
+  // 过滤统计信息
+  const filterStats = React.useMemo(() => {
+    const total = data.nodes.length;
+    const filtered = filteredData.nodes.length;
+    const removed = total - filtered;
+
+    // 统计被移除的静态符号
+    const staticSymbols = data.nodes.filter(n => {
+      const classification = classifySymbolForGraph(n.type);
+      return !classification.canHaveCallGraph;
+    });
+
+    return {
+      total,
+      filtered,
+      removed,
+      staticSymbolsCount: staticSymbols.length,
+      staticSymbols: staticSymbols.map(n => `${n.name} (${n.type})`),
+    };
+  }, [data.nodes, filteredData.nodes]);
 
   // 检查节点是否在循环中
   const isNodeInCycle = useCallback((nodeId: string): boolean => {
@@ -407,11 +465,44 @@ export const CallGraphVizEnhanced: React.FC<CallGraphVizEnhancedProps> = ({
     );
   }
 
+  // 空状态处理
+  if (filteredData.nodes.length === 0) {
+    return (
+      <div className={styles.container} style={{ height }}>
+        <div className={styles.emptyState}>
+          <p>⚠️ 没有可执行符号可显示</p>
+          <p>调用图仅支持函数和方法，不支持 interface、type 或 property。</p>
+          {filterStats.staticSymbolsCount > 0 && (
+            <>
+              <p>共过滤掉 {filterStats.staticSymbolsCount} 个静态符号：</p>
+              <div className={styles.staticSymbolsList}>
+                {filterStats.staticSymbols.slice(0, 5).map((s, i) => (
+                  <div key={i}>{s}</div>
+                ))}
+                {filterStats.staticSymbols.length > 5 && (
+                  <div>... 还有 {filterStats.staticSymbols.length - 5} 个</div>
+                )}
+              </div>
+            </>
+          )}
+          <p className={styles.suggestion}>
+            💡 建议使用"引用查找"或"类型层级"视图
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.container} style={{ height }}>
       {/* 工具栏 */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
+          {/* 工具栏提示 */}
+          <div className={styles.toolbarHint}>
+            💡 调用图仅显示可执行符号（函数、方法）
+          </div>
+
           {/* 搜索 */}
           <input
             type="text"
@@ -497,6 +588,13 @@ export const CallGraphVizEnhanced: React.FC<CallGraphVizEnhancedProps> = ({
           )}
         </div>
       </div>
+
+      {/* 过滤信息提示 */}
+      {filterStats.staticSymbolsCount > 0 && (
+        <div className={styles.filterInfo}>
+          ℹ️ 已过滤 {filterStats.staticSymbolsCount} 个静态符号（interface/type/property）
+        </div>
+      )}
 
       {/* 图谱画布 */}
       <div className={styles.canvas} ref={containerRef}>

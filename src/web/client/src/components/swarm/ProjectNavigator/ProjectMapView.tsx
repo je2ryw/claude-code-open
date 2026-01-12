@@ -1,0 +1,119 @@
+import React, { useEffect, useState } from 'react';
+import styles from './ProjectMapView.module.css';
+import { ModuleStatsCard } from './components/ModuleStatsCard';
+import { ArchitectureLayersView } from './components/ArchitectureLayersView';
+import { EntryPointsList } from './components/EntryPointsList';
+import { CoreSymbolsList } from './components/CoreSymbolsList';
+import { TreemapView } from './views/TreemapView';
+
+type ViewMode = 'treemap' | 'stats';
+
+interface ProjectMapData {
+  moduleStats: {
+    totalFiles: number;
+    totalLines: number;
+    byDirectory: Record<string, number>;
+    languages: Record<string, number>;
+  };
+  layers?: {
+    total: number;
+    distribution: Record<string, number>;
+  } | null;
+  entryPoints: Array<{
+    id: string;
+    name: string;
+    moduleId: string;
+    type: string;
+  }>;
+  coreSymbols: {
+    classes: Array<{ name: string; refs: number; moduleId: string }>;
+    functions: Array<{ name: string; refs: number; moduleId: string }>;
+  };
+}
+
+export const ProjectMapView: React.FC = () => {
+  const [mapData, setMapData] = useState<ProjectMapData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('treemap');
+
+  useEffect(() => {
+    fetch('/api/blueprint/project-map')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setMapData(data.data);
+        } else {
+          setError(data.error);
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className={styles.loading}>
+        <div className={styles.spinner}></div>
+        <p>正在加载项目地图...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.error}>
+        <p>❌ 加载失败: {error}</p>
+      </div>
+    );
+  }
+
+  if (!mapData) return null;
+
+  return (
+    <div className={styles.projectMapView}>
+      {/* 标题和视图切换 */}
+      <div className={styles.header}>
+        <h2>📍 项目地图</h2>
+        <div className={styles.viewToggle}>
+          <button
+            className={`${styles.toggleBtn} ${viewMode === 'treemap' ? styles.active : ''}`}
+            onClick={() => setViewMode('treemap')}
+          >
+            🗺️ 代码地图
+          </button>
+          <button
+            className={`${styles.toggleBtn} ${viewMode === 'stats' ? styles.active : ''}`}
+            onClick={() => setViewMode('stats')}
+          >
+            📊 统计视图
+          </button>
+        </div>
+      </div>
+
+      {/* Treemap 视图 */}
+      {viewMode === 'treemap' && (
+        <div className={styles.treemapSection}>
+          <TreemapView />
+        </div>
+      )}
+
+      {/* 统计视图 */}
+      {viewMode === 'stats' && (
+        <>
+          {/* 上半部分：统计卡片 */}
+          <div className={styles.statsRow}>
+            <ModuleStatsCard stats={mapData.moduleStats} />
+            {mapData.layers && <ArchitectureLayersView layers={mapData.layers} />}
+          </div>
+
+          {/* 下半部分：列表 */}
+          <div className={styles.listsRow}>
+            <EntryPointsList points={mapData.entryPoints} />
+            <CoreSymbolsList symbols={mapData.coreSymbols} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

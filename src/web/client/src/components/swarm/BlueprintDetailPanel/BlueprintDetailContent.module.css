@@ -1654,6 +1654,189 @@
   border: 1px solid #333;
 }
 
+/* 调用图谱内容区 - 左右分栏 */
+.callGraphContent {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.callGraphLeft {
+  flex: 0 0 450px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.callGraphRight {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.graphSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  overflow: hidden;
+}
+
+.graphSection h3 {
+  margin: 0;
+  padding: 12px 16px;
+  background: #252525;
+  border-bottom: 1px solid #333;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* 调用链列表样式 */
+.callChainList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.callChainHeader {
+  padding: 16px;
+  background: #252525;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.callChainHeader h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.callChainHeader p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.callChainHeader code {
+  color: #0084ff;
+  background: #1a1a1a;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+}
+
+.entryPoints {
+  margin-top: 8px !important;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+  font-size: 12px !important;
+  color: #888 !important;
+}
+
+/* 调用链项 */
+.callChainItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #1a1a1a;
+  border-radius: 6px;
+  border: 1px solid #333;
+  transition: all 0.2s;
+}
+
+.callChainItem:hover {
+  background: #222;
+  border-color: #444;
+}
+
+.callChainIndex {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.callChainPath {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+}
+
+.callChainNode {
+  padding: 4px 10px;
+  background: #252525;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.callChainNode:hover {
+  background: #0084ff;
+  border-color: #0084ff;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 132, 255, 0.3);
+}
+
+.callChainArrow {
+  color: #666;
+  font-size: 16px;
+  user-select: none;
+}
+
+.callChainLength {
+  font-size: 11px;
+  color: #666;
+  text-align: right;
+}
+
+/* 空状态 */
+.callChainEmpty {
+  padding: 24px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  text-align: center;
+}
+
+.callChainEmpty p {
+  margin: 8px 0;
+  color: #aaa;
+}
+
+.callChainEmpty .hint {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+}
+
+.hintList {
+  margin: 8px 0;
+  padding-left: 24px;
+  text-align: left;
+  font-size: 12px;
+  color: #666;
+  list-style: disc;
+}
+
+.hintList li {
+  margin: 4px 0;
+}
+
 .symbolSectionTitle {
   display: flex;
   align-items: center;
