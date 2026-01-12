@@ -10,6 +10,7 @@ import { LRUCache } from 'lru-cache';
 import { BaseTool, type ToolOptions } from './base.js';
 import type { WebFetchInput, WebSearchInput, ToolResult, ToolDefinition } from '../types/index.js';
 import { ErrorCode } from '../types/errors.js';
+import { persistLargeOutputSync } from './output-persistence.js';
 
 /**
  * 响应体大小限制 (10MB)
@@ -549,14 +550,16 @@ Usage notes:
       const cached = webFetchCache.get(url);
       if (cached) {
         const maxLength = 100000;
-        let content = cached.content;
-        if (content.length > maxLength) {
-          content = content.substring(0, maxLength) + '\n\n... [content truncated]';
-        }
+
+        // 使用统一的输出持久化
+        const persistResult = persistLargeOutputSync(cached.content, {
+          toolName: 'WebFetch',
+          maxLength,
+        });
 
         return {
           success: true,
-          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content (Cached) ---\n${content}`,
+          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content (Cached) ---\n${persistResult.content}`,
         };
       }
 
@@ -586,14 +589,14 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
           };
         }
 
-        // 截断过长的内容
+        // 使用统一的输出持久化处理大内容
         const maxLength = 100000;
-        let { content } = result;
-        if (content.length > maxLength) {
-          content = content.substring(0, maxLength) + '\n\n... [content truncated]';
-        }
+        const persistResult = persistLargeOutputSync(result.content, {
+          toolName: 'WebFetch',
+          maxLength,
+        });
 
-        // 缓存结果
+        // 缓存结果（缓存原始内容）
         webFetchCache.set(url, {
           content: result.content,
           contentType: result.contentType,
@@ -603,7 +606,7 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
 
         return {
           success: true,
-          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content ---\n${content}`,
+          output: `URL: ${url}\nPrompt: ${prompt}\n\n--- Content ---\n${persistResult.content}`,
         };
       } catch (err: any) {
         // 将网络错误转换为可重试的错误

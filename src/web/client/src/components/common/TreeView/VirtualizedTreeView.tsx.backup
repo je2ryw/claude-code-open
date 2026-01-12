@@ -1,0 +1,196 @@
+import React, { useMemo, useRef, useCallback, useEffect } from 'react';
+import { VariableSizeList } from 'react-window';
+import type { TreeNode, NodeType } from './index';
+import styles from './TreeView.module.css';
+
+interface VirtualizedTreeViewProps<T extends TreeNode> {
+  data: T[];
+  dataType: NodeType;
+  onSelect?: (node: T) => void;
+  selectedId?: string;
+  renderNode?: (node: T) => React.ReactNode;
+  height?: number;  // 容器高度
+  baseItemHeight?: number;  // 基础项高度
+  expandedIds: Set<string>;  // 外部传入的展开状态
+  onToggleExpand: (id: string) => void;  // 展开/折叠回调
+}
+
+// 扁平化节点结构
+interface FlatNode<T extends TreeNode> {
+  node: T;
+  level: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+}
+
+export function VirtualizedTreeView<T extends TreeNode>({
+  data,
+  dataType,
+  onSelect,
+  selectedId,
+  renderNode,
+  height = 600,
+  baseItemHeight = 32,
+  expandedIds,
+  onToggleExpand
+}: VirtualizedTreeViewProps<T>) {
+  const listRef = useRef<VariableSizeList>(null);
+  const rowHeights = useRef<{ [key: number]: number }>({});
+
+  // 扁平化树形结构
+  const flattenedNodes = useMemo(() => {
+    const result: FlatNode<T>[] = [];
+
+    const flatten = (nodes: T[], level: number = 0) => {
+      for (const node of nodes) {
+        const hasChildren = Boolean(node.children && node.children.length > 0);
+        const isExpanded = expandedIds.has(node.id);
+
+        result.push({
+          node,
+          level,
+          hasChildren,
+          isExpanded
+        });
+
+        if (hasChildren && isExpanded) {
+          flatten(node.children as T[], level + 1);
+        }
+      }
+    };
+
+    flatten(data);
+    return result;
+  }, [data, expandedIds]);
+
+  // 计算行高（根据节点内容动态调整）
+  const getItemSize = useCallback((index: number) => {
+    // 如果有缓存的高度，使用缓存
+    if (rowHeights.current[index]) {
+      return rowHeights.current[index];
+    }
+
+    const flatNode = flattenedNodes[index];
+    if (!flatNode) {
+      return baseItemHeight;
+    }
+
+    // 根据节点类型和内容估算高度
+    let estimatedHeight = baseItemHeight;
+
+    // 如果是符号节点且有签名，增加高度
+    if (dataType === 'symbol' && (flatNode.node as any).signature) {
+      estimatedHeight += 20;
+    }
+
+    rowHeights.current[index] = estimatedHeight;
+    return estimatedHeight;
+  }, [flattenedNodes, baseItemHeight, dataType]);
+
+  // 当扁平化节点变化时，重置高度缓存
+  useEffect(() => {
+    rowHeights.current = {};
+    listRef.current?.resetAfterIndex(0);
+  }, [flattenedNodes]);
+
+  // 渲染单个行
+  const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const flatNode = flattenedNodes[index];
+    if (!flatNode) {
+      return null;
+    }
+
+    const { node, level, hasChildren, isExpanded } = flatNode;
+    const isSelected = node.id === selectedId;
+
+    return (
+      <div
+        style={{
+          ...style,
+          paddingLeft: `${level * 20}px`
+        }}
+        className={`${styles.treeNode} ${isSelected ? styles.selected : ''}`}
+        onClick={() => onSelect?.(node)}
+      >
+        {/* 展开/折叠按钮 */}
+        <span
+          className={`${styles.expandIcon} ${!hasChildren ? styles.noChildren : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasChildren) {
+              onToggleExpand(node.id);
+            }
+          }}
+        >
+          {hasChildren ? (isExpanded ? '▼' : '▶') : ''}
+        </span>
+
+        {/* 节点内容 */}
+        {renderNode ? (
+          renderNode(node)
+        ) : (
+          <DefaultNodeRenderer node={node} dataType={dataType} />
+        )}
+      </div>
+    );
+  }, [flattenedNodes, selectedId, onSelect, renderNode, dataType, onToggleExpand]);
+
+  return (
+    <div className={styles.virtualList}>
+      <VariableSizeList
+        ref={listRef}
+        height={height}
+        itemCount={flattenedNodes.length}
+        itemSize={getItemSize}
+        width="100%"
+        overscanCount={5}  // 预渲染5个元素，提升滚动体验
+      >
+        {Row}
+      </VariableSizeList>
+    </div>
+  );
+}
+
+// 默认节点渲染器（与 TreeView 共用逻辑）
+function DefaultNodeRenderer({ node, dataType }: { node: TreeNode; dataType: NodeType }) {
+  const icon = getNodeIcon(node, dataType);
+
+  return (
+    <div className={styles.nodeContent}>
+      <span className={styles.nodeIcon}>{icon}</span>
+      <span className={styles.nodeName}>{node.name}</span>
+    </div>
+  );
+}
+
+function getNodeIcon(node: TreeNode, dataType: NodeType): string {
+  if (dataType === 'file') {
+    return node.children && node.children.length > 0 ? '📁' : '📄';
+  }
+
+  if (dataType === 'symbol') {
+    const type = (node as any).type || 'unknown';
+    const iconMap: Record<string, string> = {
+      'function': '🔹',
+      'method': '⚡',
+      'class': '🔸',
+      'interface': '📐',
+      'type': '📋',
+      'property': '🔹',
+      'variable': '📦',
+      'const': '🔒',
+      'module': '📦',
+    };
+    return iconMap[type] || '❓';
+  }
+
+  if (dataType === 'task') {
+    const status = (node as any).status;
+    if (status === 'completed' || status === 'passed') return '✅';
+    if (status === 'in_progress' || status === 'coding' || status === 'testing') return '⏳';
+    if (status === 'failed' || status === 'test_failed') return '❌';
+    return '⬜';
+  }
+
+  return '📄';
+}

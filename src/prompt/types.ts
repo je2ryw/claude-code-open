@@ -72,6 +72,8 @@ export interface PromptContext {
   platform?: string;
   /** 是否为 git 仓库 */
   isGitRepo?: boolean;
+  /** 响应语言 (v2.1.0+) - 配置 Claude 的响应语言 */
+  language?: string;
 }
 
 /**

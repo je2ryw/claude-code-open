@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import { isDemoMode } from '../../utils/env-check.js';
 
 // 官方 claude 颜色 (clawd_body)
 const CLAUDE_COLOR = '#D77757'; // rgb(215,119,87)
@@ -22,6 +23,9 @@ interface HeaderProps {
   showShortcutHint?: boolean;
   hasUpdate?: boolean;
   latestVersion?: string;
+  // 后台任务计数
+  backgroundTaskCount?: number;
+  runningTaskCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(({
@@ -37,6 +41,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   showShortcutHint = true,
   hasUpdate = false,
   latestVersion,
+  backgroundTaskCount = 0,
+  runningTaskCount = 0,
 }) => {
   // 连接状态指示器
   const getConnectionIndicator = () => {
@@ -109,6 +115,15 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <Text dimColor> · </Text>
             </>
           )}
+          {/* 后台任务指示器 */}
+          {backgroundTaskCount > 0 && (
+            <>
+              <Text color={runningTaskCount > 0 ? 'yellow' : 'blue'}>
+                {runningTaskCount > 0 ? '🔄' : '✓'} {backgroundTaskCount} task{backgroundTaskCount > 1 ? 's' : ''}
+              </Text>
+              <Text dimColor> · </Text>
+            </>
+          )}
           {getConnectionIndicator()}
           <Text dimColor> {getConnectionLabel()}</Text>
         </Box>
@@ -146,6 +161,15 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <Text dimColor> · </Text>
             </>
           )}
+          {/* 后台任务指示器 */}
+          {backgroundTaskCount > 0 && (
+            <>
+              <Text color={runningTaskCount > 0 ? 'yellow' : 'blue'}>
+                {runningTaskCount > 0 ? '🔄' : '✓'} {backgroundTaskCount} task{backgroundTaskCount > 1 ? 's' : ''}
+              </Text>
+              <Text dimColor> · </Text>
+            </>
+          )}
           {getConnectionIndicator()}
           <Text dimColor> {getConnectionLabel()}</Text>
         </Box>
@@ -172,7 +196,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <Text color="cyan">{model}</Text>
           <Text dimColor> · </Text>
           <Text dimColor>{apiType}</Text>
-          {organization && (
+          {/* IS_DEMO 模式下隐藏组织名称 - 官网实现: !process.env.IS_DEMO && D.oauthAccount?.organizationName */}
+          {organization && !isDemoMode() && (
             <>
               <Text dimColor> · </Text>
               <Text dimColor>{organization}</Text>

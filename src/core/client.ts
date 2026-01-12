@@ -18,6 +18,7 @@ import {
 } from '../models/index.js';
 import { initAuth, getAuth } from '../auth/index.js';
 import { v4 as uuidv4 } from 'uuid';
+import { VERSION_BASE } from '../version.js';
 import { randomBytes } from 'crypto';
 
 export interface ClientConfig {
@@ -274,7 +275,7 @@ export class ClaudeClient {
     // 通过抓包分析得到的官方请求头
     const defaultHeaders: Record<string, string> = {
       'x-app': 'cli',
-      'User-Agent': 'claude-cli/2.0.76 (external, claude-vscode, agent-sdk/0.1.75)',
+      'User-Agent': `claude-cli/${VERSION_BASE} (external, claude-vscode, agent-sdk/0.1.75)`,
       'anthropic-dangerous-direct-browser-access': 'true',
     };
 
@@ -329,7 +330,10 @@ export class ClaudeClient {
 
     // 根据模型能力设置 maxTokens
     const capabilities = modelConfig.getCapabilities(this.model);
-    this.maxTokens = config.maxTokens || Math.min(32000, capabilities.maxOutputTokens);
+    // SDK限制：maxTokens不能太大，否则会要求streaming
+    // 计算公式：3600 * maxTokens / 128000 <= 600，即 maxTokens <= 21333
+    // 使用21000作为安全默认值（留有余量）
+    this.maxTokens = config.maxTokens || Math.min(21000, capabilities.maxOutputTokens);
 
     this.maxRetries = config.maxRetries ?? 2;
     this.retryDelay = config.retryDelay ?? 1000;

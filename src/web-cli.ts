@@ -33,13 +33,14 @@ loadEnvFile();
 
 import { Command } from 'commander';
 import { startWebServer } from './web/index.js';
+import { VERSION_BASE } from './version.js';
 
 const program = new Command();
 
 program
   .name('claude-web')
   .description('Claude Code WebUI 服务器')
-  .version('2.0.76')
+  .version(VERSION_BASE)
   .option('-p, --port <port>', '服务器端口', '3456')
   .option('-H, --host <host>', '服务器主机', 'localhost')
   .option('-m, --model <model>', '默认模型 (opus/sonnet/haiku)', 'sonnet')

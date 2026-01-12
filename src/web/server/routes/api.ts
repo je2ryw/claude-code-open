@@ -8,17 +8,33 @@ import { toolRegistry } from '../../../tools/index.js';
 import { apiManager } from '../api-manager.js';
 import { authManager } from '../auth-manager.js';
 import { CheckpointManager } from '../checkpoint-manager.js';
+import blueprintApiRouter from './blueprint-api.js';
+import agentApiRouter from './agent-api.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 全局检查点管理器实例
 const checkpointManager = new CheckpointManager();
 
 export function setupApiRoutes(app: Express, conversationManager: ConversationManager): void {
+  // ============ 蓝图系统 API ============
+  // 注册蓝图API路由（供 SwarmConsole 使用）
+  app.use('/api/blueprint', blueprintApiRouter);
+
+  // ============ Agent 系统 API ============
+  // 注册 Agent API 路由（提供 agent 元数据）
+  app.use('/api/agents', agentApiRouter);
+
   // 健康检查
   app.get('/api/health', (req: Request, res: Response) => {
     res.json({
       status: 'ok',
       timestamp: Date.now(),
-      version: '2.0.76',
+      version: '2.1.4',
     });
   });
 

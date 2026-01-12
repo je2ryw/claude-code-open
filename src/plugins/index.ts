@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { EventEmitter } from 'events';
 import type { ToolDefinition, ToolResult } from '../types/index.js';
 
@@ -315,7 +316,7 @@ export class PluginManager extends EventEmitter {
   private configDir: string;
   private pluginConfigFile: string;
   private fileWatchers: Map<string, fs.FSWatcher> = new Map();
-  private claudeCodeVersion: string = '2.0.76'; // 当前 Claude Code 版本
+  private claudeCodeVersion: string = '2.1.4'; // 当前 Claude Code 版本
 
   // 注册的工具、命令、技能和钩子
   private registeredTools: Map<string, ToolDefinition[]> = new Map();
@@ -331,7 +332,7 @@ export class PluginManager extends EventEmitter {
     }
 
     this.configDir = process.env.CLAUDE_CONFIG_DIR ||
-                     path.join(process.env.HOME || '~', '.claude');
+                     path.join(os.homedir(), '.claude');
 
     this.pluginConfigFile = path.join(this.configDir, 'plugins.json');
 
@@ -2236,5 +2237,301 @@ export default {
 };
 `.trim();
   },
+};
+
+// ============ 插件自动更新 (v2.1.2+) ============
+
+import {
+  shouldSkipPluginAutoUpdate,
+  isForcePluginAutoUpdateEnabled,
+  isAutoUpdaterDisabled,
+  getAutoUpdaterDisabledReason,
+} from '../utils/env-check.js';
+
+/**
+ * 插件更新状态
+ */
+export interface PluginUpdateInfo {
+  name: string;
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  updateAvailable?: boolean;
+  changelog?: string;
+}
+
+/**
+ * 插件自动更新器
+ * 实现 FORCE_AUTOUPDATE_PLUGINS 环境变量功能 (v2.1.2)
+ *
+ * 官网 changelog:
+ * "Added FORCE_AUTOUPDATE_PLUGINS environment variable to allow plugin autoupdate
+ *  even when the main auto-updater is disabled"
+ */
+export class PluginAutoUpdater {
+  private manager: PluginManager;
+  private updateCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private lastUpdateCheck: Date | null = null;
+  private pendingUpdates: Map<string, PluginUpdateInfo> = new Map();
+
+  constructor(manager: PluginManager) {
+    this.manager = manager;
+  }
+
+  /**
+   * 检查是否应该跳过插件自动更新
+   * 官网源码实现:
+   * function BOA(){return Ku()&&!i1(process.env.FORCE_AUTOUPDATE_PLUGINS)}
+   */
+  shouldSkipAutoUpdate(): boolean {
+    return shouldSkipPluginAutoUpdate();
+  }
+
+  /**
+   * 检查是否强制启用插件自动更新
+   */
+  isForceUpdateEnabled(): boolean {
+    return isForcePluginAutoUpdateEnabled();
+  }
+
+  /**
+   * 启动自动更新检查
+   * @param intervalMs 检查间隔（毫秒），默认 1 小时
+   */
+  startAutoUpdate(intervalMs: number = 60 * 60 * 1000): void {
+    // 检查是否应该跳过自动更新
+    if (this.shouldSkipAutoUpdate()) {
+      console.log('[Plugins] Auto-update: skipped (auto-updater disabled)');
+      return;
+    }
+
+    // 如果是因为 FORCE_AUTOUPDATE_PLUGINS 启用而允许更新，记录日志
+    if (isAutoUpdaterDisabled() && this.isForceUpdateEnabled()) {
+      console.log('[Plugins] Force auto-update enabled via FORCE_AUTOUPDATE_PLUGINS environment variable');
+    }
+
+    // 立即执行一次检查
+    this.checkForUpdates().catch(err => {
+      console.error('[Plugins] Auto-update check failed:', err);
+    });
+
+    // 设置定期检查
+    this.updateCheckInterval = setInterval(() => {
+      this.checkForUpdates().catch(err => {
+        console.error('[Plugins] Auto-update check failed:', err);
+      });
+    }, intervalMs);
+  }
+
+  /**
+   * 停止自动更新检查
+   */
+  stopAutoUpdate(): void {
+    if (this.updateCheckInterval) {
+      clearInterval(this.updateCheckInterval);
+      this.updateCheckInterval = null;
+    }
+  }
+
+  /**
+   * 检查所有已安装插件的更新
+   */
+  async checkForUpdates(): Promise<Map<string, PluginUpdateInfo>> {
+    // 再次检查是否应该跳过
+    if (this.shouldSkipAutoUpdate()) {
+      console.log('[Plugins] Plugin autoupdate: skipped (auto-updater disabled)');
+      return new Map();
+    }
+
+    this.lastUpdateCheck = new Date();
+    const updates = new Map<string, PluginUpdateInfo>();
+    const installedPlugins = this.manager.getPluginStates();
+
+    if (installedPlugins.length === 0) {
+      return updates;
+    }
+
+    console.log(`[Plugins] Checking updates for ${installedPlugins.length} plugins...`);
+
+    for (const state of installedPlugins) {
+      if (!state.loaded) continue;
+
+      try {
+        const updateInfo = await this.checkPluginUpdate(state);
+        if (updateInfo.hasUpdate) {
+          updates.set(state.metadata.name, updateInfo);
+          this.pendingUpdates.set(state.metadata.name, updateInfo);
+          console.log(`[Plugins] Update available: ${state.metadata.name} ${updateInfo.currentVersion} -> ${updateInfo.latestVersion}`);
+        }
+      } catch (err) {
+        console.warn(`[Plugins] Failed to check update for ${state.metadata.name}:`, err);
+      }
+    }
+
+    this.manager.emit('plugins:updates-checked', updates);
+    return updates;
+  }
+
+  /**
+   * 检查单个插件的更新
+   */
+  private async checkPluginUpdate(state: PluginState): Promise<PluginUpdateInfo> {
+    const name = state.metadata.name;
+    const currentVersion = state.metadata.version;
+
+    // 这里应该从远程仓库获取最新版本信息
+    // 由于是本地实现，这里模拟返回当前版本（无更新）
+    // 实际实现需要根据插件来源（marketplace、git、npm 等）获取最新版本
+
+    return {
+      name,
+      currentVersion,
+      latestVersion: currentVersion, // 模拟：当前已是最新版本
+      hasUpdate: false,
+    };
+  }
+
+  /**
+   * 更新指定插件
+   */
+  async updatePlugin(name: string): Promise<boolean> {
+    if (this.shouldSkipAutoUpdate()) {
+      console.log(`[Plugins] Cannot update ${name}: auto-updater disabled`);
+      return false;
+    }
+
+    const state = this.manager.getPluginState(name);
+    if (!state) {
+      console.error(`[Plugins] Plugin not found: ${name}`);
+      return false;
+    }
+
+    const updateInfo = this.pendingUpdates.get(name);
+    if (!updateInfo || !updateInfo.hasUpdate) {
+      console.log(`[Plugins] No update available for ${name}`);
+      return false;
+    }
+
+    try {
+      console.log(`[Plugins] Updating ${name} from ${updateInfo.currentVersion} to ${updateInfo.latestVersion}...`);
+
+      // 这里应该执行实际的更新逻辑
+      // 1. 下载新版本
+      // 2. 卸载旧版本
+      // 3. 安装新版本
+      // 4. 重新加载插件
+
+      // 模拟更新成功
+      this.pendingUpdates.delete(name);
+      this.manager.emit('plugin:updated', name, updateInfo);
+      console.log(`[Plugins] Successfully updated ${name} to ${updateInfo.latestVersion}`);
+      return true;
+    } catch (err) {
+      console.error(`[Plugins] Failed to update ${name}:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * 更新所有有更新的插件
+   */
+  async updateAll(): Promise<{ success: string[]; failed: string[] }> {
+    const success: string[] = [];
+    const failed: string[] = [];
+
+    const names = Array.from(this.pendingUpdates.keys());
+    for (const name of names) {
+      const result = await this.updatePlugin(name);
+      if (result) {
+        success.push(name);
+      } else {
+        failed.push(name);
+      }
+    }
+
+    return { success, failed };
+  }
+
+  /**
+   * 获取待更新的插件列表
+   */
+  getPendingUpdates(): PluginUpdateInfo[] {
+    return Array.from(this.pendingUpdates.values());
+  }
+
+  /**
+   * 获取上次更新检查时间
+   */
+  getLastUpdateCheck(): Date | null {
+    return this.lastUpdateCheck;
+  }
+
+  /**
+   * 获取自动更新状态信息
+   */
+  getStatus(): {
+    enabled: boolean;
+    reason?: string;
+    forceEnabled: boolean;
+    lastCheck: Date | null;
+    pendingUpdates: number;
+  } {
+    const disabled = isAutoUpdaterDisabled();
+    const forceEnabled = this.isForceUpdateEnabled();
+    const skipUpdate = this.shouldSkipAutoUpdate();
+
+    return {
+      enabled: !skipUpdate,
+      reason: disabled ? getAutoUpdaterDisabledReason() || undefined : undefined,
+      forceEnabled,
+      lastCheck: this.lastUpdateCheck,
+      pendingUpdates: this.pendingUpdates.size,
+    };
+  }
+}
+
+/**
+ * 默认插件自动更新器实例
+ */
+export const pluginAutoUpdater = new PluginAutoUpdater(pluginManager);
+
+/**
+ * 启动插件自动更新（在应用启动时调用）
+ * 官网源码实现参考:
+ * function TA9(){(async()=>{
+ *   if(BOA()){k("Plugin autoupdate: skipped (auto-updater disabled)");return}
+ *   try{let A=await qt5();if(A.size===0)...
+ * })()}
+ */
+export async function startPluginAutoUpdate(): Promise<void> {
+  // 检查是否应该跳过
+  if (shouldSkipPluginAutoUpdate()) {
+    console.log('[Plugins] Plugin autoupdate: skipped (auto-updater disabled)');
+    return;
+  }
+
+  // 如果是强制启用，记录日志
+  if (isAutoUpdaterDisabled() && isForcePluginAutoUpdateEnabled()) {
+    console.log('[Plugins] Force auto-update enabled via FORCE_AUTOUPDATE_PLUGINS environment variable');
+  }
+
+  try {
+    const updates = await pluginAutoUpdater.checkForUpdates();
+    if (updates.size === 0) {
+      console.log('[Plugins] All plugins are up to date');
+    } else {
+      console.log(`[Plugins] ${updates.size} plugin update(s) available`);
+    }
+  } catch (err) {
+    console.error('[Plugins] Failed to check for plugin updates:', err);
+  }
+}
+
+// 导出环境变量检查函数以便外部使用
+export {
+  shouldSkipPluginAutoUpdate,
+  isForcePluginAutoUpdateEnabled,
+  isAutoUpdaterDisabled,
+  getAutoUpdaterDisabledReason,
 };
 

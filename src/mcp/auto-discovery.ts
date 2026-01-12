@@ -889,7 +889,7 @@ export class McpAutoDiscovery extends EventEmitter {
       },
       clientInfo: {
         name: 'claude-code-open',
-        version: '2.0.76',
+        version: '2.1.4',
       },
     });
 

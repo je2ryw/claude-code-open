@@ -9,6 +9,7 @@ import * as path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import { BaseTool } from './base.js';
 import type { GlobInput, GrepInput, ToolResult, ToolDefinition } from '../types/index.js';
+import { persistLargeOutputSync } from './output-persistence.js';
 
 // 检测当前平台
 const isWindows = process.platform === 'win32';
@@ -63,8 +64,15 @@ export class GlobTool extends BaseTool<GlobInput, ToolResult> {
         return { success: true, output: 'No files found' };
       }
 
-      const output = sortedFiles.join('\n');
-      return { success: true, output };
+      let output = sortedFiles.join('\n');
+
+      // 使用统一的输出持久化（Glob 通常输出不大，但为统一性也使用）
+      const persistResult = persistLargeOutputSync(output, {
+        toolName: 'Glob',
+        maxLength: 30000,
+      });
+
+      return { success: true, output: persistResult.content };
     } catch (err) {
       return { success: false, error: `Glob error: ${err}` };
     }
@@ -426,14 +434,18 @@ Usage:
 
   /**
    * 截断超长输出 (官方限制: 20000 字符)
+   * 使用统一的输出持久化机制
    */
   private truncateOutput(text: string): string {
     const MAX_LENGTH = 20000;
-    if (text.length <= MAX_LENGTH) return text;
 
-    const truncated = text.slice(0, MAX_LENGTH);
-    const remainingLines = text.slice(MAX_LENGTH).split('\n').length;
-    return `${truncated}\n\n... [${remainingLines} lines truncated] ...`;
+    // 使用统一的输出持久化
+    const persistResult = persistLargeOutputSync(text, {
+      toolName: 'Grep',
+      maxLength: MAX_LENGTH,
+    });
+
+    return persistResult.content;
   }
 
   private fallbackGrep(input: GrepInput): ToolResult {

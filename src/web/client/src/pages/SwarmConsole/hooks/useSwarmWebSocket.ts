@@ -1,0 +1,240 @@
+/**
+ * useSwarmWebSocket Hook
+ * 管理蜂群系统的 WebSocket 连接和消息处理
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type {
+  SwarmServerMessage,
+  SwarmClientMessage,
+  SwarmConnectionStatus,
+  UseSwarmWebSocketReturn,
+} from '../types';
+
+export interface UseSwarmWebSocketOptions {
+  url: string;
+  onMessage?: (message: SwarmServerMessage) => void;
+  onError?: (error: string) => void;
+  autoReconnect?: boolean;
+  reconnectInterval?: number;
+  pingInterval?: number;
+}
+
+export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWebSocketReturn {
+  const {
+    url,
+    onMessage,
+    onError,
+    autoReconnect = true,
+    reconnectInterval = 3000,
+    pingInterval = 25000,
+  } = options;
+
+  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState<SwarmConnectionStatus>('disconnected');
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const messageHandlersRef = useRef<Array<(msg: SwarmServerMessage) => void>>([]);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 追踪组件是否已卸载，防止 React 18 Strict Mode 导致的重复连接问题
+  const isMountedRef = useRef(true);
+  // 追踪是否正在连接中
+  const isConnectingRef = useRef(false);
+  // 保存 URL ref，避免 useCallback 依赖变化导致重新连接
+  const urlRef = useRef(url);
+  urlRef.current = url;
+
+  // 添加消息处理器
+  const addMessageHandler = useCallback((handler: (msg: SwarmServerMessage) => void) => {
+    messageHandlersRef.current.push(handler);
+    return () => {
+      messageHandlersRef.current = messageHandlersRef.current.filter(h => h !== handler);
+    };
+  }, []);
+
+  // 注册外部消息处理器
+  useEffect(() => {
+    if (onMessage) {
+      return addMessageHandler(onMessage);
+    }
+  }, [onMessage, addMessageHandler]);
+
+  // 发送消息
+  const send = useCallback((message: SwarmClientMessage) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    } else {
+      console.warn('WebSocket is not connected, cannot send message:', message);
+    }
+  }, []);
+
+  // 连接 WebSocket
+  const connect = useCallback(() => {
+    // 防止重复连接
+    if (isConnectingRef.current) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+    if (!isMountedRef.current) return;
+
+    isConnectingRef.current = true;
+    setStatus('connecting');
+
+    const ws = new WebSocket(urlRef.current);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      isConnectingRef.current = false;
+
+      // 如果组件已卸载，立即关闭连接
+      if (!isMountedRef.current) {
+        ws.close();
+        return;
+      }
+
+      console.log('[SwarmWebSocket] Connected');
+      setConnected(true);
+      setStatus('connected');
+
+      // 定期发送 ping 保持连接
+      pingIntervalRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, pingInterval);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as SwarmServerMessage;
+
+        // 忽略 pong 消息
+        if (message.type === 'pong') return;
+
+        // 触发所有消息处理器
+        messageHandlersRef.current.forEach(handler => {
+          try {
+            handler(message);
+          } catch (err) {
+            console.error('[SwarmWebSocket] Message handler error:', err);
+          }
+        });
+
+        // 处理错误消息
+        if (message.type === 'swarm:error') {
+          const error = message.payload.error;
+          console.error('[SwarmWebSocket] Swarm error:', error);
+          if (onError) {
+            onError(error);
+          }
+        }
+      } catch (err) {
+        console.error('[SwarmWebSocket] Failed to parse message:', err);
+      }
+    };
+
+    ws.onclose = () => {
+      isConnectingRef.current = false;
+      console.log('[SwarmWebSocket] Disconnected');
+      setConnected(false);
+      setStatus('disconnected');
+
+      // 清除 ping 定时器
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+
+      // 只有在组件仍然挂载且需要自动重连时才尝试重连
+      if (isMountedRef.current && autoReconnect) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log('[SwarmWebSocket] Attempting to reconnect...');
+          connect();
+        }, reconnectInterval);
+      }
+    };
+
+    ws.onerror = (event) => {
+      isConnectingRef.current = false;
+      console.error('[SwarmWebSocket] WebSocket error:', event);
+      setStatus('error');
+
+      if (onError) {
+        onError('WebSocket connection error');
+      }
+    };
+  }, [autoReconnect, reconnectInterval, pingInterval, onError]);
+
+  // 组件挂载时连接，卸载时清理
+  useEffect(() => {
+    isMountedRef.current = true;
+    connect();
+
+    return () => {
+      isMountedRef.current = false;
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  // ============= 蜂群控制方法 =============
+
+  const subscribe = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:subscribe', payload: { blueprintId } });
+  }, [send]);
+
+  const unsubscribe = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:unsubscribe', payload: { blueprintId } });
+  }, [send]);
+
+  const pauseSwarm = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:pause', payload: { blueprintId } });
+  }, [send]);
+
+  const resumeSwarm = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:resume', payload: { blueprintId } });
+  }, [send]);
+
+  const stopSwarm = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:stop', payload: { blueprintId } });
+  }, [send]);
+
+  const pauseWorker = useCallback((workerId: string) => {
+    send({ type: 'worker:pause', payload: { workerId } });
+  }, [send]);
+
+  const resumeWorker = useCallback((workerId: string) => {
+    send({ type: 'worker:resume', payload: { workerId } });
+  }, [send]);
+
+  const terminateWorker = useCallback((workerId: string) => {
+    send({ type: 'worker:terminate', payload: { workerId } });
+  }, [send]);
+
+  return {
+    connected,
+    status,
+    subscribe,
+    unsubscribe,
+    pauseSwarm,
+    resumeSwarm,
+    stopSwarm,
+    pauseWorker,
+    resumeWorker,
+    terminateWorker,
+  };
+}

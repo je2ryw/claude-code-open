@@ -9,6 +9,12 @@ import * as os from 'os';
 import * as child_process from 'child_process';
 const { exec } = child_process;
 import { detectProvider, validateProviderConfig } from '../providers/index.js';
+import {
+  getPackageManagerInfo,
+  getUpdateInstructions,
+  formatPackageManagerDiagnostics,
+  type PackageManagerInfo,
+} from '../utils/package-manager.js';
 
 export interface DiagnosticCheck {
   name: string;
@@ -96,6 +102,9 @@ export async function runDiagnostics(options: DiagnosticOptions = {}): Promise<D
   // Performance checks
   checks.push(await checkMemoryUsage());
   checks.push(await checkCPULoad());
+
+  // Package manager check
+  checks.push(await checkPackageManager());
 
   // Calculate summary
   const summary = {
@@ -889,6 +898,41 @@ async function checkMemoryUsage(): Promise<DiagnosticCheck> {
       name: 'Memory Usage',
       status: 'pass',
       message: `${percentUsed.toFixed(1)}% (${memInfo.used} / ${memInfo.total})`,
+    };
+  }
+}
+
+/**
+ * Check package manager and installation type
+ * 检测安装方式（homebrew/winget/npm）并显示更新命令
+ */
+async function checkPackageManager(): Promise<DiagnosticCheck> {
+  try {
+    const info = getPackageManagerInfo();
+    const instructions = getUpdateInstructions(info.packageManager);
+
+    // 构建详细信息
+    const details = [
+      `Installation Type: ${info.installationType}`,
+      `Exec Path: ${info.execPath}`,
+      `Update Command: ${info.updateCommand}`,
+    ].join('\n    ');
+
+    return {
+      name: 'Package Manager',
+      status: 'pass',
+      message: `Installed via ${instructions.managerName}`,
+      details: details,
+      fix: info.canAutoUpdate
+        ? 'Run "claude update" to update automatically'
+        : `Run "${info.updateCommand}" to update`,
+    };
+  } catch (err) {
+    return {
+      name: 'Package Manager',
+      status: 'warn',
+      message: 'Could not detect package manager',
+      details: String(err),
     };
   }
 }

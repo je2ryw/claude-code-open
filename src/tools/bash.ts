@@ -15,6 +15,7 @@ import { executeInSandbox, isBubblewrapAvailable } from './sandbox.js';
 import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 import { processGitCommitCommand } from '../utils/git-helper.js';
 import { configManager } from '../config/index.js';
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -345,6 +346,18 @@ function cleanupTimedOutTasks(): number {
 // 向后兼容
 const cleanupTimedOutShells = cleanupTimedOutTasks;
 
+/**
+ * 生成后台任务相关提示文本（条件性）
+ * 根据 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS 环境变量决定是否显示
+ */
+function getBackgroundTasksPrompt(): string {
+  if (isBackgroundTasksDisabled()) {
+    return '';
+  }
+  return `
+  - You can use the \`run_in_background\` parameter to run the command in the background, which allows you to continue working while the command runs. You can monitor the output using the BashOutput tool as it becomes available. You do not need to use '&' at the end of the command when using this parameter.`;
+}
+
 export class BashTool extends BaseTool<BashInput, BashResult> {
   name = 'Bash';
   description = `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
@@ -371,8 +384,7 @@ Usage notes:
   - The command argument is required.
   - You can specify an optional timeout in milliseconds (up to ${MAX_TIMEOUT}ms / ${MAX_TIMEOUT / 60000} minutes). If not specified, commands will timeout after ${DEFAULT_TIMEOUT}ms (${DEFAULT_TIMEOUT / 60000} minutes).
   - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.
-  - If the output exceeds ${MAX_OUTPUT_LENGTH} characters, output will be truncated before being returned to you.
-  - You can use the \`run_in_background\` parameter to run the command in the background, which allows you to continue working while the command runs. You can monitor the output using the BashOutput tool as it becomes available. You do not need to use '&' at the end of the command when using this parameter.
+  - If the output exceeds ${MAX_OUTPUT_LENGTH} characters, output will be truncated before being returned to you.${getBackgroundTasksPrompt()}
   - Avoid using Bash with the \`find\`, \`grep\`, \`cat\`, \`head\`, \`tail\`, \`sed\`, \`awk\`, or \`echo\` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:
     - File search: Use Glob (NOT find or ls)
     - Content search: Use Grep (NOT grep or rg)
@@ -530,7 +542,33 @@ Important:
     const modelId = config.model;
 
     // 处理 git commit 命令以添加署名
-    command = processGitCommitCommand(command, modelId);
+    // 修复 2.1.3: 添加友好的错误处理，防止命令注入异常导致不友好的错误消息
+    try {
+      command = processGitCommitCommand(command, modelId);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Command injection detected')) {
+        // 返回友好的安全错误消息
+        const auditLog: AuditLog = {
+          timestamp: Date.now(),
+          command,
+          cwd: process.cwd(),
+          sandboxed: false,
+          success: false,
+          duration: 0,
+          outputSize: 0,
+          background: run_in_background,
+        };
+        recordAudit(auditLog);
+
+        return {
+          success: false,
+          error: `🛡️ 安全防护：Git commit 已被阻止\n\n原因：${error.message}\n\n这是为了保护您的系统安全。请使用安全的提交消息，避免包含特殊字符如 $()、\`、;、|、&&、||、<、> 等。`,
+          blocked: true,
+        };
+      }
+      // 其他错误向上传播
+      throw error;
+    }
 
     // 安全检查
     const safetyCheck = checkCommandSafety(command);
@@ -820,145 +858,6 @@ Use TaskOutput tool with task_id="${taskId}" to retrieve the output.`;
       task_id: taskId, // 官方字段名
       shell_id: taskId, // 向后兼容
       bash_id: taskId, // 向后兼容
-    };
-  }
-}
-
-/**
- * BashOutput 工具（向后兼容）
- * 直接实现，不依赖 TaskOutput 以避免循环依赖
- */
-export class BashOutputTool extends BaseTool<
-  { bash_id?: string; task_id?: string; filter?: string; block?: boolean; timeout?: number },
-  BashResult
-> {
-  name = 'BashOutput';
-  description = `
-- Retrieves output from a running or completed task (background shell, agent, or remote session)
-- Takes a task_id parameter identifying the task
-- Returns the task output along with status information
-- Use block=true (default) to wait for task completion
-- Use block=false for non-blocking check of current status
-- Task IDs can be found using the /tasks command
-- Works with all task types: background shells, async agents, and remote sessions`.trim();
-
-  getInputSchema(): ToolDefinition['inputSchema'] {
-    return {
-      type: 'object',
-      properties: {
-        bash_id: {
-          type: 'string',
-          description: 'The ID of the background bash shell',
-        },
-        task_id: {
-          type: 'string',
-          description: 'The task ID to get output from',
-        },
-        filter: {
-          type: 'string',
-          description: 'Optional regex to filter output lines',
-        },
-        block: {
-          type: 'boolean',
-          description: 'Whether to wait for completion (default: true)',
-        },
-        timeout: {
-          type: 'number',
-          description: 'Max wait time in ms when blocking (default: 30000)',
-        },
-      },
-      required: [],
-    };
-  }
-
-  async execute(input: {
-    bash_id?: string;
-    task_id?: string;
-    filter?: string;
-    block?: boolean;
-    timeout?: number;
-  }): Promise<BashResult> {
-    // 同时支持 task_id 和 bash_id 参数
-    const taskId = input.task_id || input.bash_id;
-    if (!taskId) {
-      return { success: false, error: 'Either task_id or bash_id parameter is required' };
-    }
-
-    const task = backgroundTasks.get(taskId);
-    if (!task) {
-      return { success: false, error: `Task ${taskId} not found` };
-    }
-
-    // 如果需要阻塞等待完成（默认为 true）
-    const shouldBlock = input.block !== false;
-    if (shouldBlock && task.status === 'running') {
-      const maxTimeout = input.timeout || 30000;
-      const startTime = Date.now();
-
-      while (task.status === 'running' && Date.now() - startTime < maxTimeout) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      if (task.status === 'running') {
-        return {
-          success: true,
-          output: `Task ${taskId} is still running after ${maxTimeout}ms timeout.\nUse block=false to check current output without waiting.`,
-          stdout: `Status: ${task.status}`,
-          task_id: taskId,
-        };
-      }
-    }
-
-    // 读取新输出（增量）
-    let output = task.output.join('');
-    task.output.length = 0;
-
-    if (input.filter) {
-      try {
-        const regex = new RegExp(input.filter);
-        output = output
-          .split('\n')
-          .filter((line) => regex.test(line))
-          .join('\n');
-      } catch {
-        return { success: false, error: `Invalid regex: ${input.filter}` };
-      }
-    }
-
-    const duration = Date.now() - task.startTime;
-
-    // 构建状态信息
-    const statusInfo = [];
-    statusInfo.push(`<task-id>${taskId}</task-id>`);
-    statusInfo.push(`<task-type>bash</task-type>`);
-    statusInfo.push(`<status>${task.status}</status>`);
-    statusInfo.push(`<duration>${duration}ms</duration>`);
-    statusInfo.push(`<output-file>${task.outputFile}</output-file>`);
-
-    if (task.exitCode !== undefined) {
-      statusInfo.push(`<exit-code>${task.exitCode}</exit-code>`);
-    }
-
-    if (output.trim()) {
-      statusInfo.push(`<output>\n${output}\n</output>`);
-    } else {
-      statusInfo.push(`<output>(no new output)</output>`);
-    }
-
-    if (task.status === 'completed') {
-      statusInfo.push(`<summary>Task completed successfully.</summary>`);
-    } else if (task.status === 'failed') {
-      statusInfo.push(`<summary>Task failed with exit code ${task.exitCode}.</summary>`);
-    } else {
-      statusInfo.push(`<summary>Task is still running.</summary>`);
-    }
-
-    return {
-      success: true,
-      output: statusInfo.join('\n'),
-      exitCode: task.exitCode,
-      stdout: output,
-      task_id: taskId,
     };
   }
 }

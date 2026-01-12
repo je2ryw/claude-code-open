@@ -115,5 +115,6 @@ export * from './codesign/index.js';
 export * from './rules/index.js';
 
 // 版本信息
-export const VERSION = '2.0.76-restored';
+// 版本号统一导出
+export { VERSION, VERSION_FULL, VERSION_BASE, getVersionInfo } from './version.js';
 export const NAME = 'claude-code-restored';

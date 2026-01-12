@@ -2,7 +2,7 @@
 
 ## 概述
 
-环境变量模块提供了完整的环境变量验证、敏感信息检测和统一管理功能，基于官方 Claude Code v2.0.76 的实现。
+环境变量模块提供了完整的环境变量验证、敏感信息检测和统一管理功能，基于官方 Claude Code v2.1.4 的实现。
 
 ## 模块结构
 
@@ -263,4 +263,4 @@ npm run dev
 ## 参考文档
 
 - 详细分析: `/home/user/claude-code-open/docs/comparison/analysis/env-analysis.md`
-- 官方源码: 基于 Claude Code v2.0.76 反编译分析
+- 官方源码: 基于 Claude Code v2.1.4 反编译分析

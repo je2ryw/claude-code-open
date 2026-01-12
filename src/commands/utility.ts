@@ -10,6 +10,7 @@ import * as os from 'os';
 import { generateTerminalConfig, detectTerminalType, formatConfigAsMarkdown } from '../utils/terminal-setup.js';
 import React from 'react';
 import { SkillsDialog } from '../ui/components/SkillsDialog.js';
+import { isDemoMode } from '../utils/env-check.js';
 
 // /cost - 费用统计 (官方风格)
 export const costCommand: SlashCommand = {
@@ -579,7 +580,21 @@ export const statsCommand: SlashCommand = {
 │    Total Sessions: ${String(totalSessions).padEnd(32)}│
 │    Recent Messages: ${String(totalMessages).padEnd(31)}│
 │                                                     │
-│  Model: ${ctx.config.modelDisplayName.padEnd(43)}│
+│  Model: ${ctx.config.modelDisplayName.padEnd(43)}│`;
+
+    // IS_DEMO 模式下隐藏敏感信息 - 官网实现:
+    // if(A.organization&&!process.env.IS_DEMO)Q.push({label:"Organization",value:A.organization});
+    // if(A.email&&!process.env.IS_DEMO)Q.push({label:"Email",value:A.email});
+    if (!isDemoMode()) {
+      // 显示 organization（如果存在）
+      if (ctx.config.organization) {
+        statsInfo += `\n│  Organization: ${ctx.config.organization.padEnd(36)}│`;
+      }
+      // 显示 email（如果存在）- 这里需要从 session 或 config 中获取
+      // 暂时只显示 organization，因为 email 需要从认证模块获取
+    }
+
+    statsInfo += `
 │                                                     │
 ╰─────────────────────────────────────────────────────╯
 

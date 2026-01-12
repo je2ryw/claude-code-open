@@ -2,7 +2,7 @@
 
 /**
  * Claude Code CLI 入口点
- * 还原版本 2.0.76 - 完整功能版
+ * 还原版本 2.1.4 - 完整功能版
  */
 
 import { Command, Option } from 'commander';
@@ -24,18 +24,17 @@ import { runHooks } from './hooks/index.js';
 import { scheduleCleanup } from './session/cleanup.js';
 import { createPluginCommand } from './plugins/cli.js';
 import type { PermissionMode, OutputFormat, InputFormat } from './types/index.js';
+import { VERSION_FULL } from './version.js';
 
 // 工作目录列表
 const additionalDirectories: string[] = [];
-
-const VERSION = '2.0.76-restored';
 
 const program = new Command();
 
 program
   .name('claude')
   .description('Claude Code - starts an interactive session by default, use -p/--print for non-interactive output')
-  .version(VERSION, '-v, --version', 'Output the version number');
+  .version(VERSION_FULL, '-v, --version', 'Output the version number');
 
 // 主命令 - 交互模式
 program
@@ -391,6 +390,9 @@ program
 
     // 打印模式 (JSON 格式支持) - 不使用 TUI
     if (options.print && prompt) {
+      // 从配置管理器获取完整配置（包括环境变量）
+      const config = configManager.getAll();
+
       const loop = new ConversationLoop({
         model: modelMap[options.model] || options.model,
         maxTokens: parseInt(options.maxTokens),
@@ -399,6 +401,12 @@ program
         permissionMode: options.permissionMode as PermissionMode,
         allowedTools: options.allowedTools,
         disallowedTools: options.disallowedTools,
+        // 传递 Extended Thinking 配置
+        thinking: config.thinking,
+        // 传递回退模型配置
+        fallbackModel: options.fallbackModel || config.fallbackModel,
+        // 传递调试配置
+        debug: options.debug || config.debug,
       });
 
       const outputFormat = options.outputFormat as OutputFormat;
@@ -478,7 +486,7 @@ async function runTextInterface(
   const LOGO = `
 ╭─────────────────────────────────────────────────────╮
 │                                                     │
-│   ${claudeColor('Claude Code')} ${chalk.gray('v' + VERSION)}                           │
+│   ${claudeColor('Claude Code')} ${chalk.gray('v' + VERSION_FULL)}                           │
 │                                                     │
 │        ${claudeColor('*')}       ${claudeColor('*')}                                 │
 │      ${claudeColor('*')}  ${claudeColor(' ▐')}${claudeColor.bgBlack('▛███▜')}${claudeColor('▌')}  ${claudeColor('*')}                            │
@@ -492,6 +500,9 @@ async function runTextInterface(
 
   console.log(LOGO);
 
+  // 从配置管理器获取完整配置（包括环境变量）
+  const config = configManager.getAll();
+
   const loop = new ConversationLoop({
     model: modelMap[options.model] || options.model,
     maxTokens: parseInt(options.maxTokens),
@@ -500,6 +511,12 @@ async function runTextInterface(
     permissionMode: options.permissionMode as PermissionMode,
     allowedTools: options.allowedTools,
     disallowedTools: options.disallowedTools,
+    // 传递 Extended Thinking 配置
+    thinking: config.thinking,
+    // 传递回退模型配置
+    fallbackModel: options.fallbackModel || config.fallbackModel,
+    // 传递调试配置
+    debug: options.debug || config.debug,
   });
 
   // 恢复会话逻辑
@@ -1051,7 +1068,7 @@ program
       }
 
       // 检查更新
-      console.log(chalk.cyan(`Current version: ${VERSION}\n`));
+      console.log(chalk.cyan(`Current version: ${VERSION_FULL}\n`));
       console.log(chalk.gray('Checking for updates...\n'));
 
       const updateInfo = await checkForUpdates({

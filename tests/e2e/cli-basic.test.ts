@@ -24,7 +24,7 @@ const tests = [
       const result = await runCLI(['--version'], { timeout: 5000 });
 
       assertEqual(result.exitCode, 0, '应该成功退出');
-      assertContains(result.stdout, '2.0.76', '应该显示版本号');
+      assertContains(result.stdout, '2.1.4', '应该显示版本号');
     }
   },
 
@@ -45,7 +45,7 @@ const tests = [
       const result = await runCLI(['-v'], { timeout: 5000 });
 
       assertEqual(result.exitCode, 0, '应该成功退出');
-      assertContains(result.stdout, '2.0.76', '应该显示版本号');
+      assertContains(result.stdout, '2.1.4', '应该显示版本号');
     }
   },
 

@@ -1,9 +1,20 @@
 /**
  * WebUI 权限处理器
  * 处理敏感工具操作的权限确认
+ *
+ * v2.1.3 新功能：
+ * - 可点击的目标选择器，允许用户选择权限设置保存的位置
+ * - 支持 This project / All projects / Shared with team / Session only
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { PermissionMode } from '../../types/index.js';
+
+/**
+ * 权限保存目标类型
+ */
+export type PermissionDestination = 'project' | 'global' | 'team' | 'session';
 
 /**
  * 权限请求
@@ -18,13 +29,14 @@ export interface PermissionRequest {
 }
 
 /**
- * 权限响应
+ * 权限响应（扩展版）
  */
 export interface PermissionResponse {
   requestId: string;
   approved: boolean;
   remember?: boolean; // 是否记住此次决定
   scope?: 'once' | 'session' | 'always'; // 记忆范围
+  destination?: PermissionDestination; // v2.1.3: 保存目标
 }
 
 /**
@@ -361,7 +373,13 @@ export class PermissionHandler {
   /**
    * 处理用户响应
    */
-  handleResponse(requestId: string, approved: boolean, remember?: boolean, scope?: 'once' | 'session' | 'always'): void {
+  handleResponse(
+    requestId: string,
+    approved: boolean,
+    remember?: boolean,
+    scope?: 'once' | 'session' | 'always',
+    destination?: PermissionDestination
+  ): void {
     const pending = this.pendingRequests.get(requestId);
 
     if (!pending) {
@@ -378,11 +396,215 @@ export class PermissionHandler {
       this.sessionMemory.set(key, approved);
     }
 
+    // v2.1.3: 根据目标保存权限规则
+    if (remember && destination && destination !== 'session') {
+      this.savePermissionToDestination(pending.request.tool, pending.request.args, approved, destination);
+    }
+
     // 解析 Promise
     pending.resolve(approved);
 
     // 清理
     this.pendingRequests.delete(requestId);
+  }
+
+  /**
+   * v2.1.3: 将权限规则保存到指定目标
+   */
+  private savePermissionToDestination(
+    tool: string,
+    args: Record<string, unknown>,
+    approved: boolean,
+    destination: PermissionDestination
+  ): void {
+    try {
+      // 获取配置文件路径
+      const configPath = this.getConfigPathForDestination(destination);
+      if (!configPath) {
+        console.warn(`[PermissionHandler] Invalid destination: ${destination}`);
+        return;
+      }
+
+      // 读取现有配置
+      let config: Record<string, unknown> = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          const content = fs.readFileSync(configPath, 'utf-8');
+          config = JSON.parse(content);
+        } catch (e) {
+          console.warn(`[PermissionHandler] Failed to parse config at ${configPath}:`, e);
+          config = {};
+        }
+      }
+
+      // 确保 permissions 对象存在
+      if (!config.permissions) {
+        config.permissions = {};
+      }
+      const permissions = config.permissions as Record<string, unknown>;
+
+      // 确保 allow/deny 数组存在
+      if (!permissions.allow) {
+        permissions.allow = [];
+      }
+      if (!permissions.deny) {
+        permissions.deny = [];
+      }
+
+      const allowList = permissions.allow as string[];
+      const denyList = permissions.deny as string[];
+
+      // 生成权限规则
+      const rule = this.generatePermissionRule(tool, args);
+
+      // 添加到适当的列表
+      if (approved) {
+        // 从 deny 列表移除（如果存在）
+        const denyIndex = denyList.indexOf(rule);
+        if (denyIndex !== -1) {
+          denyList.splice(denyIndex, 1);
+        }
+        // 添加到 allow 列表（如果不存在）
+        if (!allowList.includes(rule)) {
+          allowList.push(rule);
+        }
+      } else {
+        // 从 allow 列表移除（如果存在）
+        const allowIndex = allowList.indexOf(rule);
+        if (allowIndex !== -1) {
+          allowList.splice(allowIndex, 1);
+        }
+        // 添加到 deny 列表（如果不存在）
+        if (!denyList.includes(rule)) {
+          denyList.push(rule);
+        }
+      }
+
+      // 确保目录存在
+      const configDir = path.dirname(configPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+
+      // 保存配置
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+
+      console.log(`[PermissionHandler] Permission rule saved to ${destination}: ${rule} (${approved ? 'allow' : 'deny'})`);
+
+      // 如果是 team 目标，确保 .gitignore 不忽略 settings.local.json
+      if (destination === 'team') {
+        this.ensureLocalSettingsInGitignore(configDir);
+      }
+    } catch (error) {
+      console.error(`[PermissionHandler] Failed to save permission to ${destination}:`, error);
+    }
+  }
+
+  /**
+   * 获取目标对应的配置文件路径
+   */
+  private getConfigPathForDestination(destination: PermissionDestination): string | null {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const cwd = process.cwd();
+
+    switch (destination) {
+      case 'project':
+        // .claude/settings.json - 项目配置，团队共享
+        return path.join(cwd, '.claude', 'settings.json');
+
+      case 'global':
+        // ~/.claude/settings.json - 全局配置
+        return path.join(homeDir, '.claude', 'settings.json');
+
+      case 'team':
+        // .claude/settings.local.json - 本地配置，机器特定
+        return path.join(cwd, '.claude', 'settings.local.json');
+
+      case 'session':
+        // 仅会话，不保存
+        return null;
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * 生成权限规则字符串
+   */
+  private generatePermissionRule(tool: string, args: Record<string, unknown>): string {
+    switch (tool) {
+      case 'Bash': {
+        const command = args.command as string;
+        if (!command) return `Bash()`;
+
+        // 提取命令名称和主要参数
+        const parts = command.trim().split(/\s+/);
+        const cmdName = parts[0] || '';
+
+        // 对于常见命令，生成更精确的规则
+        if (['npm', 'yarn', 'pnpm', 'git', 'node', 'python', 'pip'].includes(cmdName)) {
+          const subCmd = parts[1] || '';
+          if (subCmd) {
+            return `Bash(${cmdName} ${subCmd}*)`;
+          }
+        }
+
+        return `Bash(${cmdName}*)`;
+      }
+
+      case 'Write':
+      case 'Edit':
+      case 'NotebookEdit': {
+        const filePath = (args.file_path || args.notebook_path) as string;
+        if (!filePath) return `${tool}()`;
+
+        // 提取文件扩展名生成规则
+        const ext = path.extname(filePath);
+        if (ext) {
+          return `${tool}(*${ext})`;
+        }
+
+        return `${tool}(${filePath})`;
+      }
+
+      case 'MultiEdit': {
+        return `MultiEdit(*)`;
+      }
+
+      case 'KillShell': {
+        return `KillShell(*)`;
+      }
+
+      default:
+        return `${tool}(*)`;
+    }
+  }
+
+  /**
+   * 确保 .gitignore 包含 settings.local.json
+   */
+  private ensureLocalSettingsInGitignore(claudeDir: string): void {
+    const projectRoot = path.dirname(claudeDir);
+    const gitignorePath = path.join(projectRoot, '.gitignore');
+
+    try {
+      let content = '';
+      if (fs.existsSync(gitignorePath)) {
+        content = fs.readFileSync(gitignorePath, 'utf-8');
+      }
+
+      const pattern = '.claude/settings.local.json';
+
+      if (!content.includes(pattern)) {
+        const addition = `\n# Claude Code local settings (machine-specific)\n${pattern}\n`;
+        fs.writeFileSync(gitignorePath, content + addition, 'utf-8');
+        console.log(`[PermissionHandler] Added ${pattern} to .gitignore`);
+      }
+    } catch (error) {
+      // 忽略 .gitignore 更新失败
+      console.warn(`[PermissionHandler] Failed to update .gitignore:`, error);
+    }
   }
 
   /**
@@ -431,10 +653,10 @@ export class PermissionHandler {
    * 取消所有待处理的请求
    */
   cancelAll(): void {
-    for (const [requestId, pending] of this.pendingRequests) {
+    this.pendingRequests.forEach((pending) => {
       clearTimeout(pending.timeout);
       pending.reject(new Error('权限请求已取消'));
-    }
+    });
     this.pendingRequests.clear();
   }
 

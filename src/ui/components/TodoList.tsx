@@ -1,6 +1,6 @@
 /**
  * TodoList 组件 - 增强版
- * 基于官方 Claude Code CLI v2.0.76 实现
+ * 基于官方 Claude Code CLI v2.1.4 实现
  *
  * 功能:
  * - 三种状态支持: pending, in_progress, completed

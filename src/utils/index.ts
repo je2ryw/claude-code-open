@@ -344,3 +344,21 @@ export { getAttribution, getCommitAttribution, getPRAttribution, isAttributionEn
 
 // Re-export git helper utilities
 export { addCommitAttribution, isGitCommitCommand, processGitCommitCommand, hasCommitAttribution } from './git-helper.js';
+
+// Re-export package manager utilities
+export {
+  isHomebrewInstallation,
+  isWingetInstallation,
+  detectPackageManager,
+  detectInstallationType,
+  getUpdateCommand,
+  getUpdateInstructions,
+  getPackageManagerInfo,
+  clearPackageManagerCache,
+  getPackageManagerDiagnostics,
+  formatPackageManagerDiagnostics,
+  type PackageManagerType,
+  type InstallationType,
+  type PackageManagerInfo,
+  type UpdateInstructions,
+} from './package-manager.js';

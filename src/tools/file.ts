@@ -23,6 +23,8 @@ import {
   isPdfSupported,
   isSvgRenderEnabled,
 } from '../media/index.js';
+import { blueprintContext } from '../blueprint/index.js';
+import { persistLargeOutputSync } from './output-persistence.js';
 
 /**
  * 差异预览接口
@@ -365,19 +367,25 @@ Usage:
 
       // 格式化带行号的输出
       const maxLineNumWidth = String(offset + selectedLines.length).length;
-      const output = selectedLines.map((line, idx) => {
+      let output = selectedLines.map((line, idx) => {
         const lineNum = String(offset + idx + 1).padStart(maxLineNumWidth, ' ');
         const truncatedLine = line.length > 2000 ? line.substring(0, 2000) + '...' : line;
         return `${lineNum}\t${truncatedLine}`;
       }).join('\n');
+
+      // 使用输出持久化处理大输出
+      const persistResult = persistLargeOutputSync(output, {
+        toolName: 'Read',
+        maxLength: 30000,
+      });
 
       // 标记文件已被读取（用于 Edit 工具验证），记录 mtime
       fileReadTracker.markAsRead(file_path, stat.mtimeMs);
 
       return {
         success: true,
-        content: output,
-        output,
+        content: persistResult.content,
+        output: persistResult.content,
         lineCount: lines.length,
       };
     } catch (err) {
@@ -590,6 +598,15 @@ Usage:
     const { file_path, content } = input;
 
     try {
+      // 蓝图边界检查（如果在蓝图执行上下文中）
+      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
+      if (!boundaryCheck.allowed) {
+        return {
+          success: false,
+          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
+        };
+      }
+
       // 确保目录存在
       const dir = path.dirname(file_path);
       if (!fs.existsSync(dir)) {
@@ -870,6 +887,17 @@ Usage:
         return {
           success: false,
           error: `File path must be absolute. Received: ${file_path}`,
+          errorCode: EditErrorCode.INVALID_PATH,
+        };
+      }
+
+
+      // 1.5 蓝图边界检查（如果在蓝图执行上下文中）
+      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
+      if (!boundaryCheck.allowed) {
+        return {
+          success: false,
+          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
           errorCode: EditErrorCode.INVALID_PATH,
         };
       }

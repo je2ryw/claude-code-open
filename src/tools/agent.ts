@@ -1,10 +1,11 @@
 /**
  * Agent 工具 (Task)
- * 子代理管理 - 参照官方 Claude Code CLI v2.0.76 实现
+ * 子代理管理 - 参照官方 Claude Code CLI v2.1.4 实现
  */
 
 import { BaseTool } from './base.js';
 import type { AgentInput, ToolResult, ToolDefinition } from '../types/index.js';
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,7 +19,7 @@ import {
   type HookInput
 } from '../hooks/index.js';
 import type { Message } from '../types/index.js';
-import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT } from '../prompt/templates.js';
+import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, CODE_ANALYZER_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
 
 // 代理类型定义（参照官方）
 export interface AgentTypeDefinition {
@@ -65,7 +66,7 @@ export function resolveAgentModel(
 ): string | undefined {
   // 如果指定了 inherit，使用父模型
   if (modelParam === 'inherit') {
-    return parentModelContext || agentDefaultModel || 'sonnet';
+    return parentModelContext || agentDefaultModel;
   }
 
   // 如果明确指定了模型，使用指定的
@@ -83,8 +84,8 @@ export function resolveAgentModel(
     return parentModelContext;
   }
 
-  // 最终默认使用 sonnet
-  return undefined; // 让 ConversationLoop 使用它自己的默认值
+  // 最终默认返回 undefined（让 ConversationLoop 使用它自己的默认值 'sonnet'）
+  return undefined;
 }
 
 // 内置代理类型
@@ -118,6 +119,21 @@ export const BUILT_IN_AGENT_TYPES: AgentTypeDefinition[] = [
     tools: ['Glob', 'Grep', 'Read', 'WebFetch', 'WebSearch'],
     forkContext: false,
     // claude-code-guide agent 的系统提示词待后续添加
+  },
+  {
+    agentType: 'blueprint-worker',
+    whenToUse: 'Worker agent for executing blueprint tasks with TDD methodology. This agent writes tests first, then implements code until tests pass. Only used by the blueprint system (Queen Agent).',
+    tools: ['*'],
+    forkContext: false,
+    getSystemPrompt: () => BLUEPRINT_WORKER_PROMPT,
+  },
+  {
+    agentType: 'code-analyzer',
+    whenToUse: 'Code analyzer agent for analyzing files and directories. Use this when you need to analyze code structure, dependencies, exports, and relationships. Returns structured JSON with semantic information.',
+    tools: ['Read', 'Grep', 'Glob', 'Bash','LSP'],
+    forkContext: false,
+    model: 'opus',  // 使用快速模型
+    getSystemPrompt: () => CODE_ANALYZER_PROMPT,
   },
 ];
 
@@ -160,6 +176,15 @@ export interface BackgroundAgent {
   metadata?: Record<string, any>;
   // 新增：对话历史
   messages?: Message[];
+  // 新增：进度追踪（对齐官方实现）
+  progress?: {
+    toolUseCount: number;
+    tokenCount: number;
+  };
+  lastActivity?: {
+    toolName: string;
+    input: any;
+  };
 }
 
 const backgroundAgents: Map<string, BackgroundAgent> = new Map();
@@ -333,6 +358,18 @@ export function getAgentTypeDefinition(agentType: string): AgentTypeDefinition |
 // 初始化时加载所有代理
 loadAllAgents();
 
+/**
+ * 生成后台任务相关提示文本（条件性）
+ * 根据 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS 环境变量决定是否显示
+ */
+function getAgentBackgroundTasksPrompt(): string {
+  if (isBackgroundTasksDisabled()) {
+    return '';
+  }
+  return `
+- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will need to use TaskOutput to retrieve its results once it's done. You can continue to work while background agents run - When you need their results to continue you can use TaskOutput in blocking mode to pause and wait for their results.`;
+}
+
 export class TaskTool extends BaseTool<AgentInput, ToolResult> {
   name = 'Task';
   description = `Launch a new agent to handle complex, multi-step tasks autonomously.
@@ -354,8 +391,7 @@ When NOT to use the Task tool:
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
 - Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
-- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will need to use TaskOutput to retrieve its results once it's done. You can continue to work while background agents run - When you need their results to continue you can use TaskOutput in blocking mode to pause and wait for their results.
+- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.${getAgentBackgroundTasksPrompt()}
 - Agents can be resumed using the \`resume\` parameter by passing the agent ID from a previous invocation. When resumed, the agent continues with its full previous context preserved. When NOT resuming, each invocation starts fresh and you should provide a detailed task description with all necessary context.
 - When the agent is done, it will return a single message back to you along with its agent ID. You can use this ID to resume the agent later if needed for follow-up work.
 - Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.
@@ -676,6 +712,14 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       // 解析模型参数，支持 inherit 继承
       const resolvedModel = resolveAgentModel(agent.model, agentDef.model);
 
+      // 从配置管理器获取完整配置（包括环境变量）
+      const { configManager } = await import('../config/index.js');
+      const config = configManager.getAll();
+
+      // 类型断言：确保 TypeScript 正确识别配置类型
+      const fallbackModel = config.fallbackModel as string | undefined;
+      const debug = config.debug as boolean | undefined;
+
       // 构建 LoopOptions
       const loopOptions: LoopOptions = {
         model: resolvedModel,
@@ -687,6 +731,14 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         workingDir: agent.workingDirectory,
         // 使用代理定义的系统提示词
         systemPrompt: agentDef.getSystemPrompt?.(),
+        // 传递 Extended Thinking 配置
+        thinking: config.thinking,
+        // 传递回退模型配置
+        fallbackModel,
+        // 传递调试配置
+        debug,
+        // 标记为 sub-agent，防止覆盖全局父模型上下文
+        isSubAgent: true,
       };
 
       // 创建子对话循环（动态导入避免循环依赖）
@@ -703,8 +755,43 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         }
       }
 
-      // 执行代理任务（添加当前任务提示）
-      const response = await loop.processMessage(agent.prompt);
+      // 执行代理任务（使用 streaming API 以支持长时间运行的操作）
+      // 根据 Anthropic SDK 要求，超过10分钟的操作必须使用 streaming
+      let response = '';
+
+      // 初始化进度追踪（对齐官方实现）
+      if (!agent.progress) {
+        agent.progress = {
+          toolUseCount: 0,
+          tokenCount: 0
+        };
+      }
+
+      for await (const event of loop.processMessageStream(agent.prompt)) {
+        if (event.type === 'text' && event.content) {
+          response += event.content;
+          // 更新token计数（粗略估计，1 word ≈ 1.3 tokens）
+          agent.progress.tokenCount += Math.ceil(event.content.split(/\s+/).length * 1.3);
+          saveAgentState(agent);
+        } else if (event.type === 'tool_start') {
+          // 追踪工具使用（对齐官方实现）
+          agent.progress.toolUseCount++;
+          agent.lastActivity = {
+            toolName: event.toolName || 'unknown',
+            input: event.toolInput
+          };
+          saveAgentState(agent);
+        } else if (event.type === 'tool_end') {
+          // 工具执行完成，更新状态
+          saveAgentState(agent);
+        } else if (event.type === 'done') {
+          // Stream 完成
+          break;
+        } else if (event.type === 'interrupted') {
+          // 如果被中断，记录状态
+          throw new Error('Agent execution was interrupted');
+        }
+      }
 
       // 保存结果
       agent.result = {
@@ -811,6 +898,16 @@ Usage notes:
 
     if (agent.currentStep !== undefined && agent.totalSteps !== undefined) {
       output.push(`Progress: ${agent.currentStep}/${agent.totalSteps} steps`);
+    }
+
+    // 显示进度追踪（对齐官方实现）
+    if (agent.progress) {
+      output.push(`Tools used: ${agent.progress.toolUseCount}`);
+      output.push(`Tokens: ${agent.progress.tokenCount}`);
+    }
+
+    if (agent.lastActivity) {
+      output.push(`Last tool: ${agent.lastActivity.toolName}`);
     }
 
     if (agent.workingDirectory) {
@@ -942,93 +1039,3 @@ Usage notes:
   }
 }
 
-export class ListAgentsTool extends BaseTool<{ status_filter?: string; include_completed?: boolean }, ToolResult> {
-  name = 'ListAgents';
-  description = `List all background agents with their current status.
-
-Usage notes:
-- Filter by status: running, completed, failed, paused
-- By default, excludes completed agents
-- Shows agent IDs that can be used with resume parameter`;
-
-  getInputSchema(): ToolDefinition['inputSchema'] {
-    return {
-      type: 'object',
-      properties: {
-        status_filter: {
-          type: 'string',
-          enum: ['running', 'completed', 'failed', 'paused'],
-          description: 'Filter agents by status',
-        },
-        include_completed: {
-          type: 'boolean',
-          description: 'Include completed agents (default: false)',
-        },
-      },
-    };
-  }
-
-  async execute(input: { status_filter?: string; include_completed?: boolean }): Promise<ToolResult> {
-    const agents = getBackgroundAgents();
-
-    if (agents.length === 0) {
-      return {
-        success: true,
-        output: 'No background agents found.',
-      };
-    }
-
-    // 过滤代理
-    let filteredAgents = agents;
-
-    if (input.status_filter) {
-      filteredAgents = filteredAgents.filter(a => a.status === input.status_filter);
-    }
-
-    if (!input.include_completed) {
-      filteredAgents = filteredAgents.filter(a => a.status !== 'completed');
-    }
-
-    if (filteredAgents.length === 0) {
-      return {
-        success: true,
-        output: 'No agents match the specified criteria.',
-      };
-    }
-
-    // 构建输出
-    const output = [];
-    output.push(`=== Background Agents (${filteredAgents.length}) ===\n`);
-
-    filteredAgents.forEach((agent, idx) => {
-      output.push(`${idx + 1}. Agent ID: ${agent.id}`);
-      output.push(`   Type: ${agent.agentType}`);
-      output.push(`   Status: ${agent.status}`);
-      output.push(`   Description: ${agent.description}`);
-      output.push(`   Started: ${agent.startTime.toISOString()}`);
-
-      if (agent.currentStep !== undefined && agent.totalSteps !== undefined) {
-        output.push(`   Progress: ${agent.currentStep}/${agent.totalSteps} steps`);
-      }
-
-      if (agent.endTime) {
-        const duration = agent.endTime.getTime() - agent.startTime.getTime();
-        output.push(`   Duration: ${(duration / 1000).toFixed(2)}s`);
-      }
-
-      if (agent.status === 'paused' || agent.status === 'failed') {
-        output.push(`   → Can be resumed with: resume="${agent.id}"`);
-      }
-
-      output.push('');
-    });
-
-    output.push('Use TaskOutput tool to get detailed information about a specific agent.');
-    output.push('Use Task tool with resume parameter to continue paused or failed agents.');
-
-    return {
-      success: true,
-      output: output.join('\n'),
-    };
-  }
-}

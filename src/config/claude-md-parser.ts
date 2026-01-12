@@ -3,30 +3,241 @@
  *
  * 解析项目根目录的 CLAUDE.md 文件，并注入到系统提示中
  * 这是官方 Claude Code 的核心特性之一
+ *
+ * v2.1.2 新增功能:
+ * - @include 指令支持：可以引用其他文件的内容
+ * - 二进制文件过滤：自动跳过图片、PDF 等二进制文件
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+/**
+ * 允许的文本文件扩展名集合 (从官方源码提取)
+ * 只有这些扩展名的文件才能被 @include
+ */
+const TEXT_FILE_EXTENSIONS = new Set([
+  // Markdown & 文档
+  '.md', '.txt', '.text', '.rst', '.adoc', '.asciidoc', '.org', '.tex', '.latex',
+  // 数据格式
+  '.json', '.yaml', '.yml', '.toml', '.xml', '.csv',
+  // Web
+  '.html', '.htm', '.css', '.scss', '.sass', '.less',
+  // JavaScript/TypeScript
+  '.js', '.ts', '.tsx', '.jsx', '.mjs', '.cjs', '.mts', '.cts',
+  // Python
+  '.py', '.pyi', '.pyw',
+  // Ruby
+  '.rb', '.erb', '.rake',
+  // 系统语言
+  '.go', '.rs', '.java', '.kt', '.kts', '.scala',
+  '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
+  '.cs', '.swift',
+  // Shell
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  // 配置
+  '.env', '.ini', '.cfg', '.conf', '.config', '.properties',
+  // 数据库 & API
+  '.sql', '.graphql', '.gql', '.proto',
+  // 框架
+  '.vue', '.svelte', '.astro', '.ejs', '.hbs', '.pug', '.jade',
+  // 其他语言
+  '.php', '.pl', '.pm', '.lua', '.r', '.R', '.dart',
+  '.ex', '.exs', '.erl', '.hrl', '.clj', '.cljs', '.cljc', '.edn',
+  '.hs', '.lhs', '.elm', '.ml', '.mli', '.f', '.f90', '.f95', '.for',
+  // 构建
+  '.cmake', '.make', '.makefile', '.gradle', '.sbt',
+  // 其他
+  '.lock', '.log', '.diff', '.patch',
+]);
 
 export interface ClaudeMdInfo {
   content: string;
   path: string;
   exists: boolean;
   lastModified?: Date;
+  /** 包含的文件路径 (v2.1.2+) */
+  includedPaths?: string[];
+  /** 跳过的二进制文件 (v2.1.2+) */
+  skippedBinaryFiles?: string[];
 }
 
 export class ClaudeMdParser {
   private claudeMdPath: string;
+  private workingDir: string;
   private watcher?: fs.FSWatcher;
   private changeCallbacks: Array<(content: string) => void> = [];
 
   constructor(workingDir?: string) {
-    const dir = workingDir || process.cwd();
-    this.claudeMdPath = path.join(dir, 'CLAUDE.md');
+    this.workingDir = workingDir || process.cwd();
+    this.claudeMdPath = path.join(this.workingDir, 'CLAUDE.md');
+  }
+
+  /**
+   * 检查文件是否为文本文件 (v2.1.2+)
+   *
+   * 官方实现: 检查扩展名是否在允许列表中
+   * 如果不在列表中，则认为是二进制文件并跳过
+   */
+  private isTextFile(filePath: string): boolean {
+    const ext = path.extname(filePath).toLowerCase();
+    // 没有扩展名的文件默认为文本文件
+    if (!ext) return true;
+    return TEXT_FILE_EXTENSIONS.has(ext);
+  }
+
+  /**
+   * 解析 @ 指令，提取文件路径 (v2.1.2+)
+   *
+   * 支持的格式:
+   * - @./relative/path.md (相对路径)
+   * - @~/home/path.md (home 目录)
+   * - @/absolute/path.md (绝对路径)
+   *
+   * 官方实现使用 marked 解析器来避免在代码块中匹配
+   */
+  private extractIncludePaths(content: string): string[] {
+    const paths: string[] = [];
+
+    // 分离代码块，避免在代码块中匹配
+    const codeBlockRegex = /```[\s\S]*?```|`[^`\n]+`/g;
+    const codeBlocks: { start: number; end: number }[] = [];
+    let match;
+
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      codeBlocks.push({ start: match.index, end: match.index + match[0].length });
+    }
+
+    // 匹配 @ 路径指令
+    // 官方正则: /(?:^|\s)@((?:[^\s\\]|\\ )+)/g
+    const includeRegex = /(?:^|\s)@((?:[^\s\\]|\\ )+)/gm;
+
+    while ((match = includeRegex.exec(content)) !== null) {
+      const matchPos = match.index;
+
+      // 检查是否在代码块中
+      const inCodeBlock = codeBlocks.some(
+        block => matchPos >= block.start && matchPos < block.end
+      );
+      if (inCodeBlock) continue;
+
+      let filePath = match[1];
+      if (!filePath) continue;
+
+      // 处理转义空格
+      filePath = filePath.replace(/\\ /g, ' ');
+
+      // 只处理路径格式的引用
+      if (
+        filePath.startsWith('./') ||
+        filePath.startsWith('~/') ||
+        (filePath.startsWith('/') && filePath !== '/')
+      ) {
+        paths.push(filePath);
+      }
+    }
+
+    return paths;
+  }
+
+  /**
+   * 解析文件路径为绝对路径 (v2.1.2+)
+   */
+  private resolveIncludePath(includePath: string): string {
+    if (includePath.startsWith('~/')) {
+      const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+      return path.join(homeDir, includePath.slice(2));
+    }
+    if (includePath.startsWith('/')) {
+      return includePath;
+    }
+    // 相对路径，相对于 CLAUDE.md 所在目录
+    return path.resolve(this.workingDir, includePath);
+  }
+
+  /**
+   * 读取并包含文件内容 (v2.1.2+)
+   *
+   * 官方实现: 如果文件不是文本文件，则跳过并打印警告
+   */
+  private readIncludeFile(includePath: string): { content: string | null; skipped: boolean } {
+    const fullPath = this.resolveIncludePath(includePath);
+
+    // 检查文件是否存在
+    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+      console.warn(`[CLAUDE.md] Include file not found: ${includePath}`);
+      return { content: null, skipped: false };
+    }
+
+    // 检查是否为文本文件 (官方二进制文件过滤)
+    if (!this.isTextFile(fullPath)) {
+      console.warn(`[CLAUDE.md] Skipping non-text file in @include: ${includePath}`);
+      return { content: null, skipped: true };
+    }
+
+    try {
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      return { content, skipped: false };
+    } catch (error) {
+      console.warn(`[CLAUDE.md] Failed to read include file: ${includePath}`, error);
+      return { content: null, skipped: false };
+    }
+  }
+
+  /**
+   * 处理 @include 指令 (v2.1.2+)
+   *
+   * 递归处理包含的文件，防止循环引用
+   */
+  private processIncludes(
+    content: string,
+    processedPaths: Set<string> = new Set(),
+    includedPaths: string[] = [],
+    skippedBinaryFiles: string[] = []
+  ): { content: string; includedPaths: string[]; skippedBinaryFiles: string[] } {
+    const paths = this.extractIncludePaths(content);
+
+    for (const includePath of paths) {
+      const fullPath = this.resolveIncludePath(includePath);
+
+      // 防止循环引用
+      if (processedPaths.has(fullPath)) {
+        console.warn(`[CLAUDE.md] Circular include detected, skipping: ${includePath}`);
+        continue;
+      }
+
+      processedPaths.add(fullPath);
+
+      const { content: fileContent, skipped } = this.readIncludeFile(includePath);
+
+      if (skipped) {
+        skippedBinaryFiles.push(includePath);
+        continue;
+      }
+
+      if (fileContent !== null) {
+        includedPaths.push(includePath);
+
+        // 递归处理包含文件中的 @include
+        const nested = this.processIncludes(
+          fileContent,
+          processedPaths,
+          includedPaths,
+          skippedBinaryFiles
+        );
+
+        // 将文件内容追加到原内容后面（官方行为）
+        content = content + '\n\n' + `<!-- Included from ${includePath} -->\n` + nested.content;
+      }
+    }
+
+    return { content, includedPaths, skippedBinaryFiles };
   }
 
   /**
    * 解析 CLAUDE.md 文件
+   *
+   * v2.1.2+: 支持 @include 指令和二进制文件过滤
    */
   parse(): ClaudeMdInfo {
     if (!fs.existsSync(this.claudeMdPath)) {
@@ -38,14 +249,20 @@ export class ClaudeMdParser {
     }
 
     try {
-      const content = fs.readFileSync(this.claudeMdPath, 'utf-8');
+      let content = fs.readFileSync(this.claudeMdPath, 'utf-8');
       const stats = fs.statSync(this.claudeMdPath);
 
+      // v2.1.2+: 处理 @include 指令
+      const { content: processedContent, includedPaths, skippedBinaryFiles } =
+        this.processIncludes(content);
+
       return {
-        content,
+        content: processedContent,
         path: this.claudeMdPath,
         exists: true,
         lastModified: stats.mtime,
+        includedPaths: includedPaths.length > 0 ? includedPaths : undefined,
+        skippedBinaryFiles: skippedBinaryFiles.length > 0 ? skippedBinaryFiles : undefined,
       };
     } catch (error) {
       console.warn(`读取 CLAUDE.md 失败: ${error}`);
@@ -255,3 +472,49 @@ ${projectName} is a ${projectType || 'software'} project.
  * 全局 CLAUDE.md 解析器实例
  */
 export const claudeMdParser = new ClaudeMdParser();
+
+// ============ 导出辅助函数 (v2.1.2+) ============
+
+/**
+ * 检查文件是否为文本文件
+ *
+ * 用于 @include 指令的二进制文件过滤
+ */
+export function isTextFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!ext) return true;
+  return TEXT_FILE_EXTENSIONS.has(ext);
+}
+
+/**
+ * 检查文件是否为二进制文件
+ *
+ * 与 isTextFile 相反
+ */
+export function isBinaryFile(filePath: string): boolean {
+  return !isTextFile(filePath);
+}
+
+/**
+ * 获取所有允许的文本文件扩展名
+ */
+export function getTextFileExtensions(): string[] {
+  return Array.from(TEXT_FILE_EXTENSIONS);
+}
+
+/**
+ * 检查文件内容是否包含二进制数据
+ *
+ * 通过检查 NULL 字节来判断
+ * 这是官方实现的备用检测方法
+ */
+export function hasBinaryContent(buffer: Buffer): boolean {
+  // 只检查前 8000 字节
+  const checkLength = Math.min(buffer.length, 8000);
+  for (let i = 0; i < checkLength; i++) {
+    if (buffer[i] === 0) {
+      return true;
+    }
+  }
+  return false;
+}

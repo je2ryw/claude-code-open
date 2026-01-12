@@ -14,13 +14,18 @@ export interface WSMessage {
 }
 
 /**
+ * 附件类型枚举
+ */
+export type AttachmentType = 'image' | 'pdf' | 'docx' | 'xlsx' | 'pptx' | 'text';
+
+/**
  * 附件类型
  */
 export interface Attachment {
   name: string;
-  type: 'image' | 'text';
+  type: AttachmentType;
   mimeType: string;
-  data: string; // base64 for images, text content for text files
+  data: string; // base64 for images/pdf/office, text content for text files
 }
 
 // ============ 认证相关类型 ============
@@ -109,7 +114,16 @@ export type ClientMessage =
   | { type: 'auth_status' }
   | { type: 'auth_set_key'; payload: AuthSetKeyPayload }
   | { type: 'auth_clear' }
-  | { type: 'auth_validate'; payload: AuthSetKeyPayload };
+  | { type: 'auth_validate'; payload: AuthSetKeyPayload }
+  // OAuth 相关消息
+  | { type: 'oauth_login'; payload: OAuthLoginPayload }
+  | { type: 'oauth_refresh'; payload?: OAuthRefreshPayload }
+  | { type: 'oauth_status' }
+  | { type: 'oauth_logout' }
+  | { type: 'oauth_get_auth_url'; payload: { redirectUri: string; state?: string } }
+  // 蜂群相关消息
+  | { type: 'swarm:subscribe'; payload: { blueprintId: string } }
+  | { type: 'swarm:unsubscribe'; payload: { blueprintId: string } };
 
 /**
  * 服务端发送的消息类型
@@ -169,7 +183,20 @@ export type ServerMessage =
   | { type: 'auth_status_response'; payload: AuthStatusPayload }
   | { type: 'auth_key_set'; payload: { success: boolean; message?: string } }
   | { type: 'auth_cleared'; payload: { success: boolean } }
-  | { type: 'auth_validated'; payload: { valid: boolean; message?: string } };
+  | { type: 'auth_validated'; payload: { valid: boolean; message?: string } }
+  | { type: 'oauth_login_response'; payload: { success: boolean; token?: OAuthTokenResponse; message?: string } }
+  | { type: 'oauth_refresh_response'; payload: { success: boolean; token?: OAuthTokenResponse; message?: string } }
+  | { type: 'oauth_status_response'; payload: OAuthStatusPayload }
+  | { type: 'oauth_logout_response'; payload: { success: boolean } }
+  | { type: 'oauth_auth_url_response'; payload: { url: string } }
+  // 蜂群相关消息
+  | { type: 'swarm:state'; payload: any }
+  | { type: 'swarm:task_update'; payload: any }
+  | { type: 'swarm:worker_update'; payload: any }
+  | { type: 'swarm:queen_update'; payload: any }
+  | { type: 'swarm:timeline_event'; payload: any }
+  | { type: 'swarm:completed'; payload: any }
+  | { type: 'swarm:error'; payload: { blueprintId: string; error: string; timestamp: string } };
 
 // ============ 消息负载类型 ============
 
@@ -1109,3 +1136,1525 @@ export interface PluginListPayload {
   /** 总数 */
   total: number;
 }
+
+// ============ OAuth 相关类型 ============
+
+/**
+ * OAuth 配置
+ */
+export interface OAuthConfig {
+  /** 访问令牌 */
+  accessToken: string;
+  /** 刷新令牌 */
+  refreshToken: string;
+  /** 过期时间（Unix 时间戳） */
+  expiresAt: number;
+  /** 授权范围 */
+  scopes: string[];
+  /** 订阅类型 */
+  subscriptionType?: string;
+  /** 速率限制层级 */
+  rateLimitTier?: string;
+  /** 组织角色 */
+  organizationRole?: string;
+  /** 工作区角色 */
+  workspaceRole?: string;
+  /** 组织名称 */
+  organizationName?: string;
+  /** 显示名称 */
+  displayName?: string;
+  /** 是否启用额外用量 */
+  hasExtraUsageEnabled?: boolean;
+}
+
+/**
+ * OAuth Token 响应
+ */
+export interface OAuthTokenResponse {
+  /** 访问令牌 */
+  accessToken: string;
+  /** 刷新令牌 */
+  refreshToken: string;
+  /** 过期时间（Unix 时间戳） */
+  expiresAt: number;
+  /** 授权范围 */
+  scopes: string[];
+  /** 订阅类型 */
+  subscriptionType?: string;
+  /** 速率限制层级 */
+  rateLimitTier?: string;
+}
+
+/**
+ * 用户角色信息
+ */
+export interface UserRoles {
+  /** 组织角色 */
+  organizationRole?: string;
+  /** 工作区角色 */
+  workspaceRole?: string;
+  /** 组织名称 */
+  organizationName?: string;
+}
+
+/**
+ * 订阅信息
+ */
+export interface SubscriptionInfo {
+  /** 订阅类型 */
+  subscriptionType: string;
+  /** 速率限制层级 */
+  rateLimitTier: string;
+  /** 组织角色 */
+  organizationRole?: string;
+  /** 工作区角色 */
+  workspaceRole?: string;
+  /** 组织名称 */
+  organizationName?: string;
+  /** 显示名称 */
+  displayName?: string;
+  /** 是否启用额外用量 */
+  hasExtraUsageEnabled?: boolean;
+}
+
+/**
+ * OAuth 登录请求负载
+ */
+export interface OAuthLoginPayload {
+  /** 授权码 */
+  code: string;
+  /** 回调 URI */
+  redirectUri: string;
+}
+
+/**
+ * OAuth 刷新请求负载
+ */
+export interface OAuthRefreshPayload {
+  /** 刷新令牌（可选，不提供则从配置读取） */
+  refreshToken?: string;
+}
+
+/**
+ * OAuth 状态响应负载
+ */
+export interface OAuthStatusPayload {
+  /** 是否已认证 */
+  authenticated: boolean;
+  /** 是否过期 */
+  expired: boolean;
+  /** 过期时间 */
+  expiresAt?: number;
+  /** 授权范围 */
+  scopes?: string[];
+  /** 订阅信息 */
+  subscriptionInfo?: SubscriptionInfo;
+}
+
+// ============================================================================
+// 完整配置管理类型（与 CLI 保持一致）
+// 以下类型定义参考 src/types/config.ts，确保前后端配置兼容性
+// ============================================================================
+
+// ============ 模型类型 ============
+
+/**
+ * 支持的 Claude 模型标识符
+ */
+export type ModelName =
+  | 'claude-opus-4-5-20251101'
+  | 'claude-sonnet-4-5-20250929'
+  | 'claude-haiku-4-5-20251001'
+  | 'opus'
+  | 'sonnet'
+  | 'haiku';
+
+/**
+ * 模型显示名称
+ */
+export type ModelDisplayName =
+  | 'Claude Opus 4.5'
+  | 'Claude Sonnet 4.5'
+  | 'Claude Haiku 4.5';
+
+// ============ API 后端类型 ============
+
+/**
+ * API 后端提供商类型
+ */
+export type APIBackend = 'anthropic' | 'bedrock' | 'vertex';
+
+/**
+ * API 配置
+ */
+export interface APIConfig {
+  /** Anthropic API 密钥 */
+  apiKey?: string;
+
+  /** OAuth Token 用于认证会话 */
+  oauthToken?: string;
+
+  /** 使用 AWS Bedrock 后端 */
+  useBedrock?: boolean;
+
+  /** 使用 Google Cloud Vertex AI 后端 */
+  useVertex?: boolean;
+
+  /** API 调用的最大重试次数 */
+  maxRetries?: number;
+
+  /** 请求超时时间（毫秒） */
+  requestTimeout?: number;
+
+  /** API 请求的 Base URL（用于自定义端点） */
+  baseURL?: string;
+
+  /** API 请求中包含的额外请求头 */
+  headers?: Record<string, string>;
+}
+
+// ============ 模型配置 ============
+
+/**
+ * 模型生成参数
+ */
+export interface ModelConfig {
+  /** 模型标识符 */
+  model?: ModelName;
+
+  /** 生成响应的最大 Token 数 */
+  maxTokens?: number;
+
+  /** 响应生成的温度参数 (0-1) */
+  temperature?: number;
+
+  /** Top-p 采样参数 */
+  topP?: number;
+
+  /** Top-k 采样参数 */
+  topK?: number;
+
+  /** 自定义系统提示覆盖 */
+  systemPrompt?: string;
+
+  /** 停止序列 */
+  stopSequences?: string[];
+}
+
+// ============ 权限设置 ============
+
+/**
+ * 工具执行的权限模式
+ */
+export type PermissionMode =
+  | 'acceptEdits'        // 自动接受文件编辑
+  | 'bypassPermissions'  // 绕过所有权限检查
+  | 'default'            // 每次都询问权限
+  | 'delegate'           // 委托给外部系统
+  | 'dontAsk'            // 不询问，使用规则
+  | 'plan';              // 计划模式（不执行）
+
+/**
+ * 权限动作类型
+ */
+export type PermissionAction = 'allow' | 'deny' | 'ask';
+
+/**
+ * 权限作用域
+ */
+export type PermissionScope = 'once' | 'session' | 'always';
+
+/**
+ * 工具级别权限设置
+ */
+export interface ToolPermissionSettings {
+  /** 允许的工具名称列表 */
+  allow?: string[];
+
+  /** 拒绝的工具名称列表 */
+  deny?: string[];
+}
+
+/**
+ * 路径级别权限设置（支持 glob 模式）
+ */
+export interface PathPermissionSettings {
+  /** 允许的路径模式列表 */
+  allow?: string[];
+
+  /** 拒绝的路径模式列表 */
+  deny?: string[];
+}
+
+/**
+ * Bash 工具的命令级别权限设置
+ */
+export interface CommandPermissionSettings {
+  /** 允许的命令模式列表 */
+  allow?: string[];
+
+  /** 拒绝的命令模式列表 */
+  deny?: string[];
+}
+
+/**
+ * 网络权限设置
+ */
+export interface NetworkPermissionSettings {
+  /** 允许的域名/URL 模式列表 */
+  allow?: string[];
+
+  /** 拒绝的域名/URL 模式列表 */
+  deny?: string[];
+}
+
+/**
+ * 审计日志配置
+ */
+export interface AuditSettings {
+  /** 启用审计日志 */
+  enabled?: boolean;
+
+  /** 审计日志文件路径 */
+  logFile?: string;
+
+  /** 最大日志文件大小（字节） */
+  maxSize?: number;
+
+  /** 日志轮转数量 */
+  rotationCount?: number;
+
+  /** 在日志中包含敏感数据 */
+  includeSensitiveData?: boolean;
+}
+
+/**
+ * 完整权限配置
+ */
+export interface PermissionSettings {
+  /** 默认权限模式 */
+  mode?: PermissionMode;
+
+  /** 工具级别权限 */
+  tools?: ToolPermissionSettings;
+
+  /** 路径级别权限 */
+  paths?: PathPermissionSettings;
+
+  /** 命令级别权限 */
+  commands?: CommandPermissionSettings;
+
+  /** 网络权限 */
+  network?: NetworkPermissionSettings;
+
+  /** 审计日志设置 */
+  audit?: AuditSettings;
+
+  /** 记住权限决策 */
+  rememberDecisions?: boolean;
+
+  /** 记住决策的默认作用域 */
+  defaultScope?: PermissionScope;
+}
+
+// ============ Hook 设置 ============
+
+/**
+ * Hook 事件类型（12 个官方事件）
+ */
+export type HookEvent =
+  | 'PreToolUse'           // 工具执行前
+  | 'PostToolUse'          // 工具执行成功后
+  | 'PostToolUseFailure'   // 工具执行失败后
+  | 'Notification'         // 通知事件
+  | 'UserPromptSubmit'     // 用户提交提示
+  | 'SessionStart'         // 会话开始
+  | 'SessionEnd'           // 会话结束
+  | 'Stop'                 // 停止/中断事件
+  | 'SubagentStart'        // 子代理启动
+  | 'SubagentStop'         // 子代理停止
+  | 'PreCompact'           // 上下文压缩前
+  | 'PermissionRequest';   // 权限请求
+
+/**
+ * Hook 类型
+ */
+export type HookType = 'command' | 'url';
+
+/**
+ * 命令 Hook 配置
+ */
+export interface CommandHookConfig {
+  /** Hook 类型 */
+  type: 'command';
+
+  /** 要执行的命令（支持环境变量替换，如 $TOOL_NAME） */
+  command: string;
+
+  /** 命令参数 */
+  args?: string[];
+
+  /** 环境变量 */
+  env?: Record<string, string>;
+
+  /** 超时时间（毫秒，默认：30000） */
+  timeout?: number;
+
+  /** 阻塞模式 - 等待完成（默认：true） */
+  blocking?: boolean;
+
+  /** 过滤事件的匹配器（工具名称或正则表达式） */
+  matcher?: string;
+
+  /** 命令执行的工作目录 */
+  cwd?: string;
+}
+
+/**
+ * URL Hook 配置
+ */
+export interface UrlHookConfig {
+  /** Hook 类型 */
+  type: 'url';
+
+  /** 回调 URL */
+  url: string;
+
+  /** HTTP 方法（默认：POST） */
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+  /** 请求头 */
+  headers?: Record<string, string>;
+
+  /** 超时时间（毫秒，默认：10000） */
+  timeout?: number;
+
+  /** 阻塞模式 - 等待响应（默认：false） */
+  blocking?: boolean;
+
+  /** 过滤事件的匹配器 */
+  matcher?: string;
+
+  /** 重试配置 */
+  retry?: {
+    attempts?: number;
+    backoff?: number;
+  };
+}
+
+/**
+ * Hook 配置（联合类型）
+ */
+export type HookConfig = CommandHookConfig | UrlHookConfig;
+
+/**
+ * Hook 设置 - 事件到 Hook 配置的映射
+ */
+export interface HookSettings {
+  /** Hook 事件到配置的映射 */
+  [event: string]: HookConfig | HookConfig[] | boolean | number | undefined;
+
+  /** 启用/禁用所有 Hooks */
+  enabled?: boolean;
+
+  /** 所有 Hooks 的全局超时 */
+  globalTimeout?: number;
+
+  /** 最大并发 Hook 执行数 */
+  maxConcurrent?: number;
+}
+
+// ============ MCP (Model Context Protocol) 设置 ============
+
+/**
+ * MCP 服务器传输类型
+ */
+export type MCPTransportType = 'stdio' | 'sse' | 'http';
+
+/**
+ * MCP 服务器配置（扩展版）
+ */
+export interface MCPServerConfigExtended {
+  /** 传输类型 */
+  type: MCPTransportType;
+
+  /** 要执行的命令（stdio 传输） */
+  command?: string;
+
+  /** 命令参数 */
+  args?: string[];
+
+  /** 环境变量 */
+  env?: Record<string, string>;
+
+  /** 服务器 URL（http/sse 传输） */
+  url?: string;
+
+  /** HTTP 请求头（http/sse 传输） */
+  headers?: Record<string, string>;
+
+  /** 服务器初始化超时（毫秒） */
+  timeout?: number;
+
+  /** 启用/禁用此服务器 */
+  enabled?: boolean;
+
+  /** 失败时自动重启 */
+  autoRestart?: boolean;
+
+  /** 最大重启次数 */
+  maxRestarts?: number;
+}
+
+/**
+ * MCP 设置
+ */
+export interface MCPSettings {
+  /** 服务器名称到配置的映射 */
+  servers?: Record<string, MCPServerConfigExtended>;
+
+  /** 启用/禁用 MCP 系统 */
+  enabled?: boolean;
+
+  /** 自动发现 MCP 服务器 */
+  autoDiscover?: boolean;
+
+  /** 自动发现的搜索路径 */
+  discoveryPaths?: string[];
+
+  /** MCP 操作的全局超时（毫秒） */
+  globalTimeout?: number;
+
+  /** 最大并发 MCP 请求数 */
+  maxConcurrentRequests?: number;
+}
+
+// ============ 插件设置 ============
+
+/**
+ * 插件元数据
+ */
+export interface PluginMetadata {
+  /** 插件名称 */
+  name: string;
+
+  /** 插件版本 */
+  version: string;
+
+  /** 插件描述 */
+  description?: string;
+
+  /** 插件作者 */
+  author?: string;
+
+  /** 插件主页 */
+  homepage?: string;
+
+  /** 插件许可证 */
+  license?: string;
+
+  /** 主入口点 */
+  main?: string;
+
+  /** 引擎要求 */
+  engines?: {
+    node?: string;
+    'claude-code'?: string;
+  };
+
+  /** 插件依赖 */
+  dependencies?: Record<string, string>;
+}
+
+/**
+ * 插件配置
+ */
+export interface PluginConfig {
+  /** 启用/禁用此插件 */
+  enabled?: boolean;
+
+  /** 插件特定设置 */
+  settings?: Record<string, unknown>;
+
+  /** 插件优先级（数值越小优先级越高） */
+  priority?: number;
+
+  /** 启动时自动加载 */
+  autoLoad?: boolean;
+}
+
+/**
+ * 插件设置
+ */
+export interface PluginSettings {
+  /** 插件名称到配置的映射 */
+  plugins?: Record<string, PluginConfig>;
+
+  /** 启用/禁用插件系统 */
+  enabled?: boolean;
+
+  /** 插件搜索路径 */
+  searchPaths?: string[];
+
+  /** 从搜索路径自动加载插件 */
+  autoLoad?: boolean;
+
+  /** 沙箱插件（限制能力） */
+  sandboxed?: boolean;
+
+  /** 每个插件的最大内存（字节） */
+  maxMemoryPerPlugin?: number;
+
+  /** 插件超时（毫秒） */
+  timeout?: number;
+}
+
+// ============ UI 设置 ============
+
+/**
+ * 主题类型
+ */
+export type ThemeType = 'dark' | 'light' | 'auto';
+
+/**
+ * 色彩方案
+ */
+export interface ColorScheme {
+  /** 主色 */
+  primary?: string;
+
+  /** 副色 */
+  secondary?: string;
+
+  /** 成功色 */
+  success?: string;
+
+  /** 警告色 */
+  warning?: string;
+
+  /** 错误色 */
+  error?: string;
+
+  /** 信息色 */
+  info?: string;
+
+  /** 背景色 */
+  background?: string;
+
+  /** 前景/文本色 */
+  foreground?: string;
+
+  /** 边框色 */
+  border?: string;
+}
+
+/**
+ * UI 组件可见性设置
+ */
+export interface UIComponentSettings {
+  /** 显示头部 */
+  showHeader?: boolean;
+
+  /** 显示状态栏 */
+  showStatusBar?: boolean;
+
+  /** 显示待办列表 */
+  showTodoList?: boolean;
+
+  /** 显示加载动画 */
+  showSpinner?: boolean;
+
+  /** 显示文件编辑的差异视图 */
+  showDiffView?: boolean;
+
+  /** 显示进度条 */
+  showProgressBar?: boolean;
+}
+
+/**
+ * UI 格式化设置
+ */
+export interface UIFormattingSettings {
+  /** 启用语法高亮 */
+  syntaxHighlighting?: boolean;
+
+  /** 启用 Markdown 渲染 */
+  markdownRendering?: boolean;
+
+  /** 代码块主题 */
+  codeBlockTheme?: string;
+
+  /** 行换行 */
+  lineWrapping?: boolean;
+
+  /** 换行前的最大行长度 */
+  maxLineLength?: number;
+
+  /** 在代码块中显示行号 */
+  showLineNumbers?: boolean;
+}
+
+/**
+ * UI 设置
+ */
+export interface UISettings {
+  /** 主题偏好 */
+  theme?: ThemeType;
+
+  /** 自定义色彩方案 */
+  colors?: ColorScheme;
+
+  /** 组件可见性 */
+  components?: UIComponentSettings;
+
+  /** 格式化偏好 */
+  formatting?: UIFormattingSettings;
+
+  /** 详细输出 */
+  verbose?: boolean;
+
+  /** 紧凑模式（最小 UI） */
+  compact?: boolean;
+
+  /** 动画设置 */
+  animations?: {
+    enabled?: boolean;
+    speed?: 'slow' | 'normal' | 'fast';
+  };
+
+  /** 终端宽度覆盖 */
+  terminalWidth?: number;
+
+  /** 启用 Unicode 符号 */
+  useUnicode?: boolean;
+}
+
+// ============ 遥测设置 ============
+
+/**
+ * 遥测级别
+ */
+export type TelemetryLevel = 'off' | 'error' | 'minimal' | 'full';
+
+/**
+ * 遥测设置
+ */
+export interface TelemetrySettings {
+  /** 启用遥测 */
+  enabled?: boolean;
+
+  /** 遥测级别 */
+  level?: TelemetryLevel;
+
+  /** 匿名化用户数据 */
+  anonymize?: boolean;
+
+  /** 包含性能指标 */
+  includePerformance?: boolean;
+
+  /** 包含错误报告 */
+  includeErrors?: boolean;
+
+  /** 包含使用统计 */
+  includeUsage?: boolean;
+
+  /** 自定义遥测端点 */
+  endpoint?: string;
+
+  /** 遥测批次大小 */
+  batchSize?: number;
+
+  /** 遥测刷新间隔（毫秒） */
+  flushInterval?: number;
+}
+
+// ============ 上下文管理设置 ============
+
+/**
+ * 上下文压缩策略
+ */
+export type CompressionStrategy =
+  | 'summarize'        // 总结旧消息
+  | 'truncate'         // 删除最旧消息
+  | 'selective'        // 选择性删除不重要的内容
+  | 'hybrid';          // 组合策略
+
+/**
+ * 上下文设置
+ */
+export interface ContextSettings {
+  /** 最大上下文大小（Token） */
+  maxTokens?: number;
+
+  /** 上下文压缩阈值（百分比） */
+  compressionThreshold?: number;
+
+  /** 压缩策略 */
+  compressionStrategy?: CompressionStrategy;
+
+  /** 压缩时保留重要消息 */
+  preserveImportant?: boolean;
+
+  /** 在上下文中包含系统信息 */
+  includeSystemInfo?: boolean;
+
+  /** 在上下文中包含文件树 */
+  includeFileTree?: boolean;
+
+  /** 最大文件树深度 */
+  fileTreeDepth?: number;
+
+  /** 自动总结 */
+  autoSummarize?: boolean;
+
+  /** 总结模型 */
+  summarizationModel?: ModelName;
+}
+
+// ============ 沙箱设置 ============
+
+/**
+ * 沙箱类型
+ */
+export type SandboxType = 'none' | 'bubblewrap' | 'docker' | 'vm';
+
+/**
+ * 沙箱设置
+ */
+export interface SandboxSettings {
+  /** 沙箱类型 */
+  type?: SandboxType;
+
+  /** 启用沙箱 */
+  enabled?: boolean;
+
+  /** 允许的目录（绑定挂载） */
+  allowedPaths?: string[];
+
+  /** 沙箱中的网络访问 */
+  allowNetwork?: boolean;
+
+  /** 沙箱超时（毫秒） */
+  timeout?: number;
+
+  /** 资源限制 */
+  limits?: {
+    /** 最大 CPU 使用（核心数） */
+    cpu?: number;
+
+    /** 最大内存（字节） */
+    memory?: number;
+
+    /** 最大磁盘使用（字节） */
+    disk?: number;
+
+    /** 最大进程数 */
+    processes?: number;
+  };
+
+  /** Docker 特定设置 */
+  docker?: {
+    /** Docker 镜像 */
+    image?: string;
+
+    /** 容器名称前缀 */
+    containerPrefix?: string;
+
+    /** 执行后删除容器 */
+    autoRemove?: boolean;
+  };
+}
+
+// ============ 会话设置 ============
+
+/**
+ * 会话设置
+ */
+export interface SessionSettings {
+  /** 自动保存会话 */
+  autoSave?: boolean;
+
+  /** 保存间隔（毫秒） */
+  saveInterval?: number;
+
+  /** 会话过期时间（毫秒） */
+  expirationTime?: number;
+
+  /** 最大会话数 */
+  maxSessions?: number;
+
+  /** 会话目录 */
+  sessionDir?: string;
+
+  /** 压缩旧会话 */
+  compressOld?: boolean;
+
+  /** 在会话中包含环境 */
+  includeEnvironment?: boolean;
+
+  /** 敏感数据加密 */
+  encryption?: {
+    enabled?: boolean;
+    algorithm?: string;
+  };
+}
+
+// ============ 检查点设置 ============
+
+/**
+ * 检查点设置
+ */
+export interface CheckpointSettings {
+  /** 启用文件检查点 */
+  enabled?: boolean;
+
+  /** 检查点目录 */
+  checkpointDir?: string;
+
+  /** 每个文件的最大检查点数 */
+  maxCheckpointsPerFile?: number;
+
+  /** 检查点保留期（毫秒） */
+  retentionPeriod?: number;
+
+  /** 自动清理旧检查点 */
+  autoCleanup?: boolean;
+
+  /** 检查点压缩 */
+  compression?: boolean;
+}
+
+// ============ 工具设置 ============
+
+/**
+ * 工具特定设置
+ */
+export interface ToolSettings {
+  /** 允许的工具列表（白名单） */
+  allowedTools?: string[];
+
+  /** 禁止的工具列表（黑名单） */
+  disallowedTools?: string[];
+
+  /** 最大并发工具执行数 */
+  maxConcurrentTasks?: number;
+
+  /** 默认工具超时（毫秒） */
+  defaultTimeout?: number;
+
+  /** 工具特定配置 */
+  toolConfig?: {
+    /** Bash 工具设置 */
+    bash?: {
+      /** 默认 Shell */
+      shell?: string;
+
+      /** Shell 参数 */
+      shellArgs?: string[];
+
+      /** 默认超时 */
+      timeout?: number;
+
+      /** 启用后台执行 */
+      allowBackground?: boolean;
+    };
+
+    /** Grep 工具设置 */
+    grep?: {
+      /** 默认上下文行数 */
+      contextLines?: number;
+
+      /** 默认区分大小写 */
+      caseSensitive?: boolean;
+
+      /** 最大结果数 */
+      maxResults?: number;
+    };
+
+    /** WebFetch 工具设置 */
+    webFetch?: {
+      /** User Agent */
+      userAgent?: string;
+
+      /** 跟随重定向 */
+      followRedirects?: boolean;
+
+      /** 最大重定向次数 */
+      maxRedirects?: number;
+
+      /** 超时 */
+      timeout?: number;
+    };
+
+    /** WebSearch 工具设置 */
+    webSearch?: {
+      /** 默认搜索引擎 */
+      engine?: string;
+
+      /** 每页结果数 */
+      resultsPerPage?: number;
+
+      /** 安全搜索 */
+      safeSearch?: boolean;
+    };
+  };
+}
+
+// ============ 通知设置 ============
+
+/**
+ * 通知设置
+ */
+export interface NotificationSettings {
+  /** 启用通知 */
+  enabled?: boolean;
+
+  /** 要启用的通知类型 */
+  types?: {
+    /** 会话事件 */
+    session?: boolean;
+
+    /** 工具执行 */
+    tools?: boolean;
+
+    /** 错误 */
+    errors?: boolean;
+
+    /** 警告 */
+    warnings?: boolean;
+
+    /** 完成 */
+    completion?: boolean;
+  };
+
+  /** 桌面通知 */
+  desktop?: boolean;
+
+  /** 声音通知 */
+  sound?: boolean;
+
+  /** 通知 Webhook */
+  webhook?: {
+    url?: string;
+    method?: string;
+    headers?: Record<string, string>;
+  };
+}
+
+// ============ 更新设置 ============
+
+/**
+ * 更新设置
+ */
+export interface UpdateSettings {
+  /** 启用自动更新检查 */
+  autoCheck?: boolean;
+
+  /** 检查间隔（毫秒） */
+  checkInterval?: number;
+
+  /** 自动安装更新 */
+  autoInstall?: boolean;
+
+  /** 更新渠道 */
+  channel?: 'stable' | 'beta' | 'canary';
+
+  /** 更新通知 */
+  notify?: boolean;
+
+  /** 自定义更新服务器 */
+  updateServer?: string;
+}
+
+// ============ 归属设置 ============
+
+/**
+ * Git 提交和 PR 的归属设置
+ */
+export interface AttributionSettings {
+  /**
+   * Git 提交的归属文本，包括任何 trailers。
+   * 空字符串隐藏归属。
+   * 默认包含带有模型名称的 Co-Authored-By trailer。
+   */
+  commit?: string;
+
+  /**
+   * Pull Request 描述的归属文本。
+   * 空字符串隐藏归属。
+   * 默认包含 Claude Code 链接。
+   */
+  pr?: string;
+}
+
+// ============ 高级设置 ============
+
+/**
+ * 高级/实验性设置
+ */
+export interface AdvancedSettings {
+  /** 默认工作目录 */
+  defaultWorkingDir?: string;
+
+  /** 调试日志目录 */
+  debugLogsDir?: string;
+
+  /** 启用实验性功能 */
+  experimentalFeatures?: boolean;
+
+  /** 功能标志 */
+  features?: Record<string, boolean>;
+
+  /** 自定义 API 端点 */
+  customEndpoint?: string;
+
+  /** 代理配置 */
+  proxy?: {
+    http?: string;
+    https?: string;
+    no?: string[];
+  };
+
+  /** 证书设置 */
+  certificates?: {
+    ca?: string[];
+    cert?: string;
+    key?: string;
+    rejectUnauthorized?: boolean;
+  };
+
+  /** 速率限制 */
+  rateLimit?: {
+    enabled?: boolean;
+    requestsPerMinute?: number;
+    tokensPerMinute?: number;
+  };
+}
+
+// ============ 主配置类型 ============
+
+/**
+ * 完整的 Claude Code 配置
+ *
+ * 这是组合所有设置的主配置对象。
+ * 可以从 settings.json 文件和环境变量加载。
+ */
+export interface ClaudeConfig {
+  /** 配置版本 */
+  version?: string;
+
+  // 核心 API 设置
+  /** API 密钥 */
+  apiKey?: string;
+
+  /** OAuth Token */
+  oauthToken?: string;
+
+  /** 模型选择 */
+  model?: ModelName;
+
+  /** 生成的最大 Token 数 */
+  maxTokens?: number;
+
+  /** 温度 (0-1) */
+  temperature?: number;
+
+  /** Top-p 采样 */
+  topP?: number;
+
+  /** Top-k 采样 */
+  topK?: number;
+
+  // 后端选择
+  /** 使用 AWS Bedrock */
+  useBedrock?: boolean;
+
+  /** 使用 Google Vertex AI */
+  useVertex?: boolean;
+
+  // 功能开关
+  /** 启用遥测 */
+  enableTelemetry?: boolean;
+
+  /** 禁用文件检查点 */
+  disableFileCheckpointing?: boolean;
+
+  /** 启用自动保存 */
+  enableAutoSave?: boolean;
+
+  // 性能设置
+  /** 最大重试次数 */
+  maxRetries?: number;
+
+  /** 请求超时（毫秒） */
+  requestTimeout?: number;
+
+  /** 最大并发任务数 */
+  maxConcurrentTasks?: number;
+
+  // UI 偏好
+  /** UI 主题 */
+  theme?: ThemeType;
+
+  /** 详细输出 */
+  verbose?: boolean;
+
+  // 工具过滤
+  /** 允许的工具 */
+  allowedTools?: string[];
+
+  /** 禁止的工具 */
+  disallowedTools?: string[];
+
+  // 系统设置
+  /** 自定义系统提示 */
+  systemPrompt?: string;
+
+  /** 默认工作目录 */
+  defaultWorkingDir?: string;
+
+  /** 调试日志目录 */
+  debugLogsDir?: string;
+
+  // ===== 嵌套配置对象 =====
+
+  /** API 配置 */
+  api?: APIConfig;
+
+  /** 模型配置 */
+  modelConfig?: ModelConfig;
+
+  /** 权限设置 */
+  permissions?: PermissionSettings;
+
+  /** Hook 设置 */
+  hooks?: HookSettings;
+
+  /** MCP 服务器设置 */
+  mcpServers?: Record<string, MCPServerConfigExtended>;
+
+  /** MCP 全局设置 */
+  mcp?: MCPSettings;
+
+  /** 插件设置 */
+  plugins?: PluginSettings;
+
+  /** UI 设置 */
+  ui?: UISettings;
+
+  /** 遥测设置 */
+  telemetry?: TelemetrySettings;
+
+  /** 上下文管理设置 */
+  context?: ContextSettings;
+
+  /** 沙箱设置 */
+  sandbox?: SandboxSettings;
+
+  /** 会话设置 */
+  session?: SessionSettings;
+
+  /** 检查点设置 */
+  checkpoint?: CheckpointSettings;
+
+  /** 工具设置 */
+  tools?: ToolSettings;
+
+  /** 通知设置 */
+  notifications?: NotificationSettings;
+
+  /** 更新设置 */
+  updates?: UpdateSettings;
+
+  /** 高级设置 */
+  advanced?: AdvancedSettings;
+
+  /**
+   * Git 提交和 Pull Request 的归属设置
+   * @since 2.1.4
+   */
+  attribution?: AttributionSettings;
+
+  /**
+   * 已弃用：请使用 attribution。
+   * 是否在提交和 PR 中包含 Claude 的 Co-authored by 归属。
+   * 默认为 true。
+   * @deprecated 请使用 attribution.commit 和 attribution.pr
+   */
+  includeCoAuthoredBy?: boolean;
+}
+
+/**
+ * 用户配置（ClaudeConfig 的别名）
+ *
+ * 这是存储在 ~/.claude/settings.json 中的配置格式
+ */
+export type UserConfig = ClaudeConfig;
+
+/**
+ * 设置（ClaudeConfig 的别名）
+ *
+ * 配置对象的替代名称
+ */
+export type Settings = ClaudeConfig;
+
+// ============ 向后兼容导出 ============
+
+/**
+ * 旧版 Config 接口（向后兼容）
+ */
+export interface Config {
+  apiKey?: string;
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+/**
+ * 会话状态
+ */
+export interface SessionState {
+  sessionId: string;
+  cwd: string;
+  originalCwd?: string; // T153: 原始工作目录
+  startTime: number;
+  totalCostUSD: number;
+  totalAPIDuration: number;
+  totalAPIDurationWithoutRetries?: number; // T143: 不含重试的 API 时间
+  totalToolDuration?: number; // T143: 工具执行总时间
+  totalLinesAdded?: number; // 代码修改统计：添加的行数
+  totalLinesRemoved?: number; // 代码修改统计：删除的行数
+  modelUsage: Record<string, ModelUsageStats>; // T151: 扩展为详细统计
+  alwaysAllowedTools?: string[]; // 会话级权限：总是允许的工具列表
+  todos: Array<{
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed';
+    activeForm: string;
+  }>;
+}
+
+/**
+ * T151/T152: 详细的模型使用统计
+ */
+export interface ModelUsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  thinkingTokens?: number; // 思考 Token 数（Extended Thinking）
+  webSearchRequests?: number;
+  requests?: number; // API 请求次数
+  costUSD: number;
+  contextWindow: number;
+}
+
+/**
+ * 输出格式
+ */
+export type OutputFormat = 'text' | 'json' | 'stream-json';
+
+/**
+ * 输入格式
+ */
+export type InputFormat = 'text' | 'stream-json';
+
+// ============ 环境配置 ============
+
+/**
+ * 环境变量配置
+ *
+ * 将环境变量映射到配置选项
+ */
+export interface EnvironmentConfig {
+  /** ANTHROPIC_API_KEY 或 CLAUDE_API_KEY */
+  ANTHROPIC_API_KEY?: string;
+  CLAUDE_API_KEY?: string;
+
+  /** CLAUDE_CODE_OAUTH_TOKEN */
+  CLAUDE_CODE_OAUTH_TOKEN?: string;
+
+  /** CLAUDE_CODE_USE_BEDROCK */
+  CLAUDE_CODE_USE_BEDROCK?: string;
+
+  /** CLAUDE_CODE_USE_VERTEX */
+  CLAUDE_CODE_USE_VERTEX?: string;
+
+  /** CLAUDE_CODE_MAX_OUTPUT_TOKENS */
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS?: string;
+
+  /** CLAUDE_CODE_MAX_RETRIES */
+  CLAUDE_CODE_MAX_RETRIES?: string;
+
+  /** CLAUDE_CODE_DEBUG_LOGS_DIR */
+  CLAUDE_CODE_DEBUG_LOGS_DIR?: string;
+
+  /** CLAUDE_CODE_ENABLE_TELEMETRY */
+  CLAUDE_CODE_ENABLE_TELEMETRY?: string;
+
+  /** CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING */
+  CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING?: string;
+
+  /** CLAUDE_CONFIG_DIR */
+  CLAUDE_CONFIG_DIR?: string;
+
+  /** HTTP_PROXY */
+  HTTP_PROXY?: string;
+
+  /** HTTPS_PROXY */
+  HTTPS_PROXY?: string;
+
+  /** NO_PROXY */
+  NO_PROXY?: string;
+}
+
+// ============ 运行时配置 ============
+
+/**
+ * 运行时配置（CLI 参数 + 环境 + 配置文件）
+ *
+ * 表示运行时的最终合并配置
+ */
+export interface RuntimeConfig extends ClaudeConfig {
+  /** 当前工作目录 */
+  cwd: string;
+
+  /** 会话 ID（如果恢复） */
+  sessionId?: string;
+
+  /** 初始提示 */
+  initialPrompt?: string;
+
+  /** 打印模式（非交互式） */
+  printMode?: boolean;
+
+  /** 恢复上一个会话 */
+  resume?: boolean;
+
+  /** 自动接受所有编辑 */
+  acceptEdits?: boolean;
+
+  /** 绕过所有权限 */
+  bypassPermissions?: boolean;
+
+  /** 计划模式（不执行） */
+  planMode?: boolean;
+
+  /** 输入格式 */
+  inputFormat?: 'text' | 'stream-json';
+
+  /** 输出格式 */
+  outputFormat?: 'text' | 'json' | 'stream-json';
+
+  /** 计算开始时间 */
+  startTime?: number;
+}
+
+// ============ 配置验证 ============
+
+/**
+ * 配置验证结果
+ */
+export interface ConfigValidationResult {
+  /** 验证成功 */
+  valid: boolean;
+
+  /** 验证错误 */
+  errors?: Array<{
+    path: string;
+    message: string;
+    value?: unknown;
+  }>;
+
+  /** 验证警告 */
+  warnings?: Array<{
+    path: string;
+    message: string;
+    value?: unknown;
+  }>;
+}
+
+// ============ 配置迁移 ============
+
+/**
+ * 配置迁移
+ */
+export interface ConfigMigration {
+  /** 源版本 */
+  fromVersion: string;
+
+  /** 目标版本 */
+  toVersion: string;
+
+  /** 迁移函数 */
+  migrate: (config: Partial<ClaudeConfig>) => Partial<ClaudeConfig>;
+
+  /** 迁移描述 */
+  description?: string;
+}
+
+// ============ 导出常量 ============
+
+/**
+ * 默认配置值
+ */
+export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
+  version: '2.1.4',
+  model: 'sonnet',
+  maxTokens: 32000,
+  temperature: 1,
+  maxRetries: 3,
+  requestTimeout: 300000,
+  theme: 'auto',
+  verbose: false,
+  enableTelemetry: false,
+  disableFileCheckpointing: false,
+  enableAutoSave: true,
+  maxConcurrentTasks: 10,
+  useBedrock: false,
+  useVertex: false,
+};
+
+/**
+ * 环境变量名称
+ */
+export const ENV_VAR_NAMES = {
+  API_KEY: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY'],
+  OAUTH_TOKEN: 'CLAUDE_CODE_OAUTH_TOKEN',
+  USE_BEDROCK: 'CLAUDE_CODE_USE_BEDROCK',
+  USE_VERTEX: 'CLAUDE_CODE_USE_VERTEX',
+  MAX_TOKENS: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
+  MAX_RETRIES: 'CLAUDE_CODE_MAX_RETRIES',
+  DEBUG_LOGS_DIR: 'CLAUDE_CODE_DEBUG_LOGS_DIR',
+  ENABLE_TELEMETRY: 'CLAUDE_CODE_ENABLE_TELEMETRY',
+  DISABLE_CHECKPOINTING: 'CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING',
+  CONFIG_DIR: 'CLAUDE_CONFIG_DIR',
+} as const;
+
+/**
+ * 配置文件路径
+ */
+export const CONFIG_PATHS = {
+  /** 全局配置目录 */
+  GLOBAL_DIR: '~/.claude',
+
+  /** 全局配置文件 */
+  GLOBAL_FILE: '~/.claude/settings.json',
+
+  /** 项目配置目录 */
+  PROJECT_DIR: '.claude',
+
+  /** 项目配置文件 */
+  PROJECT_FILE: '.claude/settings.json',
+
+  /** 会话目录 */
+  SESSION_DIR: '~/.claude/sessions',
+
+  /** 插件目录 */
+  PLUGIN_DIR: '~/.claude/plugins',
+
+  /** Hook 目录 */
+  HOOK_DIR: '~/.claude/hooks',
+
+  /** 技能目录 */
+  SKILLS_DIR: '~/.claude/skills',
+} as const;

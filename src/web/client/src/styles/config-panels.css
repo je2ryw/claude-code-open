@@ -1,0 +1,418 @@
+/* ============================================
+   配置面板通用样式
+   用于 PermissionsConfigPanel 和 HooksConfigPanel
+   ============================================ */
+
+/* 配置面板容器 */
+.permissions-config-panel,
+.hooks-config-panel {
+  padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* 配置面板头部 */
+.config-panel-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.config-panel-header h3 {
+  font-size: 24px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.config-description {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* 配置区块 */
+.config-section {
+  margin-bottom: 32px;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.config-section-title {
+  font-size: 18px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-section-description {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* 设置项 */
+.setting-item {
+  margin-bottom: 20px;
+}
+
+.setting-item:last-child {
+  margin-bottom: 0;
+}
+
+.setting-label {
+  display: block;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.setting-label-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+/* 输入框 */
+.setting-input,
+.setting-select,
+.setting-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  transition: all 0.2s;
+}
+
+.setting-input:focus,
+.setting-select:focus,
+.setting-textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: var(--bg-secondary);
+}
+
+.setting-textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+/* 复选框 */
+.setting-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.setting-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+/* 提示文本 */
+.setting-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+/* 配置操作按钮 */
+.config-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 32px;
+}
+
+.config-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-btn-primary {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.config-btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.config-btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.config-btn-secondary:hover {
+  background: var(--border-color);
+}
+
+.config-btn-danger-small {
+  padding: 6px 12px;
+  background: var(--accent-error);
+  color: white;
+  font-size: 12px;
+}
+
+.config-btn-danger-small:hover {
+  opacity: 0.9;
+}
+
+/* ============================================
+   Hooks 配置面板专用样式
+   ============================================ */
+
+/* Hooks 列表 */
+.hooks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Hook 项目 */
+.hook-item {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.hook-item:hover {
+  border-color: var(--accent-primary);
+}
+
+/* Hook 头部 */
+.hook-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.hook-header:hover {
+  background: var(--bg-secondary);
+}
+
+.hook-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.hook-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+}
+
+.hook-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hook-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.hook-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.hook-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hook-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.hook-configured {
+  background: rgba(158, 206, 106, 0.15);
+  color: var(--accent-success);
+}
+
+.hook-unconfigured {
+  background: rgba(86, 95, 137, 0.15);
+  color: var(--text-muted);
+}
+
+.hook-expand-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+/* Hook 内容 */
+.hook-content {
+  padding: 0 16px 16px 16px;
+  border-top: 1px solid var(--border-color);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hook-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 12px 0;
+  line-height: 1.5;
+}
+
+/* Hook 编辑器 */
+.hook-editor {
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.hook-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Hook 操作按钮 */
+.hook-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+/* ============================================
+   响应式设计
+   ============================================ */
+
+@media (max-width: 768px) {
+  .permissions-config-panel,
+  .hooks-config-panel {
+    padding: 16px;
+  }
+
+  .config-panel-header h3 {
+    font-size: 20px;
+  }
+
+  .config-section {
+    padding: 16px;
+  }
+
+  .config-actions {
+    flex-direction: column;
+  }
+
+  .config-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .hook-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   深色模式优化
+   ============================================ */
+
+@media (prefers-color-scheme: dark) {
+  .setting-input::placeholder,
+  .setting-textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .setting-input:disabled,
+  .setting-select:disabled,
+  .setting-textarea:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+/* ============================================
+   无障碍优化
+   ============================================ */
+
+.config-btn:focus-visible,
+.setting-input:focus-visible,
+.setting-select:focus-visible,
+.setting-textarea:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.hook-header:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+/* ============================================
+   打印样式
+   ============================================ */
+
+@media print {
+  .config-actions,
+  .hook-actions {
+    display: none;
+  }
+
+  .config-section,
+  .hook-item {
+    break-inside: avoid;
+  }
+}

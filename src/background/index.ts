@@ -5,6 +5,8 @@
  * @module background
  */
 
+import { isBackgroundTasksDisabled } from '../utils/env-check.js';
+
 // 任务队列
 export {
   SimpleTaskQueue,
@@ -55,10 +57,24 @@ export class BackgroundTaskManager {
   public readonly taskQueue: SimpleTaskQueue;
   public readonly timeoutManager: TimeoutManager;
   public readonly persistenceManager: PersistenceManager;
+  public readonly disabled: boolean;
 
   private static instance: BackgroundTaskManager | null = null;
 
   constructor() {
+    // 检查环境变量：CLAUDE_CODE_DISABLE_BACKGROUND_TASKS
+    this.disabled = isBackgroundTasksDisabled();
+
+    if (this.disabled) {
+      console.log('[BackgroundTaskManager] Background tasks disabled by environment variable');
+      // 创建空的管理器实例（不初始化任何功能）
+      this.shellManager = null as any;
+      this.taskQueue = null as any;
+      this.timeoutManager = null as any;
+      this.persistenceManager = null as any;
+      return;
+    }
+
     this.shellManager = new ShellManager({
       maxShells: parseInt(process.env.BASH_MAX_BACKGROUND_SHELLS || '10', 10),
       maxOutputSize: 10 * 1024 * 1024, // 10MB
@@ -95,6 +111,7 @@ export class BackgroundTaskManager {
    * 清理资源
    */
   cleanup(): void {
+    if (this.disabled) return;
     this.shellManager.terminateAll();
     this.taskQueue.clear();
     this.timeoutManager.clearAll();
@@ -104,6 +121,14 @@ export class BackgroundTaskManager {
    * 获取统计信息
    */
   getStats() {
+    if (this.disabled) {
+      return {
+        shells: null,
+        queue: null,
+        timeouts: null,
+        persistence: null,
+      };
+    }
     return {
       shells: this.shellManager.getStats(),
       queue: this.taskQueue.getStatus(),

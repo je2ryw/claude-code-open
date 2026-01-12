@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import type { Message, SessionState, TodoItem } from '../types/index.js';
+import type { Message, SessionState, TodoItem, SessionConfig } from '../types/index.js';
 import { GitUtils, type GitInfo } from '../git/index.js';
 
 // 会话版本号
@@ -23,14 +23,29 @@ export class Session {
   private isLocked: boolean = false; // T157: 会话锁定状态
   private lockFile?: string; // T157: 锁文件路径
 
+  /**
+   * Session 构造函数
+   *
+   * @param cwd - 工作目录，默认为 process.cwd()
+   *
+   * @example
+   * const session = new Session('/path/to/project');
+   * const session2 = new Session(); // 使用当前工作目录
+   */
   constructor(cwd: string = process.cwd()) {
-    // T145: 支持 CLAUDE_CONFIG_DIR 环境变量
-    this.configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-    this.originalCwd = cwd; // T153: 保存原始工作目录
+    // 从环境变量读取配置目录
+    this.configDir =
+      process.env.CLAUDE_CONFIG_DIR ||
+      path.join(os.homedir(), '.claude');
 
-    // T144: 使用 crypto.randomUUID() 代替 uuid 包
+    this.originalCwd = cwd;
+
+    // 从环境变量读取 Session ID，或生成新 ID
+    const sessionId = process.env.CLAUDE_CODE_SESSION_ID || randomUUID();
+
+    // 初始化 Session 状态
     this.state = {
-      sessionId: randomUUID(),
+      sessionId,
       cwd,
       originalCwd: cwd, // T153: 添加原始目录字段
       startTime: Date.now(),
@@ -44,6 +59,11 @@ export class Session {
       alwaysAllowedTools: [], // 会话级权限：总是允许的工具列表
       todos: [],
     };
+
+    // 从环境变量读取父会话 ID（用于 fork）
+    if (process.env.CLAUDE_CODE_PARENT_SESSION_ID) {
+      (this.state as any).parentId = process.env.CLAUDE_CODE_PARENT_SESSION_ID;
+    }
 
     // 确保配置目录存在
     if (!fs.existsSync(this.configDir)) {
@@ -99,6 +119,44 @@ export class Session {
   setCwd(cwd: string): void {
     this.state.cwd = cwd;
     process.chdir(cwd);
+  }
+
+  /**
+   * 获取访问令牌（从环境变量）
+   */
+  getAccessToken(): string | undefined {
+    return process.env.CLAUDE_CODE_SESSION_ACCESS_TOKEN;
+  }
+
+  /**
+   * 获取 SSE 端口（从环境变量）
+   */
+  getSsePort(): number | undefined {
+    const port = process.env.CLAUDE_CODE_SSE_PORT;
+    return port ? parseInt(port, 10) : undefined;
+  }
+
+  /**
+   * 是否跳过提示历史（从环境变量）
+   */
+  shouldSkipPromptHistory(): boolean {
+    return process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY === 'true' ||
+           process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY === '1';
+  }
+
+  /**
+   * 获取停止后延迟退出时间（从环境变量，单位：ms）
+   */
+  getExitAfterStopDelay(): number | undefined {
+    const delay = process.env.CLAUDE_CODE_EXIT_AFTER_STOP_DELAY;
+    return delay ? parseInt(delay, 10) : undefined;
+  }
+
+  /**
+   * 获取父会话 ID（从 state 或环境变量）
+   */
+  getParentSessionId(): string | undefined {
+    return (this.state as any).parentId || process.env.CLAUDE_CODE_PARENT_SESSION_ID;
   }
 
   getMessages(): Message[] {

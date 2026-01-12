@@ -1,0 +1,135 @@
+/**
+ * 模块关系图样式
+ * Domain Graph Styles
+ */
+
+/* ============ 图容器 ============ */
+
+.graphContainer {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.graphSvg {
+  min-width: 100%;
+}
+
+/* ============ 模块节点 ============ */
+
+.domainNode {
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.domainNode:hover {
+  filter: brightness(1.2);
+}
+
+.domainNode.selected {
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.6));
+}
+
+.nodeRect {
+  transition: fill 0.2s ease, stroke-width 0.2s ease;
+}
+
+.domainNode:hover .nodeRect {
+  stroke-width: 3;
+}
+
+.nodeName {
+  pointer-events: none;
+  user-select: none;
+}
+
+.nodeType {
+  pointer-events: none;
+  user-select: none;
+  text-transform: capitalize;
+}
+
+/* ============ 关系连接线 ============ */
+
+.relationshipLine {
+  pointer-events: none;
+}
+
+.relationshipLine path {
+  transition: opacity 0.2s ease, stroke-width 0.2s ease;
+}
+
+/* ============ 图例 ============ */
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.legendTitle {
+  color: #808080;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendColor {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legendLabel {
+  color: #a0a0a0;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+/* ============ 空状态 ============ */
+
+.emptyGraph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  gap: 12px;
+}
+
+.emptyIcon {
+  font-size: 36px;
+  opacity: 0.5;
+}
+
+.emptyText {
+  color: #808080;
+  font-size: 14px;
+}
+
+/* ============ 节点分组样式 ============ */
+
+.nodes {
+  /* 节点层在连接线之上 */
+}
+
+.relationships {
+  /* 连接线层 */
+}

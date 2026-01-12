@@ -1,0 +1,1844 @@
+/* 主容器 */
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1e1e1e; /* VS Code 深色背景 */
+}
+
+/* 加载和错误状态 */
+.loadingContainer,
+.errorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #808080;
+  gap: 16px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #3c3c3c;
+  border-top-color: #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.errorText { color: #f48771; }
+
+.retryButton {
+  padding: 8px 16px;
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* ============================================ */
+/* VS Code 风格布局 */
+/* ============================================ */
+
+.vscodeLayout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 左侧边栏 */
+.sidebar {
+  width: 260px;
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  font-size: 11px;
+  font-weight: 600;
+  color: #bbbbbb;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebarTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.sidebarContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+/* 目录树 */
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #cccccc;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.treeItem:hover {
+  background: #2a2d2e;
+}
+
+.treeItem.selected {
+  background: #094771;
+}
+
+.treeItem.hasModule {
+  color: #4ec9b0;
+}
+
+.treeIcon {
+  width: 16px;
+  font-size: 10px;
+  color: #808080;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fileIcon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.treeName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 主编辑区 */
+.mainPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+/* 标签栏 */
+.tabBar {
+  display: flex;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  min-height: 35px;
+}
+
+.tabIcon {
+  font-size: 14px;
+}
+
+.tabName {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 编辑区内容 */
+.editorContent {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 当显示分析结果时添加内边距 */
+.editorContent > .analysisResult,
+.editorContent > .welcomePage,
+.editorContent > .analyzingState,
+.editorContent > .errorState {
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* 模块详情 */
+.moduleDetail,
+.directoryDetail {
+  max-width: 800px;
+}
+
+.moduleHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.modulePath {
+  font-size: 20px;
+  font-weight: 400;
+  color: #4ec9b0;
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.moduleType {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.moduleType.frontend { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.moduleType.backend { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.moduleType.database { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.moduleType.service { background: rgba(168, 85, 247, 0.2); color: #a78bfa; }
+.moduleType.infrastructure { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.moduleType.other { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+
+.folderBadge {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #808080;
+}
+
+.moduleDescription {
+  font-size: 14px;
+  color: #d4d4d4;
+  line-height: 1.6;
+  margin: 0 0 24px 0;
+}
+
+.directoryHint {
+  font-size: 13px;
+  color: #808080;
+  margin: 0 0 24px 0;
+}
+
+/* 区块 */
+.section {
+  margin-bottom: 24px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 12px 0;
+}
+
+.responsibilityList {
+  margin: 0;
+  padding-left: 20px;
+  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.responsibilityList li {
+  margin-bottom: 4px;
+}
+
+.responsibilityList li::marker {
+  color: #007acc;
+}
+
+.techTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.techTag {
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #9cdcfe;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 子模块网格 */
+.childModuleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.childModuleCard {
+  background: #2d2d2d;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.childModuleCard:hover {
+  border-color: #007acc;
+  background: #323232;
+}
+
+.childModuleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.childModuleName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4ec9b0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.childModuleType {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.childModuleType.frontend { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.childModuleType.backend { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.childModuleType.database { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.childModuleType.service { background: rgba(168, 85, 247, 0.2); color: #a78bfa; }
+.childModuleType.infrastructure { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.childModuleType.other { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+
+.childModuleDesc {
+  font-size: 12px;
+  color: #808080;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* 欢迎页面 */
+.welcomePage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 40px;
+}
+
+.welcomeTitle {
+  font-size: 28px;
+  font-weight: 300;
+  color: #cccccc;
+  margin: 0 0 16px 0;
+}
+
+.welcomeDesc {
+  font-size: 14px;
+  color: #808080;
+  margin: 0 0 32px 0;
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+.welcomeStats {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 32px;
+}
+
+.welcomeStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.welcomeStatValue {
+  font-size: 36px;
+  font-weight: 300;
+  color: #007acc;
+}
+
+.welcomeStatLabel {
+  font-size: 12px;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.welcomeHint {
+  font-size: 13px;
+  color: #606060;
+  font-style: italic;
+}
+
+/* ============================================ */
+/* 底部状态栏 */
+/* ============================================ */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 24px;
+  background: #007acc;
+  color: white;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.statusLeft,
+.statusRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.statusItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.statusBadge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.statusBadge.draft { background: rgba(255, 255, 255, 0.2); }
+.statusBadge.review { background: #f59e0b; color: #000; }
+.statusBadge.approved { background: #10b981; }
+.statusBadge.executing { background: #3b82f6; }
+.statusBadge.completed { background: #22c55e; }
+.statusBadge.paused { background: #eab308; color: #000; }
+.statusBadge.modified { background: #a855f7; }
+
+.statusTech {
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.statusBtn {
+  padding: 2px 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 3px;
+  color: white;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.statusBtn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.statusBtn.success {
+  background: #10b981;
+}
+
+.statusBtn.success:hover {
+  background: #059669;
+}
+
+.statusBtn.danger {
+  background: #ef4444;
+}
+
+.statusBtn.danger:hover {
+  background: #dc2626;
+}
+
+/* ============================================ */
+/* ============================================ */
+/* 已分析状态 */
+/* ============================================ */
+
+.treeItem.analyzed {
+  color: #4ec9b0;
+}
+
+.analyzedDot {
+  color: #10b981;
+  font-size: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ============================================ */
+/* 代码符号显示 */
+/* ============================================ */
+
+.symbolItem {
+  font-size: 12px;
+  color: #c8c8c8;
+}
+
+.symbolItem .treeName {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 400;
+}
+
+.symbolLine {
+  margin-left: 4px;
+  font-size: 10px;
+  color: #858585;
+  font-family: 'Consolas', monospace;
+}
+
+.symbolItem:hover .symbolLine {
+  color: #b0b0b0;
+}
+
+.symbolItem.selected {
+  background: #094771;
+  color: white;
+}
+
+.symbolItem.selected .symbolLine {
+  color: #c0d9ea;
+}
+
+/* 符号详情面板 */
+.symbolDetail {
+  padding: 24px 32px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.symbolDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #3c3c3c;
+  margin-bottom: 24px;
+}
+
+.symbolDetailIcon {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+
+.symbolDetailTitle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.symbolName {
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  font-family: 'Consolas', monospace;
+}
+
+.symbolKind {
+  background: #007acc;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.symbolLocation {
+  font-size: 13px;
+  color: #858585;
+  font-family: 'Consolas', monospace;
+}
+
+.symbolSection {
+  margin-bottom: 24px;
+}
+
+.symbolSectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+}
+
+.symbolTypeInfo {
+  background: #2d2d30;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border-left: 3px solid #007acc;
+  color: #cccccc;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.symbolTypeDetail {
+  margin-top: 8px;
+  background: #1e1e1e;
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.symbolTypeDetail code {
+  color: #4ec9b0;
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+}
+
+.symbolMembers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.symbolMember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #2d2d30;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.symbolMember:hover {
+  background: #3c3c3c;
+}
+
+.symbolMemberIcon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.symbolMemberName {
+  font-family: 'Consolas', monospace;
+  color: #dcdcdc;
+  font-size: 13px;
+  flex: 1;
+}
+
+.symbolMemberKind {
+  font-size: 11px;
+  color: #858585;
+  text-transform: uppercase;
+}
+
+.symbolMemberLine {
+  font-size: 11px;
+  color: #858585;
+  font-family: 'Consolas', monospace;
+}
+
+.callGraphPlaceholder {
+  background: #2d2d30;
+  padding: 20px;
+  border-radius: 6px;
+  text-align: center;
+  border: 1px dashed #3c3c3c;
+}
+
+.callGraphPlaceholder p {
+  margin: 8px 0;
+  color: #858585;
+  font-size: 13px;
+}
+
+.locationItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #2d2d30;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.locationLabel {
+  color: #858585;
+  font-size: 13px;
+  min-width: 60px;
+}
+
+.locationValue {
+  background: #1e1e1e;
+  color: #4ec9b0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'Consolas', monospace;
+  flex: 1;
+}
+
+/* 刷新按钮 */
+.refreshBtn {
+  background: transparent;
+  border: none;
+  color: #808080;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.refreshBtn:hover {
+  background: #3c3c3c;
+  color: #cccccc;
+}
+
+/* 目录树错误 */
+.treeError {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.1);
+  border-bottom: 1px solid #3c3c3c;
+}
+
+/* ============================================ */
+/* 欢迎页面提示 */
+/* ============================================ */
+
+.welcomeTips {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 16px 24px;
+  background: #252526;
+  border-radius: 8px;
+}
+
+.tipItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #808080;
+}
+
+.tipIcon {
+  font-size: 14px;
+}
+
+/* ============================================ */
+/* 分析中状态 */
+/* ============================================ */
+
+.analyzingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  text-align: center;
+}
+
+.analyzingSpinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid #3c3c3c;
+  border-top-color: #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.analyzingTitle {
+  font-size: 18px;
+  font-weight: 400;
+  color: #cccccc;
+  margin: 0;
+}
+
+.analyzingHint {
+  font-size: 13px;
+  color: #606060;
+  margin: 0;
+}
+
+/* ============================================ */
+/* 错误状态 */
+/* ============================================ */
+
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  text-align: center;
+}
+
+/* ============================================ */
+/* 分析结果 */
+/* ============================================ */
+
+.analysisResult {
+  max-width: 900px;
+}
+
+.analysisHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.analysisTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.analysisIcon {
+  font-size: 24px;
+}
+
+.analysisPath {
+  font-size: 20px;
+  font-weight: 400;
+  color: #4ec9b0;
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.analysisType {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
+}
+
+.regenerateBtn {
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #cccccc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.regenerateBtn:hover {
+  background: #3c3c3c;
+  border-color: #007acc;
+}
+
+.analysisSummary {
+  font-size: 16px;
+  font-weight: 500;
+  color: #d4d4d4;
+  margin-bottom: 12px;
+}
+
+.analysisDescription {
+  font-size: 14px;
+  color: #9ca3af;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+
+/* ============================================ */
+/* 分析区块 */
+/* ============================================ */
+
+.analysisSection {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #252526;
+  border-radius: 8px;
+  border: 1px solid #3c3c3c;
+}
+
+.sectionList {
+  margin: 0;
+  padding-left: 20px;
+  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.sectionList li {
+  margin-bottom: 4px;
+}
+
+.sectionList li::marker {
+  color: #007acc;
+}
+
+/* 导出列表 */
+.exportList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exportItem {
+  padding: 4px 10px;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #dcdcaa;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 依赖列表 */
+.depList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.depItem {
+  padding: 4px 10px;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #9cdcfe;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  transition: all 0.2s;
+}
+
+/* 可点击的内部依赖 */
+.depItem.clickable {
+  cursor: pointer;
+  border-color: #4fc3f7;
+  color: #4fc3f7;
+}
+
+.depItem.clickable:hover {
+  background: #1e3a5f;
+  border-color: #64b5f6;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(79, 195, 247, 0.2);
+}
+
+/* 被引用列表（反向依赖） */
+.reverseDepList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reverseDepItem {
+  padding: 12px;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-left: 3px solid #4caf50;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reverseDepItem:hover {
+  background: #2a3a2e;
+  border-left-color: #66bb6a;
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+
+.reverseDepPath {
+  font-size: 13px;
+  color: #4fc3f7;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.reverseDepImports {
+  font-size: 12px;
+  color: #9e9e9e;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  padding-left: 20px;
+}
+
+/* ============================================ */
+/* 关系图谱 */
+/* ============================================ */
+
+.relationshipGraph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  min-height: 200px;
+}
+
+.graphRow {
+  width: 100%;
+  margin: 12px 0;
+}
+
+.graphNodes {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.graphNode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  background: #2a2a2a;
+  border: 2px solid #4fc3f7;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  min-width: 100px;
+  max-width: 150px;
+}
+
+.graphNode:hover {
+  background: #1e3a5f;
+  border-color: #64b5f6;
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(79, 195, 247, 0.3);
+  z-index: 10;
+}
+
+.graphNode.external {
+  border-color: #9e9e9e;
+  cursor: default;
+}
+
+.graphNode.external:hover {
+  background: #2a2a2a;
+  border-color: #9e9e9e;
+  transform: none;
+  box-shadow: none;
+}
+
+.graphNodeIcon {
+  font-size: 20px;
+}
+
+.graphNodeName {
+  font-size: 11px;
+  color: #cccccc;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.3;
+}
+
+.graphNodeMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  background: #2a2a2a;
+  border: 2px dashed #606060;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #808080;
+  min-width: 100px;
+}
+
+/* 连接线 */
+.graphConnector {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  background: linear-gradient(to bottom, #4fc3f7, transparent);
+  pointer-events: none;
+}
+
+/* 当前文件（中心节点） */
+.graphCenter {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.graphCurrent {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 32px;
+  background: linear-gradient(135deg, #094771 0%, #1e5a8e 100%);
+  border: 3px solid #007acc;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 122, 204, 0.4);
+}
+
+.graphCurrentIcon {
+  font-size: 32px;
+}
+
+.graphCurrentName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  text-align: center;
+}
+
+.graphCurrentBadge {
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #e0e0e0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 关键点列表 */
+.keyPointsList {
+  margin: 0;
+  padding-left: 20px;
+  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.keyPointsList li {
+  margin-bottom: 4px;
+}
+
+.keyPointsList li::marker {
+  color: #fbbf24;
+}
+
+/* ============================================ */
+/* 子模块网格 */
+/* ============================================ */
+
+.childrenGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.childCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.childCard:hover {
+  border-color: #007acc;
+  background: #2d2d2d;
+}
+
+.childName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4ec9b0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.childDesc {
+  font-size: 12px;
+  color: #808080;
+  line-height: 1.4;
+}
+
+/* ============================================ */
+/* 分析页脚 */
+/* ============================================ */
+
+.analysisFooter {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #3c3c3c;
+}
+
+.analyzedTime {
+  font-size: 12px;
+  color: #606060;
+}
+
+.cacheBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.15);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  border-radius: 4px;
+  cursor: help;
+  transition: all 0.2s;
+}
+
+.cacheBadge:hover {
+  background: rgba(79, 195, 247, 0.25);
+}
+
+.freshBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  margin-left: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #66bb6a;
+  background: rgba(102, 187, 106, 0.15);
+  border: 1px solid rgba(102, 187, 106, 0.3);
+  border-radius: 4px;
+  cursor: help;
+  transition: all 0.2s;
+}
+
+.freshBadge:hover {
+  background: rgba(102, 187, 106, 0.25);
+}
+
+/* ============================================ */
+/* 状态栏分析中 */
+/* ============================================ */
+
+.statusAnalyzing {
+  color: rgba(255, 255, 255, 0.8);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ============================================ */
+/* 标签切换 */
+/* ============================================ */
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #2d2d2d;
+  border-right: 1px solid #252526;
+  font-size: 13px;
+  color: #808080;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.tab:hover {
+  background: #323232;
+  color: #cccccc;
+}
+
+.activeTab {
+  background: #1e1e1e;
+  color: #ffffff;
+}
+
+.activeTab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #007acc;
+}
+
+.unsavedDot {
+  color: #fbbf24;
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.breadcrumb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  overflow: hidden;
+}
+
+.breadcrumbPath {
+  font-size: 12px;
+  color: #606060;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================ */
+/* 代码编辑器 */
+/* ============================================ */
+
+.codeEditor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e1e;
+}
+
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.codeInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.codeLanguage {
+  padding: 3px 8px;
+  background: #007acc;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: white;
+  text-transform: uppercase;
+}
+
+.codeSize {
+  font-size: 12px;
+  color: #808080;
+}
+
+.unsavedBadge {
+  padding: 2px 8px;
+  background: rgba(251, 191, 36, 0.2);
+  border: 1px solid #fbbf24;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+
+.codeActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.codeBtn {
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #cccccc;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.codeBtn:hover {
+  background: #3c3c3c;
+  border-color: #505050;
+}
+
+.codeBtn.active {
+  background: #094771;
+  border-color: #007acc;
+  color: white;
+}
+
+.codeBtn.saveBtn {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.codeBtn.saveBtn:hover {
+  background: #059669;
+  border-color: #059669;
+}
+
+.codeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.codeContent {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+/* Monaco Editor 容器 */
+.monacoContainer {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0; /* 允许 flex 子项缩小 */
+}
+
+.codeTextarea {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  background: #1e1e1e;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d4d4d4;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.codeTextarea:focus {
+  background: #1e1e1e;
+}
+
+.codePreview {
+  margin: 0;
+  padding: 16px;
+  background: #1e1e1e;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d4d4d4;
+  white-space: pre;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.codePreview code {
+  font-family: inherit;
+  background: none;
+  padding: 0;
+}
+
+.codeFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #252526;
+  border-top: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.codeModified {
+  font-size: 11px;
+  color: #606060;
+}
+
+.codeLines {
+  font-size: 11px;
+  color: #808080;
+}
+
+.codeShortcuts {
+  font-size: 10px;
+  color: #606060;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* ============================================ */
+/* 状态栏保存中 */
+/* ============================================ */
+
+.statusSaving {
+  color: #fbbf24;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ============================================ */
+/* 响应式 */
+/* ============================================ */
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .childrenGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .vscodeLayout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #3c3c3c;
+  }
+
+  .childModuleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysisHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .analysisTitle {
+    flex-wrap: wrap;
+  }
+
+  .analysisPath {
+    font-size: 16px;
+  }
+}
+
+/* ============================================ */
+/* 调用图谱相关样式 */
+/* ============================================ */
+
+.loadGraphBtn {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.loadGraphBtn:hover {
+  background: #005a9e;
+}
+
+.callGraphLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #808080;
+  gap: 12px;
+}
+
+.callGraphLoading .spinner {
+  width: 32px;
+  height: 32px;
+}
+
+.callGraphError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #f48771;
+  gap: 12px;
+}
+
+.callGraphPlaceholder {
+  padding: 40px 20px;
+  text-align: center;
+  color: #808080;
+  border: 1px dashed #3c3c3c;
+  border-radius: 4px;
+  background: #252526;
+}
+
+.callGraphPlaceholder p {
+  margin: 8px 0;
+}
+
+.callGraphPlaceholder .hint {
+  font-size: 12px;
+  color: #6a6a6a;
+}
+
+/* 全屏调用图谱 */
+.callGraphFullscreen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.callGraphHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #252525;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.callGraphTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.callGraphIcon {
+  font-size: 20px;
+}
+
+.callGraphMeta {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  color: #888;
+}
+
+.callGraphMeta span {
+  padding: 4px 12px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  border: 1px solid #333;
+}
+
+/* 调用图谱内容区 - 左右分栏 */
+.callGraphContent {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.callGraphLeft {
+  flex: 0 0 450px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.callGraphRight {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.graphSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  overflow: hidden;
+}
+
+.graphSection h3 {
+  margin: 0;
+  padding: 12px 16px;
+  background: #252525;
+  border-bottom: 1px solid #333;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* 调用链列表样式 */
+.callChainList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.callChainHeader {
+  padding: 16px;
+  background: #252525;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.callChainHeader h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.callChainHeader p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.callChainHeader code {
+  color: #0084ff;
+  background: #1a1a1a;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+}
+
+.entryPoints {
+  margin-top: 8px !important;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+  font-size: 12px !important;
+  color: #888 !important;
+}
+
+/* 调用链项 */
+.callChainItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #1a1a1a;
+  border-radius: 6px;
+  border: 1px solid #333;
+  transition: all 0.2s;
+}
+
+.callChainItem:hover {
+  background: #222;
+  border-color: #444;
+}
+
+.callChainIndex {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.callChainPath {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+}
+
+.callChainNode {
+  padding: 4px 10px;
+  background: #252525;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.callChainNode:hover {
+  background: #0084ff;
+  border-color: #0084ff;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 132, 255, 0.3);
+}
+
+.callChainArrow {
+  color: #666;
+  font-size: 16px;
+  user-select: none;
+}
+
+.callChainLength {
+  font-size: 11px;
+  color: #666;
+  text-align: right;
+}
+
+/* 空状态 */
+.callChainEmpty {
+  padding: 24px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  text-align: center;
+}
+
+.callChainEmpty p {
+  margin: 8px 0;
+  color: #aaa;
+}
+
+.callChainEmpty .hint {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+}
+
+.hintList {
+  margin: 8px 0;
+  padding-left: 24px;
+  text-align: left;
+  font-size: 12px;
+  color: #666;
+  list-style: disc;
+}
+
+.hintList li {
+  margin: 4px 0;
+}
+
+.symbolSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

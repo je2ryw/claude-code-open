@@ -4,6 +4,7 @@
 
 import type { SlashCommand, CommandContext, CommandResult } from './types.js';
 import { commandRegistry } from './registry.js';
+import { VERSION_BASE } from '../version.js';
 
 // /review - 代码审查
 export const reviewCommand: SlashCommand = {
@@ -62,7 +63,7 @@ export const feedbackCommand: SlashCommand = {
       const environmentInfo = {
         platform: process.platform,
         nodeVersion: process.version,
-        version: config.version || '2.0.76',
+        version: config.version || VERSION_BASE,
         terminal: process.env.TERM || process.env.TERM_PROGRAM || 'unknown',
         datetime: new Date().toISOString(),
       };
@@ -177,7 +178,7 @@ We read all feedback and use it to improve Claude Code!`;
   },
 };
 
-// /pr - 创建 Pull Request (基于官方 v2.0.76 源码实现)
+// /pr - 创建 Pull Request (基于官方 v2.1.4 源码实现)
 export const prCommand: SlashCommand = {
   name: 'pr',
   aliases: ['pull-request', 'create-pr'],
@@ -604,7 +605,7 @@ function parseChangelog(changelog: string): Array<[string, string[]]> {
       const header = lines[0];
       if (!header) continue;
 
-      // 提取版本号 (例如: "2.0.76 - 2024-01-15" -> "2.0.76")
+      // 提取版本号 (例如: "2.1.4 - 2024-01-15" -> "2.1.4")
       const version = header.split(' - ')[0]?.trim() || '';
       if (!version) continue;
 

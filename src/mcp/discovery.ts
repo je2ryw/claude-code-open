@@ -450,7 +450,7 @@ export class McpDiscovery {
           capabilities: {},
           clientInfo: {
             name: 'claude-code-discovery',
-            version: '2.0.76',
+            version: '2.1.4',
           },
         });
       } catch (err) {

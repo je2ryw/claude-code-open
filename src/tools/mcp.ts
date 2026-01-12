@@ -16,6 +16,7 @@ import type {
 } from '../types/index.js';
 import type { MCPSearchToolResult } from '../types/results.js';
 import { MAX_MCP_OUTPUT_TOKENS, truncateMcpOutput } from '../utils/index.js';
+import { persistLargeOutputSync } from './output-persistence.js';
 
 // MCP 服务器状态管理
 interface McpServerState {
@@ -265,7 +266,7 @@ export async function connectMcpServer(name: string, retry = true): Promise<bool
           capabilities: {},
           clientInfo: {
             name: 'claude-code-restored',
-            version: '2.0.76',
+            version: '2.1.4',
           },
         });
 
@@ -568,10 +569,16 @@ export async function callMcpTool(
       output = JSON.stringify(result, null, 2);
     }
 
-    // 应用 MCP 输出 Token 限制
-    output = truncateMcpOutput(output, MAX_MCP_OUTPUT_TOKENS());
+    // 使用统一的输出持久化机制（MCP 工具特殊处理：基于 token 限制）
+    const maxTokens = MAX_MCP_OUTPUT_TOKENS();
+    const maxChars = maxTokens * 4; // 大约 4 字符/token
 
-    return { success: true, output };
+    const persistResult = persistLargeOutputSync(output, {
+      toolName: 'MCP',
+      maxLength: maxChars,
+    });
+
+    return { success: true, output: persistResult.content };
   } catch (err) {
     return {
       success: false,
@@ -613,240 +620,6 @@ export function getServerStatus(name: string): {
     lastConnectAttempt: server.lastConnectAttempt,
     reconnectAttempts: server.reconnectAttempts,
   };
-}
-
-// ============ MCP 工具类 ============
-
-export class ListMcpResourcesTool extends BaseTool<ListMcpResourcesInput, ToolResult> {
-  name = 'ListMcpResources';
-  description = `Lists available resources from configured MCP servers.
-Each resource object includes a 'server' field indicating which server it's from.
-
-Usage examples:
-- List all resources from all servers: \`listMcpResources\`
-- List resources from a specific server: \`listMcpResources({ server: "myserver" })\``;
-
-  getPrompt?(): string {
-    return `List available resources from configured MCP servers.
-Each returned resource will include all standard MCP resource fields plus a 'server' field
-indicating which server the resource belongs to.
-
-Parameters:
-- server (optional): The name of a specific MCP server to get resources from. If not provided,
-  resources from all servers will be returned.
-- refresh (optional): Force refresh resource list from server, bypassing cache.`;
-  }
-
-  getInputSchema(): ToolDefinition['inputSchema'] {
-    return {
-      type: 'object',
-      properties: {
-        server: {
-          type: 'string',
-          description: 'Optional server name to filter resources by',
-        },
-        refresh: {
-          type: 'boolean',
-          description: 'Force refresh resource list from server (bypass cache)',
-        },
-      },
-      required: [],
-    };
-  }
-
-  async execute(input: ListMcpResourcesInput): Promise<ToolResult> {
-    const { server, refresh = false } = input;
-
-    const results: Array<{ server: string; resources: McpResource[]; cached: boolean }> = [];
-    const errors: Array<{ server: string; error: string }> = [];
-
-    for (const [name, state] of mcpServers) {
-      if (server && name !== server) continue;
-
-      try {
-        // 确保连接
-        if (!state.connected) {
-          const connected = await connectMcpServer(name);
-          if (!connected) {
-            errors.push({ server: name, error: 'Failed to connect to server' });
-            continue;
-          }
-        }
-
-        // 检查服务器是否支持资源
-        if (!state.capabilities.resources) {
-          continue;
-        }
-
-        // 获取资源列表（使用缓存）
-        const resources = await getResources(name, refresh);
-
-        if (resources.length > 0) {
-          const cached = !refresh && state.resourcesCache !== undefined &&
-            Date.now() - state.resourcesCache.timestamp < RESOURCE_CACHE_TTL;
-          results.push({ server: name, resources, cached });
-        }
-      } catch (err) {
-        errors.push({
-          server: name,
-          error: err instanceof Error ? err.message : 'Unknown error'
-        });
-      }
-    }
-
-    if (results.length === 0 && errors.length === 0) {
-      return { success: true, output: 'No MCP servers with resources configured.' };
-    }
-
-    let output = 'Available MCP Resources:\n\n';
-
-    for (const { server: serverName, resources, cached } of results) {
-      output += `Server: ${serverName}${cached ? ' (cached)' : ''}\n`;
-      for (const resource of resources) {
-        output += `  - ${resource.name} (${resource.uri})\n`;
-        if (resource.description) {
-          output += `    ${resource.description}\n`;
-        }
-        if (resource.mimeType) {
-          output += `    MIME: ${resource.mimeType}\n`;
-        }
-      }
-      output += '\n';
-    }
-
-    // 报告错误
-    if (errors.length > 0) {
-      output += 'Errors:\n';
-      for (const { server: serverName, error } of errors) {
-        output += `  - ${serverName}: ${error}\n`;
-      }
-      output += '\n';
-    }
-
-    return { success: true, output };
-  }
-}
-
-export class ReadMcpResourceTool extends BaseTool<ReadMcpResourceInput, ToolResult> {
-  name = 'ReadMcpResource';
-  description = `Reads a specific resource from an MCP server.
-- server: The name of the MCP server to read from
-- uri: The URI of the resource to read
-
-Usage examples:
-- Read a resource from a server: \`readMcpResource({ server: "myserver", uri: "my-resource-uri" })\``;
-
-  getPrompt?(): string {
-    return `Reads a specific resource from an MCP server, identified by server name and resource URI.
-
-Parameters:
-- server (required): The name of the MCP server from which to read the resource
-- uri (required): The URI of the resource to read`;
-  }
-
-  getInputSchema(): ToolDefinition['inputSchema'] {
-    return {
-      type: 'object',
-      properties: {
-        server: {
-          type: 'string',
-          description: 'The MCP server name',
-        },
-        uri: {
-          type: 'string',
-          description: 'The resource URI to read',
-        },
-      },
-      required: ['server', 'uri'],
-    };
-  }
-
-  async execute(input: ReadMcpResourceInput): Promise<ToolResult> {
-    const { server, uri } = input;
-
-    const serverState = mcpServers.get(server);
-    if (!serverState) {
-      return {
-        success: false,
-        error: `MCP server not found: ${server}. Available servers: ${Array.from(mcpServers.keys()).join(', ') || 'none'}`
-      };
-    }
-
-    // 确保连接
-    if (!serverState.connected) {
-      const connected = await connectMcpServer(server);
-      if (!connected) {
-        return {
-          success: false,
-          error: `Failed to connect to MCP server: ${server}. Please check server configuration and ensure it's running.`
-        };
-      }
-    }
-
-    // 检查服务器是否支持资源
-    if (!serverState.capabilities.resources) {
-      return {
-        success: false,
-        error: `MCP server ${server} does not support resources.`
-      };
-    }
-
-    // 验证资源是否存在于列表中
-    const resources = await getResources(server);
-    const resourceExists = resources.some((r) => r.uri === uri);
-    if (!resourceExists) {
-      return {
-        success: false,
-        error: `Resource URI not found: ${uri}. Use ListMcpResources to see available resources.`
-      };
-    }
-
-    try {
-      // 读取资源，带重试
-      const result = await sendMcpMessage(server, 'resources/read', { uri });
-
-      if (!result) {
-        return {
-          success: false,
-          error: `Failed to read MCP resource: ${uri}. Server did not respond or returned an error.`
-        };
-      }
-
-      // 解析结果
-      const contents = (result as { contents?: Array<{ uri: string; text?: string; blob?: string; mimeType?: string }> }).contents;
-      if (contents && Array.isArray(contents)) {
-        let output = '';
-
-        for (const content of contents) {
-          if (content.uri) {
-            output += `Resource: ${content.uri}\n`;
-            if (content.mimeType) {
-              output += `MIME Type: ${content.mimeType}\n`;
-            }
-            output += '\n';
-          }
-
-          if (content.text) {
-            output += content.text;
-          } else if (content.blob) {
-            output += `[Binary data: ${content.blob.length} bytes]`;
-          }
-
-          output += '\n';
-        }
-
-        return { success: true, output: output.trim() };
-      }
-
-      // 如果格式不符合预期，返回原始 JSON
-      return { success: true, output: JSON.stringify(result, null, 2) };
-    } catch (err) {
-      return {
-        success: false,
-        error: `Error reading MCP resource: ${err instanceof Error ? err.message : 'Unknown error'}`
-      };
-    }
-  }
 }
 
 // ============ MCP Search 工具 ============

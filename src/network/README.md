@@ -171,7 +171,7 @@ const result = await withTimeout(
 
 ## 与官方对齐
 
-本实现参考了官方 `@anthropic-ai/claude-code` v2.0.76 的代理实现：
+本实现参考了官方 `@anthropic-ai/claude-code` v2.1.4 的代理实现：
 
 | 功能 | 本项目 | 官方 |
 |------|--------|------|

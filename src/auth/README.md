@@ -429,14 +429,73 @@ await switchAccount('claude.ai');
 1. 使用官方 Claude Code CLI
 2. 或从官方 CLI 复制 `~/.claude/auth.json`
 
+## Help Improve Claude 设置 (v2.1.4)
+
+v2.1.4 版本新增了 "Help Improve Claude" 设置获取功能，并实现了 OAuth token 过期时自动刷新重试的机制。
+
+### 功能特性
+
+- **自动获取用户设置**: 从 Anthropic API 获取用户的 "Help improve Claude" 偏好
+- **OAuth 刷新重试**: 当因 token 过期而失败时，自动刷新 OAuth token 并重试请求
+- **设置缓存**: 5 分钟内缓存设置，减少 API 调用
+- **优雅降级**: 当无法获取设置时返回安全的默认值
+
+### 使用方法
+
+```typescript
+import {
+  fetchHelpImproveClaudeSetting,
+  isHelpImproveClaudeEnabled,
+  isCodeHaikuEnabled,
+  fetchWithOAuthRetry,
+} from './auth/index.js';
+
+// 获取完整设置
+const settings = await fetchHelpImproveClaudeSetting();
+console.log('Help Improve Claude:', settings.helpImproveClaudeEnabled);
+console.log('Code Haiku:', settings.codeHaikuEnabled);
+
+// 快捷方式检查
+const helpEnabled = await isHelpImproveClaudeEnabled();
+const haikuEnabled = await isCodeHaikuEnabled();
+
+// 通用 OAuth 重试请求
+const result = await fetchWithOAuthRetry(async (accessToken) => {
+  const response = await fetch('https://api.anthropic.com/api/some-endpoint', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  return response.json();
+});
+```
+
+### 错误处理
+
+当 OAuth token 过期时，系统会自动：
+1. 检测 401/403 或 token 相关错误
+2. 调用 `refreshTokenAsync()` 刷新 token
+3. 使用新 token 重试请求
+4. 如果刷新失败，返回默认值或抛出错误
+
+### 类型定义
+
+```typescript
+interface HelpImproveClaudeSettings {
+  helpImproveClaudeEnabled: boolean;  // 是否允许使用对话改进 Claude
+  codeHaikuEnabled: boolean;           // 是否启用 code haiku
+  fetchedAt: number;                   // 设置获取时间戳
+}
+```
+
 ## 贡献
 
 欢迎贡献！主要改进方向：
 
+- [x] 添加 "Help Improve Claude" 设置获取 (v2.1.4)
+- [x] 实现 OAuth 刷新重试机制 (v2.1.4)
 - [ ] 添加 OAuth token 撤销支持
 - [ ] 支持多账户同时存储
 - [ ] 添加 token 自动续期定时器
-- [ ] 实现更安全的密钥存储（如 Keychain）
+- [x] 实现更安全的密钥存储（如 Keychain）
 - [ ] 添加 OAuth scope 动态选择
 - [ ] 支持自定义 OAuth 端点
 

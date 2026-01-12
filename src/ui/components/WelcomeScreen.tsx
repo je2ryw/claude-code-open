@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { useTerminalWidth } from '../hooks/useTerminalSize.js';
+import { isDemoMode } from '../../utils/env-check.js';
 
 interface WelcomeScreenProps {
   version: string;
@@ -207,7 +208,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <Text color="cyan">{model}</Text>
               <Text dimColor> · </Text>
               <Text dimColor>{apiType}</Text>
-              {organization && (
+              {/* IS_DEMO 模式下隐藏组织名称 - 官网实现: !process.env.IS_DEMO && D.oauthAccount?.organizationName */}
+              {organization && !isDemoMode() && (
                 <>
                   <Text dimColor> · </Text>
                   <Text dimColor>{organization}</Text>

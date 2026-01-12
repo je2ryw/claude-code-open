@@ -15,87 +15,72 @@ export * from './planmode.js';
 export * from './mcp.js';
 export * from './ask.js';
 export * from './sandbox.js';
-export * from './multiedit.js';
-export * from './tmux.js';
 export * from './skill.js';
 export * from './lsp.js';
-export * from './chrome.js';
 
 import { toolRegistry } from './base.js';
-import { BashTool, BashOutputTool, KillShellTool } from './bash.js';
+import { BashTool, KillShellTool } from './bash.js';
 import { ReadTool, WriteTool, EditTool } from './file.js';
 import { GlobTool, GrepTool } from './search.js';
 import { WebFetchTool, WebSearchTool } from './web.js';
 import { TodoWriteTool } from './todo.js';
-import { TaskTool, TaskOutputTool, ListAgentsTool } from './agent.js';
+import { TaskTool, TaskOutputTool } from './agent.js';
 import { NotebookEditTool } from './notebook.js';
 import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
-import { ListMcpResourcesTool, ReadMcpResourceTool, MCPSearchTool } from './mcp.js';
+import { MCPSearchTool } from './mcp.js';
 import { AskUserQuestionTool } from './ask.js';
-import { MultiEditTool } from './multiedit.js';
-import { TmuxTool } from './tmux.js';
-import { SkillTool, initializeSkills } from './skill.js';
+import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
 import { LSPTool } from './lsp.js';
-import { ChromeTool } from './chrome.js';
 
-// 注册所有工具
+// 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
 export function registerAllTools(): void {
-  // Bash 工具
+  // 1. Bash 工具 (2个)
   toolRegistry.register(new BashTool());
-  toolRegistry.register(new BashOutputTool()); // 向后兼容
   toolRegistry.register(new KillShellTool());
 
-  // 文件工具
+  // 2. 文件工具 (3个)
   toolRegistry.register(new ReadTool());
   toolRegistry.register(new WriteTool());
   toolRegistry.register(new EditTool());
 
-  // 搜索工具
+  // 3. 搜索工具 (2个)
   toolRegistry.register(new GlobTool());
   toolRegistry.register(new GrepTool());
 
-  // Web 工具
+  // 4. Web 工具 (2个)
   toolRegistry.register(new WebFetchTool());
   toolRegistry.register(new WebSearchTool());
 
-  // 任务管理
+  // 5. 任务管理 (3个)
   toolRegistry.register(new TodoWriteTool());
-
-  // 代理工具
   toolRegistry.register(new TaskTool());
-  toolRegistry.register(new TaskOutputTool()); // 统一的 TaskOutput 工具（支持 Bash 和 Agent）
-  toolRegistry.register(new ListAgentsTool());
+  toolRegistry.register(new TaskOutputTool());
 
-  // Notebook 编辑
+  // 6. Notebook 编辑 (1个)
   toolRegistry.register(new NotebookEditTool());
 
-  // 计划模式
+  // 7. 计划模式 (2个)
   toolRegistry.register(new EnterPlanModeTool());
   toolRegistry.register(new ExitPlanModeTool());
 
-  // MCP 工具
-  toolRegistry.register(new MCPSearchTool());
-  toolRegistry.register(new ListMcpResourcesTool());
-  toolRegistry.register(new ReadMcpResourceTool());
-
-  // 用户交互
+  // 8. 用户交互 (1个)
   toolRegistry.register(new AskUserQuestionTool());
 
-  // MultiEdit
-  toolRegistry.register(new MultiEditTool());
-
-  // Tmux
-  toolRegistry.register(new TmuxTool());
-
-  // Skill（异步初始化）
-  initializeSkills().catch(err => console.error('Failed to initialize skills:', err));
+  // 9. Skill 系统 (1个)
+  initializeSkills()
+    .then(() => {
+      // 启用技能热重载（2.1.0 新功能）
+      enableSkillHotReload();
+    })
+    .catch(err => console.error('Failed to initialize skills:', err));
   toolRegistry.register(new SkillTool());
 
-  // LSP
+  // 10. 代码智能 (1个)
   toolRegistry.register(new LSPTool());
 
-  // Chrome
-  toolRegistry.register(new ChromeTool());
+  // MCP 工具通过动态注册机制添加
+  // MCPSearchTool 作为 MCP 桥接工具保留
+  toolRegistry.register(new MCPSearchTool());
 }
 
 // 自动注册

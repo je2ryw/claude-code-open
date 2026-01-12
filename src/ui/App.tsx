@@ -38,7 +38,11 @@ import {
   type TaskSummary,
 } from '../core/backgroundTasks.js';
 import { BackgroundTasksPanel } from './components/BackgroundTasksPanel.js';
-const VERSION = '2.0.76-restored';
+// 版本号从统一模块导入
+import { VERSION_FULL } from '../version.js';
+// 信任管理模块 - 修复 v2.1.3 home 目录信任问题
+import { trustManager, initializeTrustManager } from '../trust/index.js';
+import { TrustDialog, useTrustDialog } from './components/TrustDialog.js';
 
 interface AppProps {
   model: string;
@@ -145,6 +149,8 @@ export const App: React.FC<AppProps> = ({
 
   // 后台任务相关状�?
   const [backgroundTasks, setBackgroundTasks] = useState<TaskSummary[]>([]);
+  const [backgroundTaskCount, setBackgroundTaskCount] = useState(0);
+  const [runningTaskCount, setRunningTaskCount] = useState(0);
   const [showBackgroundPanel, setShowBackgroundPanel] = useState(false);
   const [currentBackgroundTaskId, setCurrentBackgroundTaskId] = useState<string | null>(null);
   const [shouldMoveToBackground, setShouldMoveToBackground] = useState(false);
@@ -157,8 +163,20 @@ export const App: React.FC<AppProps> = ({
   const [commandJsx, setCommandJsx] = useState<React.ReactElement | null>(null);
   const [hidePromptForJsx, setHidePromptForJsx] = useState(false);
 
-  // Rewind 状�?
+  // Rewind 状态
   const [showRewindUI, setShowRewindUI] = useState(false);
+
+  // 权限模式状态 - 官方 v2.1.2 Shift+Tab 快捷切换
+  const [quickPermissionMode, setQuickPermissionMode] = useState<'default' | 'acceptEdits' | 'plan'>('default');
+
+  // 信任对话框状态 - 修复 v2.1.3 home 目录信任问题
+  const {
+    showDialog: showTrustDialog,
+    trusted: directoryTrusted,
+    handleAccept: handleTrustAccept,
+    handleReject: handleTrustReject,
+    TrustDialogComponent,
+  } = useTrustDialog(process.cwd());
 
   // 会话 ID
   const sessionId = useRef(uuidv4());
@@ -197,9 +215,14 @@ export const App: React.FC<AppProps> = ({
       })
   );
 
-  // 初始化命令系�?
+  // 初始化命令系统
   useEffect(() => {
     initializeCommands();
+  }, []);
+
+  // 初始化信任管理器 - 修复 v2.1.3 home 目录信任问题
+  useEffect(() => {
+    initializeTrustManager();
   }, []);
 
   // 监听更新通知
@@ -304,7 +327,7 @@ export const App: React.FC<AppProps> = ({
         // 如果没有正在运行的任务，切换后台面板显示
         setShowBackgroundPanel((v) => !v);
         // 更新后台任务列表
-        setBackgroundTasks(getTaskSummaries());
+        updateBackgroundTasks();
       }
     },
     getCurrentInput: () => currentInputRef.current,
@@ -327,13 +350,15 @@ export const App: React.FC<AppProps> = ({
         loop.abort();
         setIsProcessing(false);
         // 添加中断提示到当前流式块
+        // v2.1.0 改进：中断消息从红色改为灰色，减少视觉干扰
         setStreamBlocks((prev) => [
           ...prev,
           {
             type: 'text',
             id: `interrupt-${Date.now()}`,
             timestamp: new Date(),
-            text: '\n\n[Interrupted by user]',
+            // 使用灰色样式的消息而非之前的红色
+            text: '\n\n⏸ Interrupted',
             isStreaming: false,
           },
         ]);
@@ -365,7 +390,30 @@ export const App: React.FC<AppProps> = ({
     ]);
   }, []);
 
-  // 添加消息的辅助函�?
+  // 更新后台任务统计的统一函�?- 单一数据源
+  const updateBackgroundTasks = useCallback(() => {
+    const tasks = getTaskSummaries();
+    const runningCount = tasks.filter((t) => t.status === 'running').length;
+
+    setBackgroundTasks(tasks);
+    setBackgroundTaskCount(tasks.length);
+    setRunningTaskCount(runningCount);
+  }, []);
+
+  // 监听后台任务状态变化（实时同步�?
+  useEffect(() => {
+    // 初始更新
+    updateBackgroundTasks();
+
+    // 每秒更新一次，确保 status bar 和 tasks dialog 保持同步
+    const interval = setInterval(() => {
+      updateBackgroundTasks();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [updateBackgroundTasks]);
+
+  // 添加消息的辅助函数
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     setMessages((prev) => [
       ...prev,
@@ -377,6 +425,28 @@ export const App: React.FC<AppProps> = ({
       },
     ]);
   }, []);
+
+  // 处理 Shift+Tab 权限模式切换 - 官方 v2.1.2
+  const handlePermissionModeChange = useCallback((mode: 'default' | 'acceptEdits' | 'plan') => {
+    setQuickPermissionMode(mode);
+
+    // 如果是 Plan Mode，同时更新 planMode 状态
+    if (mode === 'plan') {
+      setPlanMode(true);
+    }
+
+    // 添加消息提示用户模式已切换
+    const modeMessage = mode === 'acceptEdits'
+      ? '✓ Auto-accept edits mode enabled\n\nFile edits will be automatically approved for this session.'
+      : mode === 'plan'
+        ? '✓ Plan mode enabled\n\nClaude will create a plan before making changes.'
+        : '';
+
+    if (modeMessage) {
+      addMessage('assistant', modeMessage);
+      addActivity(`Permission mode: ${mode}`);
+    }
+  }, [addMessage, addActivity]);
 
   // 处理登录方法选择
   const handleLoginSelect = useCallback(async (method: LoginMethod) => {
@@ -442,7 +512,7 @@ export const App: React.FC<AppProps> = ({
         organization,
         username,
         cwd: process.cwd(),
-        version: VERSION,
+        version: VERSION_FULL,
       },
       ui: {
         addMessage,
@@ -578,10 +648,10 @@ export const App: React.FC<AppProps> = ({
                 completeTask(bgTask.id, true);
 
                 // 更新后台任务列表
-                setBackgroundTasks(getTaskSummaries());
+                updateBackgroundTasks();
               } catch (err) {
                 completeTask(bgTask.id, false, String(err));
-                setBackgroundTasks(getTaskSummaries());
+                updateBackgroundTasks();
               }
             })();
 
@@ -745,7 +815,7 @@ export const App: React.FC<AppProps> = ({
       {/* 欢迎屏幕或头�?*/}
       {showWelcome && messages.length === 0 ? (
         <WelcomeScreen
-          version={VERSION}
+          version={VERSION_FULL}
           username={username}
           model={modelDisplayName[currentModel] || currentModel}
           apiType={apiType as any}
@@ -755,7 +825,7 @@ export const App: React.FC<AppProps> = ({
         />
       ) : (
         <Header
-          version={VERSION}
+          version={VERSION_FULL}
           model={modelDisplayName[currentModel] || currentModel}
           cwd={process.cwd()}
           username={username}
@@ -767,6 +837,8 @@ export const App: React.FC<AppProps> = ({
           showShortcutHint={true}
           hasUpdate={hasUpdate}
           latestVersion={latestVersion}
+          backgroundTaskCount={backgroundTaskCount}
+          runningTaskCount={runningTaskCount}
         />
       )}
 
@@ -776,10 +848,13 @@ export const App: React.FC<AppProps> = ({
         onClose={() => setShowShortcuts(false)}
       />
 
-      {/* 登录选择�?*/}
+      {/* 登录选择器 */}
       {showLoginScreen && (
         <LoginSelector onSelect={handleLoginSelect} />
       )}
+
+      {/* 信任对话框 - 修复 v2.1.3 home 目录信任问题 */}
+      {TrustDialogComponent}
 
       {/* 官方 local-jsx 命令：显示命令返回的 JSX 组件（如 /chrome 设置界面�?resume 会话选择器）*/}
       {commandJsx && (
@@ -864,9 +939,20 @@ export const App: React.FC<AppProps> = ({
 
       {/* 当前活动区域 - 流式输出和动态内�?*/}
       <Box flexDirection="column" flexGrow={0} flexShrink={0} marginY={1}>
-        {/* 当前流式块（按时间顺序交织显示文本和工具�?/}
+        {/* 当前流式块（按时间顺序交织显示文本和工具）*/}
         {streamBlocks.map((block) => {
           if (block.type === 'text') {
+            // v2.1.0 改进：中断消息使用灰色显示
+            const isInterrupted = block.id.startsWith('interrupt-');
+            if (isInterrupted) {
+              return (
+                <Box key={block.id} marginTop={1}>
+                  <Text color="gray" dimColor>
+                    {block.text || ''}
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Message
                 key={block.id}
@@ -893,9 +979,14 @@ export const App: React.FC<AppProps> = ({
         })}
 
         {/* 加载中指示器（仅在没有任何块时显示）*/}
+        {/* v2.1.0 改进：等待首个响应时的 spinner 反馈 */}
         {isProcessing && streamBlocks.length === 0 && (
           <Box marginLeft={2}>
-            <Spinner label="Thinking..." />
+            <Spinner
+              label="Thinking..."
+              waitingForFirstToken={true}
+              showElapsed={true}
+            />
           </Box>
         )}
       </Box>
@@ -934,7 +1025,7 @@ export const App: React.FC<AppProps> = ({
         />
       )}
 
-      {/* Input with suggestion - 当显�?JSX 命令组件时隐藏输入框 */}
+      {/* Input with suggestion - 当显示 JSX 命令组件时隐藏输入框 */}
       {!hidePromptForJsx && !showRewindUI && (
         <Box marginTop={1}>
           <Input
@@ -942,15 +1033,24 @@ export const App: React.FC<AppProps> = ({
             disabled={isProcessing}
             suggestion={showWelcome ? currentSuggestion : undefined}
             onRewindRequest={handleRewindRequest}
+            onPermissionModeChange={handlePermissionModeChange}
+            permissionMode={quickPermissionMode}
           />
         </Box>
       )}
 
       {/* Status Bar - 底部状态栏 */}
       <Box justifyContent="space-between" paddingX={1} marginTop={1}>
-        <Text color="gray" dimColor>
-          ? for shortcuts
-        </Text>
+        <Box>
+          <Text color="gray" dimColor>
+            ? for shortcuts
+          </Text>
+          {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 */}
+          <Text color="gray" dimColor> · </Text>
+          <Text color="cyan" dimColor>
+            shift+tab: mode
+          </Text>
+        </Box>
         <Box>
           {/* 当正在处理时显示 esc to interrupt */}
           {isProcessing && (

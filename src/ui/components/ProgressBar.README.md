@@ -405,7 +405,7 @@ A: 使用 `CompactProgressBar` 可以轻松嵌入到其他 Ink 组件中。
 
 ## 贡献者
 
-基于 Claude Code CLI v2.0.76 官方实现，增强了功能和可配置性。
+基于 Claude Code CLI v2.1.4 官方实现，增强了功能和可配置性。
 
 ## 许可证
 

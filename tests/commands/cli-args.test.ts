@@ -16,7 +16,7 @@ function parseArgs(args: string[]): any {
   program
     .name('claude')
     .description('Claude Code - starts an interactive session by default')
-    .version('2.0.76-test', '-v, --version', 'Output the version number');
+    .version('2.1.4-test', '-v, --version', 'Output the version number');
 
   program
     .argument('[prompt]', 'Your prompt')
@@ -100,7 +100,7 @@ describe('CLI Arguments - Basic Commands', () => {
 
   it('should parse -v/--version flag', () => {
     const program = new Command();
-    program.version('2.0.76-test', '-v, --version');
+    program.version('2.1.4-test', '-v, --version');
 
     // Test short form
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);

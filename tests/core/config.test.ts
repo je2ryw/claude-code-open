@@ -80,7 +80,7 @@ const initTests = [
     const manager = new ConfigManager();
     const config = manager.getAll();
 
-    assertEqual(config.version, '2.0.76', '版本号应为 2.0.76');
+    assertEqual(config.version, '2.1.4', '版本号应为 2.1.4');
     assertEqual(config.model, 'sonnet', '默认模型应为 sonnet');
     assertEqual(config.maxTokens, 8192, '默认最大令牌数应为 8192');
     assertEqual(config.temperature, 1, '默认温度应为 1');
@@ -357,7 +357,7 @@ const migrationTests = [
 
     assertEqual(config.model, 'opus', '旧模型名应该被迁移');
     assertEqual(config.enableAutoSave, true, 'autoSave 应该迁移为 enableAutoSave');
-    assertEqual(config.version, '2.0.76', '版本号应该更新');
+    assertEqual(config.version, '2.1.4', '版本号应该更新');
 
     process.env.CLAUDE_CONFIG_DIR = originalEnv;
     cleanup();
@@ -430,7 +430,7 @@ const importExportTests = [
     const manager = new ConfigManager();
 
     const configJson = JSON.stringify({
-      version: '2.0.76',
+      version: '2.1.4',
       model: 'opus',
       maxTokens: 16384,
     });

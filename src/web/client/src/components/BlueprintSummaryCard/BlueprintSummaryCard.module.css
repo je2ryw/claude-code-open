@@ -1,0 +1,130 @@
+/* 蓝图摘要卡片 */
+.blueprintCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+  transition: all 0.2s ease;
+}
+
+.blueprintCard:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+/* 卡片头部 */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.blueprintIcon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.blueprintTitle {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* 统计信息区域 */
+.statsContainer {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.statItem:hover {
+  background: #4a5178;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  margin-bottom: 4px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 操作按钮区域 */
+.actionsContainer {
+  display: flex;
+  gap: 10px;
+}
+
+.actionButton {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.primaryButton {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.primaryButton:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.secondaryButton {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.secondaryButton:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+  .statsContainer {
+    gap: 8px;
+  }
+
+  .statItem {
+    padding: 8px;
+  }
+
+  .statValue {
+    font-size: 18px;
+  }
+
+  .actionsContainer {
+    flex-direction: column;
+  }
+}

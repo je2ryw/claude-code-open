@@ -203,3 +203,13 @@ export function getMemoryManager(projectDir?: string): MemoryManager {
 export function resetMemoryManager(): void {
   defaultMemoryManager = null;
 }
+
+// 导出新的记忆模块
+export * from './types.js';
+export * from './chat-memory.js';
+export * from './link-memory.js';
+export * from './identity-memory.js';
+export * from './embedder.js';
+export * from './vector-store.js';
+export * from './compressor.js';
+export * from './unified-memory.js';

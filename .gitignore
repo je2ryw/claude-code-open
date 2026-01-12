@@ -4,6 +4,7 @@ dist/
 .DS_Store
 .env
 .env.*
+.lhs
 *.key
 .lh/.env.json
 .claude/settings.local.json

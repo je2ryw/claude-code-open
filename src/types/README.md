@@ -219,4 +219,4 @@ import type { BashToolInput } from './types/index.js';
 
 ## 版本
 
-当前版本: 2.0.76
+当前版本: 2.1.4
