@@ -1,12 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import styles from './ProjectNavigator.module.css';
-import type { ViewMode } from './index';
+import { useNavigatorContext } from './NavigatorContext';
 import { ProjectMapView } from './ProjectMapView';
 import { SymbolDetailPanel } from './SymbolDetailPanel';
 import { OnionView } from './views/OnionView';
+import { CodeViewPanel } from './CodeViewPanel';
 
 interface CenterPanelProps {
-  viewMode: ViewMode;
   selectedSymbol: string | null;
   onSymbolSelect?: (symbolId: string) => void;
 }
@@ -19,12 +19,21 @@ interface CenterPanelProps {
  * - Layer 2: 符号详情视图
  * - Layer 3: 代码编辑器
  * - Layer 4: 洋葱架构导航器
+ *
+ * 使用 NavigatorContext 获取 viewMode 和 selectedFile
  */
 export const CenterPanel: React.FC<CenterPanelProps> = ({
-  viewMode,
   selectedSymbol,
-  onSymbolSelect
+  onSymbolSelect,
 }) => {
+  // 使用 Context 获取视图状态
+  const { viewMode, selectedFile, closeCodeView } = useNavigatorContext();
+
+  // 调试日志
+  useEffect(() => {
+    console.log('[CenterPanel] Context 状态 - viewMode:', viewMode, 'selectedFile:', selectedFile);
+  }, [viewMode, selectedFile]);
+
   return (
     <div className={styles.centerPanel}>
       {viewMode === 'map' && (
@@ -33,10 +42,12 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
       {viewMode === 'symbol' && selectedSymbol && (
         <SymbolDetailPanel symbolId={selectedSymbol} />
       )}
-      {viewMode === 'code' && (
-        <div className={styles.placeholder}>
-          代码编辑器（待实现 - 可集成 Monaco Editor）
-        </div>
+      {viewMode === 'code' && selectedFile && (
+        <CodeViewPanel
+          filePath={selectedFile}
+          onClose={closeCodeView}
+          onSymbolSelect={onSymbolSelect}
+        />
       )}
       {viewMode === 'onion' && (
         <OnionView onSymbolSelect={onSymbolSelect} />

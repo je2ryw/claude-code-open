@@ -11,12 +11,83 @@
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 16px;
+  padding: 12px;
   overflow: auto;
+  position: relative;
+}
+
+.graphContainer.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #1a1a2e;
+  border-radius: 0;
+  padding: 20px;
 }
 
 .graphSvg {
   min-width: 100%;
+  user-select: none;
+  cursor: grab;
+}
+
+.graphSvg.panning {
+  cursor: grabbing;
+}
+
+/* ============ 工具栏 ============ */
+
+.toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+
+.toolButton {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: #ccc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.toolButton:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.3);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #fff;
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoomIndicator {
+  font-size: 10px;
+  color: #888;
+  min-width: 36px;
+  text-align: center;
+  user-select: none;
+}
+
+.toolDivider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
 }
 
 /* ============ 模块节点 ============ */
@@ -30,7 +101,12 @@
 }
 
 .domainNode.selected {
-  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.6));
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.6));
+}
+
+.domainNode.dragging {
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8));
+  cursor: grabbing !important;
 }
 
 .nodeRect {
@@ -99,6 +175,13 @@
   text-transform: capitalize;
 }
 
+.legendHint {
+  color: #666;
+  font-size: 10px;
+  font-style: italic;
+  margin-left: 8px;
+}
+
 /* ============ 空状态 ============ */
 
 .emptyGraph {
@@ -132,4 +215,91 @@
 
 .relationships {
   /* 连接线层 */
+}
+
+/* ============ 展开状态节点样式 ============ */
+
+.domainNode.expanded {
+  filter: drop-shadow(0 0 12px rgba(74, 222, 128, 0.6));
+}
+
+.domainNode.expanded .nodeRect {
+  stroke-width: 3;
+}
+
+/* ============ 加载动画 ============ */
+
+.loadingSpinner {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============ 父子连接线样式 ============ */
+
+.parentChildLines {
+  /* 父子连接线层 */
+}
+
+.parentChildLine {
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+
+.parentChildLine:hover {
+  stroke: rgba(139, 92, 246, 0.7);
+}
+
+/* ============ 文件节点分组 ============ */
+
+.fileNodes {
+  /* 文件节点层 */
+}
+
+/* ============ 文件节点样式 ============ */
+
+.fileNode {
+  transition: transform 0.15s ease;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fileNode:hover {
+  filter: brightness(1.15);
+}
+
+.fileNode:hover .fileRect {
+  stroke-width: 2;
+}
+
+.fileNodeSelected {
+  filter: brightness(1.2);
+}
+
+.fileNodeSelected .fileRect {
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+.fileRect {
+  transition: fill 0.15s ease, stroke-width 0.15s ease;
+}
+
+.fileName {
+  pointer-events: none;
+  user-select: none;
 }

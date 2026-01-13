@@ -1,0 +1,183 @@
+/**
+ * LayerSwitcher 样式
+ * 图层切换组件
+ */
+
+.layerSwitcher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #252536;
+  border-bottom: 1px solid #333;
+}
+
+.layerSwitcher.loading {
+  opacity: 0.8;
+}
+
+/* 导航按钮 */
+.navButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.navButton {
+  width: 32px;
+  height: 32px;
+  background: #1e1e2e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navButton:hover:not(:disabled) {
+  background: #3178c6;
+  border-color: #4188d6;
+}
+
+.navButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 面包屑导航 */
+.breadcrumb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #444 transparent;
+}
+
+.breadcrumb::-webkit-scrollbar {
+  height: 4px;
+}
+
+.breadcrumb::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.breadcrumb::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 2px;
+}
+
+.separator {
+  color: #555;
+  font-size: 12px;
+  user-select: none;
+}
+
+.breadcrumbItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #8b8fa3;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.breadcrumbItem:hover:not(:disabled) {
+  background: #2a2a3d;
+  border-color: #444;
+  color: #fff;
+}
+
+.breadcrumbItem.active {
+  background: rgba(78, 123, 223, 0.15);
+  border-color: rgba(78, 123, 223, 0.3);
+  color: #4e7bdf;
+  font-weight: 500;
+  cursor: default;
+}
+
+.breadcrumbItem:disabled {
+  cursor: default;
+}
+
+.itemIcon {
+  font-size: 12px;
+}
+
+.itemName {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 层级指示器 */
+.levelIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(78, 123, 223, 0.1);
+  border: 1px solid rgba(78, 123, 223, 0.2);
+  border-radius: 16px;
+  white-space: nowrap;
+}
+
+.levelIndicator .levelIcon {
+  font-size: 12px;
+}
+
+.levelIndicator .levelName {
+  font-size: 11px;
+  font-weight: 500;
+  color: #4e7bdf;
+}
+
+/* 加载指示器 */
+.loadingIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #333;
+  border-top-color: #4e7bdf;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+  .layerSwitcher {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .breadcrumb {
+    order: 3;
+    flex: 0 0 100%;
+  }
+
+  .levelIndicator {
+    margin-left: auto;
+  }
+}

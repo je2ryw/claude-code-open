@@ -107,14 +107,34 @@
   overflow: hidden;
 }
 
-.leftPanel {
+/* 左侧面板包装器 */
+.leftPanelWrapper {
+  position: relative;
+  display: flex;
   width: 30%;
   min-width: 250px;
   max-width: 400px;
+  transition: all 0.3s ease;
+}
+
+.leftPanelWrapper.collapsed {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+}
+
+.leftPanelWrapper.collapsed .leftPanel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.leftPanel {
+  flex: 1;
   border-right: 1px solid #333;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  transition: opacity 0.2s ease;
 }
 
 .centerPanel {
@@ -123,13 +143,80 @@
   padding: 20px;
 }
 
-.rightPanel {
+/* 右侧面板包装器 */
+.rightPanelWrapper {
+  position: relative;
+  display: flex;
   width: 25%;
   min-width: 200px;
   max-width: 350px;
+  transition: all 0.3s ease;
+}
+
+.rightPanelWrapper.collapsed {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+}
+
+.rightPanelWrapper.collapsed .rightPanel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rightPanel {
+  flex: 1;
   border-left: 1px solid #333;
   overflow-y: auto;
   padding: 20px;
+  transition: opacity 0.2s ease;
+}
+
+/* 折叠按钮 */
+.collapseButton {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 0;
+  color: #888;
+  font-size: 10px;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.collapseButton:hover {
+  background: #444;
+  color: #fff;
+}
+
+/* 左侧折叠按钮位置 */
+.leftPanelWrapper .collapseButton {
+  right: -20px;
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+}
+
+.leftPanelWrapper.collapsed .collapseButton {
+  right: -20px;
+}
+
+/* 右侧折叠按钮位置 */
+.rightPanelWrapper .collapseButton {
+  left: -20px;
+  border-radius: 4px 0 0 4px;
+  border-right: none;
+}
+
+.rightPanelWrapper.collapsed .collapseButton {
+  left: -20px;
 }
 
 .tabs {

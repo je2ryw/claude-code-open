@@ -16,7 +16,7 @@ import {
   type ThinkingConfig,
   type ThinkingResult,
 } from '../models/index.js';
-import { initAuth, getAuth } from '../auth/index.js';
+import { initAuth, getAuth, refreshTokenAsync } from '../auth/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { VERSION_BASE } from '../version.js';
 import { randomBytes } from 'crypto';
@@ -401,14 +401,54 @@ export class ClaudeClient {
         return this.withRetry(operation, retryCount + 1);
       }
 
-      // 非重试错误，打印详细信息
-      console.error(`[ClaudeClient] API request failed: ${error.message}`);
-      if (errorStatus === 401) {
-        console.error('[ClaudeClient] Authentication failed - check your API key');
+      // 401 错误：尝试刷新 OAuth token
+      if (errorStatus === 401 && retryCount === 0) {
+        const auth = getAuth();
+        if (auth?.type === 'oauth' && auth.refreshToken) {
+          console.log('[ClaudeClient] OAuth token expired, attempting refresh...');
+          try {
+            const refreshedAuth = await refreshTokenAsync(auth);
+            if (refreshedAuth?.accessToken) {
+              console.log('[ClaudeClient] OAuth token refreshed, retrying request...');
+              // 重置默认客户端，以便下次获取新的 token
+              resetDefaultClient();
+              // 更新当前客户端的 authToken
+              if (this.client) {
+                // 创建新的客户端实例
+                const newAuthToken = refreshedAuth.accessToken;
+                const clientOptions: any = {
+                  apiKey: null, // OAuth 模式不需要 apiKey
+                  authToken: newAuthToken,
+                  baseURL: this.client.baseURL,
+                  maxRetries: 0,
+                };
+                // 保持代理配置（如果有）
+                const existingOptions = (this.client as any)._options;
+                if (existingOptions?.httpAgent) {
+                  clientOptions.httpAgent = existingOptions.httpAgent;
+                }
+                if (existingOptions?.defaultHeaders) {
+                  clientOptions.defaultHeaders = existingOptions.defaultHeaders;
+                }
+                this.client = new Anthropic(clientOptions);
+                this.isOAuth = true;
+              }
+              // 重试请求
+              return this.withRetry(operation, retryCount + 1);
+            }
+          } catch (refreshError) {
+            console.error('[ClaudeClient] OAuth token refresh failed:', refreshError);
+          }
+        }
+        console.error('[ClaudeClient] Authentication failed - check your API key or login again');
+      } else if (errorStatus === 401) {
+        console.error('[ClaudeClient] Authentication failed after token refresh - please login again');
       } else if (errorStatus === 403) {
         console.error('[ClaudeClient] Access denied - check API key permissions');
       } else if (errorStatus === 400) {
         console.error('[ClaudeClient] Bad request - check your request parameters');
+      } else {
+        console.error(`[ClaudeClient] API request failed: ${error.message}`);
       }
 
       throw error;

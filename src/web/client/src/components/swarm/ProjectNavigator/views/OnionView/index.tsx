@@ -9,7 +9,7 @@
  * - 管理加载、错误、空状态
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import {
   OnionLayer,
   ONION_LAYER_META,
@@ -91,10 +91,13 @@ export const OnionView: React.FC<OnionViewProps> = ({
   onNodeClick,
   onSymbolSelect,
 }) => {
+  // 注意：文件双击现在通过 NavigatorContext 处理，不再需要 props 传递
+
   const {
     currentLayer,
     layerStack,
     layerData,
+    currentLayerData,
     loading,
     errors,
     canGoBack,
@@ -105,10 +108,37 @@ export const OnionView: React.FC<OnionViewProps> = ({
     clearError,
   } = useOnionNavigation(initialLayer);
 
+  // 全屏状态
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const currentMeta = ONION_LAYER_META[currentLayer];
   const isLoading = loading[currentLayer] || false;
   const error = errors[currentLayer];
-  const data = layerData[currentLayer];
+  const data = currentLayerData;
+
+  // 监听全屏变化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // 全屏切换
+  const toggleFullscreen = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch((err) => {
+        console.error('进入全屏失败:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }, []);
 
   // 初始化时加载第一层数据
   useEffect(() => {
@@ -197,6 +227,7 @@ export const OnionView: React.FC<OnionViewProps> = ({
         );
 
       case OnionLayer.BUSINESS_DOMAIN:
+        // 注意：文件双击通过 NavigatorContext 处理，不再需要传递回调
         return (
           <BusinessDomainLayer
             data={data as BusinessDomainData}
@@ -235,7 +266,10 @@ export const OnionView: React.FC<OnionViewProps> = ({
   };
 
   return (
-    <div className={styles.onionView}>
+    <div
+      className={`${styles.onionView} ${isFullscreen ? styles.fullscreen : ''}`}
+      ref={containerRef}
+    >
       {/* 导航条 */}
       <OnionNavigation
         currentLayer={currentLayer}
@@ -247,30 +281,6 @@ export const OnionView: React.FC<OnionViewProps> = ({
         onQuickJump={handleQuickJump}
         onBreadcrumbClick={handleBreadcrumbClick}
       />
-
-      {/* 层级指示器 */}
-      <div className={styles.layerIndicator}>
-        <div className={styles.layerInfo}>
-          <div
-            className={styles.layerIconWrapper}
-            style={{ '--layer-color': currentMeta.color } as React.CSSProperties}
-          >
-            {currentMeta.icon}
-          </div>
-          <div className={styles.layerMeta}>
-            <div
-              className={styles.layerName}
-              style={{ color: currentMeta.color }}
-            >
-              第 {currentLayer} 层: {currentMeta.name}
-            </div>
-            <div className={styles.layerQuestion}>{currentMeta.question}</div>
-          </div>
-        </div>
-
-        {/* 洋葱环可视化 */}
-        <OnionRings currentLayer={currentLayer} />
-      </div>
 
       {/* 内容区域 */}
       <div className={styles.content}>{renderContent()}</div>
@@ -289,6 +299,9 @@ export const OnionView: React.FC<OnionViewProps> = ({
           </span>
           <span>
             <kbd>Enter</kbd> 进入下一层
+          </span>
+          <span>
+            <kbd>F</kbd> 全屏
           </span>
         </div>
       </div>
