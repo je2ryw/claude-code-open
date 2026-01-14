@@ -235,13 +235,53 @@ export const blueprintApi = {
   },
 
   /**
-   * 启动执行（注意：后端没有这个接口，但需求中要求提供）
-   * 如果后端实现了相关接口，可以补充完整
+   * 启动蓝图执行
+   *
+   * 完整的执行流程：
+   * 1. 初始化蜂王 Agent（负责全局协调）
+   * 2. 更新蓝图状态为 executing
+   * 3. 启动主循环开始执行任务
    */
-  startExecution: async (id: string): Promise<any> => {
-    // 目前后端没有直接的执行接口
-    // 可能需要通过 Agent 协调器来启动
-    throw new Error('startExecution API not implemented yet');
+  startExecution: async (id: string): Promise<{
+    blueprint: Blueprint;
+    queen: { id: string; status: string; blueprintId: string; taskTreeId: string };
+    taskTreeId: string;
+    message: string;
+  }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/execute`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 暂停蓝图执行
+   */
+  pauseExecution: async (id: string): Promise<{ blueprint: Blueprint; message: string }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/pause`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 恢复蓝图执行
+   */
+  resumeExecution: async (id: string): Promise<{ blueprint: Blueprint; message: string }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/resume`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 完成蓝图执行
+   */
+  completeExecution: async (id: string): Promise<{ blueprint: Blueprint; message: string }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/complete`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
   },
 
   /**
@@ -381,6 +421,35 @@ export interface NodeAnalysis {
 }
 
 /**
+ * 符号分析结果
+ */
+export interface SymbolAnalysis {
+  symbolName: string;
+  symbolKind: string;
+  filePath: string;
+  lineNumber?: number;
+  detail?: string;
+  // AI 生成的语义分析
+  semanticDescription: string;
+  purpose: string;
+  parameters?: Array<{ name: string; type: string; description: string }>;
+  returnValue?: { type: string; description: string };
+  usageExample?: string;
+  relatedConcepts?: string[];
+  complexity?: 'low' | 'medium' | 'high';
+  tips?: string[];
+  // 调用链分析
+  internalCalls: {
+    calledBy: Array<{ line: number; caller: string }>;
+    calls: string[];
+  };
+  externalReferences: Array<{ file: string; imports: string[] }>;
+  // 元数据
+  analyzedAt: string;
+  fromCache?: boolean;
+}
+
+/**
  * 文件内容响应
  */
 export interface FileContent {
@@ -468,6 +537,95 @@ export const codebaseApi = {
     });
     return handleResponse(response);
   },
+
+  /**
+   * 分析代码符号（函数、类、方法等）
+   */
+  analyzeSymbol: async (params: {
+    filePath: string;
+    symbolName: string;
+    symbolKind: string;
+    lineNumber?: number;
+    detail?: string;
+  }): Promise<SymbolAnalysis> => {
+    const response = await fetch('/api/blueprint/analyze-symbol', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 生成AI气泡（为新手解释代码）
+   */
+  analyzeBubbles: async (params: {
+    filePath: string;
+    content: string;
+    language?: string;
+  }): Promise<{
+    bubbles: Array<{
+      line: number;
+      message: string;
+      type: 'info' | 'tip' | 'warning';
+    }>;
+    fromCache?: boolean;
+  }> => {
+    const response = await fetch('/api/blueprint/analyze-bubbles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * AI 分析代码复杂度热力图
+   */
+  analyzeHeatmap: async (params: {
+    filePath: string;
+    content: string;
+    language?: string;
+  }): Promise<{
+    heatmap: Array<{
+      line: number;
+      complexity: number;
+      reason: string;
+    }>;
+    fromCache?: boolean;
+  }> => {
+    const response = await fetch('/api/blueprint/analyze-heatmap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * AI 分析代码重构建议
+   */
+  analyzeRefactoring: async (params: {
+    filePath: string;
+    content: string;
+    language?: string;
+  }): Promise<{
+    suggestions: Array<{
+      line: number;
+      endLine: number;
+      type: 'extract' | 'simplify' | 'rename' | 'duplicate' | 'performance' | 'safety';
+      message: string;
+      priority: 'high' | 'medium' | 'low';
+    }>;
+    fromCache?: boolean;
+  }> => {
+    const response = await fetch('/api/blueprint/analyze-refactoring', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return handleResponse(response);
+  },
 };
 
 /**
@@ -509,6 +667,26 @@ export const coordinatorApi = {
    */
   stop: async (): Promise<void> => {
     const response = await fetch('/api/blueprint/coordinator/stop', {
+      method: 'POST',
+    });
+    await handleResponse(response);
+  },
+
+  /**
+   * 暂停主循环（与 stop 相同，但语义上表示暂停）
+   */
+  pause: async (): Promise<void> => {
+    const response = await fetch('/api/blueprint/coordinator/stop', {
+      method: 'POST',
+    });
+    await handleResponse(response);
+  },
+
+  /**
+   * 恢复主循环（与 start 相同，但语义上表示恢复）
+   */
+  resume: async (): Promise<void> => {
+    const response = await fetch('/api/blueprint/coordinator/start', {
       method: 'POST',
     });
     await handleResponse(response);
@@ -755,6 +933,189 @@ export const cacheApi = {
     const response = await fetch('/api/blueprint/cache/reset-stats', {
       method: 'POST',
     });
+    return handleResponse(response);
+  },
+};
+
+// ============================================================================
+// 项目管理 API
+// ============================================================================
+
+/**
+ * 最近打开的项目
+ */
+export interface RecentProject {
+  id: string;           // 唯一ID（路径hash）
+  path: string;         // 绝对路径
+  name: string;         // 项目名（目录名）
+  lastOpenedAt: string; // 最后打开时间
+}
+
+/**
+ * 项目管理 API 封装
+ */
+export const projectApi = {
+  /**
+   * 获取最近打开的项目列表
+   */
+  getRecentProjects: async (): Promise<RecentProject[]> => {
+    const response = await fetch('/api/blueprint/projects');
+    return handleResponse(response);
+  },
+
+  /**
+   * 打开项目（添加到最近列表）
+   */
+  openProject: async (projectPath: string): Promise<RecentProject> => {
+    const response = await fetch('/api/blueprint/projects/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: projectPath }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 从最近列表中移除项目
+   */
+  removeProject: async (projectId: string): Promise<void> => {
+    const response = await fetch(`/api/blueprint/projects/${projectId}`, {
+      method: 'DELETE',
+    });
+    await handleResponse(response);
+  },
+
+  /**
+   * 获取当前工作目录
+   */
+  getCurrentWorkingDirectory: async (): Promise<{ path: string; name: string }> => {
+    const response = await fetch('/api/blueprint/projects/cwd');
+    return handleResponse(response);
+  },
+
+  /**
+   * 浏览目录（用于目录选择器）
+   */
+  browseDirectory: async (parentPath?: string): Promise<{
+    current: string;
+    parent: string | null;
+    directories: Array<{ name: string; path: string }>;
+  }> => {
+    const url = parentPath
+      ? `/api/blueprint/projects/browse?path=${encodeURIComponent(parentPath)}`
+      : '/api/blueprint/projects/browse';
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 打开系统原生的文件夹选择对话框
+   * @returns 选择的路径，如果用户取消则返回 null
+   */
+  showFolderDialog: async (): Promise<string | null> => {
+    const response = await fetch('/api/blueprint/projects/browse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const result = await handleResponse<{ path: string | null; cancelled: boolean }>(response);
+    return result.cancelled ? null : result.path;
+  },
+};
+
+// ============================================================================
+// 文件操作 API
+// ============================================================================
+
+/**
+ * 文件操作结果
+ */
+export interface FileOperationResult {
+  success: boolean;
+  path: string;
+  message: string;
+}
+
+/**
+ * 文件操作 API 封装
+ */
+export const fileOperationApi = {
+  /**
+   * 创建文件
+   */
+  createFile: async (filePath: string, content: string = ''): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath, type: 'file', content }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 创建文件夹
+   */
+  createDirectory: async (dirPath: string): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: dirPath, type: 'directory' }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 删除文件或文件夹
+   */
+  delete: async (targetPath: string): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: targetPath }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 重命名文件或文件夹
+   */
+  rename: async (oldPath: string, newPath: string): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newPath }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 复制文件或文件夹
+   */
+  copy: async (sourcePath: string, destPath: string): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files/copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destPath }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 移动文件或文件夹
+   */
+  move: async (sourcePath: string, destPath: string): Promise<FileOperationResult> => {
+    const response = await fetch('/api/blueprint/files/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destPath }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 检查路径是否存在
+   */
+  exists: async (targetPath: string): Promise<{ exists: boolean; isFile: boolean; isDirectory: boolean }> => {
+    const response = await fetch(`/api/blueprint/files/exists?path=${encodeURIComponent(targetPath)}`);
     return handleResponse(response);
   },
 };

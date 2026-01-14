@@ -244,7 +244,332 @@ async function disablePlugin(pluginName: string): Promise<void> {
 }
 
 /**
+ * 从 package.json 中获取插件的远程源信息
+ * 支持的源格式：
+ * - npm: 包名称（如 "claude-code-plugin-xxx"）
+ * - git: git+https://github.com/xxx/yyy.git
+ * - url: https://example.com/plugin.tar.gz
+ */
+interface PluginSourceInfo {
+  type: 'npm' | 'git' | 'url' | 'local';
+  source: string;
+  currentVersion: string;
+}
+
+/**
+ * 解析插件源信息
+ */
+async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo | null> {
+  const fs = await import('fs');
+  const path = await import('path');
+
+  const packageJsonPath = path.join(pluginPath, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    return null;
+  }
+
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const currentVersion = packageJson.version || '0.0.0';
+
+    // 检查 package.json 中的 _source 字段（安装时记录的来源）
+    if (packageJson._source) {
+      const source = packageJson._source;
+      if (source.startsWith('git+') || source.includes('.git')) {
+        return { type: 'git', source, currentVersion };
+      } else if (source.startsWith('http://') || source.startsWith('https://')) {
+        return { type: 'url', source, currentVersion };
+      } else if (source.startsWith('npm:')) {
+        return { type: 'npm', source: source.slice(4), currentVersion };
+      } else {
+        // 假定为 npm 包名
+        return { type: 'npm', source, currentVersion };
+      }
+    }
+
+    // 检查 repository 字段
+    if (packageJson.repository) {
+      const repo = typeof packageJson.repository === 'string'
+        ? packageJson.repository
+        : packageJson.repository.url;
+      if (repo && (repo.startsWith('git+') || repo.includes('github.com'))) {
+        return { type: 'git', source: repo, currentVersion };
+      }
+    }
+
+    // 如果包名看起来是 npm 格式，则假定可以从 npm 更新
+    if (packageJson.name && !packageJson.name.startsWith('@local/')) {
+      return { type: 'npm', source: packageJson.name, currentVersion };
+    }
+
+    // 无法确定远程源，只能本地重载
+    return { type: 'local', source: pluginPath, currentVersion };
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * 从 npm 获取包的最新版本
+ */
+async function getNpmLatestVersion(packageName: string): Promise<string | null> {
+  const https = await import('https');
+
+  return new Promise((resolve) => {
+    // 使用 npm registry API 获取最新版本
+    const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`;
+
+    https.get(url, { timeout: 10000 }, (res) => {
+      if (res.statusCode !== 200) {
+        resolve(null);
+        return;
+      }
+
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.version || null);
+        } catch {
+          resolve(null);
+        }
+      });
+    }).on('error', () => {
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * 比较语义化版本号
+ * 返回: 1 表示 v1 > v2, -1 表示 v1 < v2, 0 表示相等
+ */
+function compareVersions(v1: string, v2: string): number {
+  const parse = (v: string) => {
+    const match = v.match(/^(\d+)\.(\d+)\.(\d+)/);
+    if (!match) return [0, 0, 0];
+    return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+  };
+
+  const [major1, minor1, patch1] = parse(v1);
+  const [major2, minor2, patch2] = parse(v2);
+
+  if (major1 !== major2) return major1 > major2 ? 1 : -1;
+  if (minor1 !== minor2) return minor1 > minor2 ? 1 : -1;
+  if (patch1 !== patch2) return patch1 > patch2 ? 1 : -1;
+  return 0;
+}
+
+/**
+ * 使用 npm 安装/更新插件
+ */
+async function installFromNpm(packageName: string, targetDir: string): Promise<boolean> {
+  const { execSync } = await import('child_process');
+  const fs = await import('fs');
+  const path = await import('path');
+  const os = await import('os');
+
+  try {
+    // 创建临时目录进行安装
+    const tempDir = path.join(os.tmpdir(), `claude-plugin-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    console.log(`  Downloading ${packageName} from npm...`);
+
+    // 使用 npm pack 下载包
+    execSync(`npm pack ${packageName}`, { cwd: tempDir, stdio: 'pipe' });
+
+    // 找到下载的 tgz 文件
+    const files = fs.readdirSync(tempDir);
+    const tgzFile = files.find(f => f.endsWith('.tgz'));
+
+    if (!tgzFile) {
+      console.error('  Failed to download package from npm');
+      return false;
+    }
+
+    console.log(`  Extracting package...`);
+
+    // 解压 tgz 文件
+    execSync(`tar -xzf "${tgzFile}"`, { cwd: tempDir, stdio: 'pipe' });
+
+    // npm pack 解压后的目录通常是 'package'
+    const extractedDir = path.join(tempDir, 'package');
+
+    if (!fs.existsSync(extractedDir)) {
+      console.error('  Failed to extract package');
+      return false;
+    }
+
+    // 删除旧的插件目录
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true });
+    }
+
+    // 复制新版本到目标目录
+    fs.cpSync(extractedDir, targetDir, { recursive: true });
+
+    // 记录安装源
+    const packageJsonPath = path.join(targetDir, 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      packageJson._source = `npm:${packageName}`;
+      packageJson._updatedAt = new Date().toISOString();
+      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+    }
+
+    // 清理临时目录
+    fs.rmSync(tempDir, { recursive: true });
+
+    return true;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`  npm install error: ${errorMsg}`);
+    return false;
+  }
+}
+
+/**
+ * 使用 git 更新插件
+ */
+async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean> {
+  const { execSync } = await import('child_process');
+  const fs = await import('fs');
+
+  try {
+    // 检查目标目录是否有 .git 目录
+    const gitDir = `${targetDir}/.git`;
+
+    if (fs.existsSync(gitDir)) {
+      // 如果是 git 仓库，执行 git pull
+      console.log(`  Pulling latest changes from git...`);
+      execSync('git pull', { cwd: targetDir, stdio: 'pipe' });
+    } else {
+      // 否则克隆仓库
+      console.log(`  Cloning from ${gitUrl}...`);
+
+      // 删除旧目录
+      if (fs.existsSync(targetDir)) {
+        fs.rmSync(targetDir, { recursive: true });
+      }
+
+      // 规范化 git URL
+      let cloneUrl = gitUrl;
+      if (cloneUrl.startsWith('git+')) {
+        cloneUrl = cloneUrl.slice(4);
+      }
+
+      execSync(`git clone "${cloneUrl}" "${targetDir}"`, { stdio: 'pipe' });
+    }
+
+    // 记录更新源
+    const packageJsonPath = `${targetDir}/package.json`;
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      packageJson._source = gitUrl;
+      packageJson._updatedAt = new Date().toISOString();
+      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+    }
+
+    return true;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`  git update error: ${errorMsg}`);
+    return false;
+  }
+}
+
+/**
+ * 从 URL 更新插件（下载 tar.gz 或 zip）
+ */
+async function updateFromUrl(url: string, targetDir: string): Promise<boolean> {
+  const https = await import('https');
+  const http = await import('http');
+  const fs = await import('fs');
+  const path = await import('path');
+  const os = await import('os');
+  const { execSync } = await import('child_process');
+
+  return new Promise((resolve) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const tempFile = path.join(os.tmpdir(), `claude-plugin-${Date.now()}.tar.gz`);
+
+    console.log(`  Downloading from ${url}...`);
+
+    const file = fs.createWriteStream(tempFile);
+
+    protocol.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        console.error(`  Download failed: HTTP ${res.statusCode}`);
+        resolve(false);
+        return;
+      }
+
+      res.pipe(file);
+
+      file.on('finish', () => {
+        file.close();
+
+        try {
+          console.log(`  Extracting package...`);
+
+          const tempExtract = path.join(os.tmpdir(), `claude-plugin-extract-${Date.now()}`);
+          fs.mkdirSync(tempExtract, { recursive: true });
+
+          // 解压文件
+          if (url.endsWith('.zip')) {
+            execSync(`unzip -q "${tempFile}" -d "${tempExtract}"`, { stdio: 'pipe' });
+          } else {
+            execSync(`tar -xzf "${tempFile}" -C "${tempExtract}"`, { stdio: 'pipe' });
+          }
+
+          // 找到解压后的主目录
+          const extractedItems = fs.readdirSync(tempExtract);
+          let sourceDir = tempExtract;
+          if (extractedItems.length === 1) {
+            const singleItem = path.join(tempExtract, extractedItems[0]);
+            if (fs.statSync(singleItem).isDirectory()) {
+              sourceDir = singleItem;
+            }
+          }
+
+          // 删除旧目录并复制新内容
+          if (fs.existsSync(targetDir)) {
+            fs.rmSync(targetDir, { recursive: true });
+          }
+          fs.cpSync(sourceDir, targetDir, { recursive: true });
+
+          // 记录更新源
+          const packageJsonPath = path.join(targetDir, 'package.json');
+          if (fs.existsSync(packageJsonPath)) {
+            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+            packageJson._source = url;
+            packageJson._updatedAt = new Date().toISOString();
+            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+          }
+
+          // 清理临时文件
+          fs.unlinkSync(tempFile);
+          fs.rmSync(tempExtract, { recursive: true });
+
+          resolve(true);
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`  Extraction error: ${errorMsg}`);
+          resolve(false);
+        }
+      });
+    }).on('error', (err) => {
+      console.error(`  Download error: ${err.message}`);
+      resolve(false);
+    });
+  });
+}
+
+/**
  * 更新插件
+ * 支持从 npm、git、URL 远程源更新，以及本地重载
  */
 async function updatePlugin(pluginName: string): Promise<void> {
   try {
@@ -263,15 +588,77 @@ async function updatePlugin(pluginName: string): Promise<void> {
       return;
     }
 
-    // TODO: 实现从远程源更新插件的逻辑
-    // 目前只能重新加载本地插件
-    const success = await pluginManager.reload(pluginName);
+    // 获取插件的远程源信息
+    const sourceInfo = await getPluginSourceInfo(state.path);
 
-    if (success) {
-      console.log(`✓ Plugin reloaded: ${pluginName}`);
-      console.log(`  Note: To update from remote source, please use 'claude plugin install <source>' to reinstall.`);
+    if (!sourceInfo) {
+      console.error(`✗ Cannot read plugin source information`);
+      process.exit(1);
+      return;
+    }
+
+    console.log(`  Current version: ${sourceInfo.currentVersion}`);
+    console.log(`  Source type: ${sourceInfo.type}`);
+
+    let updateSuccess = false;
+
+    switch (sourceInfo.type) {
+      case 'npm': {
+        // 从 npm 更新
+        console.log(`  Checking npm registry for updates...`);
+        const latestVersion = await getNpmLatestVersion(sourceInfo.source);
+
+        if (!latestVersion) {
+          console.log(`  Cannot fetch latest version from npm, falling back to reinstall...`);
+          updateSuccess = await installFromNpm(sourceInfo.source, state.path);
+        } else if (compareVersions(latestVersion, sourceInfo.currentVersion) > 0) {
+          console.log(`  New version available: ${latestVersion}`);
+          updateSuccess = await installFromNpm(sourceInfo.source, state.path);
+        } else {
+          console.log(`  Already at latest version (${sourceInfo.currentVersion})`);
+          // 仍然重载以应用任何本地更改
+          updateSuccess = await pluginManager.reload(pluginName);
+        }
+        break;
+      }
+
+      case 'git': {
+        // 从 git 更新
+        console.log(`  Updating from git repository...`);
+        updateSuccess = await updateFromGit(sourceInfo.source, state.path);
+        break;
+      }
+
+      case 'url': {
+        // 从 URL 更新
+        console.log(`  Updating from remote URL...`);
+        updateSuccess = await updateFromUrl(sourceInfo.source, state.path);
+        break;
+      }
+
+      case 'local':
+      default: {
+        // 本地插件只能重载
+        console.log(`  Local plugin detected, performing reload...`);
+        updateSuccess = await pluginManager.reload(pluginName);
+        break;
+      }
+    }
+
+    if (updateSuccess) {
+      // 重新加载插件到内存
+      if (sourceInfo.type !== 'local') {
+        await pluginManager.reload(pluginName);
+      }
+
+      // 获取更新后的版本信息
+      const updatedState = pluginManager.getPluginState(pluginName);
+      const newVersion = updatedState?.metadata.version || 'unknown';
+
+      console.log(`✓ Successfully updated plugin: ${pluginName}`);
+      console.log(`  New version: ${newVersion}`);
     } else {
-      console.error(`✗ Failed to reload plugin: ${pluginName}`);
+      console.error(`✗ Failed to update plugin: ${pluginName}`);
       process.exit(1);
     }
   } catch (err) {

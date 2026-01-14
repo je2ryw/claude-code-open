@@ -333,10 +333,26 @@ export class UnifiedMemory implements IUnifiedMemory {
       ...links.map((l) => new Date(l.timestamp).getTime()),
     ];
 
+    // 计算实际存储大小（字节）
+    // 通过将所有数据序列化为 JSON 字符串来估算存储大小
+    const conversationsJson = JSON.stringify(conversations);
+    const linksJson = JSON.stringify(links);
+    const coreMemoriesJson = JSON.stringify(this.chatMemory.getCoreMemories());
+    const userProfileJson = JSON.stringify(this.identityMemory.getUserProfile());
+    const selfAwarenessJson = JSON.stringify(this.identityMemory.getSelfAwareness());
+
+    // 使用 Buffer.byteLength 计算 UTF-8 编码后的实际字节数
+    const memorySize =
+      Buffer.byteLength(conversationsJson, 'utf-8') +
+      Buffer.byteLength(linksJson, 'utf-8') +
+      Buffer.byteLength(coreMemoriesJson, 'utf-8') +
+      Buffer.byteLength(userProfileJson, 'utf-8') +
+      Buffer.byteLength(selfAwarenessJson, 'utf-8');
+
     return {
       totalConversations: conversations.length,
       totalLinks: links.length,
-      memorySize: 0, // TODO: 计算实际存储大小
+      memorySize, // 返回实际存储大小（字节）
       oldestMemory: allTimes.length > 0 ? new Date(Math.min(...allTimes)).toISOString() : '',
       newestMemory: allTimes.length > 0 ? new Date(Math.max(...allTimes)).toISOString() : '',
     };

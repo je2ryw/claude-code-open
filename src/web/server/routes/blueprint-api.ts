@@ -12,6 +12,9 @@
 import { Router, Request, Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
+import * as os from 'os';
+import { spawn } from 'child_process';
 import {
   blueprintManager,
   taskTreeManager,
@@ -162,6 +165,118 @@ router.post('/blueprints/:id/reject', (req: Request, res: Response) => {
     const { reason } = req.body;
     const blueprint = blueprintManager.rejectBlueprint(req.params.id, reason);
     res.json({ success: true, data: blueprint });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 启动蓝图执行
+ *
+ * 完整的执行流程：
+ * 1. 初始化蜂王 Agent（负责全局协调）
+ * 2. 更新蓝图状态为 executing
+ * 3. 启动主循环开始执行任务
+ */
+router.post('/blueprints/:id/execute', async (req: Request, res: Response) => {
+  try {
+    const blueprintId = req.params.id;
+
+    // 1. 获取蓝图并验证状态
+    const blueprint = blueprintManager.getBlueprint(blueprintId);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: '蓝图不存在' });
+    }
+
+    if (blueprint.status !== 'approved') {
+      return res.status(400).json({
+        success: false,
+        error: `无法执行状态为 "${blueprint.status}" 的蓝图。蓝图必须先获得批准。`,
+      });
+    }
+
+    // 2. 初始化蜂王 Agent
+    const queen = await agentCoordinator.initializeQueen(blueprintId);
+
+    // 3. 获取或创建任务树
+    let taskTreeId = blueprint.taskTreeId;
+    if (!taskTreeId) {
+      // 如果没有任务树，从蓝图生成一个
+      const taskTree = taskTreeManager.generateFromBlueprint(blueprint);
+      taskTreeId = taskTree.id;
+    }
+
+    // 4. 更新蓝图状态为 executing
+    const updatedBlueprint = blueprintManager.startExecution(blueprintId, taskTreeId);
+
+    // 5. 启动主循环
+    agentCoordinator.startMainLoop();
+
+    res.json({
+      success: true,
+      data: {
+        blueprint: updatedBlueprint,
+        queen: {
+          id: queen.id,
+          status: queen.status,
+          blueprintId: queen.blueprintId,
+          taskTreeId: queen.taskTreeId,
+        },
+        taskTreeId,
+        message: '蓝图执行已启动',
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 暂停蓝图执行
+ */
+router.post('/blueprints/:id/pause', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.pauseExecution(req.params.id);
+    agentCoordinator.stopMainLoop();
+    res.json({
+      success: true,
+      data: blueprint,
+      message: '蓝图执行已暂停',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 恢复蓝图执行
+ */
+router.post('/blueprints/:id/resume', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.resumeExecution(req.params.id);
+    agentCoordinator.startMainLoop();
+    res.json({
+      success: true,
+      data: blueprint,
+      message: '蓝图执行已恢复',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 停止蓝图执行（完成）
+ */
+router.post('/blueprints/:id/complete', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.completeExecution(req.params.id);
+    agentCoordinator.stopMainLoop();
+    res.json({
+      success: true,
+      data: blueprint,
+      message: '蓝图执行已完成',
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -629,11 +744,30 @@ router.put('/file-content', (req: Request, res: Response) => {
 
 /**
  * 获取目录树结构
+ *
+ * 支持两种模式：
+ * 1. 相对路径模式：root=src（相对于当前工作目录）
+ * 2. 绝对路径模式：root=C:\Users\xxx\project 或 root=/home/user/project
+ *
+ * 安全检查：
+ * - 禁止访问系统目录（Windows: C:\Windows, C:\Program Files 等；Unix: /bin, /etc 等）
+ * - 禁止访问根目录
  */
 router.get('/file-tree', (req: Request, res: Response) => {
   try {
     const root = (req.query.root as string) || 'src';
-    const absoluteRoot = path.resolve(process.cwd(), root);
+
+    // 判断是否是绝对路径
+    const isAbsolutePath = path.isAbsolute(root);
+    const absoluteRoot = isAbsolutePath ? root : path.resolve(process.cwd(), root);
+
+    // 安全检查：使用 isPathSafeForFileTree 函数检查路径
+    if (!isPathSafeForFileTree(absoluteRoot)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止访问系统目录或根目录',
+      });
+    }
 
     // 检查目录是否存在
     if (!fs.existsSync(absoluteRoot)) {
@@ -643,15 +777,28 @@ router.get('/file-tree', (req: Request, res: Response) => {
       });
     }
 
+    // 检查是否是目录
+    if (!fs.statSync(absoluteRoot).isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: `路径不是目录: ${root}`,
+      });
+    }
+
     // 递归构建文件树
+    // 对于绝对路径，使用绝对路径作为 path 属性
+    // 对于相对路径，使用相对路径作为 path 属性
     const buildTree = (dirPath: string, relativePath: string): FileTreeNode => {
       const name = path.basename(dirPath);
       const stats = fs.statSync(dirPath);
 
+      // 计算返回的路径：如果是绝对路径模式，返回绝对路径；否则返回相对路径
+      const returnPath = isAbsolutePath ? dirPath : relativePath;
+
       if (stats.isFile()) {
         return {
           name,
-          path: relativePath,
+          path: returnPath,
           type: 'file',
         };
       }
@@ -684,7 +831,7 @@ router.get('/file-tree', (req: Request, res: Response) => {
 
       return {
         name,
-        path: relativePath || name,
+        path: returnPath || name,
         type: 'directory',
         children,
       };
@@ -695,12 +842,75 @@ router.get('/file-tree', (req: Request, res: Response) => {
     res.json({
       success: true,
       data: tree,
+      // 返回额外信息，方便前端判断
+      meta: {
+        isAbsolutePath,
+        absoluteRoot,
+        projectName: path.basename(absoluteRoot),
+      },
     });
   } catch (error: any) {
     console.error('[File Tree Error]', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * 检查路径是否安全（用于 file-tree API）
+ * 这个函数与 isPathSafe 类似，但针对 file-tree 场景做了优化
+ */
+function isPathSafeForFileTree(targetPath: string): boolean {
+  const normalizedPath = path.normalize(targetPath).toLowerCase();
+  const homeDir = os.homedir().toLowerCase();
+
+  // Windows 系统目录黑名单
+  const windowsUnsafePaths = [
+    'c:\\windows',
+    'c:\\program files',
+    'c:\\program files (x86)',
+    'c:\\programdata',
+    'c:\\$recycle.bin',
+    'c:\\system volume information',
+    'c:\\recovery',
+    'c:\\boot',
+  ];
+
+  // Unix 系统目录黑名单
+  const unixUnsafePaths = [
+    '/bin',
+    '/sbin',
+    '/usr/bin',
+    '/usr/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/etc',
+    '/var',
+    '/root',
+    '/boot',
+    '/lib',
+    '/lib64',
+    '/proc',
+    '/sys',
+    '/dev',
+    '/run',
+  ];
+
+  // 检查是否是系统目录
+  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
+
+  for (const unsafePath of unsafePaths) {
+    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
+      return false;
+    }
+  }
+
+  // 不允许访问根目录
+  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
+    return false;
+  }
+
+  return true;
+}
 
 /**
  * 获取模块内部文件列表
@@ -3870,6 +4080,14 @@ import {
   analyzeKeyProcesses,
   analyzeImplementation,
   generateAIAnnotation,
+  // 带缓存状态的分析函数
+  analyzeProjectIntentWithCache,
+  analyzeBusinessDomainsWithCache,
+  analyzeKeyProcessesWithCache,
+  analyzeImplementationWithCache,
+  // 标注更新函数
+  updateAnnotation,
+  getUserAnnotation,
 } from './onion-analyzer.js';
 import { OnionLayer } from '../../shared/onion-types.js';
 
@@ -3925,29 +4143,43 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
 
     console.log(`[Onion API] 请求层级 ${layer}，nodeId: ${nodeId || context?.nodeId || '无'}`);
 
+    // 使用带缓存状态的分析函数，追踪数据是否来自缓存
+    let fromCache = false;
 
     switch (layer) {
-      case OnionLayer.PROJECT_INTENT:
-        data = await analyzeProjectIntent(projectRoot);
+      case OnionLayer.PROJECT_INTENT: {
+        const result = await analyzeProjectIntentWithCache(projectRoot);
+        data = result.data;
+        fromCache = result.fromCache;
         break;
+      }
 
-      case OnionLayer.BUSINESS_DOMAIN:
-        data = await analyzeBusinessDomains(projectRoot);
+      case OnionLayer.BUSINESS_DOMAIN: {
+        const result = await analyzeBusinessDomainsWithCache(projectRoot);
+        data = result.data;
+        fromCache = result.fromCache;
         break;
+      }
 
-      case OnionLayer.KEY_PROCESS:
-        data = await analyzeKeyProcesses(projectRoot, context?.nodeId, forceRefresh);
+      case OnionLayer.KEY_PROCESS: {
+        const result = await analyzeKeyProcessesWithCache(projectRoot, context?.nodeId, forceRefresh);
+        data = result.data;
+        fromCache = result.fromCache;
         break;
+      }
 
-      case OnionLayer.IMPLEMENTATION:
+      case OnionLayer.IMPLEMENTATION: {
         if (!filePath) {
           return res.status(400).json({
             success: false,
             error: '第四层需要提供 filePath 参数',
           });
         }
-        data = await analyzeImplementation(projectRoot, filePath, symbolId);
+        const result = await analyzeImplementationWithCache(projectRoot, filePath, symbolId);
+        data = result.data;
+        fromCache = result.fromCache;
         break;
+      }
     }
 
     // 如果启用 AI 分析，且 annotation.keyPoints 包含占位符，则触发 AI 分析
@@ -3997,7 +4229,7 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
       layer,
       data,
       analysisTime,
-      fromCache: false, // TODO: 从分析器返回缓存状态
+      fromCache, // 从分析器返回的缓存状态
     });
   } catch (error: any) {
     console.error('[Onion API] 层级数据获取错误:', error);
@@ -4096,19 +4328,2043 @@ router.put('/onion/annotation/:annotationId', async (req: Request, res: Response
     const { annotationId } = req.params;
     const { summary, description, keyPoints } = req.body;
 
-    // TODO: 实现标注更新和持久化
-    // 目前返回模拟成功
+    // 参数校验
+    if (!annotationId) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 annotationId 参数',
+      });
+    }
+
+    // 至少需要一个更新字段
+    if (summary === undefined && description === undefined && keyPoints === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: '请提供至少一个要更新的字段（summary, description, keyPoints）',
+      });
+    }
+
+    // 校验 keyPoints 格式
+    if (keyPoints !== undefined && !Array.isArray(keyPoints)) {
+      return res.status(400).json({
+        success: false,
+        error: 'keyPoints 必须是字符串数组',
+      });
+    }
+
+    // 调用 updateAnnotation 更新标注并持久化到 ~/.claude/annotations.json
+    const updatedAnnotation = updateAnnotation(annotationId, {
+      summary,
+      description,
+      keyPoints,
+    });
+
+    if (!updatedAnnotation) {
+      return res.status(404).json({
+        success: false,
+        error: `未找到标注: ${annotationId}`,
+      });
+    }
+
+    console.log(`[Onion API] 标注更新成功: ${annotationId}`);
 
     res.json({
       success: true,
-      message: '标注已更新',
+      message: '标注已更新并持久化',
       annotationId,
+      annotation: updatedAnnotation,
     });
   } catch (error: any) {
     console.error('[Onion API] 标注更新错误:', error);
     res.status(500).json({
       success: false,
       error: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// 符号语义分析 API
+// ============================================================================
+
+/**
+ * 符号分析缓存
+ * key: filePath:symbolName:line
+ * 基于文件修改时间判断缓存是否有效
+ */
+const symbolAnalysisCache = new Map<string, {
+  data: any;
+  fileMtime: number; // 文件修改时间
+}>();
+
+/**
+ * 分析代码符号（函数、类、方法等）
+ * 返回语义描述、调用链、参数说明等信息
+ */
+router.post('/analyze-symbol', async (req: Request, res: Response) => {
+  try {
+    const { filePath, symbolName, symbolKind, lineNumber, detail } = req.body;
+
+    if (!filePath || !symbolName) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数: filePath, symbolName',
+      });
+    }
+
+    const absolutePath = path.resolve(process.cwd(), filePath);
+
+    // 检查文件是否存在
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `文件不存在: ${filePath}`,
+      });
+    }
+
+    // 获取文件修改时间
+    const stats = fs.statSync(absolutePath);
+    const currentMtime = stats.mtimeMs;
+
+    // 检查缓存（基于文件修改时间）
+    const cacheKey = `${filePath}:${symbolName}:${lineNumber || 0}`;
+    const cached = symbolAnalysisCache.get(cacheKey);
+    if (cached && cached.fileMtime === currentMtime) {
+      console.log(`[Analyze Symbol] 使用缓存 (文件未变化): ${symbolName} @ ${filePath}`);
+      return res.json({
+        success: true,
+        data: { ...cached.data, fromCache: true },
+      });
+    }
+
+    // 如果文件已修改，清除旧缓存
+    if (cached) {
+      console.log(`[Analyze Symbol] 文件已修改，清除旧缓存: ${symbolName} @ ${filePath}`);
+    }
+
+    const totalStart = Date.now();
+    console.log(`[Analyze Symbol] 开始分析符号: ${symbolName} (${symbolKind}) @ ${filePath}:${lineNumber}`);
+
+    // 读取文件内容
+    let t1 = Date.now();
+    const fileContent = fs.readFileSync(absolutePath, 'utf-8');
+    const lines = fileContent.split('\n');
+    console.log(`[Analyze Symbol] 读取文件耗时: ${Date.now() - t1}ms`);
+
+    // 提取符号上下文（符号定义前后的代码，减少上下文加速 AI 分析）
+    const targetLine = lineNumber ? lineNumber - 1 : 0;
+    const contextStart = Math.max(0, targetLine - 3);
+    const contextEnd = Math.min(lines.length, targetLine + 50); // 从 50 减到 20 行
+    const symbolContext = lines.slice(contextStart, contextEnd).join('\n');
+
+    // 分析文件内调用关系
+    t1 = Date.now();
+    const internalCalls = analyzeInternalCalls(fileContent, symbolName, symbolKind);
+    console.log(`[Analyze Symbol] analyzeInternalCalls 耗时: ${Date.now() - t1}ms`);
+
+    // 分析跨文件调用关系
+    t1 = Date.now();
+    const externalReferences = analyzeExternalReferences(filePath, symbolName);
+    console.log(`[Analyze Symbol] analyzeExternalReferences 耗时: ${Date.now() - t1}ms, 找到 ${externalReferences.length} 个引用`);
+
+    // 获取 AI 客户端 - 使用 Haiku 模型加速简单分析
+    const { createClientWithModel } = await import('../../../core/client.js');
+    const client = createClientWithModel('haiku');
+
+    // 构建分析提示
+    const prompt = `请分析以下代码符号并生成语义分析报告。
+
+## 符号信息
+- 名称: ${symbolName}
+- 类型: ${symbolKind}
+- 文件: ${filePath}
+- 行号: ${lineNumber || '未知'}
+${detail ? `- 类型签名: ${detail}` : ''}
+
+## 符号代码上下文
+\`\`\`
+${symbolContext}
+\`\`\`
+
+## 文件内调用关系
+- 被调用位置: ${internalCalls.calledBy.length > 0 ? internalCalls.calledBy.map(c => `第${c.line}行 ${c.caller}`).join(', ') : '无'}
+- 调用的符号: ${internalCalls.calls.length > 0 ? internalCalls.calls.join(', ') : '无'}
+
+## 跨文件引用
+${externalReferences.length > 0 ? externalReferences.map(r => `- ${r.file}: ${r.imports.join(', ')}`).join('\n') : '无外部引用'}
+
+请返回以下 JSON 格式的分析结果（只返回 JSON，不要其他内容）：
+{
+  "semanticDescription": "这个${symbolKind === 'function' || symbolKind === 'method' ? '函数/方法' : symbolKind === 'class' ? '类' : '符号'}的核心功能是什么，用通俗易懂的语言描述，让新手也能理解",
+  "purpose": "这个符号存在的目的和解决的问题",
+  "parameters": [{"name": "参数名", "type": "类型", "description": "参数作用说明"}],
+  "returnValue": {"type": "返回类型", "description": "返回值说明"},
+  "usageExample": "一个简短的使用示例代码",
+  "relatedConcepts": ["相关的编程概念或设计模式"],
+  "complexity": "low|medium|high",
+  "tips": ["给新手的使用提示"]
+}`;
+
+    // 调用 AI 分析
+    t1 = Date.now();
+    console.log(`[Analyze Symbol] 开始调用 AI...`);
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码教育专家，擅长用通俗易懂的语言解释复杂的代码。分析代码符号并返回结构化的 JSON 结果。只返回 JSON，不要其他内容。'
+    );
+    console.log(`[Analyze Symbol] AI 调用耗时: ${Date.now() - t1}ms`);
+    console.log(`[Analyze Symbol] AI 输入: ${prompt}`);
+    // 提取响应文本
+    let analysisText = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        analysisText += block.text;
+      }
+    }
+
+    // 解析 JSON
+    let analysis: Record<string, any>;
+    try {
+      analysis = JSON.parse(analysisText.trim());
+    } catch {
+      const jsonMatch = analysisText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[1]);
+      } else {
+        const bareJsonMatch = analysisText.match(/\{[\s\S]*\}/);
+        if (bareJsonMatch) {
+          analysis = JSON.parse(bareJsonMatch[0]);
+        } else {
+          throw new Error(`无法解析 AI 返回的 JSON`);
+        }
+      }
+    }
+
+    // 组装完整结果
+    const result = {
+      symbolName,
+      symbolKind,
+      filePath,
+      lineNumber,
+      detail,
+      ...analysis,
+      internalCalls,
+      externalReferences,
+      analyzedAt: new Date().toISOString(),
+    };
+
+    // 保存到缓存
+    symbolAnalysisCache.set(cacheKey, {
+      data: result,
+      fileMtime: currentMtime, // 使用文件修改时间作为缓存依据
+    });
+
+    console.log(`[Analyze Symbol] 分析完成: ${symbolName}, 总耗时: ${Date.now() - totalStart}ms`);
+
+    res.json({
+      success: true,
+      data: { ...result, fromCache: false },
+    });
+  } catch (error: any) {
+    console.error('[Analyze Symbol Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 分析文件内调用关系
+ */
+function analyzeInternalCalls(fileContent: string, symbolName: string, symbolKind: string): {
+  calledBy: Array<{ line: number; caller: string }>;
+  calls: string[];
+} {
+  const lines = fileContent.split('\n');
+  const calledBy: Array<{ line: number; caller: string }> = [];
+  const calls: string[] = [];
+
+  // 简单的正则匹配来找调用关系
+  const callPattern = new RegExp(`\\b${symbolName}\\s*\\(`, 'g');
+
+  // 找到当前符号被调用的位置
+  let currentFunction = '';
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 检测函数/方法定义（简化版）
+    const funcMatch = line.match(/(?:function|const|let|var)\s+(\w+)|(\w+)\s*[=:]\s*(?:async\s*)?\(|(\w+)\s*\(/);
+    if (funcMatch) {
+      currentFunction = funcMatch[1] || funcMatch[2] || funcMatch[3] || '';
+    }
+
+    // 检测对目标符号的调用
+    if (callPattern.test(line) && currentFunction !== symbolName) {
+      calledBy.push({ line: i + 1, caller: currentFunction || '顶层代码' });
+    }
+    callPattern.lastIndex = 0; // 重置正则
+  }
+
+  // 如果是函数/方法，分析它调用了哪些其他符号
+  if (symbolKind === 'function' || symbolKind === 'method') {
+    // 简单提取函数体中的调用
+    const funcCallPattern = /(\w+)\s*\(/g;
+    let match;
+    while ((match = funcCallPattern.exec(fileContent)) !== null) {
+      const calledFunc = match[1];
+      // 排除常见的关键字和自身
+      if (!['if', 'for', 'while', 'switch', 'catch', 'function', 'return', symbolName].includes(calledFunc)) {
+        if (!calls.includes(calledFunc)) {
+          calls.push(calledFunc);
+        }
+      }
+    }
+  }
+
+  return { calledBy: calledBy.slice(0, 10), calls: calls.slice(0, 10) };
+}
+
+/**
+ * 分析跨文件引用
+ */
+function analyzeExternalReferences(filePath: string, symbolName: string): Array<{ file: string; imports: string[] }> {
+  const references: Array<{ file: string; imports: string[] }> = [];
+
+  try {
+    // 获取 src 目录下的所有 ts/tsx/js/jsx 文件
+    const srcDir = path.resolve(process.cwd(), 'src');
+    if (!fs.existsSync(srcDir)) {
+      return references;
+    }
+
+    const walkDir = (dir: string, files: string[] = []): string[] => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkDir(fullPath, files);
+        } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+          files.push(fullPath);
+        }
+      }
+      return files;
+    };
+
+    const files = walkDir(srcDir).slice(0, 200); // 限制扫描文件数量
+    const targetFileName = path.basename(filePath, path.extname(filePath));
+
+    for (const file of files) {
+      if (file === path.resolve(process.cwd(), filePath)) continue;
+
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+
+        // 检查是否 import 了目标文件
+        const importPattern = new RegExp(`import\\s+.*from\\s+['"]\\..*${targetFileName}['"]`, 'g');
+        if (importPattern.test(content)) {
+          // 检查是否使用了目标符号
+          const usePattern = new RegExp(`\\b${symbolName}\\b`, 'g');
+          if (usePattern.test(content)) {
+            const relativePath = path.relative(process.cwd(), file);
+            references.push({
+              file: relativePath,
+              imports: [symbolName],
+            });
+          }
+        }
+      } catch {
+        // 忽略读取错误
+      }
+    }
+  } catch (error) {
+    console.error('[Analyze External References]', error);
+  }
+
+  return references.slice(0, 5); // 最多返回 5 个引用
+}
+
+// ============================================================================
+// 项目管理 API
+// ============================================================================
+
+/**
+ * 最近打开的项目接口
+ */
+interface RecentProject {
+  id: string;           // 唯一ID（用路径hash）
+  path: string;         // 绝对路径
+  name: string;         // 项目名（目录名）
+  lastOpenedAt: string; // 最后打开时间
+}
+
+/**
+ * 获取 Claude 配置目录路径
+ * 支持 Windows 和 Unix 系统
+ */
+function getClaudeConfigDir(): string {
+  const homeDir = os.homedir();
+  return path.join(homeDir, '.claude');
+}
+
+/**
+ * 获取最近项目列表的存储路径
+ */
+function getRecentProjectsPath(): string {
+  return path.join(getClaudeConfigDir(), 'recent-projects.json');
+}
+
+/**
+ * 生成路径的唯一 ID（使用 MD5 hash）
+ */
+function generateProjectId(projectPath: string): string {
+  const normalizedPath = path.normalize(projectPath).toLowerCase();
+  return crypto.createHash('md5').update(normalizedPath).digest('hex').substring(0, 12);
+}
+
+/**
+ * 读取最近打开的项目列表
+ */
+function loadRecentProjects(): RecentProject[] {
+  try {
+    const filePath = getRecentProjectsPath();
+    if (!fs.existsSync(filePath)) {
+      return [];
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(content) as RecentProject[];
+  } catch (error) {
+    console.error('[Recent Projects] 读取失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 保存最近打开的项目列表
+ */
+function saveRecentProjects(projects: RecentProject[]): void {
+  try {
+    const configDir = getClaudeConfigDir();
+    // 确保配置目录存在
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    const filePath = getRecentProjectsPath();
+    fs.writeFileSync(filePath, JSON.stringify(projects, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('[Recent Projects] 保存失败:', error);
+    throw error;
+  }
+}
+
+/**
+ * GET /api/blueprint/projects
+ * 获取最近打开的项目列表
+ */
+router.get('/projects', (req: Request, res: Response) => {
+  try {
+    const projects = loadRecentProjects();
+    // 按最后打开时间倒序排列
+    projects.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
+    res.json({
+      success: true,
+      data: projects,
+      total: projects.length,
+    });
+  } catch (error: any) {
+    console.error('[GET /projects]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/blueprint/projects/open
+ * 打开项目（添加到最近项目列表）
+ */
+router.post('/projects/open', (req: Request, res: Response) => {
+  try {
+    const { path: projectPath } = req.body;
+
+    if (!projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    // 验证路径是绝对路径
+    if (!path.isAbsolute(projectPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '必须提供绝对路径',
+      });
+    }
+
+    // 检查路径是否存在
+    if (!fs.existsSync(projectPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `路径不存在: ${projectPath}`,
+      });
+    }
+
+    // 检查是否是目录
+    if (!fs.statSync(projectPath).isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: '路径必须是目录',
+      });
+    }
+
+    // 安全检查：禁止打开系统目录
+    if (!isPathSafe(projectPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止访问系统目录',
+      });
+    }
+
+    const projects = loadRecentProjects();
+    const projectId = generateProjectId(projectPath);
+
+    // 检查是否已存在
+    const existingIndex = projects.findIndex(p => p.id === projectId);
+    const newProject: RecentProject = {
+      id: projectId,
+      path: projectPath,
+      name: path.basename(projectPath),
+      lastOpenedAt: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      // 更新现有项目的最后打开时间
+      projects[existingIndex] = newProject;
+    } else {
+      // 添加新项目到列表开头
+      projects.unshift(newProject);
+      // 限制最多保存 50 个最近项目
+      if (projects.length > 50) {
+        projects.pop();
+      }
+    }
+
+    saveRecentProjects(projects);
+
+    res.json({
+      success: true,
+      data: newProject,
+    });
+  } catch (error: any) {
+    console.error('[POST /projects/open]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/blueprint/projects/browse
+ * 打开系统原生的文件夹选择对话框
+ */
+router.post('/projects/browse', async (req: Request, res: Response) => {
+  try {
+    const platform = os.platform();
+    let cmd: string;
+    let args: string[];
+
+    if (platform === 'win32') {
+      // Windows: 使用 PowerShell 打开文件夹选择对话框
+      const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "选择项目文件夹"
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.SelectedPath
+}
+`;
+      cmd = 'powershell';
+      args = ['-NoProfile', '-NonInteractive', '-Command', psScript];
+    } else if (platform === 'darwin') {
+      // macOS: 使用 osascript 打开文件夹选择对话框
+      cmd = 'osascript';
+      args = ['-e', 'POSIX path of (choose folder with prompt "选择项目文件夹")'];
+    } else {
+      // Linux: 使用 zenity
+      cmd = 'zenity';
+      args = ['--file-selection', '--directory', '--title=选择项目文件夹'];
+    }
+
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      // 用户取消选择（code 1 或空输出）
+      if (code === 1 || !stdout.trim()) {
+        return res.json({
+          success: true,
+          data: { path: null, cancelled: true },
+        });
+      }
+
+      if (code !== 0) {
+        console.error('[POST /projects/browse] process error:', stderr);
+        return res.status(500).json({
+          success: false,
+          error: '无法打开文件夹选择对话框',
+        });
+      }
+
+      const selectedPath = stdout.trim();
+
+      // 验证路径是否存在且是目录
+      if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isDirectory()) {
+        return res.status(400).json({
+          success: false,
+          error: '选择的路径无效',
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { path: selectedPath, cancelled: false },
+      });
+    });
+
+    child.on('error', (error) => {
+      console.error('[POST /projects/browse] spawn error:', error);
+      res.status(500).json({
+        success: false,
+        error: '无法启动文件夹选择对话框',
+      });
+    });
+  } catch (error: any) {
+    console.error('[POST /projects/browse]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/blueprint/projects/:id
+ * 从最近项目列表中移除
+ */
+router.delete('/projects/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const projects = loadRecentProjects();
+    const index = projects.findIndex(p => p.id === id);
+
+    if (index < 0) {
+      return res.status(404).json({
+        success: false,
+        error: '项目不存在',
+      });
+    }
+
+    const removedProject = projects.splice(index, 1)[0];
+    saveRecentProjects(projects);
+
+    res.json({
+      success: true,
+      message: `项目 "${removedProject.name}" 已从列表中移除`,
+      data: removedProject,
+    });
+  } catch (error: any) {
+    console.error('[DELETE /projects/:id]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/blueprint/projects/current
+ * 获取当前工作目录的项目信息
+ */
+router.get('/projects/current', (req: Request, res: Response) => {
+  try {
+    const currentPath = process.cwd();
+    const projects = loadRecentProjects();
+    const currentProject = projects.find(p => p.path === currentPath);
+
+    if (currentProject) {
+      res.json({ success: true, data: currentProject });
+    } else {
+      // 如果不在列表中，创建一个临时项目信息
+      const projectId = generateProjectId(currentPath);
+      res.json({
+        success: true,
+        data: {
+          id: projectId,
+          name: path.basename(currentPath),
+          path: currentPath,
+          lastOpenedAt: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error('[GET /projects/current]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/blueprint/projects/cwd
+ * 获取当前工作目录（/projects/current 的别名）
+ */
+router.get('/projects/cwd', (req: Request, res: Response) => {
+  try {
+    const currentPath = process.cwd();
+    res.json({
+      success: true,
+      data: {
+        path: currentPath,
+        name: path.basename(currentPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[GET /projects/cwd]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 安全检查函数
+// ============================================================================
+
+/**
+ * 检查路径是否安全（不是系统目录）
+ * 返回 true 表示安全，可以访问
+ */
+function isPathSafe(targetPath: string): boolean {
+  const normalizedPath = path.normalize(targetPath).toLowerCase();
+  const homeDir = os.homedir().toLowerCase();
+
+  // Windows 系统目录黑名单
+  const windowsUnsafePaths = [
+    'c:\\windows',
+    'c:\\program files',
+    'c:\\program files (x86)',
+    'c:\\programdata',
+    'c:\\$recycle.bin',
+    'c:\\system volume information',
+    'c:\\recovery',
+    'c:\\boot',
+  ];
+
+  // Unix 系统目录黑名单
+  const unixUnsafePaths = [
+    '/bin',
+    '/sbin',
+    '/usr/bin',
+    '/usr/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/etc',
+    '/var',
+    '/root',
+    '/boot',
+    '/lib',
+    '/lib64',
+    '/proc',
+    '/sys',
+    '/dev',
+    '/run',
+  ];
+
+  // 检查是否是系统目录
+  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
+
+  for (const unsafePath of unsafePaths) {
+    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
+      return false;
+    }
+  }
+
+  // 不允许访问根目录
+  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
+    return false;
+  }
+
+  // 允许访问用户主目录及其子目录
+  if (normalizedPath.startsWith(homeDir)) {
+    return true;
+  }
+
+  // 允许访问其他非系统目录（如 D:\projects, E:\work 等）
+  return true;
+}
+
+/**
+ * 检查路径是否在允许的项目范围内
+ * 用于文件操作的额外安全检查
+ */
+function isPathWithinProject(targetPath: string, projectRoot: string): boolean {
+  const normalizedTarget = path.normalize(path.resolve(targetPath));
+  const normalizedRoot = path.normalize(path.resolve(projectRoot));
+
+  // 目标路径必须在项目根目录下
+  return normalizedTarget.startsWith(normalizedRoot + path.sep) || normalizedTarget === normalizedRoot;
+}
+
+// ============================================================================
+// 文件操作 API
+// ============================================================================
+
+/**
+ * POST /api/blueprint/files/create
+ * 创建文件或文件夹
+ */
+router.post('/files/create', (req: Request, res: Response) => {
+  try {
+    const { path: filePath, type, content } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    if (!type || !['file', 'directory'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: 'type 参数必须是 "file" 或 "directory"',
+      });
+    }
+
+    // 转换为绝对路径
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+
+    // 安全检查
+    if (!isPathSafe(absolutePath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止在系统目录中创建文件',
+      });
+    }
+
+    // 检查路径是否已存在
+    if (fs.existsSync(absolutePath)) {
+      return res.status(409).json({
+        success: false,
+        error: `路径已存在: ${filePath}`,
+      });
+    }
+
+    // 确保父目录存在
+    const parentDir = path.dirname(absolutePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    if (type === 'directory') {
+      fs.mkdirSync(absolutePath, { recursive: true });
+    } else {
+      fs.writeFileSync(absolutePath, content || '', 'utf-8');
+    }
+
+    res.json({
+      success: true,
+      message: `${type === 'directory' ? '文件夹' : '文件'} 创建成功`,
+      data: {
+        path: absolutePath,
+        type,
+        name: path.basename(absolutePath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/create]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/blueprint/files
+ * 删除文件或文件夹（移到回收站概念 - 实际是重命名到 .trash 目录）
+ */
+router.delete('/files', (req: Request, res: Response) => {
+  try {
+    const { path: filePath, permanent } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    // 转换为绝对路径
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+
+    // 安全检查
+    if (!isPathSafe(absolutePath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止删除系统目录中的文件',
+      });
+    }
+
+    // 检查路径是否存在
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `路径不存在: ${filePath}`,
+      });
+    }
+
+    const stats = fs.statSync(absolutePath);
+    const isDirectory = stats.isDirectory();
+    const fileName = path.basename(absolutePath);
+
+    if (permanent) {
+      // 永久删除
+      if (isDirectory) {
+        fs.rmSync(absolutePath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(absolutePath);
+      }
+
+      res.json({
+        success: true,
+        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已永久删除`,
+      });
+    } else {
+      // 移到项目内的 .trash 目录（模拟回收站）
+      const projectRoot = process.cwd();
+      const trashDir = path.join(projectRoot, '.trash');
+      const timestamp = Date.now();
+      const trashPath = path.join(trashDir, `${fileName}_${timestamp}`);
+
+      // 确保 .trash 目录存在
+      if (!fs.existsSync(trashDir)) {
+        fs.mkdirSync(trashDir, { recursive: true });
+      }
+
+      // 移动文件到回收站
+      fs.renameSync(absolutePath, trashPath);
+
+      res.json({
+        success: true,
+        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已移到回收站`,
+        data: {
+          originalPath: absolutePath,
+          trashPath,
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error('[DELETE /files]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/blueprint/files/rename
+ * 重命名文件或文件夹
+ */
+router.post('/files/rename', (req: Request, res: Response) => {
+  try {
+    const { oldPath, newPath } = req.body;
+
+    if (!oldPath || !newPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 oldPath 或 newPath 参数',
+      });
+    }
+
+    // 转换为绝对路径
+    const absoluteOldPath = path.isAbsolute(oldPath) ? oldPath : path.resolve(process.cwd(), oldPath);
+    const absoluteNewPath = path.isAbsolute(newPath) ? newPath : path.resolve(process.cwd(), newPath);
+
+    // 安全检查
+    if (!isPathSafe(absoluteOldPath) || !isPathSafe(absoluteNewPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止操作系统目录中的文件',
+      });
+    }
+
+    // 检查源路径是否存在
+    if (!fs.existsSync(absoluteOldPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `源路径不存在: ${oldPath}`,
+      });
+    }
+
+    // 检查目标路径是否已存在
+    if (fs.existsSync(absoluteNewPath)) {
+      return res.status(409).json({
+        success: false,
+        error: `目标路径已存在: ${newPath}`,
+      });
+    }
+
+    // 确保目标目录存在
+    const newParentDir = path.dirname(absoluteNewPath);
+    if (!fs.existsSync(newParentDir)) {
+      fs.mkdirSync(newParentDir, { recursive: true });
+    }
+
+    fs.renameSync(absoluteOldPath, absoluteNewPath);
+
+    res.json({
+      success: true,
+      message: '重命名成功',
+      data: {
+        oldPath: absoluteOldPath,
+        newPath: absoluteNewPath,
+        name: path.basename(absoluteNewPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/rename]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/blueprint/files/copy
+ * 复制文件或文件夹
+ */
+router.post('/files/copy', (req: Request, res: Response) => {
+  try {
+    const { sourcePath, destPath } = req.body;
+
+    if (!sourcePath || !destPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 sourcePath 或 destPath 参数',
+      });
+    }
+
+    // 转换为绝对路径
+    const absoluteSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(process.cwd(), sourcePath);
+    const absoluteDestPath = path.isAbsolute(destPath) ? destPath : path.resolve(process.cwd(), destPath);
+
+    // 安全检查
+    if (!isPathSafe(absoluteSourcePath) || !isPathSafe(absoluteDestPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止操作系统目录中的文件',
+      });
+    }
+
+    // 检查源路径是否存在
+    if (!fs.existsSync(absoluteSourcePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `源路径不存在: ${sourcePath}`,
+      });
+    }
+
+    // 检查目标路径是否已存在
+    if (fs.existsSync(absoluteDestPath)) {
+      return res.status(409).json({
+        success: false,
+        error: `目标路径已存在: ${destPath}`,
+      });
+    }
+
+    // 确保目标目录存在
+    const destParentDir = path.dirname(absoluteDestPath);
+    if (!fs.existsSync(destParentDir)) {
+      fs.mkdirSync(destParentDir, { recursive: true });
+    }
+
+    const stats = fs.statSync(absoluteSourcePath);
+
+    if (stats.isDirectory()) {
+      // 递归复制目录
+      copyDirectoryRecursive(absoluteSourcePath, absoluteDestPath);
+    } else {
+      // 复制文件
+      fs.copyFileSync(absoluteSourcePath, absoluteDestPath);
+    }
+
+    res.json({
+      success: true,
+      message: '复制成功',
+      data: {
+        sourcePath: absoluteSourcePath,
+        destPath: absoluteDestPath,
+        name: path.basename(absoluteDestPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/copy]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 递归复制目录
+ */
+function copyDirectoryRecursive(source: string, destination: string): void {
+  fs.mkdirSync(destination, { recursive: true });
+
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(source, entry.name);
+    const destPath = path.join(destination, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirectoryRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * POST /api/blueprint/files/move
+ * 移动文件或文件夹
+ */
+router.post('/files/move', (req: Request, res: Response) => {
+  try {
+    const { sourcePath, destPath } = req.body;
+
+    if (!sourcePath || !destPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 sourcePath 或 destPath 参数',
+      });
+    }
+
+    // 转换为绝对路径
+    const absoluteSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(process.cwd(), sourcePath);
+    const absoluteDestPath = path.isAbsolute(destPath) ? destPath : path.resolve(process.cwd(), destPath);
+
+    // 安全检查
+    if (!isPathSafe(absoluteSourcePath) || !isPathSafe(absoluteDestPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止操作系统目录中的文件',
+      });
+    }
+
+    // 检查源路径是否存在
+    if (!fs.existsSync(absoluteSourcePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `源路径不存在: ${sourcePath}`,
+      });
+    }
+
+    // 检查目标路径是否已存在
+    if (fs.existsSync(absoluteDestPath)) {
+      return res.status(409).json({
+        success: false,
+        error: `目标路径已存在: ${destPath}`,
+      });
+    }
+
+    // 确保目标目录存在
+    const destParentDir = path.dirname(absoluteDestPath);
+    if (!fs.existsSync(destParentDir)) {
+      fs.mkdirSync(destParentDir, { recursive: true });
+    }
+
+    // 尝试直接重命名（同一文件系统内）
+    try {
+      fs.renameSync(absoluteSourcePath, absoluteDestPath);
+    } catch (renameError: any) {
+      // 如果跨文件系统，则先复制再删除
+      if (renameError.code === 'EXDEV') {
+        const stats = fs.statSync(absoluteSourcePath);
+        if (stats.isDirectory()) {
+          copyDirectoryRecursive(absoluteSourcePath, absoluteDestPath);
+          fs.rmSync(absoluteSourcePath, { recursive: true, force: true });
+        } else {
+          fs.copyFileSync(absoluteSourcePath, absoluteDestPath);
+          fs.unlinkSync(absoluteSourcePath);
+        }
+      } else {
+        throw renameError;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: '移动成功',
+      data: {
+        sourcePath: absoluteSourcePath,
+        destPath: absoluteDestPath,
+        name: path.basename(absoluteDestPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/move]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * AI 代码问答 - 回答用户关于代码的问题
+ * POST /api/blueprint/ai/ask
+ */
+router.post('/ai/ask', async (req, res) => {
+  try {
+    const { code, question, filePath, context } = req.body;
+
+    if (!code || !question) {
+      return res.status(400).json({ success: false, error: '缺少代码或问题' });
+    }
+
+    // 获取 AI 客户端
+    const { getDefaultClient } = await import('../../../core/client.js');
+    const client = getDefaultClient();
+
+    const language = context?.language || 'typescript';
+    const lineCount = code.split('\n').length;
+
+    const prompt = `请回答以下关于代码的问题。
+
+**文件**: ${filePath || '未知'}
+**语言**: ${language}
+**代码行数**: ${lineCount}
+
+**代码片段**:
+\`\`\`${language}
+${code.substring(0, 3000)}
+\`\`\`
+
+**用户问题**: ${question}
+
+请用中文回答，要求：
+1. 直接回答问题，不要废话
+2. 如果是关于代码作用的问题，具体说明这段代码做了什么
+3. 如果是关于优化的问题，给出具体、可执行的建议
+4. 如果是关于问题/bug的问题，指出具体的潜在问题和位置
+5. 回答控制在 200 字以内，言简意赅`;
+
+    console.log(`[AI Ask] 回答问题: "${question.substring(0, 50)}..."`);
+    const startTime = Date.now();
+
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码专家。直接、具体地回答用户关于代码的问题，不要使用模板化的废话。'
+    );
+
+    console.log(`[AI Ask] AI 调用耗时: ${Date.now() - startTime}ms`);
+
+    // 提取回答
+    let answer = '暂时无法回答这个问题';
+    const textContent = response.content?.find((c: any) => c.type === 'text');
+    if (textContent && 'text' in textContent) {
+      answer = textContent.text;
+    }
+
+    res.json({
+      success: true,
+      answer,
+    });
+  } catch (error: any) {
+    console.error('[AI Ask] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 回答失败',
+    });
+  }
+});
+
+/**
+ * AI 代码导游 - 为代码生成智能导览
+ * POST /api/blueprint/ai/tour
+ */
+router.post('/ai/tour', async (req, res) => {
+  try {
+    const { filePath, content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ success: false, error: '缺少文件内容' });
+    }
+
+    // 获取 AI 客户端
+    const { getDefaultClient } = await import('../../../core/client.js');
+    const client = getDefaultClient();
+
+    // 提取代码中的关键符号
+    const symbols: Array<{ type: string; name: string; line: number; code: string }> = [];
+    const lines = content.split('\n');
+
+    // 提取类
+    const classMatches = content.matchAll(/(?:export\s+)?(?:abstract\s+)?class\s+(\w+)[^{]*\{/g);
+    for (const match of classMatches) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      // 提取类的前 50 行代码作为上下文
+      const endLine = Math.min(lineNum + 50, lines.length);
+      const classCode = lines.slice(lineNum - 1, endLine).join('\n');
+      symbols.push({
+        type: 'class',
+        name: match[1],
+        line: lineNum,
+        code: classCode.substring(0, 2000), // 限制长度
+      });
+    }
+
+    // 提取函数
+    const funcMatches = content.matchAll(/(?:export\s+)?(?:async\s+)?function\s+(\w+)[^{]*\{/g);
+    for (const match of funcMatches) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      const endLine = Math.min(lineNum + 30, lines.length);
+      const funcCode = lines.slice(lineNum - 1, endLine).join('\n');
+      symbols.push({
+        type: 'function',
+        name: match[1],
+        line: lineNum,
+        code: funcCode.substring(0, 1500),
+      });
+    }
+
+    // 提取 React 组件
+    const componentMatches = content.matchAll(/(?:export\s+)?(?:const|function)\s+(\w+)[\s\S]*?(?:React\.FC|JSX\.Element|=>[\s\S]*?<)/g);
+    for (const match of componentMatches) {
+      // 避免与函数重复
+      if (symbols.some(s => s.name === match[1])) continue;
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      const endLine = Math.min(lineNum + 40, lines.length);
+      const componentCode = lines.slice(lineNum - 1, endLine).join('\n');
+      symbols.push({
+        type: 'component',
+        name: match[1],
+        line: lineNum,
+        code: componentCode.substring(0, 1500),
+      });
+    }
+
+    if (symbols.length === 0) {
+      return res.json({
+        success: true,
+        data: { steps: [] },
+      });
+    }
+
+    // 构建 AI prompt
+    const symbolsInfo = symbols.map((s, i) => `
+### 符号 ${i + 1}: ${s.type} "${s.name}" (行 ${s.line})
+\`\`\`typescript
+${s.code}
+\`\`\`
+`).join('\n');
+
+    const prompt = `分析以下代码文件中的符号，为每个符号生成一个简洁、有信息量的中文描述。
+
+文件路径: ${filePath || '未知'}
+
+${symbolsInfo}
+
+要求：
+1. 描述要具体，说明这个符号"做什么"、"为什么存在"
+2. 如果是类，说明其职责、关键方法、继承关系
+3. 如果是函数，说明其输入输出、核心逻辑
+4. 如果是组件，说明其渲染的UI、使用的状态
+5. 描述控制在 50-100 字以内
+6. 不要使用"这是一个..."这样的废话开头
+
+返回 JSON 格式：
+{
+  "descriptions": [
+    { "name": "符号名", "description": "具体描述" }
+  ]
+}
+
+只返回 JSON，不要其他内容。`;
+
+    console.log(`[AI Tour] 分析 ${symbols.length} 个符号...`);
+    const startTime = Date.now();
+
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码分析专家。用简洁、专业的中文描述代码符号的功能和职责。'
+    );
+
+    console.log(`[AI Tour] AI 调用耗时: ${Date.now() - startTime}ms`);
+
+    // 解析 AI 响应
+    let descriptions: Array<{ name: string; description: string }> = [];
+    const textContent = response.content?.find((c: any) => c.type === 'text');
+    if (textContent && 'text' in textContent) {
+      try {
+        // 提取 JSON
+        const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          descriptions = parsed.descriptions || [];
+        }
+      } catch (parseError) {
+        console.error('[AI Tour] JSON 解析失败:', parseError);
+      }
+    }
+
+    // 构建导游步骤
+    const steps = symbols.map(symbol => {
+      const desc = descriptions.find(d => d.name === symbol.name);
+      return {
+        type: symbol.type,
+        name: symbol.name,
+        line: symbol.line,
+        description: desc?.description || `${symbol.type} ${symbol.name}`,
+        importance: 'high' as 'high' | 'medium' | 'low',
+      };
+    });
+
+    // 添加导入区域描述
+    let importEndLine = 0;
+    const importSources: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const importMatch = lines[i].match(/^import\s.*from\s+['"]([^'"]+)['"]/);
+      if (importMatch) {
+        importEndLine = i + 1;
+        const source = importMatch[1];
+        if (!source.startsWith('.') && !source.startsWith('@/') && importSources.length < 5) {
+          importSources.push(source.split('/')[0]);
+        }
+      }
+    }
+
+    if (importEndLine > 0) {
+      const uniqueSources = [...new Set(importSources)];
+      steps.unshift({
+        type: 'block',
+        name: '导入声明',
+        line: 1,
+        description: uniqueSources.length > 0
+          ? `引入 ${uniqueSources.join(', ')} 等外部依赖，以及本地模块。`
+          : '引入本地模块依赖。',
+        importance: 'medium' as const,
+      });
+    }
+
+    // 按行号排序
+    steps.sort((a, b) => a.line - b.line);
+
+    res.json({
+      success: true,
+      data: { steps },
+    });
+  } catch (error: any) {
+    console.error('[AI Tour] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 分析失败',
+    });
+  }
+});
+
+// ============================================================================
+// AI 气泡 API - 为新手生成代码解释
+// ============================================================================
+
+/**
+ * AI 气泡缓存
+ * key: filePath:contentHash
+ * value: { bubbles, timestamp }
+ */
+const aiBubblesCache = new Map<string, { bubbles: any[]; timestamp: number; contentHash: string }>();
+const BUBBLES_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
+
+/**
+ * POST /api/blueprint/analyze-bubbles
+ * 使用AI为代码生成新手友好的解释气泡
+ */
+router.post('/analyze-bubbles', async (req: Request, res: Response) => {
+  try {
+    const { filePath, content, language } = req.body;
+
+    if (!filePath || !content) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数: filePath, content',
+      });
+    }
+
+    // 计算内容hash用于缓存
+    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
+    const cacheKey = `${filePath}:${contentHash}`;
+
+    // 检查缓存
+    const cached = aiBubblesCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < BUBBLES_CACHE_TTL) {
+      console.log(`[AI Bubbles] 使用缓存: ${filePath}`);
+      return res.json({
+        success: true,
+        data: { bubbles: cached.bubbles, fromCache: true },
+      });
+    }
+
+    console.log(`[AI Bubbles] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
+
+    // 限制内容长度，避免 token 过大
+    const lines = content.split('\n');
+    const truncatedContent = lines.length > 200
+      ? lines.slice(0, 200).join('\n') + '\n// ... 文件过长，已截断 ...'
+      : content;
+
+    // 获取 AI 客户端 - 使用 Haiku 模型加速
+    const { createClientWithModel } = await import('../../../core/client.js');
+    const client = createClientWithModel('haiku');
+
+    // 构建分析提示
+    const prompt = `你是一个代码教育专家，专门帮助编程新手理解代码。请分析以下代码，找出对新手最有帮助的关键点，生成解释气泡。
+
+## 文件信息
+- 文件路径: ${filePath}
+- 编程语言: ${language || '未知'}
+
+## 代码内容
+\`\`\`${language || ''}
+${truncatedContent}
+\`\`\`
+
+## 生成要求
+1. 找出代码中新手最需要理解的 5-10 个关键点
+2. 每个气泡必须有具体的教育价值，不要生成废话
+3. 解释必须通俗易懂，假设读者是刚学编程的新手
+4. 解释要具体，结合这段代码的上下文，不要泛泛而谈
+5. 气泡类型: info(解释概念), tip(最佳实践), warning(注意事项)
+
+## 好的气泡示例
+- "这个函数接收用户名和密码，验证后返回登录状态。第3行的await表示需要等待服务器响应"
+- "useState(false) 创建了一个开关变量，初始值是关闭。点击按钮时会切换这个开关"
+- "这里用 try-catch 包裹是因为网络请求可能失败，catch 里处理失败的情况"
+
+## 不好的气泡示例（禁止生成这类废话）
+- "这是一个函数定义"
+- "useEffect 是 React 的副作用钩子"
+- "async 表示异步操作"
+
+请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
+{
+  "bubbles": [
+    {
+      "line": 行号（从1开始）,
+      "message": "具体的解释内容，要有教育价值",
+      "type": "info|tip|warning"
+    }
+  ]
+}`;
+
+    // 调用 AI 分析
+    const startTime = Date.now();
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码教育专家，专门帮助编程新手理解代码。你的解释必须具体、实用、有教育价值。只返回 JSON，不要其他内容。'
+    );
+    console.log(`[AI Bubbles] AI 调用耗时: ${Date.now() - startTime}ms`);
+
+    // 提取响应文本
+    let responseText = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        responseText += block.text;
+      }
+    }
+
+    // 解析 JSON
+    let result: { bubbles: any[] };
+    try {
+      result = JSON.parse(responseText.trim());
+    } catch {
+      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[1]);
+      } else {
+        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (bareJsonMatch) {
+          result = JSON.parse(bareJsonMatch[0]);
+        } else {
+          throw new Error('无法解析 AI 返回的 JSON');
+        }
+      }
+    }
+
+    // 验证和过滤气泡
+    const validBubbles = (result.bubbles || [])
+      .filter((b: any) => {
+        // 验证必要字段
+        if (!b.line || !b.message || !b.type) return false;
+        // 过滤废话（太短或太通用的解释）
+        if (b.message.length < 10) return false;
+        // 验证行号在有效范围内
+        if (b.line < 1 || b.line > lines.length) return false;
+        return true;
+      })
+      .slice(0, 15); // 最多15个气泡
+
+    // 保存到缓存
+    aiBubblesCache.set(cacheKey, {
+      bubbles: validBubbles,
+      timestamp: Date.now(),
+      contentHash,
+    });
+
+    console.log(`[AI Bubbles] 生成 ${validBubbles.length} 个气泡`);
+
+    res.json({
+      success: true,
+      data: { bubbles: validBubbles, fromCache: false },
+    });
+  } catch (error: any) {
+    console.error('[AI Bubbles] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 气泡生成失败',
+    });
+  }
+});
+
+// ============================================================================
+// AI 热力图 API - 智能分析代码复杂度
+// ============================================================================
+
+/**
+ * AI 热力图缓存
+ */
+const aiHeatmapCache = new Map<string, { heatmap: any[]; timestamp: number; contentHash: string }>();
+const HEATMAP_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
+
+/**
+ * POST /api/blueprint/analyze-heatmap
+ * 使用AI分析代码复杂度，生成热力图数据
+ */
+router.post('/analyze-heatmap', async (req: Request, res: Response) => {
+  try {
+    const { filePath, content, language } = req.body;
+
+    if (!filePath || !content) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数: filePath, content',
+      });
+    }
+
+    // 计算内容hash用于缓存
+    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
+    const cacheKey = `heatmap:${filePath}:${contentHash}`;
+
+    // 检查缓存
+    const cached = aiHeatmapCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < HEATMAP_CACHE_TTL) {
+      console.log(`[AI Heatmap] 使用缓存: ${filePath}`);
+      return res.json({
+        success: true,
+        data: { heatmap: cached.heatmap, fromCache: true },
+      });
+    }
+
+    console.log(`[AI Heatmap] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
+
+    // 限制内容长度
+    const lines = content.split('\n');
+    const truncatedContent = lines.length > 300
+      ? lines.slice(0, 300).join('\n') + '\n// ... 文件过长，已截断 ...'
+      : content;
+
+    // 获取 AI 客户端
+    const { createClientWithModel } = await import('../../../core/client.js');
+    const client = createClientWithModel('haiku');
+
+    const prompt = `你是一个代码复杂度分析专家。请分析以下代码，识别出复杂度较高的代码行。
+
+## 文件信息
+- 文件路径: ${filePath}
+- 编程语言: ${language || '未知'}
+- 总行数: ${lines.length}
+
+## 代码内容
+\`\`\`${language || ''}
+${truncatedContent}
+\`\`\`
+
+## 分析要求
+1. 找出代码中复杂度较高的行（不是每一行都要标记）
+2. 只标记真正复杂、难以理解或需要重点关注的代码
+3. 复杂度评分 0-100：
+   - 0-30: 简单，不需要标记
+   - 31-50: 中等复杂度，可能需要注意
+   - 51-70: 较复杂，需要仔细理解
+   - 71-100: 非常复杂，可能需要重构
+
+## 复杂度标准
+- 深层嵌套（3层以上的 if/for/while）
+- 复杂的条件表达式（多个 && || 组合）
+- 回调地狱或 Promise 链过长
+- 正则表达式（尤其是复杂的）
+- 一行代码做太多事（超过120字符的复杂逻辑）
+- 难以理解的算法逻辑
+- 魔法数字或不清晰的变量
+
+## 不应该标记的内容
+- 普通的变量声明
+- 简单的 import/export
+- 简单的函数调用
+- 注释和空行
+- 简单的类型定义
+
+请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
+{
+  "heatmap": [
+    {
+      "line": 行号（从1开始）,
+      "complexity": 复杂度评分（31-100，低于31的不要返回）,
+      "reason": "简短说明为什么复杂（10-30字）"
+    }
+  ]
+}`;
+
+    const startTime = Date.now();
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码复杂度分析专家。只标记真正复杂的代码，不要过度标记。只返回 JSON。'
+    );
+    console.log(`[AI Heatmap] AI 调用耗时: ${Date.now() - startTime}ms`);
+
+    // 提取响应
+    let responseText = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        responseText += block.text;
+      }
+    }
+
+    // 解析 JSON
+    let result: { heatmap: any[] };
+    try {
+      result = JSON.parse(responseText.trim());
+    } catch {
+      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[1]);
+      } else {
+        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (bareJsonMatch) {
+          result = JSON.parse(bareJsonMatch[0]);
+        } else {
+          throw new Error('无法解析 AI 返回的 JSON');
+        }
+      }
+    }
+
+    // 验证和过滤
+    const validHeatmap = (result.heatmap || [])
+      .filter((h: any) => {
+        if (!h.line || typeof h.complexity !== 'number') return false;
+        if (h.complexity < 31 || h.complexity > 100) return false;
+        if (h.line < 1 || h.line > lines.length) return false;
+        return true;
+      })
+      .map((h: any) => ({
+        line: h.line,
+        complexity: Math.min(100, Math.max(0, h.complexity)),
+        reason: h.reason || '复杂代码',
+      }));
+
+    // 保存缓存
+    aiHeatmapCache.set(cacheKey, {
+      heatmap: validHeatmap,
+      timestamp: Date.now(),
+      contentHash,
+    });
+
+    console.log(`[AI Heatmap] 标记 ${validHeatmap.length} 个复杂行`);
+
+    res.json({
+      success: true,
+      data: { heatmap: validHeatmap, fromCache: false },
+    });
+  } catch (error: any) {
+    console.error('[AI Heatmap] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 热力图分析失败',
+    });
+  }
+});
+
+// ============================================================================
+// AI 重构建议 API - 智能分析代码质量并提供改进建议
+// ============================================================================
+
+/**
+ * AI 重构建议缓存
+ */
+const aiRefactorCache = new Map<string, { suggestions: any[]; timestamp: number; contentHash: string }>();
+const REFACTOR_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
+
+/**
+ * POST /api/blueprint/analyze-refactoring
+ * 使用AI分析代码并提供重构建议
+ */
+router.post('/analyze-refactoring', async (req: Request, res: Response) => {
+  try {
+    const { filePath, content, language } = req.body;
+
+    if (!filePath || !content) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数: filePath, content',
+      });
+    }
+
+    // 计算内容hash用于缓存
+    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
+    const cacheKey = `refactor:${filePath}:${contentHash}`;
+
+    // 检查缓存
+    const cached = aiRefactorCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < REFACTOR_CACHE_TTL) {
+      console.log(`[AI Refactor] 使用缓存: ${filePath}`);
+      return res.json({
+        success: true,
+        data: { suggestions: cached.suggestions, fromCache: true },
+      });
+    }
+
+    console.log(`[AI Refactor] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
+
+    // 限制内容长度
+    const lines = content.split('\n');
+    const truncatedContent = lines.length > 400
+      ? lines.slice(0, 400).join('\n') + '\n// ... 文件过长，已截断 ...'
+      : content;
+
+    // 获取 AI 客户端
+    const { createClientWithModel } = await import('../../../core/client.js');
+    const client = createClientWithModel('haiku');
+
+    const prompt = `你是一个高级代码审查专家和重构顾问。请分析以下代码，提供专业的重构建议。
+
+## 文件信息
+- 文件路径: ${filePath}
+- 编程语言: ${language || '未知'}
+- 总行数: ${lines.length}
+
+## 代码内容
+\`\`\`${language || ''}
+${truncatedContent}
+\`\`\`
+
+## 分析重点
+1. **代码异味（Code Smells）**
+   - 过长的函数（超过50行应该拆分）
+   - 过深的嵌套（超过3层应该重构）
+   - 重复代码（类似逻辑应该提取）
+   - 过长的参数列表
+   - 过大的类或模块
+
+2. **可维护性问题**
+   - 魔法数字（应该定义为常量）
+   - 不清晰的命名
+   - 缺少错误处理
+   - 过于复杂的条件逻辑
+
+3. **性能隐患**
+   - 不必要的重复计算
+   - 内存泄漏风险（未清理的订阅、定时器等）
+   - 低效的循环或查找
+
+4. **最佳实践**
+   - 可以使用更现代的语法
+   - 可以利用框架特性简化代码
+   - 可以提升类型安全性
+
+## 输出要求
+- 只提供有价值的、可操作的建议
+- 每个建议都要具体说明问题和解决方案
+- 优先级：high（必须修复）、medium（建议修复）、low（可以考虑）
+- 类型：extract（提取函数/组件）、simplify（简化逻辑）、rename（重命名）、duplicate（消除重复）、performance（性能优化）、safety（安全性）
+
+请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
+{
+  "suggestions": [
+    {
+      "line": 起始行号,
+      "endLine": 结束行号,
+      "type": "extract|simplify|rename|duplicate|performance|safety",
+      "message": "具体的问题描述和解决建议（30-80字）",
+      "priority": "high|medium|low",
+      "codeContext": "问题代码的一小段原文（15-40字符，必须是代码中真实存在的片段）"
+    }
+  ]
+}
+
+**重要**: codeContext 必须是代码中真实存在的原文片段，用于精确定位问题代码的位置。例如：
+- 对于接口定义问题：使用 "interface Message {" 或 "to: string | string[]"
+- 对于函数问题：使用 "function calculateTotal(" 或 "const handleSubmit ="
+- 对于变量问题：使用 "let counter = 0" 或 "const config: Config"`;
+
+    const startTime = Date.now();
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个代码审查专家。提供专业、可操作的重构建议。只返回 JSON。'
+    );
+    console.log(`[AI Refactor] AI 调用耗时: ${Date.now() - startTime}ms`);
+
+    // 提取响应
+    let responseText = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        responseText += block.text;
+      }
+    }
+
+    // 解析 JSON
+    let result: { suggestions: any[] };
+    try {
+      result = JSON.parse(responseText.trim());
+    } catch {
+      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[1]);
+      } else {
+        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (bareJsonMatch) {
+          result = JSON.parse(bareJsonMatch[0]);
+        } else {
+          throw new Error('无法解析 AI 返回的 JSON');
+        }
+      }
+    }
+
+    // 验证和过滤
+    const validTypes = ['extract', 'simplify', 'rename', 'duplicate', 'performance', 'safety'];
+    const validPriorities = ['high', 'medium', 'low'];
+
+    /**
+     * 使用 codeContext 校正行号
+     * AI返回的行号可能不准确，通过搜索代码片段来找到正确位置
+     * 参考 Edit 工具的字符串匹配方式
+     */
+    const correctLineNumber = (suggestion: any): { line: number; endLine: number } => {
+      const originalLine = suggestion.line;
+      const originalEndLine = suggestion.endLine || suggestion.line;
+      const codeContext = suggestion.codeContext;
+
+      // 如果没有提供代码上下文，使用原始行号
+      if (!codeContext || typeof codeContext !== 'string' || codeContext.length < 5) {
+        return { line: originalLine, endLine: originalEndLine };
+      }
+
+      // 清理代码上下文（移除首尾空白，但保留内部格式）
+      const cleanContext = codeContext.trim();
+
+      // 在原始行号附近搜索（优先），找距离最近的匹配
+      let bestMatch: number | null = null;
+      let bestDistance = Infinity;
+
+      // 第一轮：在原始行号附近50行内搜索
+      const searchRadius = 50;
+      const startLine = Math.max(0, originalLine - searchRadius - 1);
+      const endLine = Math.min(lines.length, originalLine + searchRadius);
+
+      for (let i = startLine; i < endLine; i++) {
+        if (lines[i].includes(cleanContext)) {
+          const distance = Math.abs(i + 1 - originalLine);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestMatch = i + 1;
+          }
+        }
+      }
+
+      if (bestMatch !== null) {
+        const lineOffset = bestMatch - originalLine;
+        const correctedEndLine = Math.max(bestMatch, originalEndLine + lineOffset);
+        console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${bestMatch} (范围内匹配)`);
+        return {
+          line: bestMatch,
+          endLine: Math.min(correctedEndLine, lines.length),
+        };
+      }
+
+      // 第二轮：全文搜索
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes(cleanContext)) {
+          const correctedLine = i + 1;
+          const lineOffset = correctedLine - originalLine;
+          const correctedEndLine = Math.max(correctedLine, originalEndLine + lineOffset);
+          console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${correctedLine} (全文匹配)`);
+          return {
+            line: correctedLine,
+            endLine: Math.min(correctedEndLine, lines.length),
+          };
+        }
+      }
+
+      // 第三轮：尝试模糊匹配（移除空格后匹配）
+      const compactContext = cleanContext.replace(/\s+/g, '');
+      for (let i = 0; i < lines.length; i++) {
+        const compactLine = lines[i].replace(/\s+/g, '');
+        if (compactLine.includes(compactContext)) {
+          const correctedLine = i + 1;
+          const lineOffset = correctedLine - originalLine;
+          const correctedEndLine = Math.max(correctedLine, originalEndLine + lineOffset);
+          console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${correctedLine} (模糊匹配)`);
+          return {
+            line: correctedLine,
+            endLine: Math.min(correctedEndLine, lines.length),
+          };
+        }
+      }
+
+      // 如果找不到，使用原始行号
+      console.log(`[AI Refactor] 无法校正行号: "${cleanContext.slice(0, 30)}..." 未找到，保持原始行号 ${originalLine}`);
+      return { line: originalLine, endLine: originalEndLine };
+    };
+
+    const validSuggestions = (result.suggestions || [])
+      .filter((s: any) => {
+        if (!s.line || !s.message || !s.type || !s.priority) return false;
+        if (!validTypes.includes(s.type)) return false;
+        if (!validPriorities.includes(s.priority)) return false;
+        if (s.line < 1 || s.line > lines.length) return false;
+        if (s.message.length < 10) return false;
+        return true;
+      })
+      .map((s: any) => {
+        const corrected = correctLineNumber(s);
+        return {
+          line: corrected.line,
+          endLine: corrected.endLine,
+          type: s.type,
+          message: s.message,
+          priority: s.priority,
+        };
+      })
+      .slice(0, 20); // 最多20个建议
+
+    // 保存缓存
+    aiRefactorCache.set(cacheKey, {
+      suggestions: validSuggestions,
+      timestamp: Date.now(),
+      contentHash,
+    });
+
+    console.log(`[AI Refactor] 生成 ${validSuggestions.length} 个建议`);
+
+    res.json({
+      success: true,
+      data: { suggestions: validSuggestions, fromCache: false },
+    });
+  } catch (error: any) {
+    console.error('[AI Refactor] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 重构分析失败',
     });
   }
 });

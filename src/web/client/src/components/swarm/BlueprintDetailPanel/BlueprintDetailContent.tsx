@@ -1,8 +1,93 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import styles from './BlueprintDetailContent.module.css';
-import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent } from '../../../api/blueprint';
+import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject } from '../../../api/blueprint';
+import { getSyntaxExplanation, extractKeywordsFromLine, SyntaxExplanation } from '../../../utils/syntaxDictionary';
+import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, formatJSDocBrief, hasValidJSDoc } from '../../../utils/jsdocParser';
+// VS Code 风格组件
+import { ProjectSelector, Project } from '../ProjectSelector';
+import { ContextMenu, MenuItem, getFileContextMenuItems, getFolderContextMenuItems, getEmptyContextMenuItems } from '../ContextMenu';
+import { FileDialog, DialogType } from '../FileDialog';
+
+// 悬浮框位置状态
+interface TooltipPosition {
+  x: number;
+  y: number;
+  visible: boolean;
+  path: string | null;
+  // 符号相关
+  symbol?: CodeSymbol | null;
+  symbolFilePath?: string | null;
+  // 新增：代码行上下文（用于语法解释）
+  lineContent?: string;
+  lineNumber?: number;
+}
+
+// 三层悬浮提示数据
+interface LayeredTooltipData {
+  // 第一层：用户注释（JSDoc）
+  userComment?: ParsedJSDoc | null;
+  // 第二层：语法解释（本地字典，0ms）
+  syntaxExplanations: SyntaxExplanation[];
+  // 第三层：AI 语义分析（异步加载）
+  semanticAnalysis?: SymbolAnalysis | null;
+  // 是否正在加载 AI 分析
+  loadingAI: boolean;
+}
+
+// ============ AI 增强功能类型 ============
+
+// AI 导游步骤
+interface TourStep {
+  type: 'file' | 'function' | 'class' | 'block';
+  name: string;
+  line: number;
+  endLine?: number;
+  description: string;
+  importance: 'high' | 'medium' | 'low';
+}
+
+// AI 导游状态
+interface TourState {
+  active: boolean;
+  steps: TourStep[];
+  currentStep: number;
+  loading: boolean;
+}
+
+// 选中即问对话
+interface AskAIState {
+  visible: boolean;
+  selectedCode: string;
+  selectedRange: { startLine: number; endLine: number } | null;
+  question: string;
+  answer: string | null;
+  loading: boolean;
+}
+
+// 代码热力图数据
+interface HeatmapData {
+  line: number;
+  complexity: number; // 0-100
+  reason: string;
+}
+
+// 重构建议
+interface RefactorSuggestion {
+  line: number;
+  endLine: number;
+  type: 'extract' | 'simplify' | 'rename' | 'unused' | 'duplicate' | 'performance' | 'safety';
+  message: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+// AI 气泡
+interface AIBubble {
+  line: number;
+  message: string;
+  type: 'info' | 'warning' | 'tip';
+}
 
 
 interface BlueprintDetailContentProps {
@@ -58,6 +143,12 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   // 代码符号缓存（文件路径 -> 符号列表）
   const [symbolsCache, setSymbolsCache] = useState<Map<string, CodeSymbol[]>>(new Map());
 
+  // 符号语义分析缓存（key: filePath:symbolName:line）
+  const [symbolAnalysisCache, setSymbolAnalysisCache] = useState<Map<string, SymbolAnalysis>>(new Map());
+
+  // 符号分析加载状态
+  const [analyzingSymbol, setAnalyzingSymbol] = useState(false);
+
   // 当前分析状态
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -79,6 +170,24 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
 
+  // 悬浮框状态
+  const [tooltip, setTooltip] = useState<TooltipPosition>({
+    x: 0,
+    y: 0,
+    visible: false,
+    path: null,
+    symbol: null,
+    symbolFilePath: null,
+  });
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // 新手模式 ref（用于 Monaco hover provider）
+  const beginnerModeRef = useRef<boolean>(true);
+
+  // Hover provider 清理 ref
+  const hoverProviderRef = useRef<{ dispose: () => void } | null>(null);
+
   // 蓝图基本信息
   const [blueprintInfo, setBlueprintInfo] = useState<{
     name: string;
@@ -87,12 +196,285 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     moduleCount: number;
   } | null>(null);
 
+  // ============ 新手模式相关状态 ============
+  // 新手模式开关（默认开启）
+  const [beginnerMode, setBeginnerMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('codeEditor_beginnerMode');
+    return saved !== null ? saved === 'true' : true;
+  });
 
-  // 加载目录树
+  // JSDoc 注释缓存（文件路径 -> 行号 -> JSDoc）
+  const [jsdocCache, setJsdocCache] = useState<Map<string, Map<number, ParsedJSDoc>>>(new Map());
+
+  // 三层悬浮提示数据
+  const [layeredTooltip, setLayeredTooltip] = useState<LayeredTooltipData>({
+    syntaxExplanations: [],
+    loadingAI: false,
+  });
+
+  // ============ AI 增强功能状态 ============
+
+  // AI 导游模式
+  const [tourState, setTourState] = useState<TourState>({
+    active: false,
+    steps: [],
+    currentStep: 0,
+    loading: false,
+  });
+
+  // 选中即问 AI
+  const [askAI, setAskAI] = useState<AskAIState>({
+    visible: false,
+    selectedCode: '',
+    selectedRange: null,
+    question: '',
+    answer: null,
+    loading: false,
+  });
+
+  // 代码热力图
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData[]>([]);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+
+  // 重构建议
+  const [refactorSuggestions, setRefactorSuggestions] = useState<RefactorSuggestion[]>([]);
+  const [refactorEnabled, setRefactorEnabled] = useState(false);
+  const [refactorLoading, setRefactorLoading] = useState(false);
+
+  // ============ 项目管理和文件操作状态 ============
+
+  // 当前项目
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  // 项目根路径
+  const [projectRoot, setProjectRoot] = useState<string>('');
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    targetPath: string;
+    targetType: 'file' | 'directory' | 'empty';
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    targetPath: '',
+    targetType: 'empty',
+  });
+
+  // 文件对话框状态
+  const [fileDialog, setFileDialog] = useState<{
+    visible: boolean;
+    type: DialogType;
+    parentPath: string;
+    currentName?: string;
+  }>({
+    visible: false,
+    type: 'newFile',
+    parentPath: '',
+  });
+
+  // ============ 拖拽和剪贴板状态 ============
+
+  // 正在拖拽的项目
+  const [draggedItem, setDraggedItem] = useState<{
+    path: string;
+    type: 'file' | 'directory';
+    name: string;
+  } | null>(null);
+
+  // 当前拖放目标（高亮显示）
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // 剪贴板（用于复制/剪切粘贴）
+  const [clipboardItem, setClipboardItem] = useState<{
+    path: string;
+    type: 'file' | 'directory';
+    name: string;
+    operation: 'copy' | 'cut';
+  } | null>(null);
+
+  // AI 气泡（默认开启）
+  const [aiBubbles, setAiBubbles] = useState<AIBubble[]>([]);
+  const [bubblesEnabled, setBubblesEnabled] = useState(true);
+  const [bubblesLoading, setBubblesLoading] = useState(false);
+
+  // Monaco 装饰器引用
+  const decorationsRef = useRef<string[]>([]);
+
+  // 气泡自动生成标记
+  const bubblesGeneratedRef = useRef<string | null>(null);
+
+  // Editor 准备状态（用于触发装饰器更新）
+  const [editorReady, setEditorReady] = useState(false);
+
+  // 应用 Monaco 装饰器（热力图、重构建议、气泡）
   useEffect(() => {
+    if (!editorRef.current || !monacoRef.current || !editorReady) return;
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const decorations: any[] = [];
+
+    // 热力图装饰器
+    if (heatmapEnabled && heatmapData.length > 0) {
+      heatmapData.forEach(item => {
+        const hue = 120 - (item.complexity * 1.2); // 绿(120) -> 红(0)
+        decorations.push({
+          range: new monaco.Range(item.line, 1, item.line, 1),
+          options: {
+            isWholeLine: true,
+            className: `heatmap-line-${Math.round(item.complexity / 10)}`,
+            glyphMarginClassName: 'heatmap-glyph',
+            glyphMarginHoverMessage: { value: `**复杂度: ${item.complexity}%**\n${item.reason}` },
+            overviewRuler: {
+              color: `hsl(${hue}, 80%, 50%)`,
+              position: monaco.editor.OverviewRulerLane.Right,
+            },
+          },
+        });
+      });
+    }
+
+    // 重构建议装饰器
+    if (refactorEnabled && refactorSuggestions.length > 0) {
+      refactorSuggestions.forEach(suggestion => {
+        const icon = suggestion.type === 'extract' ? '✂️' :
+                     suggestion.type === 'simplify' ? '🔄' :
+                     suggestion.type === 'duplicate' ? '📋' :
+                     suggestion.type === 'unused' ? '🗑️' : '✨';
+        const color = suggestion.priority === 'high' ? '#f44336' :
+                     suggestion.priority === 'medium' ? '#ff9800' : '#4caf50';
+        decorations.push({
+          range: new monaco.Range(suggestion.line, 1, suggestion.line, 1),
+          options: {
+            glyphMarginClassName: `refactor-glyph refactor-${suggestion.priority}`,
+            glyphMarginHoverMessage: { value: `${icon} **${suggestion.message}**` },
+            overviewRuler: {
+              color: color,
+              position: monaco.editor.OverviewRulerLane.Left,
+            },
+          },
+        });
+      });
+    }
+
+    // AI 气泡装饰器
+    if (bubblesEnabled && aiBubbles.length > 0) {
+      aiBubbles.forEach(bubble => {
+        decorations.push({
+          range: new monaco.Range(bubble.line, 1, bubble.line, 1),
+          options: {
+            glyphMarginClassName: `bubble-glyph bubble-${bubble.type}`,
+            glyphMarginHoverMessage: { value: bubble.message },
+          },
+        });
+      });
+    }
+
+    // 应用装饰器
+    decorationsRef.current = editor.deltaDecorations(decorationsRef.current, decorations);
+  }, [editorReady, heatmapEnabled, heatmapData, refactorEnabled, refactorSuggestions, bubblesEnabled, aiBubbles]);
+
+  // 保存新手模式设置并更新 ref
+  useEffect(() => {
+    localStorage.setItem('codeEditor_beginnerMode', String(beginnerMode));
+    beginnerModeRef.current = beginnerMode;
+  }, [beginnerMode]);
+
+  // 组件卸载时清理 hover provider
+  useEffect(() => {
+    return () => {
+      if (hoverProviderRef.current) {
+        hoverProviderRef.current.dispose();
+        hoverProviderRef.current = null;
+      }
+    };
+  }, []);
+
+
+  /**
+   * 加载文件树
+   * @param rootPath 指定根目录路径，不传则使用当前项目根目录，都没有则默认 'src'
+   */
+  const loadFileTree = useCallback(async (rootPath?: string) => {
+    try {
+      setLoadingTree(true);
+      setTreeError(null);
+
+      // 确定根目录：优先使用传入参数，其次使用项目根目录，最后默认 'src'
+      const effectiveRoot = rootPath || projectRoot || 'src';
+
+      // 使用封装好的 API 获取目录树
+      const tree = await codebaseApi.getFileTree(effectiveRoot);
+      setFileTree(tree);
+      // 默认展开根目录
+      setExpandedPaths(new Set([effectiveRoot]));
+    } catch (err: any) {
+      setTreeError(err.message);
+      // 如果获取失败，使用模拟数据
+      setFileTree(createMockFileTree());
+    } finally {
+      setLoadingTree(false);
+    }
+  }, [projectRoot]);
+
+  /**
+   * 初始化项目：
+   * 1. 尝试获取当前工作目录
+   * 2. 如果成功，设置项目信息并加载文件树
+   * 3. 如果失败，使用默认的 'src' 目录
+   */
+  const initializeProject = useCallback(async () => {
+    try {
+      // 尝试获取当前工作目录
+      const cwd = await projectApi.getCurrentWorkingDirectory();
+      if (cwd && cwd.path) {
+        // 设置当前项目信息
+        setCurrentProject({
+          id: 'cwd',
+          name: cwd.name || cwd.path.split(/[\\/]/).pop() || 'Project',
+          path: cwd.path,
+        });
+        setProjectRoot(cwd.path);
+        // 使用当前工作目录加载文件树
+        loadFileTree(cwd.path);
+        return;
+      }
+    } catch (err) {
+      console.warn('获取当前工作目录失败，尝试获取最近项目:', err);
+    }
+
+    try {
+      // 尝试获取最近打开的项目
+      const recentProjects = await projectApi.getRecentProjects();
+      if (recentProjects && recentProjects.length > 0) {
+        const lastProject = recentProjects[0];
+        setCurrentProject({
+          id: lastProject.id,
+          name: lastProject.name,
+          path: lastProject.path,
+        });
+        setProjectRoot(lastProject.path);
+        // 使用最近项目路径加载文件树
+        loadFileTree(lastProject.path);
+        return;
+      }
+    } catch (err) {
+      console.warn('获取最近项目失败，使用默认目录:', err);
+    }
+
+    // 都失败了，使用默认的 'src' 目录
     loadFileTree();
+  }, [loadFileTree]);
+
+  // 组件挂载时初始化项目和蓝图信息
+  useEffect(() => {
+    initializeProject();
     loadBlueprintInfo();
-  }, [blueprintId]);
+  }, [blueprintId, initializeProject]);
 
   const loadBlueprintInfo = async () => {
     try {
@@ -110,25 +492,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       }
     } catch (err) {
       console.error('加载蓝图信息失败:', err);
-    }
-  };
-
-  const loadFileTree = async () => {
-    try {
-      setLoadingTree(true);
-      setTreeError(null);
-
-      // 使用封装好的 API 获取目录树
-      const tree = await codebaseApi.getFileTree('src');
-      setFileTree(tree);
-      // 默认展开 src
-      setExpandedPaths(new Set(['src']));
-    } catch (err: any) {
-      setTreeError(err.message);
-      // 如果获取失败，使用模拟数据
-      setFileTree(createMockFileTree());
-    } finally {
-      setLoadingTree(false);
     }
   };
 
@@ -180,6 +543,457 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   }, [blueprintId, analysisCache]);
 
+  // ============ 文件操作处理函数 ============
+
+  /**
+   * 处理右键菜单
+   */
+  const handleContextMenu = useCallback((
+    e: React.MouseEvent,
+    path: string,
+    type: 'file' | 'directory' | 'empty'
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      targetPath: path,
+      targetType: type,
+    });
+  }, []);
+
+  /**
+   * 关闭右键菜单
+   */
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  /**
+   * 创建新文件
+   */
+  const handleCreateFile = useCallback(async (name: string) => {
+    const filePath = fileDialog.parentPath ? `${fileDialog.parentPath}/${name}` : name;
+    try {
+      await fileOperationApi.createFile(filePath);
+      // 刷新文件树
+      loadFileTree();
+      setFileDialog(prev => ({ ...prev, visible: false }));
+    } catch (err: any) {
+      console.error('创建文件失败:', err);
+      alert(`创建文件失败: ${err.message}`);
+    }
+  }, [fileDialog.parentPath]);
+
+  /**
+   * 创建新文件夹
+   */
+  const handleCreateDirectory = useCallback(async (name: string) => {
+    const dirPath = fileDialog.parentPath ? `${fileDialog.parentPath}/${name}` : name;
+    try {
+      await fileOperationApi.createDirectory(dirPath);
+      // 刷新文件树
+      loadFileTree();
+      setFileDialog(prev => ({ ...prev, visible: false }));
+    } catch (err: any) {
+      console.error('创建文件夹失败:', err);
+      alert(`创建文件夹失败: ${err.message}`);
+    }
+  }, [fileDialog.parentPath]);
+
+  /**
+   * 重命名文件/文件夹
+   */
+  const handleRename = useCallback(async (newName: string) => {
+    const oldPath = fileDialog.parentPath;
+    const parentDir = oldPath.substring(0, oldPath.lastIndexOf('/'));
+    const newPath = parentDir ? `${parentDir}/${newName}` : newName;
+    try {
+      await fileOperationApi.rename(oldPath, newPath);
+      // 刷新文件树
+      loadFileTree();
+      setFileDialog(prev => ({ ...prev, visible: false }));
+    } catch (err: any) {
+      console.error('重命名失败:', err);
+      alert(`重命名失败: ${err.message}`);
+    }
+  }, [fileDialog.parentPath]);
+
+  /**
+   * 删除文件/文件夹
+   */
+  const handleDelete = useCallback(async () => {
+    const targetPath = contextMenu.targetPath;
+    if (!confirm(`确定要删除 "${targetPath}" 吗？此操作不可恢复！`)) {
+      return;
+    }
+    try {
+      await fileOperationApi.delete(targetPath);
+      // 刷新文件树
+      loadFileTree();
+      // 如果删除的是当前选中的，清除选择
+      if (selectedPath === targetPath || selectedPath?.startsWith(targetPath + '/')) {
+        setSelectedPath(null);
+        setFileContent(null);
+      }
+    } catch (err: any) {
+      console.error('删除失败:', err);
+      alert(`删除失败: ${err.message}`);
+    }
+  }, [contextMenu.targetPath, selectedPath]);
+
+  /**
+   * 复制路径到剪贴板
+   */
+  const handleCopyPath = useCallback(async (relativePath: boolean = false) => {
+    const path = relativePath ? contextMenu.targetPath : `${projectRoot}/${contextMenu.targetPath}`;
+    try {
+      await navigator.clipboard.writeText(path);
+    } catch (err) {
+      console.error('复制失败:', err);
+    }
+  }, [contextMenu.targetPath, projectRoot]);
+
+  // ============ 拖拽和剪贴板处理 ============
+
+  /**
+   * 拖拽开始
+   */
+  const handleDragStart = useCallback((e: React.DragEvent, path: string, type: 'file' | 'directory', name: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', path);
+    setDraggedItem({ path, type, name });
+  }, []);
+
+  /**
+   * 拖拽经过目标
+   */
+  const handleDragOver = useCallback((e: React.DragEvent, targetPath: string, targetType: 'file' | 'directory') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 只有文件夹才能作为拖放目标
+    if (targetType !== 'directory') return;
+
+    // 不能拖放到自己或自己的子目录
+    if (draggedItem && (targetPath === draggedItem.path || targetPath.startsWith(draggedItem.path + '/'))) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget(targetPath);
+  }, [draggedItem]);
+
+  /**
+   * 拖拽离开目标
+   */
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDropTarget(null);
+  }, []);
+
+  /**
+   * 拖拽放下
+   */
+  const handleDrop = useCallback(async (e: React.DragEvent, targetPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTarget(null);
+
+    if (!draggedItem) return;
+
+    // 不能拖放到自己或自己的子目录
+    if (targetPath === draggedItem.path || targetPath.startsWith(draggedItem.path + '/')) {
+      return;
+    }
+
+    // 计算目标路径
+    const newPath = `${targetPath}/${draggedItem.name}`;
+
+    try {
+      await fileOperationApi.move(draggedItem.path, newPath);
+      loadFileTree();
+
+      // 如果移动的是当前选中的，更新选择
+      if (selectedPath === draggedItem.path) {
+        setSelectedPath(newPath);
+      }
+    } catch (err: any) {
+      console.error('移动失败:', err);
+      alert(`移动失败: ${err.message}`);
+    }
+
+    setDraggedItem(null);
+  }, [draggedItem, selectedPath]);
+
+  /**
+   * 拖拽结束
+   */
+  const handleDragEnd = useCallback(() => {
+    setDraggedItem(null);
+    setDropTarget(null);
+  }, []);
+
+  /**
+   * 复制文件/文件夹到剪贴板
+   */
+  const handleCopyItem = useCallback((path: string, type: 'file' | 'directory') => {
+    const name = path.substring(path.lastIndexOf('/') + 1);
+    setClipboardItem({ path, type, name, operation: 'copy' });
+  }, []);
+
+  /**
+   * 剪切文件/文件夹到剪贴板
+   */
+  const handleCutItem = useCallback((path: string, type: 'file' | 'directory') => {
+    const name = path.substring(path.lastIndexOf('/') + 1);
+    setClipboardItem({ path, type, name, operation: 'cut' });
+  }, []);
+
+  /**
+   * 粘贴文件/文件夹
+   */
+  const handlePaste = useCallback(async (targetDir: string) => {
+    if (!clipboardItem) return;
+
+    const newPath = `${targetDir}/${clipboardItem.name}`;
+
+    try {
+      if (clipboardItem.operation === 'copy') {
+        await fileOperationApi.copy(clipboardItem.path, newPath);
+      } else {
+        await fileOperationApi.move(clipboardItem.path, newPath);
+        // 剪切后清空剪贴板
+        setClipboardItem(null);
+      }
+      loadFileTree();
+    } catch (err: any) {
+      console.error('粘贴失败:', err);
+      alert(`粘贴失败: ${err.message}`);
+    }
+  }, [clipboardItem]);
+
+  /**
+   * 键盘快捷键处理（Ctrl+C, Ctrl+X, Ctrl+V）
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 只在没有输入框焦点时处理
+      const activeElement = document.activeElement;
+      if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // 只有选中了文件/文件夹才处理
+      if (!selectedPath) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
+        handleCopyItem(selectedPath, selectedIsFile ? 'file' : 'directory');
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+        e.preventDefault();
+        handleCutItem(selectedPath, selectedIsFile ? 'file' : 'directory');
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        // 粘贴到选中的文件夹，或者选中文件的父目录
+        if (clipboardItem) {
+          let targetDir = selectedPath;
+          if (selectedIsFile) {
+            // 如果选中的是文件，获取其父目录
+            const lastSlash = selectedPath.lastIndexOf('/');
+            targetDir = lastSlash > 0 ? selectedPath.substring(0, lastSlash) : 'src';
+          }
+          handlePaste(targetDir);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPath, selectedIsFile, clipboardItem, handleCopyItem, handleCutItem, handlePaste]);
+
+  /**
+   * 获取当前的右键菜单项
+   */
+  const getContextMenuItems = useCallback((): MenuItem[] => {
+    const { targetPath, targetType } = contextMenu;
+
+    if (targetType === 'file') {
+      return getFileContextMenuItems({
+        onOpen: () => {
+          handleSelectNode(targetPath, true);
+          closeContextMenu();
+        },
+        onCut: () => {
+          handleCutItem(targetPath, 'file');
+          closeContextMenu();
+        },
+        onCopy: () => {
+          handleCopyItem(targetPath, 'file');
+          closeContextMenu();
+        },
+        onRename: () => {
+          const name = targetPath.substring(targetPath.lastIndexOf('/') + 1);
+          setFileDialog({
+            visible: true,
+            type: 'rename',
+            parentPath: targetPath,
+            currentName: name,
+          });
+          closeContextMenu();
+        },
+        onDelete: () => {
+          handleDelete();
+          closeContextMenu();
+        },
+        onCopyPath: () => {
+          handleCopyPath(false);
+          closeContextMenu();
+        },
+        onCopyRelativePath: () => {
+          handleCopyPath(true);
+          closeContextMenu();
+        },
+        onRevealInExplorer: () => {
+          // 在系统资源管理器中显示（通过后端API）
+          window.open(`file://${projectRoot}/${targetPath}`, '_blank');
+          closeContextMenu();
+        },
+      });
+    }
+
+    if (targetType === 'directory') {
+      return getFolderContextMenuItems({
+        onNewFile: () => {
+          setFileDialog({
+            visible: true,
+            type: 'newFile',
+            parentPath: targetPath,
+          });
+          closeContextMenu();
+        },
+        onNewFolder: () => {
+          setFileDialog({
+            visible: true,
+            type: 'newFolder',
+            parentPath: targetPath,
+          });
+          closeContextMenu();
+        },
+        onCut: () => {
+          handleCutItem(targetPath, 'directory');
+          closeContextMenu();
+        },
+        onCopy: () => {
+          handleCopyItem(targetPath, 'directory');
+          closeContextMenu();
+        },
+        onPaste: () => {
+          handlePaste(targetPath);
+          closeContextMenu();
+        },
+        canPaste: clipboardItem !== null,
+        onRename: () => {
+          const name = targetPath.substring(targetPath.lastIndexOf('/') + 1);
+          setFileDialog({
+            visible: true,
+            type: 'rename',
+            parentPath: targetPath,
+            currentName: name,
+          });
+          closeContextMenu();
+        },
+        onDelete: () => {
+          handleDelete();
+          closeContextMenu();
+        },
+        onCopyPath: () => {
+          handleCopyPath(false);
+          closeContextMenu();
+        },
+        onCopyRelativePath: () => {
+          handleCopyPath(true);
+          closeContextMenu();
+        },
+        onRevealInExplorer: () => {
+          window.open(`file://${projectRoot}/${targetPath}`, '_blank');
+          closeContextMenu();
+        },
+        onCollapseAll: () => {
+          setExpandedPaths(new Set());
+          closeContextMenu();
+        },
+      });
+    }
+
+    // 空白区域
+    return getEmptyContextMenuItems({
+      onNewFile: () => {
+        setFileDialog({
+          visible: true,
+          type: 'newFile',
+          parentPath: 'src',
+        });
+        closeContextMenu();
+      },
+      onNewFolder: () => {
+        setFileDialog({
+          visible: true,
+          type: 'newFolder',
+          parentPath: 'src',
+        });
+        closeContextMenu();
+      },
+      onRefresh: () => {
+        loadFileTree();
+        closeContextMenu();
+      },
+      onCollapseAll: () => {
+        setExpandedPaths(new Set());
+        closeContextMenu();
+      },
+    });
+  }, [contextMenu, handleDelete, handleCopyPath, handleCutItem, handleCopyItem, handlePaste, clipboardItem, closeContextMenu, projectRoot, loadFileTree]);
+
+  /**
+   * 处理项目切换
+   */
+  const handleProjectChange = useCallback(async (project: Project) => {
+    setCurrentProject(project);
+    setProjectRoot(project.path);
+    // 重新加载文件树，传入项目路径作为根目录
+    loadFileTree(project.path);
+  }, [loadFileTree]);
+
+  /**
+   * 打开系统原生的文件夹选择对话框
+   */
+  const handleOpenFolder = useCallback(async () => {
+    try {
+      // 调用系统原生对话框
+      const selectedPath = await projectApi.showFolderDialog();
+
+      if (selectedPath) {
+        // 用户选择了文件夹，打开项目
+        const project = await projectApi.openProject(selectedPath);
+        setCurrentProject({
+          id: project.id,
+          name: project.name,
+          path: project.path,
+        });
+        setProjectRoot(project.path);
+        // 传入项目路径作为根目录加载文件树
+        loadFileTree(project.path);
+      }
+      // 如果 selectedPath 为 null，说明用户取消了选择，不做任何操作
+    } catch (error: any) {
+      console.error('打开文件夹失败:', error);
+      alert('打开文件夹失败: ' + (error.message || '未知错误'));
+    }
+  }, [loadFileTree]);
 
   // 解析代码符号
   const parseCodeSymbols = useCallback((content: string, filePath: string): CodeSymbol[] => {
@@ -316,6 +1130,12 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       setEditedContent(content.content);
       setHasUnsavedChanges(false);
 
+      // 预热 JSDoc 缓存（异步，不阻塞 UI）
+      setTimeout(() => {
+        extractAllJSDocs(content.content, path);
+        console.log(`[Cache] JSDoc 预热完成: ${path}`);
+      }, 100);
+
       // 解析代码符号
       const symbols = parseCodeSymbols(content.content, path);
       setSymbolsCache(prev => new Map(prev).set(path, symbols));
@@ -343,6 +1163,27 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           modifiedAt: new Date().toISOString(),
         });
       }
+
+      // 清除该文件相关的符号分析缓存（文件已修改）
+      setSymbolAnalysisCache(prev => {
+        const newCache = new Map(prev);
+        // 遍历并删除该文件的所有符号分析缓存
+        for (const key of newCache.keys()) {
+          if (key.startsWith(`${selectedPath}:`)) {
+            newCache.delete(key);
+          }
+        }
+        return newCache;
+      });
+
+      // 同时清除节点分析缓存
+      setAnalysisCache(prev => {
+        const newCache = new Map(prev);
+        newCache.delete(selectedPath);
+        return newCache;
+      });
+
+      console.log(`[SaveFile] 已清除 ${selectedPath} 的分析缓存`);
     } catch (err: any) {
       setFileError(`保存失败: ${err.message}`);
     } finally {
@@ -394,18 +1235,16 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     setSelectedPath(path);
     setSelectedIsFile(isFile);
     setHasUnsavedChanges(false);
+    setEditorReady(false); // 重置 editor 状态，等待新 editor 挂载
 
     if (isFile) {
-      // 文件：加载内容，同时也触发语义分析
+      // 文件：加载内容，同时也触发语义分析（用于悬浮框显示）
       loadFileContent(path);
-      setViewMode('code');
-      // 也为文件生成语义分析
       if (!analysisCache.has(path)) {
         analyzeNode(path);
       }
     } else {
-      // 目录：只显示分析视图，不显示代码tab
-      setViewMode('analysis');
+      // 目录：触发语义分析
       if (!analysisCache.has(path)) {
         analyzeNode(path);
       }
@@ -424,6 +1263,226 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       return next;
     });
   };
+
+  // 处理鼠标进入文件/文件夹节点
+  const handleNodeMouseEnter = useCallback((e: React.MouseEvent, path: string) => {
+    // 清除之前的定时器
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+    }
+
+    // 延迟300ms显示悬浮框，避免快速移动时频繁显示
+    tooltipTimeoutRef.current = setTimeout(() => {
+      const rect = (e.target as HTMLElement).getBoundingClientRect();
+      const sidebarRect = sidebarRef.current?.getBoundingClientRect();
+
+      // 计算悬浮框位置（显示在节点右侧）
+      const x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
+      const y = rect.top;
+
+      setTooltip({
+        x,
+        y,
+        visible: true,
+        path,
+      });
+
+      // 触发分析（如果还没有缓存）
+      if (!analysisCache.has(path)) {
+        analyzeNode(path);
+      }
+    }, 300);
+  }, [analysisCache, analyzeNode]);
+
+  // 用于追踪鼠标是否在悬浮框上
+  const isMouseOnTooltipRef = useRef(false);
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 处理鼠标离开文件/文件夹节点
+  const handleNodeMouseLeave = useCallback(() => {
+    // 清除显示定时器
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+    // 清除之前的隐藏定时器
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+    }
+    // 延迟隐藏，让用户有时间移动到悬浮框上
+    hideTimeoutRef.current = setTimeout(() => {
+      if (!isMouseOnTooltipRef.current) {
+        setTooltip(prev => ({ ...prev, visible: false }));
+      }
+    }, 150);
+  }, []);
+
+  // 处理鼠标进入悬浮框（保持显示）
+  const handleTooltipMouseEnter = useCallback(() => {
+    isMouseOnTooltipRef.current = true;
+    // 清除所有定时器
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  }, []);
+
+  // 处理鼠标离开悬浮框
+  const handleTooltipMouseLeave = useCallback(() => {
+    isMouseOnTooltipRef.current = false;
+    // 延迟隐藏，给用户一点缓冲时间
+    hideTimeoutRef.current = setTimeout(() => {
+      setTooltip(prev => ({ ...prev, visible: false }));
+    }, 100);
+  }, []);
+
+  // 分析符号语义（调用 AI API）- 返回分析结果避免闭包问题
+  const analyzeSymbol = useCallback(async (symbol: CodeSymbol, filePath: string): Promise<SymbolAnalysis | null> => {
+    const cacheKey = `${filePath}:${symbol.name}:${symbol.line}`;
+
+    // 检查缓存
+    if (symbolAnalysisCache.has(cacheKey)) {
+      return symbolAnalysisCache.get(cacheKey) || null;
+    }
+
+    setAnalyzingSymbol(true);
+    try {
+      const result = await codebaseApi.analyzeSymbol({
+        filePath,
+        symbolName: symbol.name,
+        symbolKind: symbol.kind,
+        lineNumber: symbol.line,
+        detail: symbol.detail,
+      });
+
+      // 保存到缓存
+      setSymbolAnalysisCache(prev => {
+        const newCache = new Map(prev);
+        newCache.set(cacheKey, result);
+        return newCache;
+      });
+
+      return result; // 返回结果，避免闭包问题
+    } catch (error) {
+      console.error('[Analyze Symbol] 分析失败:', error);
+      return null;
+    } finally {
+      setAnalyzingSymbol(false);
+    }
+  }, [symbolAnalysisCache]);
+
+  // 计算分层悬浮提示数据（本地计算，0ms）
+  const computeLayeredTooltip = useCallback((
+    symbol: CodeSymbol,
+    filePath: string,
+    content: string
+  ): Partial<LayeredTooltipData> => {
+    const result: Partial<LayeredTooltipData> = {
+      syntaxExplanations: [],
+      loadingAI: false,
+    };
+
+    // 第一层：提取 JSDoc 注释
+    const jsdoc = extractJSDocForLine(content, symbol.line, filePath);
+    if (hasValidJSDoc(jsdoc)) {
+      result.userComment = jsdoc;
+    }
+
+    // 第二层：提取符号所在行的语法关键字
+    const lines = content.split('\n');
+    if (symbol.line > 0 && symbol.line <= lines.length) {
+      const lineContent = lines[symbol.line - 1];
+      const keywords = extractKeywordsFromLine(lineContent);
+      result.syntaxExplanations = keywords
+        .map(kw => getSyntaxExplanation(kw))
+        .filter((exp): exp is SyntaxExplanation => exp !== undefined);
+    }
+
+    // 第三层：检查缓存中是否有 AI 分析
+    const cacheKey = `${filePath}:${symbol.name}:${symbol.line}`;
+    const cachedAnalysis = symbolAnalysisCache.get(cacheKey);
+    if (cachedAnalysis) {
+      result.semanticAnalysis = cachedAnalysis;
+    }
+
+    return result;
+  }, [symbolAnalysisCache]);
+
+  // 处理鼠标进入代码符号节点
+  const handleSymbolMouseEnter = useCallback((e: React.MouseEvent, symbol: CodeSymbol, filePath: string) => {
+    // 清除之前的定时器
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+    }
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+    }
+
+    // 延迟显示悬浮框
+    tooltipTimeoutRef.current = setTimeout(() => {
+      const rect = (e.target as HTMLElement).getBoundingClientRect();
+      const sidebarRect = sidebarRef.current?.getBoundingClientRect();
+
+      const x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
+      const y = rect.top;
+
+      // 立即计算本地数据（0ms）
+      const content = editedContent || fileContent?.content || '';
+      const localData = computeLayeredTooltip(symbol, filePath, content);
+
+      // 更新分层提示数据
+      setLayeredTooltip({
+        userComment: localData.userComment,
+        syntaxExplanations: localData.syntaxExplanations || [],
+        semanticAnalysis: localData.semanticAnalysis,
+        loadingAI: !localData.semanticAnalysis, // 如果没有缓存，标记为加载中
+      });
+
+      setTooltip({
+        x,
+        y,
+        visible: true,
+        path: null,
+        symbol,
+        symbolFilePath: filePath,
+      });
+
+      // 异步触发 AI 符号分析（如果还没有缓存）
+      const cacheKey = `${filePath}:${symbol.name}:${symbol.line}`;
+      if (!symbolAnalysisCache.has(cacheKey)) {
+        analyzeSymbol(symbol, filePath).then((newAnalysis) => {
+          // AI 分析完成后更新 - 直接使用返回值避免闭包问题
+          if (newAnalysis) {
+            setLayeredTooltip(prev => ({
+              ...prev,
+              semanticAnalysis: newAnalysis,
+              loadingAI: false,
+            }));
+          }
+        });
+      }
+    }, 300);
+  }, [symbolAnalysisCache, analyzeSymbol, computeLayeredTooltip, editedContent, fileContent]);
+
+  // 处理鼠标离开代码符号节点
+  const handleSymbolMouseLeave = useCallback(() => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+    }
+    hideTimeoutRef.current = setTimeout(() => {
+      if (!isMouseOnTooltipRef.current) {
+        setTooltip(prev => ({ ...prev, visible: false }));
+      }
+    }, 150);
+  }, []);
 
   // 获取当前选中节点的分析
   const currentAnalysis = selectedPath ? analysisCache.get(selectedPath) : null;
@@ -530,6 +1589,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
               toggleExpand(symbolKey);
             }
           }}
+          onMouseEnter={(e) => handleSymbolMouseEnter(e, symbol, filePath)}
+          onMouseLeave={handleSymbolMouseLeave}
         >
           <span className={styles.treeIcon}>
             {hasChildren ? (isExpanded ? '▼' : '▶') : '　'}
@@ -556,11 +1617,23 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     const symbols = node.type === 'file' ? symbolsCache.get(node.path) : undefined;
     const hasSymbols = symbols && symbols.length > 0;
 
+    // 拖拽相关状态
+    const isDragging = draggedItem?.path === node.path;
+    const isDropTarget = dropTarget === node.path && node.type === 'directory';
+    const isCutItem = clipboardItem?.path === node.path && clipboardItem?.operation === 'cut';
+
     return (
       <div key={node.path}>
         <div
-          className={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isAnalyzed ? styles.analyzed : ''}`}
+          className={`${styles.treeItem} ${isSelected ? styles.selected : ''} ${isAnalyzed ? styles.analyzed : ''} ${isDragging ? styles.dragging : ''} ${isDropTarget ? styles.dropTarget : ''} ${isCutItem ? styles.cutItem : ''}`}
           style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          // 拖拽属性
+          draggable={true}
+          onDragStart={(e) => handleDragStart(e, node.path, node.type, node.name)}
+          onDragOver={(e) => handleDragOver(e, node.path, node.type)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, node.path)}
+          onDragEnd={handleDragEnd}
           onClick={() => {
             if (node.type === 'directory') {
               toggleExpand(node.path);
@@ -571,6 +1644,9 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             handleSelectNode(node.path, node.type === 'file');
             setSelectedSymbol(null); // 清除符号选择
           }}
+          onContextMenu={(e) => handleContextMenu(e, node.path, node.type)}
+          onMouseEnter={(e) => handleNodeMouseEnter(e, node.path)}
+          onMouseLeave={handleNodeMouseLeave}
         >
           <span className={styles.treeIcon}>
             {node.type === 'directory' ? (isExpanded ? '▼' : '▶') :
@@ -648,6 +1724,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setEditorReady(true);
 
     // 配置 TypeScript/JavaScript 语言服务（用于跳转支持）
     monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
@@ -683,7 +1760,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     const languages = ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'];
     languages.forEach(lang => {
       monaco.languages.registerDefinitionProvider(lang, {
-        provideDefinition: async (model, position) => {
+        provideDefinition: async (model: any, position: any) => {
           const word = model.getWordAtPosition(position);
           if (!word) return null;
 
@@ -754,6 +1831,86 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         }
       }
     });
+
+    // 添加右键菜单 - "问AI"选项
+    editor.addAction({
+      id: 'ask-ai-about-selection',
+      label: '🤖 问 AI 关于这段代码',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 0,
+      run: () => {
+        handleAskAI();
+      }
+    });
+
+    // 清理旧的 Hover Provider（防止重复注册导致多个提示框）
+    if (hoverProviderRef.current) {
+      hoverProviderRef.current.dispose();
+      hoverProviderRef.current = null;
+    }
+
+    // 注册增强的 Hover Provider（在新手模式下添加语法解释）
+    const hoverProvider = monaco.languages.registerHoverProvider(['typescript', 'javascript', 'typescriptreact', 'javascriptreact'], {
+      provideHover: (model: any, position: any) => {
+        // 只在新手模式下增强（使用 ref 获取最新值）
+        if (!beginnerModeRef.current) return null;
+
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+
+        const lineContent = model.getLineContent(position.lineNumber);
+
+        // 检查是否是关键字
+        const syntaxExp = getSyntaxExplanation(word.word);
+        if (syntaxExp) {
+          return {
+            range: new monaco.Range(
+              position.lineNumber,
+              word.startColumn,
+              position.lineNumber,
+              word.endColumn
+            ),
+            contents: [
+              { value: `**📖 ${syntaxExp.keyword}** \`${syntaxExp.category}\`` },
+              { value: syntaxExp.brief },
+              ...(syntaxExp.detail ? [{ value: `*${syntaxExp.detail}*` }] : []),
+              ...(syntaxExp.example ? [{ value: `\`\`\`typescript\n${syntaxExp.example}\n\`\`\`` }] : []),
+            ]
+          };
+        }
+
+        // 检查当前行的关键字
+        const keywords = extractKeywordsFromLine(lineContent);
+        if (keywords.length > 0) {
+          const explanations = keywords
+            .map(kw => getSyntaxExplanation(kw))
+            .filter((exp): exp is SyntaxExplanation => exp !== undefined)
+            .slice(0, 3);
+
+          if (explanations.length > 0) {
+            return {
+              range: new monaco.Range(
+                position.lineNumber,
+                word.startColumn,
+                position.lineNumber,
+                word.endColumn
+              ),
+              contents: [
+                { value: '**📖 本行语法提示** *(新手模式)*' },
+                ...explanations.map(exp => ({
+                  value: `\`${exp.keyword}\` - ${exp.brief}`
+                }))
+              ]
+            };
+          }
+        }
+
+        return null;
+      }
+    });
+
+    // 保存到 ref，以便后续清理
+    hoverProviderRef.current = hoverProvider;
   };
 
   // 解析相对路径
@@ -772,11 +1929,657 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     return baseParts.join('/');
   };
 
+  // ============ AI 增强功能实现 ============
+
+  /**
+   * 拆分驼峰命名为可读文本
+   */
+  const splitCamelCase = (str: string): string => {
+    return str
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, s => s.toUpperCase())
+      .trim()
+      .toLowerCase();
+  };
+
+  /**
+   * 根据命名推断代码职责
+   */
+  const inferPurposeFromName = (name: string): string => {
+    // 常见命名模式
+    const patterns: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+      // 动作类
+      [/^handle(\w+)$/, (m) => `处理 ${splitCamelCase(m[1])} 事件`],
+      [/^on(\w+)$/, (m) => `响应 ${splitCamelCase(m[1])} 事件`],
+      [/^get(\w+)$/, (m) => `获取 ${splitCamelCase(m[1])}`],
+      [/^set(\w+)$/, (m) => `设置 ${splitCamelCase(m[1])}`],
+      [/^fetch(\w+)$/, (m) => `请求 ${splitCamelCase(m[1])} 数据`],
+      [/^load(\w+)$/, (m) => `加载 ${splitCamelCase(m[1])}`],
+      [/^save(\w+)$/, (m) => `保存 ${splitCamelCase(m[1])}`],
+      [/^create(\w+)$/, (m) => `创建 ${splitCamelCase(m[1])}`],
+      [/^update(\w+)$/, (m) => `更新 ${splitCamelCase(m[1])}`],
+      [/^delete(\w+)$/, (m) => `删除 ${splitCamelCase(m[1])}`],
+      [/^remove(\w+)$/, (m) => `移除 ${splitCamelCase(m[1])}`],
+      [/^add(\w+)$/, (m) => `添加 ${splitCamelCase(m[1])}`],
+      [/^init(\w*)$/, (m) => m[1] ? `初始化 ${splitCamelCase(m[1])}` : '执行初始化'],
+      [/^parse(\w+)$/, (m) => `解析 ${splitCamelCase(m[1])}`],
+      [/^format(\w+)$/, (m) => `格式化 ${splitCamelCase(m[1])}`],
+      [/^validate(\w+)$/, (m) => `验证 ${splitCamelCase(m[1])}`],
+      [/^check(\w+)$/, (m) => `检查 ${splitCamelCase(m[1])}`],
+      [/^is(\w+)$/, (m) => `判断是否 ${splitCamelCase(m[1])}`],
+      [/^has(\w+)$/, (m) => `判断是否有 ${splitCamelCase(m[1])}`],
+      [/^can(\w+)$/, (m) => `判断能否 ${splitCamelCase(m[1])}`],
+      [/^should(\w+)$/, (m) => `判断是否应该 ${splitCamelCase(m[1])}`],
+      [/^render(\w*)$/, (m) => m[1] ? `渲染 ${splitCamelCase(m[1])}` : '执行渲染'],
+      [/^use(\w+)$/, (m) => `${splitCamelCase(m[1])} Hook`],
+      [/^with(\w+)$/, (m) => `附加 ${splitCamelCase(m[1])} 能力的高阶组件`],
+      // 角色类后缀
+      [/(\w+)Manager$/, (m) => `${splitCamelCase(m[1])} 管理器`],
+      [/(\w+)Service$/, (m) => `${splitCamelCase(m[1])} 服务`],
+      [/(\w+)Controller$/, (m) => `${splitCamelCase(m[1])} 控制器`],
+      [/(\w+)Handler$/, (m) => `${splitCamelCase(m[1])} 处理器`],
+      [/(\w+)Provider$/, (m) => `${splitCamelCase(m[1])} 提供者`],
+      [/(\w+)Factory$/, (m) => `${splitCamelCase(m[1])} 工厂`],
+      [/(\w+)Builder$/, (m) => `${splitCamelCase(m[1])} 构建器`],
+      [/(\w+)Helper$/, (m) => `${splitCamelCase(m[1])} 辅助工具`],
+      [/(\w+)Util(?:s)?$/, (m) => `${splitCamelCase(m[1])} 工具函数`],
+      [/(\w+)Coordinator$/, (m) => `${splitCamelCase(m[1])} 协调器，负责多组件间的协作调度`],
+      [/(\w+)Registry$/, (m) => `${splitCamelCase(m[1])} 注册表`],
+      [/(\w+)Pool$/, (m) => `${splitCamelCase(m[1])} 池`],
+      [/(\w+)Queue$/, (m) => `${splitCamelCase(m[1])} 队列`],
+      [/(\w+)Cache$/, (m) => `${splitCamelCase(m[1])} 缓存`],
+      [/(\w+)Store$/, (m) => `${splitCamelCase(m[1])} 状态存储`],
+      [/(\w+)Context$/, (m) => `${splitCamelCase(m[1])} 上下文`],
+      [/(\w+)Reducer$/, (m) => `${splitCamelCase(m[1])} 状态管理 Reducer`],
+      [/(\w+)Middleware$/, (m) => `${splitCamelCase(m[1])} 中间件`],
+      [/(\w+)Plugin$/, (m) => `${splitCamelCase(m[1])} 插件`],
+      [/(\w+)Adapter$/, (m) => `${splitCamelCase(m[1])} 适配器`],
+      [/(\w+)Wrapper$/, (m) => `${splitCamelCase(m[1])} 包装器`],
+      [/(\w+)Listener$/, (m) => `${splitCamelCase(m[1])} 监听器`],
+      [/(\w+)Observer$/, (m) => `${splitCamelCase(m[1])} 观察者`],
+      [/(\w+)Emitter$/, (m) => `${splitCamelCase(m[1])} 事件发射器`],
+      [/(\w+)Client$/, (m) => `${splitCamelCase(m[1])} 客户端`],
+      [/(\w+)Server$/, (m) => `${splitCamelCase(m[1])} 服务端`],
+      [/(\w+)Api$/, (m) => `${splitCamelCase(m[1])} API 接口`],
+      [/(\w+)Route(?:r)?$/, (m) => `${splitCamelCase(m[1])} 路由`],
+      [/(\w+)Component$/, (m) => `${splitCamelCase(m[1])} 组件`],
+      [/(\w+)View$/, (m) => `${splitCamelCase(m[1])} 视图`],
+      [/(\w+)Page$/, (m) => `${splitCamelCase(m[1])} 页面`],
+      [/(\w+)Modal$/, (m) => `${splitCamelCase(m[1])} 弹窗`],
+      [/(\w+)Dialog$/, (m) => `${splitCamelCase(m[1])} 对话框`],
+      [/(\w+)Form$/, (m) => `${splitCamelCase(m[1])} 表单`],
+      [/(\w+)List$/, (m) => `${splitCamelCase(m[1])} 列表`],
+      [/(\w+)Table$/, (m) => `${splitCamelCase(m[1])} 表格`],
+      [/(\w+)Panel$/, (m) => `${splitCamelCase(m[1])} 面板`],
+      [/(\w+)Card$/, (m) => `${splitCamelCase(m[1])} 卡片`],
+      [/(\w+)Button$/, (m) => `${splitCamelCase(m[1])} 按钮`],
+      [/(\w+)Input$/, (m) => `${splitCamelCase(m[1])} 输入框`],
+      [/(\w+)Select$/, (m) => `${splitCamelCase(m[1])} 选择器`],
+    ];
+
+    for (const [pattern, generator] of patterns) {
+      const match = name.match(pattern);
+      if (match) {
+        return generator(match);
+      }
+    }
+
+    return '';
+  };
+
+  /**
+   * 生成智能描述：优先使用 JSDoc，否则分析代码结构
+   */
+  const generateSmartDescription = useCallback((
+    type: 'class' | 'function' | 'component',
+    name: string,
+    lineNum: number,
+    content: string
+  ): string => {
+    // 1. 优先从 JSDoc 获取描述
+    const jsdoc = extractJSDocForLine(content, lineNum, selectedPath || undefined);
+    if (jsdoc && jsdoc.description) {
+      return jsdoc.description;
+    }
+
+    // 2. 根据代码结构分析
+    const lines = content.split('\n');
+
+    if (type === 'class') {
+      // 分析类的结构
+      const classStartLine = lineNum - 1;
+      let braceCount = 0;
+      let started = false;
+      let methodCount = 0;
+      let propertyCount = 0;
+      const methods: string[] = [];
+      let extendsClass = '';
+      let implementsInterfaces: string[] = [];
+
+      // 解析 extends 和 implements
+      const classDecl = lines[classStartLine];
+      const extendsMatch = classDecl.match(/extends\s+(\w+)/);
+      const implementsMatch = classDecl.match(/implements\s+([\w\s,]+)/);
+      if (extendsMatch) extendsClass = extendsMatch[1];
+      if (implementsMatch) {
+        implementsInterfaces = implementsMatch[1].split(',').map(s => s.trim());
+      }
+
+      for (let i = classStartLine; i < Math.min(classStartLine + 200, lines.length); i++) {
+        const line = lines[i];
+        if (line.includes('{')) { braceCount++; started = true; }
+        if (line.includes('}')) braceCount--;
+        if (started && braceCount === 0) break;
+
+        // 识别方法
+        const methodMatch = line.match(/^\s*(?:public|private|protected)?\s*(?:static)?\s*(?:async)?\s*(\w+)\s*\(/);
+        if (methodMatch && methodMatch[1] !== 'constructor') {
+          methodCount++;
+          if (methods.length < 3) methods.push(methodMatch[1]);
+        }
+
+        // 识别属性
+        const propMatch = line.match(/^\s*(?:public|private|protected)?\s*(?:static)?\s*(?:readonly)?\s*(\w+)\s*[?:]?\s*[:=]/);
+        if (propMatch && !line.includes('(')) {
+          propertyCount++;
+        }
+      }
+
+      // 根据分析结果生成描述
+      const parts: string[] = [];
+
+      // 基于类名推断职责
+      const nameDesc = inferPurposeFromName(name);
+      if (nameDesc) {
+        parts.push(nameDesc);
+      }
+
+      if (extendsClass) {
+        parts.push(`继承自 ${extendsClass}`);
+      }
+      if (implementsInterfaces.length > 0) {
+        parts.push(`实现 ${implementsInterfaces.join(', ')} 接口`);
+      }
+      if (methodCount > 0) {
+        parts.push(`包含 ${methodCount} 个方法` + (methods.length > 0 ? `（${methods.join(', ')} 等）` : ''));
+      }
+      if (propertyCount > 0) {
+        parts.push(`${propertyCount} 个属性`);
+      }
+
+      return parts.length > 0 ? parts.join('，') + '。' : `类 ${name}`;
+    }
+
+    if (type === 'function' || type === 'component') {
+      // 分析函数/组件结构
+      const funcStartLine = lineNum - 1;
+      const funcDecl = lines[funcStartLine];
+
+      // 提取参数
+      const paramsMatch = funcDecl.match(/\(([^)]*)\)/);
+      const params = paramsMatch ? paramsMatch[1].split(',').filter(p => p.trim()).map(p => {
+        const nameMatch = p.trim().match(/^(\w+)/);
+        return nameMatch ? nameMatch[1] : '';
+      }).filter(Boolean) : [];
+
+      // 提取返回类型
+      const returnMatch = funcDecl.match(/\):\s*([^{]+)/);
+      const returnType = returnMatch ? returnMatch[1].trim() : '';
+
+      // 检查是否是 async
+      const isAsync = funcDecl.includes('async');
+
+      const parts: string[] = [];
+
+      // 基于函数名推断职责
+      const nameDesc = inferPurposeFromName(name);
+      if (nameDesc) {
+        parts.push(nameDesc);
+      }
+
+      if (type === 'component') {
+        // 分析组件使用的 hooks
+        let braceCount = 0;
+        let started = false;
+        const hooks: string[] = [];
+        for (let i = funcStartLine; i < Math.min(funcStartLine + 100, lines.length); i++) {
+          const line = lines[i];
+          if (line.includes('{')) { braceCount++; started = true; }
+          if (line.includes('}')) braceCount--;
+          if (started && braceCount === 0) break;
+
+          const hookMatch = line.match(/use(\w+)\s*\(/);
+          if (hookMatch && !hooks.includes(hookMatch[1]) && hooks.length < 3) {
+            hooks.push('use' + hookMatch[1]);
+          }
+        }
+
+        if (hooks.length > 0) {
+          parts.push(`使用 ${hooks.join(', ')}`);
+        }
+      }
+
+      if (isAsync) {
+        parts.push('异步执行');
+      }
+      if (params.length > 0) {
+        parts.push(`接收参数: ${params.slice(0, 3).join(', ')}${params.length > 3 ? ' 等' : ''}`);
+      }
+      if (returnType && returnType !== 'void') {
+        parts.push(`返回 ${returnType}`);
+      }
+
+      return parts.length > 0 ? parts.join('，') + '。' : `${type === 'component' ? '组件' : '函数'} ${name}`;
+    }
+
+    return `${name}`;
+  }, [selectedPath]);
+
+  /**
+   * 本地生成导游步骤（作为 AI 调用失败时的 fallback）
+   */
+  const generateLocalTourSteps = useCallback((content: string): TourStep[] => {
+    const steps: TourStep[] = [];
+    const lines = content.split('\n');
+
+    // 解析导入区域
+    let importEndLine = 0;
+    const importSources: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const importMatch = lines[i].match(/^import\s.*from\s+['"]([^'"]+)['"]/);
+      if (importMatch) {
+        importEndLine = i + 1;
+        const source = importMatch[1];
+        if (!source.startsWith('.') && !source.startsWith('@/') && importSources.length < 5) {
+          importSources.push(source.split('/')[0]);
+        }
+      }
+    }
+    if (importEndLine > 0) {
+      const uniqueSources = [...new Set(importSources)];
+      steps.push({
+        type: 'block',
+        name: '导入声明',
+        line: 1,
+        endLine: importEndLine,
+        description: uniqueSources.length > 0
+          ? `引入 ${uniqueSources.join(', ')} 等外部依赖。`
+          : '引入本地模块依赖。',
+        importance: 'medium',
+      });
+    }
+
+    // 解析类定义
+    const classMatches = content.matchAll(/(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/g);
+    for (const match of classMatches) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      steps.push({
+        type: 'class',
+        name: match[1],
+        line: lineNum,
+        description: generateSmartDescription('class', match[1], lineNum, content),
+        importance: 'high',
+      });
+    }
+
+    // 解析函数定义
+    const funcMatches = content.matchAll(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g);
+    for (const match of funcMatches) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      steps.push({
+        type: 'function',
+        name: match[1],
+        line: lineNum,
+        description: generateSmartDescription('function', match[1], lineNum, content),
+        importance: 'high',
+      });
+    }
+
+    // 解析 React 组件
+    const componentMatches = content.matchAll(/(?:export\s+)?const\s+(\w+):\s*React\.FC/g);
+    for (const match of componentMatches) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      steps.push({
+        type: 'function',
+        name: match[1],
+        line: lineNum,
+        description: generateSmartDescription('component', match[1], lineNum, content),
+        importance: 'high',
+      });
+    }
+
+    steps.sort((a, b) => a.line - b.line);
+    return steps;
+  }, [generateSmartDescription]);
+
+  // 1. AI 导游模式 - 生成代码导览
+  const startCodeTour = useCallback(async () => {
+    if (!selectedPath || !editedContent) return;
+
+    setTourState(prev => ({ ...prev, loading: true, active: false }));
+
+    try {
+      // 调用后端 AI 接口生成智能导游
+      const response = await fetch('/api/blueprint/ai/tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath: selectedPath,
+          content: editedContent,
+        }),
+      });
+
+      let steps: TourStep[] = [];
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data?.steps) {
+          steps = data.data.steps;
+        }
+      }
+
+      // 如果 AI 接口失败或返回空，使用本地分析作为 fallback
+      if (steps.length === 0) {
+        console.log('[Tour] AI 接口未返回结果，使用本地分析');
+        steps = generateLocalTourSteps(editedContent);
+      }
+
+      setTourState({
+        active: true,
+        steps,
+        currentStep: 0,
+        loading: false,
+      });
+
+      // 跳转到第一步
+      if (steps.length > 0 && editorRef.current) {
+        editorRef.current.revealLineInCenter(steps[0].line);
+        editorRef.current.setPosition({ lineNumber: steps[0].line, column: 1 });
+      }
+    } catch (err) {
+      console.error('生成导游失败:', err);
+      // 失败时尝试本地分析
+      try {
+        const localSteps = generateLocalTourSteps(editedContent);
+        if (localSteps.length > 0) {
+          setTourState({
+            active: true,
+            steps: localSteps,
+            currentStep: 0,
+            loading: false,
+          });
+          if (editorRef.current) {
+            editorRef.current.revealLineInCenter(localSteps[0].line);
+            editorRef.current.setPosition({ lineNumber: localSteps[0].line, column: 1 });
+          }
+          return;
+        }
+      } catch {}
+      setTourState(prev => ({ ...prev, loading: false }));
+    }
+  }, [selectedPath, editedContent]);
+
+  // 导游导航
+  const tourNavigate = (direction: 'prev' | 'next') => {
+    if (!tourState.active || tourState.steps.length === 0) return;
+
+    let newStep = tourState.currentStep;
+    if (direction === 'next' && newStep < tourState.steps.length - 1) {
+      newStep++;
+    } else if (direction === 'prev' && newStep > 0) {
+      newStep--;
+    }
+
+    setTourState(prev => ({ ...prev, currentStep: newStep }));
+
+    const step = tourState.steps[newStep];
+    if (step && editorRef.current) {
+      editorRef.current.revealLineInCenter(step.line);
+      editorRef.current.setPosition({ lineNumber: step.line, column: 1 });
+    }
+  };
+
+  // 停止导游
+  const stopTour = () => {
+    setTourState({
+      active: false,
+      steps: [],
+      currentStep: 0,
+      loading: false,
+    });
+  };
+
+  // 2. 选中即问 AI
+  const handleAskAI = useCallback(() => {
+    if (!editorRef.current) return;
+
+    const selection = editorRef.current.getSelection();
+    const model = editorRef.current.getModel();
+    if (!selection || !model) return;
+
+    const selectedText = model.getValueInRange(selection);
+    if (!selectedText.trim()) return;
+
+    setAskAI({
+      visible: true,
+      selectedCode: selectedText,
+      selectedRange: {
+        startLine: selection.startLineNumber,
+        endLine: selection.endLineNumber,
+      },
+      question: '',
+      answer: null,
+      loading: false,
+    });
+  }, []);
+
+  // 提交 AI 问题
+  const submitAIQuestion = useCallback(async () => {
+    if (!askAI.question.trim() || !askAI.selectedCode) return;
+
+    setAskAI(prev => ({ ...prev, loading: true, answer: null }));
+
+    try {
+      // 调用后端 AI 接口
+      const response = await fetch('/api/blueprint/ai/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: askAI.selectedCode,
+          question: askAI.question,
+          filePath: selectedPath,
+          context: {
+            language: selectedPath?.split('.').pop() || 'typescript',
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.answer) {
+          setAskAI(prev => ({
+            ...prev,
+            answer: data.answer,
+            loading: false,
+          }));
+        } else {
+          setAskAI(prev => ({
+            ...prev,
+            answer: `❌ AI 服务暂时不可用: ${data.error || '请稍后重试'}`,
+            loading: false,
+          }));
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setAskAI(prev => ({
+          ...prev,
+          answer: `❌ AI 服务请求失败: ${errorData.error || '请检查网络连接或 API 配置'}`,
+          loading: false,
+        }));
+      }
+    } catch (err: any) {
+      setAskAI(prev => ({
+        ...prev,
+        answer: `❌ 网络错误: ${err.message || '无法连接到 AI 服务'}`,
+        loading: false,
+      }));
+    }
+  }, [askAI.question, askAI.selectedCode, selectedPath]);
+
+  // 关闭 AI 问答
+  const closeAskAI = () => {
+    setAskAI({
+      visible: false,
+      selectedCode: '',
+      selectedRange: null,
+      question: '',
+      answer: null,
+      loading: false,
+    });
+  };
+
+  // 3. 代码热力图 - 调用真正的 AI 分析代码复杂度
+  const analyzeHeatmap = useCallback(async () => {
+    if (!editedContent || !selectedPath) return;
+
+    setHeatmapLoading(true);
+    setHeatmapData([]);
+
+    try {
+      // 获取文件语言
+      const filename = selectedPath.split('/').pop() || 'file.txt';
+      const language = getMonacoLanguage(filename);
+
+      console.log(`[AI Heatmap] 开始分析复杂度: ${selectedPath}, 语言: ${language}`);
+
+      const result = await codebaseApi.analyzeHeatmap({
+        filePath: selectedPath,
+        content: editedContent,
+        language,
+      });
+
+      const heatmap: HeatmapData[] = result.heatmap.map(h => ({
+        line: h.line,
+        complexity: h.complexity,
+        reason: h.reason,
+      }));
+
+      console.log(`[AI Heatmap] 分析完成，标记 ${heatmap.length} 个复杂行${result.fromCache ? ' (缓存)' : ''}`);
+
+      setHeatmapData(heatmap);
+      setHeatmapEnabled(true);
+    } catch (err) {
+      console.error('分析热力图失败:', err);
+      setHeatmapData([]);
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [editedContent, selectedPath]);
+
+  // 4. 重构建议 - 调用真正的 AI 分析代码质量
+  const analyzeRefactoring = useCallback(async () => {
+    if (!editedContent || !selectedPath) return;
+
+    setRefactorLoading(true);
+    setRefactorSuggestions([]);
+
+    try {
+      // 获取文件语言
+      const filename = selectedPath.split('/').pop() || 'file.txt';
+      const language = getMonacoLanguage(filename);
+
+      console.log(`[AI Refactor] 开始分析重构建议: ${selectedPath}, 语言: ${language}`);
+
+      const result = await codebaseApi.analyzeRefactoring({
+        filePath: selectedPath,
+        content: editedContent,
+        language,
+      });
+
+      const suggestions: RefactorSuggestion[] = result.suggestions.map(s => ({
+        line: s.line,
+        endLine: s.endLine,
+        type: s.type,
+        message: s.message,
+        priority: s.priority,
+      }));
+
+      console.log(`[AI Refactor] 分析完成，生成 ${suggestions.length} 个建议${result.fromCache ? ' (缓存)' : ''}`);
+
+      setRefactorSuggestions(suggestions);
+      setRefactorEnabled(true);
+    } catch (err) {
+      console.error('分析重构建议失败:', err);
+      setRefactorSuggestions([]);
+    } finally {
+      setRefactorLoading(false);
+    }
+  }, [editedContent, selectedPath]);
+
+  // 5. AI 气泡 - 调用真正的 AI 生成代码解释
+  const generateAIBubbles = useCallback(async () => {
+    if (!editedContent || !selectedPath) return;
+
+    setBubblesLoading(true);
+    setAiBubbles([]);
+
+    try {
+      // 获取文件语言
+      const filename = selectedPath.split('/').pop() || 'file.txt';
+      const language = getMonacoLanguage(filename);
+
+      console.log(`[AI Bubbles] 开始生成气泡: ${selectedPath}, 语言: ${language}`);
+
+      // 调用真正的 AI API
+      const result = await codebaseApi.analyzeBubbles({
+        filePath: selectedPath,
+        content: editedContent,
+        language,
+      });
+
+      // 转换气泡格式，添加 emoji
+      const bubbles: AIBubble[] = result.bubbles.map(b => ({
+        line: b.line,
+        message: `${b.type === 'info' ? '💡' : b.type === 'tip' ? '✨' : '⚠️'} ${b.message}`,
+        type: b.type,
+      }));
+
+      console.log(`[AI Bubbles] 生成 ${bubbles.length} 个气泡${result.fromCache ? ' (来自缓存)' : ''}`);
+
+      setAiBubbles(bubbles);
+      setBubblesEnabled(true);
+    } catch (err) {
+      console.error('生成AI气泡失败:', err);
+      // 失败时不显示任何气泡，而不是显示废话
+      setAiBubbles([]);
+    } finally {
+      setBubblesLoading(false);
+    }
+  }, [editedContent, selectedPath]);
+
+  // 文件内容变化时自动生成 AI 气泡（如果默认开启）
+  useEffect(() => {
+    if (bubblesEnabled && editedContent && selectedPath && bubblesGeneratedRef.current !== selectedPath) {
+      bubblesGeneratedRef.current = selectedPath;
+      // 延迟生成，避免频繁触发
+      const timer = setTimeout(() => {
+        generateAIBubbles();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [bubblesEnabled, editedContent, selectedPath, generateAIBubbles]);
+
   // Monaco Editor 内容变化回调
   const handleEditorChange = (value: string | undefined) => {
     const newContent = value || '';
     setEditedContent(newContent);
-    setHasUnsavedChanges(newContent !== fileContent?.content);
+    const isModified = newContent !== fileContent?.content;
+    setHasUnsavedChanges(isModified);
+
+    // 文件修改时清除 JSDoc 缓存（内容已变，注释位置可能已变）
+    if (isModified && selectedPath) {
+      clearJSDocCache(selectedPath);
+    }
   };
 
   // 跳转到定义（模拟 LSP Go to Definition）
@@ -865,8 +2668,19 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     const filename = selectedPath?.split('/').pop() || 'file.txt';
     const language = getMonacoLanguage(filename);
 
+    // 跳转到指定步骤
+    const goToStep = (stepIndex: number) => {
+      setTourState(prev => ({ ...prev, currentStep: stepIndex }));
+      const step = tourState.steps[stepIndex];
+      if (step && editorRef.current) {
+        editorRef.current.revealLineInCenter(step.line);
+        editorRef.current.setPosition({ lineNumber: step.line, column: 1 });
+      }
+    };
+
     return (
-      <div className={styles.codeEditor}>
+      <div className={styles.codeEditorWithTour}>
+        <div className={tourState.active && tourState.steps.length > 0 ? styles.codeEditorMain : styles.codeEditor}>
         <div className={styles.codeHeader}>
           <div className={styles.codeInfo}>
             <span className={styles.codeLanguage}>{language}</span>
@@ -874,6 +2688,65 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             {hasUnsavedChanges && <span className={styles.unsavedBadge}>未保存</span>}
           </div>
           <div className={styles.codeActions}>
+            {/* AI 增强功能按钮组 */}
+            <div className={styles.aiToolGroup}>
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${tourState.active ? styles.active : ''}`}
+                onClick={tourState.active ? stopTour : startCodeTour}
+                disabled={tourState.loading}
+                title="AI 代码导游 - 逐步讲解代码"
+              >
+                {tourState.loading ? '⏳' : tourState.active ? '⏹️ 停止导游' : '🎯 代码导游'}
+              </button>
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${heatmapEnabled ? styles.active : ''}`}
+                onClick={() => {
+                  if (heatmapEnabled) {
+                    setHeatmapEnabled(false);
+                    setHeatmapData([]);
+                  } else {
+                    analyzeHeatmap();
+                  }
+                }}
+                disabled={heatmapLoading}
+                title="代码热力图 - 显示代码复杂度"
+              >
+                {heatmapLoading ? '⏳' : heatmapEnabled ? '🔥 关闭热力图' : '🌡️ 热力图'}
+              </button>
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${refactorEnabled ? styles.active : ''}`}
+                onClick={() => {
+                  if (refactorEnabled) {
+                    setRefactorEnabled(false);
+                    setRefactorSuggestions([]);
+                  } else {
+                    analyzeRefactoring();
+                  }
+                }}
+                disabled={refactorLoading}
+                title="重构建议 - 检测可优化的代码"
+              >
+                {refactorLoading ? '⏳' : refactorEnabled ? '✨ 关闭建议' : '🔧 重构建议'}
+              </button>
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${bubblesEnabled ? styles.active : ''}`}
+                onClick={() => {
+                  if (bubblesEnabled) {
+                    setBubblesEnabled(false);
+                    setAiBubbles([]);
+                  } else {
+                    generateAIBubbles();
+                  }
+                }}
+                disabled={bubblesLoading}
+                title="AI 气泡 - 显示代码解释气泡"
+              >
+                {bubblesLoading ? '⏳' : bubblesEnabled ? '💬 关闭气泡' : '💡 AI 气泡'}
+              </button>
+            </div>
+
+            <span className={styles.toolDivider}>|</span>
+
             <button
               className={`${styles.codeBtn} ${isEditing ? styles.active : ''}`}
               onClick={() => setIsEditing(!isEditing)}
@@ -911,6 +2784,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             options={{
               readOnly: !isEditing,
               minimap: { enabled: true },
+              glyphMargin: true,
               fontSize: 14,
               fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
               fontLigatures: true,
@@ -994,9 +2868,132 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             {editedContent.split('\n').length} 行
           </span>
           <span className={styles.codeShortcuts}>
-            F12: 跳转定义 | Ctrl+S: 保存 | Ctrl+Space: 自动补全
+            F12: 跳转定义 | Ctrl+S: 保存 | 右键: 问AI
           </span>
         </div>
+
+        {/* 选中即问 AI 对话框 */}
+        {askAI.visible && (
+          <div className={styles.askAIOverlay} onClick={closeAskAI}>
+            <div className={styles.askAIDialog} onClick={e => e.stopPropagation()}>
+              <div className={styles.askAIHeader}>
+                <span className={styles.askAITitle}>🤖 问 AI</span>
+                <span className={styles.askAIRange}>
+                  行 {askAI.selectedRange?.startLine} - {askAI.selectedRange?.endLine}
+                </span>
+                <button className={styles.askAIClose} onClick={closeAskAI}>×</button>
+              </div>
+              <div className={styles.askAICode}>
+                <pre>{askAI.selectedCode.slice(0, 500)}{askAI.selectedCode.length > 500 ? '...' : ''}</pre>
+              </div>
+              <div className={styles.askAIInput}>
+                <input
+                  type="text"
+                  placeholder="输入你的问题，例如：这段代码有什么作用？"
+                  value={askAI.question}
+                  onChange={e => setAskAI(prev => ({ ...prev, question: e.target.value }))}
+                  onKeyPress={e => e.key === 'Enter' && submitAIQuestion()}
+                  disabled={askAI.loading}
+                  autoFocus
+                />
+                <button
+                  className={styles.askAISubmit}
+                  onClick={submitAIQuestion}
+                  disabled={askAI.loading || !askAI.question.trim()}
+                >
+                  {askAI.loading ? '思考中...' : '提问'}
+                </button>
+              </div>
+              {askAI.answer && (
+                <div className={styles.askAIAnswer}>
+                  <div className={styles.askAIAnswerLabel}>AI 回答：</div>
+                  <div className={styles.askAIAnswerContent}>{askAI.answer}</div>
+                </div>
+              )}
+              <div className={styles.askAIHints}>
+                <span className={styles.askAIHint} onClick={() => setAskAI(prev => ({ ...prev, question: '这段代码有什么作用？' }))}>
+                  这段代码有什么作用？
+                </span>
+                <span className={styles.askAIHint} onClick={() => setAskAI(prev => ({ ...prev, question: '怎么优化这段代码？' }))}>
+                  怎么优化这段代码？
+                </span>
+                <span className={styles.askAIHint} onClick={() => setAskAI(prev => ({ ...prev, question: '这段代码有什么问题？' }))}>
+                  这段代码有什么问题？
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+        </div>
+
+        {/* AI 导游面板 - 右侧边栏 */}
+        {tourState.active && tourState.steps.length > 0 && (
+          <div className={styles.tourPanel}>
+            <div className={styles.tourHeader}>
+              <span className={styles.tourTitle}>🎯 代码导游</span>
+              <span className={styles.tourProgress}>
+                {tourState.currentStep + 1} / {tourState.steps.length}
+              </span>
+              <button className={styles.tourClose} onClick={stopTour}>×</button>
+            </div>
+
+            <div className={styles.tourContent}>
+              <div className={styles.tourStepInfo}>
+                <span className={styles.tourStepType}>
+                  {tourState.steps[tourState.currentStep].type === 'class' ? '🏛️ 类' :
+                   tourState.steps[tourState.currentStep].type === 'function' ? '🔧 函数' :
+                   tourState.steps[tourState.currentStep].type === 'block' ? '📦 代码块' : '📄 文件'}
+                </span>
+                <span className={styles.tourStepName}>
+                  {tourState.steps[tourState.currentStep].name}
+                </span>
+                <span className={styles.tourStepLine}>
+                  行 {tourState.steps[tourState.currentStep].line}
+                </span>
+              </div>
+              <p className={styles.tourDescription}>
+                {tourState.steps[tourState.currentStep].description}
+              </p>
+            </div>
+
+            {/* 步骤列表 */}
+            <div className={styles.tourStepsList}>
+              <div className={styles.tourStepsTitle}>全部步骤</div>
+              {tourState.steps.map((step, i) => (
+                <div
+                  key={i}
+                  className={`${styles.tourStepItem} ${i === tourState.currentStep ? styles.active : ''}`}
+                  onClick={() => goToStep(i)}
+                >
+                  <span className={styles.tourStepItemNum}>{i + 1}</span>
+                  <span className={styles.tourStepItemName}>{step.name}</span>
+                  <span className={styles.tourStepItemType}>
+                    {step.type === 'class' ? '类' :
+                     step.type === 'function' ? '函数' :
+                     step.type === 'block' ? '块' : '文件'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className={styles.tourNav}>
+              <button
+                className={styles.tourNavBtn}
+                onClick={() => tourNavigate('prev')}
+                disabled={tourState.currentStep === 0}
+              >
+                ← 上一步
+              </button>
+              <button
+                className={styles.tourNavBtn}
+                onClick={() => tourNavigate('next')}
+                disabled={tourState.currentStep === tourState.steps.length - 1}
+              >
+                下一步 →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1403,18 +3400,50 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       {/* VS Code 风格主体 */}
       <div className={styles.vscodeLayout}>
         {/* 左侧边栏 - 资源管理器 */}
-        <div className={styles.sidebar}>
+        <div className={styles.sidebar} ref={sidebarRef}>
           <div className={styles.sidebarHeader}>
             <span className={styles.sidebarTitle}>资源管理器</span>
-            <button
-              className={styles.refreshBtn}
-              onClick={loadFileTree}
-              title="刷新目录"
-            >
-              ↻
-            </button>
+            <div className={styles.sidebarToolbar}>
+              <button
+                className={styles.toolbarBtn}
+                onClick={() => setFileDialog({ visible: true, type: 'newFile', parentPath: selectedPath || 'src' })}
+                title="新建文件"
+              >
+                📄+
+              </button>
+              <button
+                className={styles.toolbarBtn}
+                onClick={() => setFileDialog({ visible: true, type: 'newFolder', parentPath: selectedPath || 'src' })}
+                title="新建文件夹"
+              >
+                📁+
+              </button>
+              <button
+                className={styles.toolbarBtn}
+                onClick={() => loadFileTree()}
+                title="刷新目录"
+              >
+                ↻
+              </button>
+            </div>
           </div>
-          <div className={styles.sidebarContent}>
+          {/* 项目选择器 */}
+          <div className={styles.projectSelector}>
+            <ProjectSelector
+              currentProject={currentProject}
+              onProjectChange={handleProjectChange}
+              onOpenFolder={handleOpenFolder}
+            />
+          </div>
+          <div
+            className={styles.sidebarContent}
+            onContextMenu={(e) => {
+              // 空白区域右键菜单
+              if (e.target === e.currentTarget) {
+                handleContextMenu(e, '', 'empty');
+              }
+            }}
+          >
             {treeError && (
               <div className={styles.treeError}>
                 {treeError}
@@ -1430,23 +3459,18 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           <div className={styles.tabBar}>
             {selectedPath ? (
               <>
-                {/* 分析tab - 目录和文件都显示 */}
-                <div
-                  className={`${styles.tab} ${viewMode === 'analysis' ? styles.activeTab : ''}`}
-                  onClick={() => setViewMode('analysis')}
-                >
-                  <span className={styles.tabIcon}>🔍</span>
-                  <span className={styles.tabName}>{selectedIsFile ? '语义' : '分析'}</span>
-                </div>
-                {/* 代码编辑tab - 只有文件显示 */}
-                {selectedIsFile && (
-                  <div
-                    className={`${styles.tab} ${viewMode === 'code' ? styles.activeTab : ''}`}
-                    onClick={() => setViewMode('code')}
-                  >
+                {/* 文件直接显示代码tab */}
+                {selectedIsFile ? (
+                  <div className={`${styles.tab} ${styles.activeTab}`}>
                     <span className={styles.tabIcon}>📝</span>
                     <span className={styles.tabName}>代码编辑</span>
                     {hasUnsavedChanges && <span className={styles.unsavedDot}>●</span>}
+                  </div>
+                ) : (
+                  /* 目录显示分析tab */
+                  <div className={`${styles.tab} ${styles.activeTab}`}>
+                    <span className={styles.tabIcon}>🔍</span>
+                    <span className={styles.tabName}>分析</span>
                   </div>
                 )}
               </>
@@ -1465,12 +3489,228 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             )}
           </div>
 
-          {/* 编辑区内容 */}
+          {/* 编辑区内容 - 文件显示代码，目录显示分析 */}
           <div className={styles.editorContent}>
-            {viewMode === 'code' && selectedIsFile ? renderCodeView() : renderAnalysisView()}
+            {selectedIsFile ? renderCodeView() : renderAnalysisView()}
           </div>
         </div>
       </div>
+
+      {/* 语义悬浮框 */}
+      {tooltip.visible && (tooltip.path || tooltip.symbol) && (
+        <div
+          className={styles.semanticTooltip}
+          style={{
+            position: 'fixed',
+            left: `${tooltip.x}px`,
+            top: `${tooltip.y}px`,
+            zIndex: 1000,
+          }}
+          onMouseEnter={handleTooltipMouseEnter}
+          onMouseLeave={handleTooltipMouseLeave}
+        >
+          {(() => {
+            // 符号悬浮框 - 三层分层显示
+            if (tooltip.symbol) {
+              const sym = tooltip.symbol;
+              const kindLabels: Record<string, string> = {
+                class: '类',
+                interface: '接口',
+                type: '类型',
+                function: '函数',
+                method: '方法',
+                property: '属性',
+                const: '常量',
+                variable: '变量',
+              };
+
+              // 使用 layeredTooltip 中的分层数据
+              const { userComment, syntaxExplanations, semanticAnalysis, loadingAI } = layeredTooltip;
+
+              return (
+                <div className={styles.tooltipContent}>
+                  {/* 头部：符号名称和类型 */}
+                  <div className={styles.tooltipHeader}>
+                    <span className={styles.tooltipIcon}>{getSymbolIcon(sym.kind)}</span>
+                    <span className={styles.tooltipName}>{sym.name}</span>
+                    <span className={styles.tooltipType}>{kindLabels[sym.kind] || sym.kind}</span>
+                    {semanticAnalysis?.complexity && (
+                      <span className={`${styles.tooltipComplexity} ${styles[`complexity${semanticAnalysis.complexity.charAt(0).toUpperCase() + semanticAnalysis.complexity.slice(1)}`]}`}>
+                        {semanticAnalysis.complexity === 'low' ? '简单' : semanticAnalysis.complexity === 'medium' ? '中等' : '复杂'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* ============ 第一层：用户注释（JSDoc） ============ */}
+                  {userComment && userComment.description && (
+                    <div className={styles.tooltipUserComment}>
+                      <span className={styles.tooltipLayerLabel}>📝 注释</span>
+                      <div className={styles.tooltipCommentText}>{formatJSDocBrief(userComment)}</div>
+                      {userComment.params && userComment.params.length > 0 && (
+                        <div className={styles.tooltipCommentParams}>
+                          {userComment.params.slice(0, 3).map((p, i) => (
+                            <span key={i} className={styles.tooltipCommentParam}>
+                              <code>{p.name}</code>{p.type && `: ${p.type}`}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ============ 第二层：语法解释（新手模式） ============ */}
+                  {beginnerMode && syntaxExplanations && syntaxExplanations.length > 0 && (
+                    <div className={styles.tooltipSyntaxLayer}>
+                      <span className={styles.tooltipLayerLabel}>📖 语法 <span className={styles.beginnerBadge}>新手</span></span>
+                      <div className={styles.tooltipSyntaxList}>
+                        {syntaxExplanations.slice(0, 4).map((exp, i) => (
+                          <div key={i} className={styles.tooltipSyntaxItem}>
+                            <code className={styles.syntaxKeyword}>{exp.keyword}</code>
+                            <span className={styles.syntaxBrief}>{exp.brief}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ============ 第三层：AI 语义分析 ============ */}
+                  {loadingAI && !semanticAnalysis && (
+                    <div className={styles.tooltipAILoading}>
+                      <div className={styles.tooltipSpinner}></div>
+                      <span>AI 正在分析...</span>
+                    </div>
+                  )}
+
+                  {semanticAnalysis && (
+                    <div className={styles.tooltipSemanticLayer}>
+                      <span className={styles.tooltipLayerLabel}>🤖 语义</span>
+                      <div className={styles.tooltipSummary}>{semanticAnalysis.semanticDescription}</div>
+
+                      {/* 参数（折叠显示） */}
+                      {semanticAnalysis.parameters && semanticAnalysis.parameters.length > 0 && (
+                        <div className={styles.tooltipCompactSection}>
+                          <span className={styles.tooltipMiniLabel}>参数:</span>
+                          {semanticAnalysis.parameters.slice(0, 3).map((p, i) => (
+                            <code key={i} className={styles.tooltipMiniCode}>{p.name}</code>
+                          ))}
+                          {semanticAnalysis.parameters.length > 3 && (
+                            <span className={styles.tooltipMore}>+{semanticAnalysis.parameters.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 返回值 */}
+                      {semanticAnalysis.returnValue && (
+                        <div className={styles.tooltipCompactSection}>
+                          <span className={styles.tooltipMiniLabel}>返回:</span>
+                          <code className={styles.tooltipMiniCode}>{semanticAnalysis.returnValue.type}</code>
+                        </div>
+                      )}
+
+                      {/* 新手提示（只在新手模式显示） */}
+                      {beginnerMode && semanticAnalysis.tips && semanticAnalysis.tips.length > 0 && (
+                        <div className={styles.tooltipTipsSection}>
+                          <span className={styles.tooltipMiniLabel}>💡</span>
+                          <span className={styles.tooltipTipText}>{semanticAnalysis.tips[0]}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 如果没有任何内容，显示基础信息 */}
+                  {!userComment && !semanticAnalysis && !loadingAI && (
+                    <div className={styles.tooltipSummary}>
+                      {`${kindLabels[sym.kind] || sym.kind} 定义`}
+                    </div>
+                  )}
+
+                  {/* 页脚 */}
+                  <div className={styles.tooltipFooter}>
+                    <span>行 {sym.line}</span>
+                    {semanticAnalysis?.fromCache ? ' · ⚡缓存' : loadingAI ? ' · 分析中...' : ''}
+                    <span className={styles.tooltipFooterHint}> · 点击跳转</span>
+                  </div>
+                </div>
+              );
+            }
+
+            // 文件/目录悬浮框
+            const analysis = tooltip.path ? analysisCache.get(tooltip.path) : null;
+            if (analyzing && !analysis) {
+              return (
+                <div className={styles.tooltipLoading}>
+                  <div className={styles.tooltipSpinner}></div>
+                  <span>正在分析...</span>
+                </div>
+              );
+            }
+            if (!analysis) {
+              return (
+                <div className={styles.tooltipEmpty}>
+                  <span className={styles.tooltipPath}>{tooltip.path}</span>
+                  <span className={styles.tooltipHint}>悬停以加载语义分析</span>
+                </div>
+              );
+            }
+            return (
+              <div className={styles.tooltipContent}>
+                <div className={styles.tooltipHeader}>
+                  <span className={styles.tooltipIcon}>
+                    {analysis.type === 'directory' ? '📁' : '📄'}
+                  </span>
+                  <span className={styles.tooltipName}>{analysis.name}</span>
+                  <span className={styles.tooltipType}>
+                    {analysis.type === 'directory' ? '目录' : '文件'}
+                  </span>
+                </div>
+                <div className={styles.tooltipSummary}>{analysis.summary}</div>
+                {analysis.description && (
+                  <div className={styles.tooltipDescription}>{analysis.description}</div>
+                )}
+                {/* 职责（目录） */}
+                {analysis.responsibilities && analysis.responsibilities.length > 0 && (
+                  <div className={styles.tooltipSection}>
+                    <span className={styles.tooltipSectionTitle}>职责</span>
+                    <ul className={styles.tooltipList}>
+                      {analysis.responsibilities.slice(0, 3).map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                      {analysis.responsibilities.length > 3 && (
+                        <li className={styles.tooltipMore}>+{analysis.responsibilities.length - 3} 更多...</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+                {/* 导出（文件） */}
+                {analysis.exports && analysis.exports.length > 0 && (
+                  <div className={styles.tooltipSection}>
+                    <span className={styles.tooltipSectionTitle}>导出</span>
+                    <div className={styles.tooltipExports}>
+                      {analysis.exports.slice(0, 5).map((e, i) => (
+                        <code key={i} className={styles.tooltipExportItem}>{e}</code>
+                      ))}
+                      {analysis.exports.length > 5 && (
+                        <span className={styles.tooltipMore}>+{analysis.exports.length - 5}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* 技术栈 */}
+                {analysis.techStack && analysis.techStack.length > 0 && (
+                  <div className={styles.tooltipTechStack}>
+                    {analysis.techStack.slice(0, 4).map((t, i) => (
+                      <span key={i} className={styles.tooltipTech}>{t}</span>
+                    ))}
+                  </div>
+                )}
+                <div className={styles.tooltipFooter}>
+                  点击查看详情
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* 底部状态栏 */}
       <div className={styles.statusBar}>
@@ -1480,6 +3720,14 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           </span>
         </div>
         <div className={styles.statusRight}>
+          {/* 新手模式开关 */}
+          <button
+            className={`${styles.statusBtn} ${beginnerMode ? styles.success : ''}`}
+            onClick={() => setBeginnerMode(!beginnerMode)}
+            title={beginnerMode ? '关闭新手模式' : '开启新手模式（显示语法解释）'}
+          >
+            {beginnerMode ? '📖 新手模式' : '💡 专家模式'}
+          </button>
           {blueprintInfo && (
             <span className={`${styles.statusBadge} ${styles[blueprintInfo.status]}`}>
               {statusTexts[blueprintInfo.status] || blueprintInfo.status}
@@ -1496,6 +3744,59 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           )}
         </div>
       </div>
+
+      {/* 右键菜单 */}
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={getContextMenuItems()}
+        onClose={closeContextMenu}
+      />
+
+      {/* 文件操作对话框 */}
+      <FileDialog
+        visible={fileDialog.visible}
+        type={fileDialog.type}
+        initialValue={fileDialog.currentName}
+        onConfirm={async (value) => {
+          if (fileDialog.type === 'newFile') {
+            handleCreateFile(value);
+          } else if (fileDialog.type === 'newFolder') {
+            handleCreateDirectory(value);
+          } else if (fileDialog.type === 'rename') {
+            handleRename(value);
+          } else if (fileDialog.type === 'openFolder') {
+            // 打开文件夹
+            try {
+              const response = await fetch('/api/blueprint/projects/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: value.trim() }),
+              });
+              const result = await response.json();
+              if (result.success) {
+                const project: Project = {
+                  id: result.data.id,
+                  name: result.data.name,
+                  path: result.data.path,
+                  lastOpenedAt: result.data.lastOpenedAt,
+                };
+                setCurrentProject(project);
+                setProjectRoot(project.path);
+                loadFileTree();
+                setFileDialog(prev => ({ ...prev, visible: false }));
+              } else {
+                alert(`打开失败: ${result.error}`);
+              }
+            } catch (err: any) {
+              console.error('打开文件夹失败:', err);
+              alert(`打开失败: ${err.message}`);
+            }
+          }
+        }}
+        onCancel={() => setFileDialog(prev => ({ ...prev, visible: false }))}
+      />
     </div>
   );
 };

@@ -13,7 +13,6 @@
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { DomainNode, DomainRelationship } from '../../../../../../../../../web/shared/onion-types';
-import { useNavigatorContext } from '../../../NavigatorContext';
 import styles from './DomainGraph.module.css';
 
 /** 模块内部文件信息 */
@@ -579,8 +578,6 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
   onFileClick,
   onFileDoubleClick,
 }) => {
-  // 使用 Context 来处理文件选择（避免深层 prop drilling）
-  const navigatorContext = useNavigatorContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -1125,10 +1122,7 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
                       }
                     }}
                     onDoubleClick={() => {
-                      console.log('[DomainGraph] 双击文件，使用 Context 打开代码视图:', file.path);
-                      // 直接使用 Context 切换到代码视图
-                      navigatorContext.selectFile(file.path);
-                      // 同时调用 props 回调（如果存在）
+                      console.log('[DomainGraph] 双击文件:', file.path);
                       if (onFileDoubleClick) {
                         onFileDoubleClick(file, moduleId);
                       }

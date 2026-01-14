@@ -1231,6 +1231,7 @@ export interface SessionState {
   totalLinesRemoved?: number; // 代码修改统计：删除的行数
   modelUsage: Record<string, ModelUsageStats>; // T151: 扩展为详细统计
   alwaysAllowedTools?: string[]; // 会话级权限：总是允许的工具列表
+  lastCompactedUuid?: string; // 最后一次压缩的边界标记 UUID（用于增量压缩）
   todos: Array<{
     content: string;
     status: 'pending' | 'in_progress' | 'completed';

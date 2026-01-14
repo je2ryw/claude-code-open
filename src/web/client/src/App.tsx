@@ -33,9 +33,10 @@ function getWebSocketUrl(): string {
 
 interface AppProps {
   onNavigateToBlueprint?: (blueprintId: string) => void;
+  onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
 }
 
-function App({ onNavigateToBlueprint }: AppProps) {
+function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -677,6 +678,7 @@ function App({ onNavigateToBlueprint }: AppProps) {
                 key={msg.id}
                 message={msg}
                 onNavigateToBlueprint={onNavigateToBlueprint}
+                onNavigateToSwarm={onNavigateToSwarm}
               />
             ))
           )}

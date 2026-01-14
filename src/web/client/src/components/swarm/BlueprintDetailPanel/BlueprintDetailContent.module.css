@@ -88,6 +88,43 @@
   flex: 1;
   overflow-y: auto;
   padding: 4px 0;
+  min-height: 200px;
+}
+
+/* 项目选择器容器 */
+.projectSelector {
+  padding: 8px 12px;
+  border-bottom: 1px solid #3c3c3c;
+  background: #2d2d2d;
+}
+
+/* 侧边栏工具栏 */
+.sidebarToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbarBtn {
+  background: transparent;
+  border: none;
+  color: #bbbbbb;
+  font-size: 14px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbarBtn:hover {
+  background: #3c3c3c;
+  color: #ffffff;
+}
+
+.toolbarBtn:active {
+  background: #4c4c4c;
 }
 
 /* 目录树 */
@@ -490,6 +527,37 @@
   font-size: 8px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* ============================================ */
+/* 拖拽样式 */
+/* ============================================ */
+
+/* 正在被拖拽的项目 */
+.treeItem.dragging {
+  opacity: 0.5;
+  background: #1e1e1e;
+}
+
+/* 拖放目标高亮 */
+.treeItem.dropTarget {
+  background: #264f78 !important;
+  border: 1px dashed #007acc;
+  border-radius: 3px;
+}
+
+/* 被剪切的项目（半透明） */
+.treeItem.cutItem {
+  opacity: 0.5;
+}
+
+/* 拖拽时的光标 */
+.treeItem[draggable="true"] {
+  cursor: grab;
+}
+
+.treeItem[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 /* ============================================ */
@@ -1841,4 +1909,1079 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* ============================================ */
+/* 语义悬浮框样式 */
+/* ============================================ */
+
+.semanticTooltip {
+  background: #2d2d30;
+  border: 1px solid #454545;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-width: 480px;
+  min-width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  animation: tooltipFadeIn 0.15s ease-out;
+}
+
+/* 滚动条样式 */
+.semanticTooltip::-webkit-scrollbar {
+  width: 8px;
+}
+
+.semanticTooltip::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.semanticTooltip::-webkit-scrollbar-thumb {
+  background: #454545;
+  border-radius: 4px;
+}
+
+.semanticTooltip::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 加载状态 */
+.tooltipLoading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  color: #808080;
+  font-size: 13px;
+}
+
+.tooltipSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #3c3c3c;
+  border-top-color: #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* 空状态 */
+.tooltipEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+}
+
+.tooltipPath {
+  font-size: 13px;
+  color: #cccccc;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.tooltipHint {
+  font-size: 11px;
+  color: #606060;
+}
+
+/* 内容区 */
+.tooltipContent {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 头部 */
+.tooltipHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.tooltipIcon {
+  font-size: 16px;
+}
+
+.tooltipName {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4ec9b0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tooltipType {
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* 摘要 */
+.tooltipSummary {
+  padding: 12px 16px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #d4d4d4;
+  line-height: 1.4;
+}
+
+/* 描述 */
+.tooltipDescription {
+  padding: 0 16px 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+/* 区块 */
+.tooltipSection {
+  padding: 8px 16px;
+  border-top: 1px solid #3c3c3c;
+}
+
+.tooltipSectionTitle {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.tooltipList {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.6;
+}
+
+.tooltipList li {
+  margin-bottom: 2px;
+}
+
+.tooltipList li::marker {
+  color: #007acc;
+}
+
+.tooltipMore {
+  color: #808080;
+  font-style: italic;
+}
+
+/* 导出 */
+.tooltipExports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tooltipExportItem {
+  padding: 2px 8px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #dcdcaa;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 技术栈 */
+.tooltipTechStack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  border-top: 1px solid #3c3c3c;
+}
+
+.tooltipTech {
+  padding: 2px 8px;
+  background: rgba(0, 122, 204, 0.2);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #9cdcfe;
+}
+
+/* 页脚 */
+.tooltipFooter {
+  padding: 8px 16px;
+  background: #252526;
+  border-top: 1px solid #3c3c3c;
+  font-size: 10px;
+  color: #606060;
+  text-align: center;
+}
+
+/* ============================================ */
+/* 符号分析增强样式 */
+/* ============================================ */
+
+/* 复杂度标签 */
+.tooltipComplexity {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.complexityLow {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.complexityMedium {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ffb74d;
+}
+
+.complexityHigh {
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
+/* 参数类型 */
+.tooltipParamType {
+  color: #569cd6;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+}
+
+/* 返回值 */
+.tooltipReturnValue {
+  font-size: 12px;
+  color: #d4d4d4;
+  padding: 4px 0;
+}
+
+/* 调用链 */
+.tooltipCallChain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.callChainLabel {
+  font-size: 11px;
+  color: #808080;
+  min-width: 50px;
+}
+
+.tooltipCallItem {
+  padding: 2px 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #ce9178;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* 调整列表样式以适应更多内容 */
+.tooltipList {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.tooltipList code {
+  background: #1e1e1e;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #dcdcaa;
+}
+
+/* 区块内部滚动 */
+.tooltipSection {
+  padding: 8px 16px;
+  border-top: 1px solid #3c3c3c;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.tooltipSection::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tooltipSection::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 2px;
+}
+
+/* ============================================ */
+/* 三层分层悬浮提示样式 */
+/* ============================================ */
+
+/* 层级标签 */
+.tooltipLayerLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+/* 新手模式徽章 */
+.beginnerBadge {
+  padding: 1px 6px;
+  background: rgba(76, 175, 80, 0.2);
+  border-radius: 3px;
+  font-size: 9px;
+  color: #81c784;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ============ 第一层：用户注释 ============ */
+.tooltipUserComment {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(33, 150, 243, 0.05) 100%);
+  border-left: 3px solid #2196f3;
+  border-top: 1px solid #3c3c3c;
+}
+
+.tooltipCommentText {
+  font-size: 13px;
+  color: #e0e0e0;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.tooltipCommentParams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tooltipCommentParam {
+  font-size: 11px;
+  color: #9e9e9e;
+}
+
+.tooltipCommentParam code {
+  color: #64b5f6;
+  background: rgba(100, 181, 246, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* ============ 第二层：语法解释 ============ */
+.tooltipSyntaxLayer {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(76, 175, 80, 0.05) 100%);
+  border-left: 3px solid #4caf50;
+  border-top: 1px solid #3c3c3c;
+}
+
+.tooltipSyntaxList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tooltipSyntaxItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.syntaxKeyword {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  color: #c586c0;
+  min-width: 60px;
+  text-align: center;
+}
+
+.syntaxBrief {
+  color: #b0b0b0;
+  line-height: 1.4;
+}
+
+/* ============ 第三层：AI 语义分析 ============ */
+.tooltipSemanticLayer {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(156, 39, 176, 0.05) 100%);
+  border-left: 3px solid #9c27b0;
+  border-top: 1px solid #3c3c3c;
+}
+
+.tooltipAILoading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid #3c3c3c;
+  color: #808080;
+  font-size: 12px;
+}
+
+/* 紧凑型区块 */
+.tooltipCompactSection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #3c3c3c;
+}
+
+.tooltipMiniLabel {
+  font-size: 11px;
+  color: #808080;
+  min-width: 40px;
+}
+
+.tooltipMiniCode {
+  padding: 2px 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #9cdcfe;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* 提示区块 */
+.tooltipTipsSection {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #3c3c3c;
+}
+
+.tooltipTipText {
+  font-size: 12px;
+  color: #ffc107;
+  line-height: 1.4;
+}
+
+/* 页脚提示 */
+.tooltipFooterHint {
+  color: #606060;
+}
+
+/* ============================================ */
+/* AI 增强功能样式 */
+/* ============================================ */
+
+/* AI 工具按钮组 */
+.aiToolGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: rgba(0, 122, 204, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 122, 204, 0.2);
+}
+
+.aiBtn {
+  background: transparent !important;
+  border: none !important;
+  color: #9cdcfe !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+}
+
+.aiBtn:hover {
+  background: rgba(0, 122, 204, 0.3) !important;
+  color: #fff !important;
+}
+
+.aiBtn.active {
+  background: #007acc !important;
+  color: #fff !important;
+}
+
+.toolDivider {
+  color: #3c3c3c;
+  margin: 0 8px;
+  font-size: 14px;
+}
+
+/* ============================================ */
+/* 代码编辑器与导游布局容器 */
+/* ============================================ */
+
+.codeEditorWithTour {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  width: 100%;
+}
+
+.codeEditorMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e1e;
+  position: relative;
+}
+
+/* 当codeEditor作为codeEditorWithTour的子元素时，继承flex属性 */
+.codeEditorWithTour > .codeEditor {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ============================================ */
+/* AI 导游面板 - 右侧边栏 */
+/* ============================================ */
+
+.tourPanel {
+  width: 320px;
+  min-width: 280px;
+  max-width: 400px;
+  height: 100%;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  border-left: 1px solid #0f3460;
+  display: flex;
+  flex-direction: column;
+  animation: tourSlideIn 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes tourSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tourHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(0, 122, 204, 0.2);
+  border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+.tourTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+}
+
+.tourProgress {
+  font-size: 12px;
+  color: #64b5f6;
+  background: rgba(100, 181, 246, 0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.tourClose {
+  background: transparent;
+  border: none;
+  color: #808080;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.tourClose:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.tourContent {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.tourStepInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tourStepType {
+  font-size: 12px;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.tourStepName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #4ec9b0;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.tourStepLine {
+  font-size: 11px;
+  color: #808080;
+  margin-left: auto;
+}
+
+.tourDescription {
+  font-size: 14px;
+  color: #d4d4d4;
+  line-height: 1.6;
+  margin: 0;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border-left: 3px solid #007acc;
+}
+
+.tourNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+.tourNavBtn {
+  padding: 8px 16px;
+  background: #007acc;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tourNavBtn:hover:not(:disabled) {
+  background: #005a9e;
+  transform: translateY(-1px);
+}
+
+.tourNavBtn:disabled {
+  background: #3c3c3c;
+  color: #606060;
+  cursor: not-allowed;
+}
+
+.tourDots {
+  display: flex;
+  gap: 6px;
+}
+
+.tourDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3c3c3c;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tourDot:hover {
+  background: #606060;
+  transform: scale(1.2);
+}
+
+.tourDot.active {
+  background: #007acc;
+  box-shadow: 0 0 8px rgba(0, 122, 204, 0.5);
+}
+
+/* 步骤列表 - 右侧边栏 */
+.tourStepsList {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tourStepsTitle {
+  font-size: 11px;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 12px 0 8px;
+}
+
+.tourStepItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 2px 0;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.tourStepItem:hover {
+  background: rgba(0, 122, 204, 0.15);
+  border-color: rgba(0, 122, 204, 0.3);
+}
+
+.tourStepItem.active {
+  background: rgba(0, 122, 204, 0.25);
+  border-color: #007acc;
+}
+
+.tourStepItemNum {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3c3c3c;
+  color: #808080;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tourStepItem.active .tourStepItemNum {
+  background: #007acc;
+  color: #fff;
+}
+
+.tourStepItemName {
+  font-size: 12px;
+  color: #d4d4d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.tourStepItemType {
+  font-size: 10px;
+  color: #808080;
+  flex-shrink: 0;
+}
+
+/* ============================================ */
+/* 选中即问 AI 对话框 */
+/* ============================================ */
+
+.askAIOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.askAIDialog {
+  width: 600px;
+  max-width: 90%;
+  max-height: 80vh;
+  background: linear-gradient(135deg, #1e1e2e 0%, #252540 100%);
+  border: 1px solid #3c3c5c;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 80px rgba(156, 39, 176, 0.1);
+  overflow: hidden;
+  animation: dialogSlideIn 0.3s ease-out;
+}
+
+@keyframes dialogSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.askAIHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(156, 39, 176, 0.2) 0%, rgba(103, 58, 183, 0.2) 100%);
+  border-bottom: 1px solid #3c3c5c;
+}
+
+.askAITitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+}
+
+.askAIRange {
+  font-size: 12px;
+  color: #9cdcfe;
+  background: rgba(156, 220, 254, 0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.askAIClose {
+  background: transparent;
+  border: none;
+  color: #808080;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.askAIClose:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.askAICode {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #3c3c5c;
+}
+
+.askAICode pre {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.askAIInput {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.askAIInput input {
+  flex: 1;
+  padding: 12px 16px;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.askAIInput input:focus {
+  border-color: #9c27b0;
+  box-shadow: 0 0 12px rgba(156, 39, 176, 0.2);
+}
+
+.askAIInput input::placeholder {
+  color: #606060;
+}
+
+.askAISubmit {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.askAISubmit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(156, 39, 176, 0.4);
+}
+
+.askAISubmit:disabled {
+  background: #3c3c3c;
+  color: #606060;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.askAIAnswer {
+  padding: 16px;
+  background: rgba(76, 175, 80, 0.05);
+  border-top: 1px solid rgba(76, 175, 80, 0.2);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.askAIAnswerLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4caf50;
+  margin-bottom: 8px;
+}
+
+.askAIAnswerContent {
+  font-size: 14px;
+  color: #d4d4d4;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.askAIHints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid #3c3c5c;
+}
+
+.askAIHint {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #3c3c3c;
+  border-radius: 16px;
+  font-size: 12px;
+  color: #808080;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.askAIHint:hover {
+  background: rgba(156, 39, 176, 0.1);
+  border-color: #9c27b0;
+  color: #ce93d8;
+}
+
+/* ============================================ */
+/* 代码热力图样式 */
+/* ============================================ */
+
+/* Monaco 装饰器样式需要全局注入 */
+:global(.heatmap-line-0) { background: rgba(76, 175, 80, 0.05) !important; }
+:global(.heatmap-line-1) { background: rgba(76, 175, 80, 0.1) !important; }
+:global(.heatmap-line-2) { background: rgba(139, 195, 74, 0.1) !important; }
+:global(.heatmap-line-3) { background: rgba(205, 220, 57, 0.1) !important; }
+:global(.heatmap-line-4) { background: rgba(255, 235, 59, 0.1) !important; }
+:global(.heatmap-line-5) { background: rgba(255, 193, 7, 0.1) !important; }
+:global(.heatmap-line-6) { background: rgba(255, 152, 0, 0.1) !important; }
+:global(.heatmap-line-7) { background: rgba(255, 87, 34, 0.15) !important; }
+:global(.heatmap-line-8) { background: rgba(244, 67, 54, 0.15) !important; }
+:global(.heatmap-line-9) { background: rgba(244, 67, 54, 0.2) !important; }
+:global(.heatmap-line-10) { background: rgba(244, 67, 54, 0.25) !important; }
+
+:global(.heatmap-glyph) {
+  background: linear-gradient(90deg, #4caf50, #f44336) !important;
+  width: 4px !important;
+  margin-left: 2px !important;
+  border-radius: 2px !important;
+}
+
+/* 重构建议装饰器 */
+:global(.refactor-glyph) {
+  width: 16px !important;
+  height: 16px !important;
+  margin-left: 4px !important;
+  margin-top: 2px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+:global(.refactor-high) {
+  background: rgba(244, 67, 54, 0.8) !important;
+}
+
+:global(.refactor-medium) {
+  background: rgba(255, 152, 0, 0.8) !important;
+}
+
+:global(.refactor-low) {
+  background: rgba(76, 175, 80, 0.8) !important;
+}
+
+/* AI 气泡装饰器 */
+:global(.bubble-glyph) {
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: 4px !important;
+  margin-top: 3px !important;
+  border-radius: 50% !important;
+  animation: bubblePulse 2s ease-in-out infinite !important;
+}
+
+:global(.bubble-info) {
+  background: rgba(33, 150, 243, 0.8) !important;
+}
+
+:global(.bubble-warning) {
+  background: rgba(255, 152, 0, 0.8) !important;
+}
+
+:global(.bubble-tip) {
+  background: rgba(156, 39, 176, 0.8) !important;
+}
+
+@keyframes bubblePulse {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
 }

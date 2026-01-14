@@ -1,0 +1,272 @@
+/* FileDialog 样式 - 文件/文件夹名称输入对话框 */
+
+/* 遮罩层 */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 对话框容器 */
+.dialog {
+  background: #252526;
+  border: 1px solid #454545;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  min-width: 320px;
+  max-width: 450px;
+  animation: slideIn 0.15s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 对话框头部 */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.titleIcon {
+  font-size: 16px;
+}
+
+.closeButton {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: #808080;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.closeButton:hover {
+  background: #3d3d3d;
+  color: #ffffff;
+}
+
+/* 对话框内容 */
+.content {
+  padding: 16px;
+}
+
+/* 输入组 */
+.inputGroup {
+  margin-bottom: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  color: #cccccc;
+  margin-bottom: 8px;
+}
+
+.inputWrapper {
+  position: relative;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  background: #3c3c3c;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #cccccc;
+  font-size: 14px;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #007acc;
+  background: #3c3c3c;
+}
+
+.input::placeholder {
+  color: #6e6e6e;
+}
+
+/* 输入框错误状态 */
+.input.error {
+  border-color: #f14c4c;
+}
+
+.input.error:focus {
+  border-color: #f14c4c;
+}
+
+/* 错误消息 */
+.errorMessage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f14c4c;
+}
+
+.errorIcon {
+  font-size: 14px;
+}
+
+/* 提示消息 */
+.hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #858585;
+}
+
+/* 路径预览 */
+.pathPreview {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #858585;
+  word-break: break-all;
+}
+
+.pathPreviewLabel {
+  color: #6e6e6e;
+  margin-right: 4px;
+}
+
+/* 对话框底部 */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #3d3d3d;
+}
+
+/* 按钮基础样式 */
+.button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* 取消按钮 */
+.cancelButton {
+  background: transparent;
+  color: #cccccc;
+  border: 1px solid #3d3d3d;
+}
+
+.cancelButton:hover {
+  background: #3d3d3d;
+}
+
+/* 确认按钮 */
+.confirmButton {
+  background: #0e639c;
+  color: #ffffff;
+}
+
+.confirmButton:hover {
+  background: #1177bb;
+}
+
+.confirmButton:disabled {
+  background: #3d3d3d;
+  color: #6e6e6e;
+  cursor: not-allowed;
+}
+
+/* 危险操作按钮 */
+.dangerButton {
+  background: #5a1d1d;
+  color: #f14c4c;
+}
+
+.dangerButton:hover {
+  background: #6e2222;
+}
+
+/* 对话框类型变体 */
+
+/* 新建文件 */
+.dialog.newFile .titleIcon {
+  color: #569cd6;
+}
+
+/* 新建文件夹 */
+.dialog.newFolder .titleIcon {
+  color: #dcdc8b;
+}
+
+/* 重命名 */
+.dialog.rename .titleIcon {
+  color: #ce9178;
+}
+
+/* 删除确认 */
+.dialog.delete .titleIcon {
+  color: #f14c4c;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .dialog {
+    min-width: 280px;
+    max-width: 90vw;
+    margin: 0 16px;
+  }
+
+  .footer {
+    flex-direction: column;
+  }
+
+  .button {
+    width: 100%;
+  }
+}
