@@ -3,7 +3,6 @@ import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
 import TopNavBar from './components/swarm/TopNavBar';
-import { ProjectNavigator } from './components/swarm/ProjectNavigator';
 import { NavigatorProvider, useNavigatorContext } from './components/swarm/ProjectNavigator/NavigatorContext';
 import { OnionView } from './components/swarm/ProjectNavigator/views/OnionView';
 import { CodeViewPanel } from './components/swarm/ProjectNavigator/CodeViewPanel';
@@ -30,7 +29,7 @@ const StandaloneOnionView: React.FC = () => {
   );
 };
 
-type Page = 'chat' | 'swarm' | 'blueprint' | 'navigator' | 'onion';
+type Page = 'chat' | 'swarm' | 'blueprint' | 'onion';
 
 /**
  * 根组件 - 处理顶层导航和页面路由
@@ -75,8 +74,6 @@ export default function Root() {
             onNavigateToSwarm={navigateToSwarmPage}
           />
         );
-      case 'navigator':
-        return <ProjectNavigator />;
       case 'onion':
         // 需要包裹 NavigatorProvider 来支持文件双击打开代码视图
         return (

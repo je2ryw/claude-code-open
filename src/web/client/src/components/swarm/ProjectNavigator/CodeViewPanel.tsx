@@ -1,197 +1,300 @@
 /**
- * CodeViewPanel - 代码查看面板
+ * CodeViewPanel - VS Code 风格代码查看器
  *
- * 功能：
- * - 显示文件代码内容（带语法高亮）
- * - 支持行号显示
- * - 支持关闭返回上一视图
+ * 布局：
+ * - 左侧：目录树
+ * - 中间：代码文件内容（带行号和语法高亮）
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import styles from './CodeViewPanel.module.css';
 
-interface FileInfo {
+// 文件树节点类型
+interface FileTreeNode {
+  name: string;
   path: string;
-  content: string;
-  language: string;
-  lineCount: number;
-  size: number;
+  type: 'file' | 'directory';
+  children?: FileTreeNode[];
 }
 
 interface CodeViewPanelProps {
-  /** 文件路径 */
-  filePath: string;
-  /** 关闭回调 */
-  onClose?: () => void;
-  /** 符号选择回调 */
-  onSymbolSelect?: (symbolId: string) => void;
+  filePath?: string;          // 初始选中的文件路径
+  onClose?: () => void;       // 关闭面板
+  onSymbolSelect?: (symbolId: string) => void;  // 符号选择回调
 }
 
-// 语言到高亮类名映射
-const LANGUAGE_HIGHLIGHT_CLASS: Record<string, string> = {
-  typescript: 'ts',
-  javascript: 'js',
-  python: 'py',
-  json: 'json',
-  css: 'css',
-  html: 'html',
-  markdown: 'md',
+// 获取文件图标
+const getFileIcon = (name: string, type: 'file' | 'directory', isExpanded?: boolean): string => {
+  if (type === 'directory') {
+    return isExpanded ? '📂' : '📁';
+  }
+  const ext = name.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'ts':
+    case 'tsx':
+      return '🔷';
+    case 'js':
+    case 'jsx':
+      return '🟨';
+    case 'css':
+    case 'scss':
+    case 'less':
+      return '🎨';
+    case 'json':
+      return '📋';
+    case 'md':
+      return '📝';
+    case 'html':
+      return '🌐';
+    case 'py':
+      return '🐍';
+    case 'go':
+      return '🔵';
+    case 'rs':
+      return '🦀';
+    default:
+      return '📄';
+  }
+};
+
+// 目录树节点组件
+const TreeNodeItem: React.FC<{
+  node: FileTreeNode;
+  depth: number;
+  selectedPath: string | null;
+  expandedPaths: Set<string>;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+}> = ({ node, depth, selectedPath, expandedPaths, onSelect, onToggle }) => {
+  const isDirectory = node.type === 'directory';
+  const isExpanded = expandedPaths.has(node.path);
+  const isSelected = selectedPath === node.path;
+
+  const handleClick = () => {
+    if (isDirectory) {
+      onToggle(node.path);
+    } else {
+      onSelect(node.path);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className={`${styles.treeNode} ${isSelected ? styles.selected : ''}`}
+        onClick={handleClick}
+        style={{ paddingLeft: depth * 16 + 8 }}
+      >
+        {isDirectory && (
+          <span className={styles.expandIcon}>
+            {isExpanded ? '▼' : '▶'}
+          </span>
+        )}
+        {!isDirectory && <span className={styles.nodeIndent} />}
+        <span className={styles.fileIcon}>
+          {getFileIcon(node.name, node.type, isExpanded)}
+        </span>
+        <span className={styles.nodeName}>{node.name}</span>
+      </div>
+      {isDirectory && isExpanded && node.children?.map(child => (
+        <TreeNodeItem
+          key={child.path}
+          node={child}
+          depth={depth + 1}
+          selectedPath={selectedPath}
+          expandedPaths={expandedPaths}
+          onSelect={onSelect}
+          onToggle={onToggle}
+        />
+      ))}
+    </>
+  );
 };
 
 export const CodeViewPanel: React.FC<CodeViewPanelProps> = ({
   filePath,
   onClose,
-  onSymbolSelect,
 }) => {
-  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 状态
+  const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+  const [treeLoading, setTreeLoading] = useState(true);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['src']));
+  const [selectedFile, setSelectedFile] = useState<string | null>(filePath || null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
+
+  // 加载文件树
+  useEffect(() => {
+    setTreeLoading(true);
+    fetch('/api/blueprint/file-tree?root=src')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setFileTree(data.data);
+          // 默认展开 src 目录
+          setExpandedPaths(new Set(['src']));
+        } else {
+          setError(data.error);
+        }
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setTreeLoading(false));
+  }, []);
 
   // 加载文件内容
-  const loadFileContent = useCallback(async () => {
-    if (!filePath) return;
+  useEffect(() => {
+    if (!selectedFile) {
+      setFileContent(null);
+      return;
+    }
 
-    setLoading(true);
+    setContentLoading(true);
     setError(null);
+    fetch(`/api/blueprint/file-content?path=${encodeURIComponent(selectedFile)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setFileContent(data.data.content);
+        } else {
+          setError(data.error);
+          setFileContent(null);
+        }
+      })
+      .catch(err => {
+        setError(err.message);
+        setFileContent(null);
+      })
+      .finally(() => setContentLoading(false));
+  }, [selectedFile]);
 
-    try {
-      const params = new URLSearchParams({ path: filePath });
-      const response = await fetch(`/api/blueprint/file-content?${params}`);
-      const result = await response.json();
-
-      if (result.success) {
-        setFileInfo(result.data);
-      } else {
-        setError(result.error || '加载文件失败');
+  // 初始化时展开到指定文件
+  useEffect(() => {
+    if (filePath) {
+      setSelectedFile(filePath);
+      // 展开文件路径中的所有目录
+      const parts = filePath.split('/');
+      const paths = new Set<string>();
+      let current = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        current = current ? `${current}/${parts[i]}` : parts[i];
+        paths.add(current);
       }
-    } catch (err: any) {
-      setError(err.message || '网络错误');
-    } finally {
-      setLoading(false);
+      setExpandedPaths(prev => new Set([...prev, ...paths]));
     }
   }, [filePath]);
 
-  useEffect(() => {
-    loadFileContent();
-  }, [loadFileContent]);
+  // 切换目录展开状态
+  const handleToggle = useCallback((path: string) => {
+    setExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  // 选择文件
+  const handleSelectFile = useCallback((path: string) => {
+    setSelectedFile(path);
+  }, []);
+
+  // 渲染代码行
+  const renderCodeLines = () => {
+    if (!fileContent) return null;
+    const lines = fileContent.split('\n');
+    return (
+      <div className={styles.codeLines}>
+        {lines.map((line, index) => (
+          <div key={index} className={styles.codeLine}>
+            <span className={styles.lineNumber}>{index + 1}</span>
+            <span className={styles.lineContent}>{line || ' '}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // 获取文件名
-  const fileName = filePath.split('/').pop() || filePath;
-
-  // 格式化文件大小
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // 处理行点击
-  const handleLineClick = (lineNum: number) => {
-    setHighlightedLine(lineNum);
-  };
-
-  // 渲染加载状态
-  if (loading) {
-    return (
-      <div className={styles.codeViewPanel}>
-        <div className={styles.loading}>
-          <div className={styles.spinner}></div>
-          <p>正在加载文件...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // 渲染错误状态
-  if (error) {
-    return (
-      <div className={styles.codeViewPanel}>
-        <div className={styles.error}>
-          <p>❌ {error}</p>
-          <button onClick={loadFileContent}>重试</button>
-          {onClose && (
-            <button onClick={onClose} className={styles.closeBtn}>
-              返回
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (!fileInfo) {
-    return (
-      <div className={styles.codeViewPanel}>
-        <div className={styles.empty}>
-          <p>文件不存在</p>
-        </div>
-      </div>
-    );
-  }
-
-  const lines = fileInfo.content.split('\n');
-  const langClass = LANGUAGE_HIGHLIGHT_CLASS[fileInfo.language] || 'txt';
+  const fileName = selectedFile?.split('/').pop() || '';
 
   return (
     <div className={styles.codeViewPanel}>
-      {/* 头部工具栏 */}
-      <div className={styles.header}>
-        <div className={styles.fileInfo}>
-          <span className={styles.fileName}>📄 {fileName}</span>
-          <span className={styles.filePath} title={filePath}>
-            {filePath}
-          </span>
-        </div>
-        <div className={styles.fileStats}>
-          <span className={styles.stat}>
-            <span className={styles.statIcon}>📝</span>
-            {fileInfo.lineCount} 行
-          </span>
-          <span className={styles.stat}>
-            <span className={styles.statIcon}>💾</span>
-            {formatSize(fileInfo.size)}
-          </span>
-          <span className={styles.stat}>
-            <span className={styles.statIcon}>🏷️</span>
-            {fileInfo.language}
-          </span>
-        </div>
-        <div className={styles.actions}>
+      {/* 左侧目录树 */}
+      <div className={styles.fileTree}>
+        <div className={styles.fileTreeHeader}>
+          <span>资源管理器</span>
           {onClose && (
-            <button onClick={onClose} className={styles.closeBtn} title="关闭">
+            <button className={styles.closeBtn} onClick={onClose} title="关闭">
               ✕
             </button>
           )}
         </div>
+        <div className={styles.fileTreeContent}>
+          {treeLoading ? (
+            <div className={styles.loading}>
+              <div className={styles.spinner} />
+              <span>加载中...</span>
+            </div>
+          ) : fileTree ? (
+            <TreeNodeItem
+              node={fileTree}
+              depth={0}
+              selectedPath={selectedFile}
+              expandedPaths={expandedPaths}
+              onSelect={handleSelectFile}
+              onToggle={handleToggle}
+            />
+          ) : (
+            <div className={styles.error}>无法加载目录</div>
+          )}
+        </div>
       </div>
 
-      {/* 代码区域 */}
-      <div className={styles.codeContainer}>
-        <pre className={`${styles.codeBlock} ${styles[`lang-${langClass}`]}`}>
-          <code>
-            {lines.map((line, index) => {
-              const lineNum = index + 1;
-              const isHighlighted = highlightedLine === lineNum;
-
-              return (
-                <div
-                  key={lineNum}
-                  className={`${styles.codeLine} ${isHighlighted ? styles.highlighted : ''}`}
-                  onClick={() => handleLineClick(lineNum)}
+      {/* 中间代码区域 */}
+      <div className={styles.codeArea}>
+        {selectedFile ? (
+          <>
+            {/* 文件标签栏 */}
+            <div className={styles.tabBar}>
+              <div className={styles.fileTab}>
+                <span className={styles.tabIcon}>
+                  {getFileIcon(fileName, 'file')}
+                </span>
+                <span className={styles.tabName}>{fileName}</span>
+                <button
+                  className={styles.tabClose}
+                  onClick={() => setSelectedFile(null)}
+                  title="关闭文件"
                 >
-                  <span className={styles.lineNumber}>{lineNum}</span>
-                  <span className={styles.lineContent}>{line || ' '}</span>
-                </div>
-              );
-            })}
-          </code>
-        </pre>
-      </div>
+                  ✕
+                </button>
+              </div>
+            </div>
 
-      {/* 底部提示 */}
-      <div className={styles.footer}>
-        <span>点击行号高亮该行 · ESC 返回</span>
+            {/* 代码内容 */}
+            <div className={styles.codeContent}>
+              {contentLoading ? (
+                <div className={styles.loading}>
+                  <div className={styles.spinner} />
+                  <span>加载文件内容...</span>
+                </div>
+              ) : error ? (
+                <div className={styles.error}>{error}</div>
+              ) : (
+                renderCodeLines()
+              )}
+            </div>
+          </>
+        ) : (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>📂</div>
+            <div>从左侧目录树选择文件查看</div>
+          </div>
+        )}
       </div>
     </div>
   );
