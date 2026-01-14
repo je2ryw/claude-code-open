@@ -509,6 +509,144 @@
   background: rgba(78, 205, 196, 0.25);
 }
 
+/* ============ 文件详情面板 ============ */
+
+.fileDetailSection {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 360px;
+  max-height: 80vh;
+  background: #1e1e2e;
+  border: 1px solid rgba(49, 120, 198, 0.3);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+  overflow: auto;
+  z-index: 100;
+  animation: slideIn 0.2s ease;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.fileIcon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(49, 120, 198, 0.15);
+  border-radius: 8px;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.fileMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.fileName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0 0 4px 0;
+  word-break: break-all;
+}
+
+.filePath {
+  font-size: 11px;
+  color: #606060;
+  font-family: 'Consolas', 'Monaco', monospace;
+  display: block;
+  word-break: break-all;
+}
+
+.fileStats {
+  display: flex;
+  gap: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.fileStat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fileStatIcon {
+  font-size: 14px;
+}
+
+.fileStatValue {
+  color: #c0c0c0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fileStatLabel {
+  color: #707070;
+  font-size: 11px;
+}
+
+.fileLoadingIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  color: #808080;
+  font-size: 13px;
+}
+
+.loadingSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(49, 120, 198, 0.3);
+  border-top-color: #3178c6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fileModuleInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(78, 205, 196, 0.08);
+  border: 1px solid rgba(78, 205, 196, 0.15);
+  border-radius: 8px;
+  margin-top: 16px;
+}
+
+.fileModuleLabel {
+  color: #707070;
+  font-size: 12px;
+}
+
+.fileModuleName {
+  color: #4ecdc4;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* ============ 响应式适配 ============ */
 
 @media (max-width: 768px) {
@@ -516,7 +654,8 @@
     grid-template-columns: 1fr;
   }
 
-  .detailSection {
+  .detailSection,
+  .fileDetailSection {
     position: fixed;
     right: 10px;
     left: 10px;
@@ -525,6 +664,10 @@
     bottom: 10px;
     transform: none;
     max-height: 60vh;
+  }
+
+  .fileStats {
+    flex-wrap: wrap;
   }
 
   @keyframes slideIn {

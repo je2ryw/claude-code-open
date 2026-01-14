@@ -22,6 +22,12 @@ export interface SemanticCardProps {
   layer?: OnionLayer;
   /** 额外的 CSS 类名 */
   className?: string;
+  /** AI 分析的目标类型（用于自动触发 AI 分析） */
+  targetType?: 'project' | 'module' | 'file' | 'symbol' | 'process';
+  /** AI 分析的目标 ID（用于自动触发 AI 分析） */
+  targetId?: string;
+  /** AI 分析完成后的回调 */
+  onAnnotationUpdate?: (annotation: SemanticAnnotation) => void;
 }
 
 /**
@@ -35,6 +41,9 @@ export const SemanticCard: React.FC<SemanticCardProps> = ({
   titleColor,
   layer,
   className,
+  targetType,
+  targetId,
+  onAnnotationUpdate,
 }) => {
   // 编辑状态
   const [editingSummary, setEditingSummary] = useState(false);
@@ -42,12 +51,77 @@ export const SemanticCard: React.FC<SemanticCardProps> = ({
   const [summaryValue, setSummaryValue] = useState(annotation.summary);
   const [descriptionValue, setDescriptionValue] = useState(annotation.description);
 
+  // AI 分析状态
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const hasTriggeredAnalysis = useRef(false);
+
   // 引用
   const summaryInputRef = useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 计算标题颜色
   const computedTitleColor = titleColor || (layer ? ONION_LAYER_META[layer].color : '#e0e0e0');
+
+  // 检测是否需要 AI 分析（关键点包含占位符）
+  const needsAIAnalysis = useCallback(() => {
+    if (!annotation.keyPoints || annotation.keyPoints.length === 0) return false;
+    return annotation.keyPoints.some((kp: string) =>
+      kp.includes('待 AI 分析') || kp.includes('分析中') || kp.includes('需要 AI')
+    );
+  }, [annotation.keyPoints]);
+
+  // 触发 AI 分析
+  const triggerAIAnalysis = useCallback(async () => {
+    if (!targetType || !targetId || isAnalyzing) return;
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      console.log(`[SemanticCard] 触发 AI 分析: ${targetType}/${targetId}`);
+
+      const response = await fetch('/api/blueprint/onion/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetType,
+          targetId,
+          context: {}, // 后端会使用 process.cwd() 作为默认值
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.annotation) {
+        console.log(`[SemanticCard] AI 分析完成:`, result.annotation);
+        // 通知父组件更新 annotation
+        if (onAnnotationUpdate) {
+          onAnnotationUpdate(result.annotation);
+        }
+      } else {
+        setAnalysisError(result.error || 'AI 分析失败');
+      }
+    } catch (error: any) {
+      console.error('[SemanticCard] AI 分析错误:', error);
+      setAnalysisError(error.message || '网络错误');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [targetType, targetId, isAnalyzing, onAnnotationUpdate]);
+
+  // 自动触发 AI 分析（仅当检测到占位符且提供了必要参数时）
+  useEffect(() => {
+    if (needsAIAnalysis() && targetType && targetId && !hasTriggeredAnalysis.current) {
+      hasTriggeredAnalysis.current = true;
+      triggerAIAnalysis();
+    }
+  }, [needsAIAnalysis, targetType, targetId, triggerAIAnalysis]);
+
+  // 重置 hasTriggeredAnalysis 当 targetId 变化时
+  useEffect(() => {
+    hasTriggeredAnalysis.current = false;
+  }, [targetId]);
 
   // 置信度等级
   const getConfidenceLevel = (confidence: number): 'high' | 'medium' | 'low' => {
@@ -184,9 +258,38 @@ export const SemanticCard: React.FC<SemanticCardProps> = ({
       )}
 
       {/* 关键点列表 */}
-      {annotation.keyPoints.length > 0 && (
-        <div className={styles.keyPointsSection}>
+      <div className={styles.keyPointsSection}>
+        <div className={styles.keyPointsHeader}>
           <h4 className={styles.keyPointsTitle}>关键点</h4>
+          {/* AI 分析按钮 */}
+          {targetType && targetId && (
+            <button
+              className={`${styles.aiGenerateButton} ${isAnalyzing ? styles.analyzing : ''}`}
+              onClick={triggerAIAnalysis}
+              disabled={isAnalyzing}
+              title={isAnalyzing ? 'AI 正在分析...' : '点击触发 AI 分析'}
+            >
+              <span className={styles.aiBtnIcon}>{isAnalyzing ? '⏳' : '✨'}</span>
+              <span className={styles.aiBtnText}>{isAnalyzing ? '分析中...' : 'AI 生成'}</span>
+            </button>
+          )}
+        </div>
+        {/* 加载状态 */}
+        {isAnalyzing && (
+          <div className={styles.analyzingIndicator}>
+            <span className={styles.analyzingSpinner}></span>
+            <span>AI 正在分析关键点...</span>
+          </div>
+        )}
+        {/* 错误提示 */}
+        {analysisError && (
+          <div className={styles.analysisError}>
+            <span className={styles.errorIcon}>⚠️</span>
+            <span>{analysisError}</span>
+          </div>
+        )}
+        {/* 关键点内容 */}
+        {annotation.keyPoints.length > 0 && !isAnalyzing && (
           <ul className={styles.keyPointsList}>
             {annotation.keyPoints.map((point, index) => (
               <li key={index} className={styles.keyPoint}>
@@ -195,8 +298,8 @@ export const SemanticCard: React.FC<SemanticCardProps> = ({
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 置信度 */}
       <div className={styles.confidenceSection}>

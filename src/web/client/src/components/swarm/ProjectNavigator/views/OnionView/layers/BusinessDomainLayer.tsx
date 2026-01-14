@@ -14,10 +14,11 @@ import {
   BusinessDomainData,
   DomainNode,
   OnionLayer,
+  SemanticAnnotation,
 } from '../../../../../../../../../web/shared/onion-types';
 import { SemanticCard } from '../components/SemanticCard';
 import { AIAnalysisIndicator } from '../components/AIAnalysisIndicator';
-import { DomainGraph } from '../components/DomainGraph';
+import { DomainGraph, ModuleFile } from '../components/DomainGraph';
 import styles from './BusinessDomainLayer.module.css';
 
 export interface BusinessDomainLayerProps {
@@ -31,6 +32,7 @@ export interface BusinessDomainLayerProps {
   onDrillDown: (moduleId: string) => void;
   /** 刷新回调 */
   onRefresh?: () => void;
+  // 注意：文件双击现在通过 NavigatorContext 在 DomainGraph 中直接处理
 }
 
 /** 模块类型颜色映射 */
@@ -167,10 +169,102 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
   // 当前选中的模块ID
   const [selectedDomainId, setSelectedDomainId] = useState<string | undefined>();
 
+  // 当前选中的文件
+  const [selectedFile, setSelectedFile] = useState<{ file: ModuleFile; moduleId: string } | undefined>();
+
+  // 文件详情数据（包括 AI 分析结果）
+  const [fileDetails, setFileDetails] = useState<Map<string, {
+    annotation?: SemanticAnnotation;
+    loading: boolean;
+    error?: string;
+  }>>(new Map());
+
+  // 模块 annotation 更新缓存（存储 AI 分析后的结果）
+  const [annotationUpdates, setAnnotationUpdates] = useState<Map<string, any>>(new Map());
+
   // 处理模块选择
   const handleDomainSelect = useCallback((domainId: string) => {
     setSelectedDomainId((prev) => (prev === domainId ? undefined : domainId));
+    // 清除文件选择
+    setSelectedFile(undefined);
   }, []);
+
+  // 处理文件点击
+  const handleFileClick = useCallback(async (file: ModuleFile, moduleId: string) => {
+    // 如果已经选中，则取消选择
+    if (selectedFile?.file.id === file.id) {
+      setSelectedFile(undefined);
+      return;
+    }
+
+    // 选中文件，清除模块选择
+    setSelectedFile({ file, moduleId });
+    setSelectedDomainId(undefined);
+
+    // 检查是否已有详情数据
+    const existingDetail = fileDetails.get(file.id);
+    if (existingDetail?.annotation) {
+      return; // 已有数据，不需要再请求
+    }
+
+    // 开始加载文件详情
+    setFileDetails((prev) => {
+      const next = new Map(prev);
+      next.set(file.id, { loading: true });
+      return next;
+    });
+
+    try {
+      // 请求文件详情 API
+      const response = await fetch(`/api/blueprint/file-detail?path=${encodeURIComponent(file.path)}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setFileDetails((prev) => {
+          const next = new Map(prev);
+          next.set(file.id, {
+            annotation: result.data.annotation,
+            loading: false,
+          });
+          return next;
+        });
+      } else {
+        // 如果 API 失败，使用默认的占位数据
+        setFileDetails((prev) => {
+          const next = new Map(prev);
+          next.set(file.id, {
+            annotation: {
+              summary: `${file.name} 文件`,
+              description: `这是位于 ${file.path} 的代码文件`,
+              keyPoints: ['待 AI 分析详细内容'],
+              confidence: 0.5,
+              userModified: false,
+            },
+            loading: false,
+          });
+          return next;
+        });
+      }
+    } catch (err: any) {
+      setFileDetails((prev) => {
+        const next = new Map(prev);
+        next.set(file.id, {
+          annotation: {
+            summary: `${file.name} 文件`,
+            description: `这是位于 ${file.path} 的代码文件`,
+            keyPoints: ['待 AI 分析详细内容'],
+            confidence: 0.5,
+            userModified: false,
+          },
+          loading: false,
+          error: err.message,
+        });
+        return next;
+      });
+    }
+  }, [selectedFile, fileDetails]);
+
+  // 注意：文件双击处理已移至 DomainGraph 组件，通过 NavigatorContext 直接切换到代码视图
 
   // 处理深入操作
   const handleDrillDown = useCallback(
@@ -266,7 +360,10 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
           domains={data.domains}
           relationships={data.relationships}
           selectedDomainId={selectedDomainId}
+          selectedFileId={selectedFile?.file.id}
           onDomainClick={handleDomainSelect}
+          onFileClick={handleFileClick}
+          // onFileDoubleClick 通过 NavigatorContext 在 DomainGraph 内部处理
         />
       </section>
 
@@ -359,9 +456,18 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
                 </div>
                 <div className={styles.detailContent}>
                   <SemanticCard
-                    annotation={selectedDomain.annotation}
+                    annotation={annotationUpdates.get(selectedDomain.id) || selectedDomain.annotation}
                     layer={OnionLayer.BUSINESS_DOMAIN}
                     editable={false}
+                    targetType="module"
+                    targetId={selectedDomain.path}
+                    onAnnotationUpdate={(newAnnotation) => {
+                      setAnnotationUpdates((prev) => {
+                        const next = new Map(prev);
+                        next.set(selectedDomain.id, newAnnotation);
+                        return next;
+                      });
+                    }}
                   />
                   <div className={styles.detailMeta}>
                     <div className={styles.metaItem}>
@@ -396,6 +502,105 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
               </>
             );
           })()}
+        </section>
+      )}
+
+      {/* 文件详情面板 */}
+      {selectedFile && (
+        <section className={styles.fileDetailSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              <span className={styles.sectionIcon}>📄</span>
+              文件详情
+            </h2>
+            <button
+              className={styles.closeButton}
+              onClick={() => setSelectedFile(undefined)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className={styles.detailContent}>
+            {/* 文件基本信息 */}
+            <div className={styles.fileHeader}>
+              <div className={styles.fileIcon}>
+                {selectedFile.file.type === 'directory' ? '📁' : '📄'}
+              </div>
+              <div className={styles.fileMeta}>
+                <h3 className={styles.fileName}>{selectedFile.file.name}</h3>
+                <code className={styles.filePath}>{selectedFile.file.path}</code>
+              </div>
+            </div>
+
+            {/* 文件统计 */}
+            <div className={styles.fileStats}>
+              {selectedFile.file.lineCount && (
+                <div className={styles.fileStat}>
+                  <span className={styles.fileStatIcon}>📝</span>
+                  <span className={styles.fileStatValue}>{selectedFile.file.lineCount}</span>
+                  <span className={styles.fileStatLabel}>行代码</span>
+                </div>
+              )}
+              {selectedFile.file.language && (
+                <div className={styles.fileStat}>
+                  <span className={styles.fileStatIcon}>🏷️</span>
+                  <span className={styles.fileStatValue}>{selectedFile.file.language}</span>
+                  <span className={styles.fileStatLabel}>语言</span>
+                </div>
+              )}
+              {selectedFile.file.symbolCount && (
+                <div className={styles.fileStat}>
+                  <span className={styles.fileStatIcon}>🔣</span>
+                  <span className={styles.fileStatValue}>{selectedFile.file.symbolCount}</span>
+                  <span className={styles.fileStatLabel}>符号</span>
+                </div>
+              )}
+            </div>
+
+            {/* AI 语义分析卡片 */}
+            {(() => {
+              const detail = fileDetails.get(selectedFile.file.id);
+              if (detail?.loading) {
+                return (
+                  <div className={styles.fileLoadingIndicator}>
+                    <span className={styles.loadingSpinner}></span>
+                    <span>正在加载文件详情...</span>
+                  </div>
+                );
+              }
+              if (detail?.annotation) {
+                return (
+                  <SemanticCard
+                    annotation={detail.annotation}
+                    layer={OnionLayer.BUSINESS_DOMAIN}
+                    editable={false}
+                    targetType="file"
+                    targetId={selectedFile.file.path}
+                    onAnnotationUpdate={(newAnnotation) => {
+                      setFileDetails((prev) => {
+                        const next = new Map(prev);
+                        next.set(selectedFile.file.id, {
+                          ...prev.get(selectedFile.file.id),
+                          annotation: newAnnotation,
+                          loading: false,
+                        });
+                        return next;
+                      });
+                    }}
+                  />
+                );
+              }
+              return null;
+            })()}
+
+            {/* 所属模块信息 */}
+            <div className={styles.fileModuleInfo}>
+              <span className={styles.fileModuleLabel}>所属模块：</span>
+              <span className={styles.fileModuleName}>
+                {data?.domains.find((d) => d.id === selectedFile.moduleId)?.name || selectedFile.moduleId}
+              </span>
+            </div>
+          </div>
         </section>
       )}
     </div>

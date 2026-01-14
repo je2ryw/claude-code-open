@@ -30,6 +30,16 @@ export interface DrillDownContext {
   nodeName?: string;
 }
 
+// 生成缓存键（第三层和第四层需要包含 context）
+function getCacheKey(layer: OnionLayer, contextNodeId?: string): string {
+  // 第一层和第二层不需要 context，直接用 layer 作为键
+  if (layer === OnionLayer.PROJECT_INTENT || layer === OnionLayer.BUSINESS_DOMAIN) {
+    return `layer-${layer}`;
+  }
+  // 第三层和第四层需要 context
+  return `layer-${layer}-${contextNodeId || 'default'}`;
+}
+
 // Hook 返回类型
 export interface UseOnionNavigationReturn {
   /** 当前层级 */
@@ -38,6 +48,8 @@ export interface UseOnionNavigationReturn {
   layerStack: OnionNavigationState['layerStack'];
   /** 各层级缓存数据 */
   layerData: OnionNavigationState['layerData'];
+  /** 当前层级的数据（根据 context 获取正确的缓存） */
+  currentLayerData: LayerData | undefined;
   /** 各层级加载状态 */
   loading: OnionNavigationState['loading'];
   /** 各层级错误状态 */
@@ -51,7 +63,7 @@ export interface UseOnionNavigationReturn {
   /** 直接跳转到指定层级 */
   navigateToLayer: (layer: OnionLayer, forceRefresh?: boolean) => Promise<void>;
   /** 向下钻取（进入下一层） */
-  drillDown: (context: DrillDownContext) => Promise<void>;
+  drillDown: (targetLayer: OnionLayer, nodeId?: string) => Promise<void>;
   /** 返回上一层 */
   goBack: () => Promise<void>;
   /** 刷新当前层级数据 */
@@ -85,7 +97,8 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
   const [currentFocusId, setCurrentFocusId] = useState<string | undefined>();
 
   // 用于防止重复请求
-  const pendingRequests = useRef<Set<OnionLayer>>(new Set());
+  // 使用 cacheKey 作为键，而不是 layer，以支持同层级不同 context 的并发请求
+  const pendingRequests = useRef<Set<string>>(new Set());
 
   /**
    * 获取层级数据
@@ -96,17 +109,21 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
       context?: DrillDownContext,
       forceRefresh: boolean = false
     ): Promise<LayerData | null> => {
+      // 生成缓存键
+      const cacheKey = getCacheKey(layer, context?.nodeId);
+
       // 检查缓存（非强制刷新时）
-      if (!forceRefresh && layerData[layer]) {
-        return layerData[layer] as LayerData;
+      // 注意：第三层和第四层的缓存键包含 context，所以不同的 nodeId 会使用不同的缓存
+      if (!forceRefresh && layerData[cacheKey]) {
+        return layerData[cacheKey] as LayerData;
       }
 
-      // 防止重复请求
-      if (pendingRequests.current.has(layer)) {
+      // 防止重复请求（使用 cacheKey 而不是 layer，允许同层级不同 context 的并发请求）
+      if (pendingRequests.current.has(cacheKey)) {
         return null;
       }
 
-      pendingRequests.current.add(layer);
+      pendingRequests.current.add(cacheKey);
 
       // 设置加载状态
       setLoading((prev) => ({ ...prev, [layer]: true }));
@@ -117,6 +134,11 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
       });
 
       try {
+        // 第四层需要 filePath 参数，如果没有则返回错误
+        if (layer === OnionLayer.IMPLEMENTATION && !context?.nodeId) {
+          throw new Error('请从第三层(关键流程)选择一个文件进入第四层');
+        }
+
         // 构建 URL
         let url = `/api/blueprint/onion/layer/${layer}`;
         const params = new URLSearchParams();
@@ -130,23 +152,41 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
           params.append('nodeId', context.nodeId);
         }
 
+        // 第四层需要 filePath 参数（从第三层钻取时，nodeId 就是文件路径）
+        if (layer === OnionLayer.IMPLEMENTATION && context?.nodeId) {
+          params.append('filePath', context.nodeId);
+        }
+
         const queryString = params.toString();
         if (queryString) {
           url += `?${queryString}`;
         }
 
         // 发起请求
+        console.log(`[Onion] 请求层级 ${layer}`, { url, context });
         const response = await fetch(url);
         const result: OnionLayerResponse<LayerData> = await response.json();
 
+        console.log(`[Onion] 层级 ${layer} 响应:`, result);
+
         if (!result.success || !result.data) {
+          console.error(`[Onion] 层级 ${layer} 请求失败:`, result.error);
           throw new Error(result.error || '获取数据失败');
         }
 
-        // 更新缓存
+        // 检查第三层数据
+        if (layer === 3) {
+          const keyProcessData = result.data as any;
+          console.log(`[Onion] 第三层流程数量:`, keyProcessData?.processes?.length || 0);
+          if (!keyProcessData?.processes?.length) {
+            console.warn('[Onion] 第三层没有流程数据！');
+          }
+        }
+
+        // 更新缓存（使用 cacheKey）
         setLayerData((prev) => ({
           ...prev,
-          [layer]: result.data,
+          [cacheKey]: result.data,
         }));
 
         return result.data;
@@ -155,7 +195,7 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
         setErrors((prev) => ({ ...prev, [layer]: errorMessage }));
         return null;
       } finally {
-        pendingRequests.current.delete(layer);
+        pendingRequests.current.delete(cacheKey);
         setLoading((prev) => ({ ...prev, [layer]: false }));
       }
     },
@@ -182,26 +222,31 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
 
   /**
    * 向下钻取
+   * @param targetLayer 目标层级
+   * @param nodeId 可选的节点ID（用于聚焦）
    */
   const drillDown = useCallback(
-    async (context: DrillDownContext) => {
-      // 计算目标层级（下一层）
-      const targetLayer = Math.min(context.fromLayer + 1, OnionLayer.IMPLEMENTATION) as OnionLayer;
+    async (targetLayer: OnionLayer, nodeId?: string) => {
+      // 构建上下文
+      const context: DrillDownContext = {
+        fromLayer: currentLayer,
+        nodeId: nodeId || '',
+      };
 
       // 获取数据
       await fetchLayerData(targetLayer, context, false);
 
       // 更新当前层级
       setCurrentLayer(targetLayer);
-      setCurrentFocusId(context.nodeId);
+      setCurrentFocusId(nodeId);
 
       // 添加到历史栈
       setLayerStack((prev) => [
         ...prev,
-        { layer: targetLayer, focusId: context.nodeId, timestamp: Date.now() },
+        { layer: targetLayer, focusId: nodeId, timestamp: Date.now() },
       ]);
     },
-    [fetchLayerData]
+    [fetchLayerData, currentLayer]
   );
 
   /**
@@ -221,8 +266,9 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
     setCurrentLayer(previousEntry.layer);
     setCurrentFocusId(previousEntry.focusId);
 
-    // 如果没有缓存数据，重新获取
-    if (!layerData[previousEntry.layer]) {
+    // 如果没有缓存数据，重新获取（使用正确的缓存键）
+    const cacheKey = getCacheKey(previousEntry.layer, previousEntry.focusId);
+    if (!layerData[cacheKey]) {
       await fetchLayerData(previousEntry.layer);
     }
   }, [layerStack, layerData, fetchLayerData]);
@@ -260,10 +306,15 @@ export function useOnionNavigation(initialLayer: OnionLayer = OnionLayer.PROJECT
   // 计算是否可以返回
   const canGoBack = layerStack.length > 1;
 
+  // 计算当前层级的数据（根据 context 获取正确的缓存）
+  const currentCacheKey = getCacheKey(currentLayer, currentFocusId);
+  const currentLayerData = layerData[currentCacheKey] as LayerData | undefined;
+
   return {
     currentLayer,
     layerStack,
     layerData,
+    currentLayerData,
     loading,
     errors,
     canGoBack,

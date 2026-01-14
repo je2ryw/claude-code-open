@@ -549,3 +549,420 @@ function getAllFiles(dirPath: string, excludePatterns: string[]): string[] {
   walk(dirPath);
   return files;
 }
+
+// ============================================================================
+// 分层加载 API - 地图模式
+// ============================================================================
+
+/**
+ * 缩放级别枚举
+ */
+export enum ZoomLevel {
+  PROJECT = 0,   // 0-20%: 项目级
+  MODULE = 1,    // 20-40%: 模块级
+  FILE = 2,      // 40-60%: 文件级
+  SYMBOL = 3,    // 60-80%: 符号级
+  CODE = 4       // 80-100%: 代码级
+}
+
+/**
+ * 分层节点数据结构
+ */
+export interface LayeredNode {
+  id: string;
+  name: string;
+  path: string;
+  level: ZoomLevel;
+  value: number;
+  type: 'directory' | 'file' | 'symbol' | 'code';
+  hasChildren: boolean;
+  childrenLoaded: boolean;
+  children?: LayeredNode[];
+  metadata?: {
+    language?: string;
+    complexity?: number;
+    fileCount?: number;
+    symbolType?: string;
+    signature?: string;
+  };
+}
+
+/**
+ * 分层加载响应结构
+ */
+export interface LayeredTreemapResponse {
+  node: LayeredNode;
+  breadcrumb: Array<{ id: string; name: string; level: ZoomLevel }>;
+  stats: {
+    totalValue: number;
+    childCount: number;
+    currentLevel: ZoomLevel;
+  };
+}
+
+/**
+ * 根据缩放级别计算最大深度
+ */
+function getMaxDepthForLevel(level: ZoomLevel): number {
+  switch (level) {
+    case ZoomLevel.PROJECT: return 1;  // 只显示顶级模块
+    case ZoomLevel.MODULE: return 2;   // 显示模块内目录
+    case ZoomLevel.FILE: return 3;     // 显示文件
+    case ZoomLevel.SYMBOL: return 4;   // 显示符号
+    case ZoomLevel.CODE: return 5;     // 显示代码细节
+    default: return 2;
+  }
+}
+
+/**
+ * 生成节点 ID
+ */
+function generateNodeId(relativePath: string, type: string): string {
+  return `${type}:${relativePath || 'root'}`;
+}
+
+/**
+ * 获取文件复杂度（基于行数和符号数量的简单估算）
+ */
+function estimateComplexity(lines: number): number {
+  if (lines < 50) return 1;
+  if (lines < 100) return 2;
+  if (lines < 200) return 3;
+  if (lines < 500) return 4;
+  return 5;
+}
+
+/**
+ * 分层加载数据生成器
+ *
+ * @param rootDir 项目根目录
+ * @param level 当前缩放级别
+ * @param focusPath 聚焦路径（可选，用于进入某个节点）
+ * @param loadDepth 加载深度，默认1
+ */
+export async function generateLayeredTreemapData(
+  rootDir: string,
+  level: ZoomLevel = ZoomLevel.PROJECT,
+  focusPath: string = '',
+  loadDepth: number = 1,
+  excludePatterns: string[] = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+): Promise<LayeredTreemapResponse> {
+  const rootName = path.basename(rootDir) || rootDir;
+  const maxDepth = getMaxDepthForLevel(level) + loadDepth - 1;
+  // 符号级别采用懒加载，不在这里一次性加载所有文件的符号
+  // 符号只通过 loadNodeChildren API 在用户点击进入文件时加载
+  const includeSymbols = false;
+
+  // 计算起始目录
+  const startDir = focusPath ? path.join(rootDir, focusPath) : rootDir;
+
+  // 验证路径存在
+  if (!fs.existsSync(startDir)) {
+    throw new Error(`Path not found: ${focusPath}`);
+  }
+
+  // 构建面包屑导航
+  const breadcrumb: Array<{ id: string; name: string; level: ZoomLevel }> = [];
+  if (focusPath) {
+    const parts = focusPath.split(path.sep).filter(Boolean);
+    let currentPath = '';
+
+    // 添加根节点
+    breadcrumb.push({
+      id: generateNodeId('', 'directory'),
+      name: rootName,
+      level: ZoomLevel.PROJECT
+    });
+
+    // 添加路径中的各级节点
+    for (let i = 0; i < parts.length; i++) {
+      currentPath = currentPath ? path.join(currentPath, parts[i]) : parts[i];
+      const fullPath = path.join(rootDir, currentPath);
+      const stat = fs.statSync(fullPath);
+      const nodeType = stat.isDirectory() ? 'directory' : 'file';
+
+      // 根据深度计算层级
+      let nodeLevel: ZoomLevel;
+      if (i === 0) nodeLevel = ZoomLevel.MODULE;
+      else if (stat.isFile()) nodeLevel = ZoomLevel.FILE;
+      else nodeLevel = ZoomLevel.MODULE;
+
+      breadcrumb.push({
+        id: generateNodeId(currentPath, nodeType),
+        name: parts[i],
+        level: nodeLevel
+      });
+    }
+  } else {
+    breadcrumb.push({
+      id: generateNodeId('', 'directory'),
+      name: rootName,
+      level: ZoomLevel.PROJECT
+    });
+  }
+
+  /**
+   * 递归构建分层树
+   */
+  async function buildLayeredNode(
+    dirPath: string,
+    currentDepth: number,
+    parentLevel: ZoomLevel
+  ): Promise<LayeredNode | null> {
+    const relativePath = path.relative(rootDir, dirPath);
+    const name = path.basename(dirPath) || rootName;
+
+    // 检查是否应该排除
+    if (excludePatterns.some(pattern => name === pattern || name.startsWith('.'))) {
+      return null;
+    }
+
+    try {
+      const stat = fs.statSync(dirPath);
+
+      if (stat.isFile()) {
+        // 只处理代码文件
+        const ext = path.extname(dirPath).toLowerCase();
+        const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.css', '.scss', '.html'];
+        if (!codeExtensions.includes(ext)) {
+          return null;
+        }
+
+        const lines = getFileLines(dirPath);
+        if (lines === 0) return null;
+
+        const language = getFileLanguage(dirPath);
+        const complexity = estimateComplexity(lines);
+
+        // TS/JS 文件可以包含符号，标记为可展开（懒加载）
+        // 符号只在用户点击进入文件时通过 loadNodeChildren API 加载
+        const canHaveSymbols = ['.ts', '.tsx', '.js', '.jsx'].includes(ext);
+
+        return {
+          id: generateNodeId(relativePath, 'file'),
+          name,
+          path: relativePath,
+          level: ZoomLevel.FILE,
+          value: lines,
+          type: 'file',
+          hasChildren: canHaveSymbols,
+          childrenLoaded: false,  // 符号采用懒加载，初始未加载
+          children: undefined,
+          metadata: {
+            language,
+            complexity
+          }
+        };
+      }
+
+      if (stat.isDirectory()) {
+        // 达到最大深度时，不再展开子节点
+        if (currentDepth >= maxDepth) {
+          const files = getAllFiles(dirPath, excludePatterns);
+          const totalLines = files.reduce((sum, f) => sum + getFileLines(f), 0);
+          if (totalLines === 0) return null;
+
+          return {
+            id: generateNodeId(relativePath, 'directory'),
+            name,
+            path: relativePath,
+            level: parentLevel,
+            value: totalLines,
+            type: 'directory',
+            hasChildren: true,
+            childrenLoaded: false,
+            metadata: {
+              fileCount: files.length
+            }
+          };
+        }
+
+        // 递归处理子目录
+        const entries = fs.readdirSync(dirPath);
+        const children: LayeredNode[] = [];
+
+        for (const entry of entries) {
+          const childPath = path.join(dirPath, entry);
+          const childNode = await buildLayeredNode(
+            childPath,
+            currentDepth + 1,
+            currentDepth === 0 ? ZoomLevel.MODULE : ZoomLevel.FILE
+          );
+          if (childNode) {
+            children.push(childNode);
+          }
+        }
+
+        // 按 value 排序（大的在前）
+        children.sort((a, b) => b.value - a.value);
+
+        if (children.length === 0) {
+          const files = getAllFiles(dirPath, excludePatterns);
+          if (files.length === 0) return null;
+        }
+
+        // 计算目录的总行数和文件数
+        const totalValue = children.reduce((sum, child) => sum + child.value, 0);
+        const fileCount = children.reduce((sum, child) => {
+          if (child.type === 'file') return sum + 1;
+          return sum + (child.metadata?.fileCount || 0);
+        }, 0);
+
+        // 确定当前层级
+        const nodeLevel = currentDepth === 0 ? ZoomLevel.PROJECT :
+                         currentDepth === 1 ? ZoomLevel.MODULE : ZoomLevel.FILE;
+
+        return {
+          id: generateNodeId(relativePath, 'directory'),
+          name,
+          path: relativePath,
+          level: nodeLevel,
+          value: totalValue,
+          type: 'directory',
+          hasChildren: children.length > 0,
+          childrenLoaded: true,
+          children: children.length > 0 ? children : undefined,
+          metadata: {
+            fileCount
+          }
+        };
+      }
+    } catch (err) {
+      console.error(`[LayeredTreemap] 无法处理: ${dirPath}`, err);
+    }
+
+    return null;
+  }
+
+  // 构建节点树
+  const node = await buildLayeredNode(startDir, 0, level);
+
+  if (!node) {
+    throw new Error(`Failed to build layered treemap for: ${startDir}`);
+  }
+
+  // 计算统计信息
+  const childCount = node.children?.length || 0;
+
+  return {
+    node,
+    breadcrumb,
+    stats: {
+      totalValue: node.value,
+      childCount,
+      currentLevel: level
+    }
+  };
+}
+
+/**
+ * 加载特定节点的子节点（懒加载）
+ *
+ * @param rootDir 项目根目录
+ * @param nodePath 节点路径
+ * @param level 当前缩放级别
+ */
+export async function loadNodeChildren(
+  rootDir: string,
+  nodePath: string,
+  level: ZoomLevel = ZoomLevel.MODULE,
+  excludePatterns: string[] = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+): Promise<LayeredNode[]> {
+  const fullPath = path.join(rootDir, nodePath);
+
+  if (!fs.existsSync(fullPath)) {
+    throw new Error(`Path not found: ${nodePath}`);
+  }
+
+  const stat = fs.statSync(fullPath);
+  const children: LayeredNode[] = [];
+
+  if (stat.isDirectory()) {
+    const entries = fs.readdirSync(fullPath);
+
+    for (const entry of entries) {
+      if (excludePatterns.some(p => entry === p || entry.startsWith('.'))) {
+        continue;
+      }
+
+      const childPath = path.join(fullPath, entry);
+      const childRelativePath = path.relative(rootDir, childPath);
+      const childStat = fs.statSync(childPath);
+
+      if (childStat.isDirectory()) {
+        const files = getAllFiles(childPath, excludePatterns);
+        const totalLines = files.reduce((sum, f) => sum + getFileLines(f), 0);
+        if (totalLines === 0) continue;
+
+        children.push({
+          id: generateNodeId(childRelativePath, 'directory'),
+          name: entry,
+          path: childRelativePath,
+          level: level + 1 as ZoomLevel,
+          value: totalLines,
+          type: 'directory',
+          hasChildren: true,
+          childrenLoaded: false,
+          metadata: {
+            fileCount: files.length
+          }
+        });
+      } else if (childStat.isFile()) {
+        const ext = path.extname(childPath).toLowerCase();
+        const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.css', '.scss', '.html'];
+        if (!codeExtensions.includes(ext)) continue;
+
+        const lines = getFileLines(childPath);
+        if (lines === 0) continue;
+
+        // 支持符号解析的文件类型
+        const symbolExtensions = ['.ts', '.tsx', '.js', '.jsx'];
+        const canHaveSymbols = symbolExtensions.includes(ext);
+
+        children.push({
+          id: generateNodeId(childRelativePath, 'file'),
+          name: entry,
+          path: childRelativePath,
+          level: ZoomLevel.FILE,
+          value: lines,
+          type: 'file',
+          hasChildren: canHaveSymbols, // 只要是支持符号解析的文件就有子节点
+          childrenLoaded: false,
+          metadata: {
+            language: getFileLanguage(childPath),
+            complexity: estimateComplexity(lines)
+          }
+        });
+      }
+    }
+
+    // 按 value 排序
+    children.sort((a, b) => b.value - a.value);
+  } else if (stat.isFile()) {
+    // 加载文件内的符号（懒加载模式 - 只在用户点击进入文件时加载）
+    const ext = path.extname(fullPath).toLowerCase();
+    if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+      console.log(`[loadNodeChildren] 懒加载文件符号: ${nodePath}`);
+      const symbols = await extractFileSymbols(fullPath, rootDir);
+      for (const sym of symbols) {
+        children.push({
+          id: generateNodeId(sym.path, 'symbol'),
+          name: sym.name,
+          path: sym.path,
+          level: ZoomLevel.SYMBOL,
+          value: sym.value || 10,
+          type: 'symbol',
+          hasChildren: !!(sym.children && sym.children.length > 0),
+          childrenLoaded: false,
+          metadata: {
+            symbolType: sym.symbolType,
+            signature: sym.signature
+          }
+        });
+      }
+      console.log(`[loadNodeChildren] 加载了 ${children.length} 个符号`);
+    }
+  }
+
+  return children;
+}

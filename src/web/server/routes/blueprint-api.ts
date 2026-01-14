@@ -378,6 +378,111 @@ router.get('/treemap', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/blueprint/layered-treemap
+ *
+ * 分层加载 Treemap 数据（地图模式）
+ *
+ * 查询参数:
+ * - level: 缩放级别 0-4 (PROJECT/MODULE/FILE/SYMBOL/CODE)
+ * - path: 聚焦路径（可选）
+ * - depth: 加载深度，默认 1
+ */
+router.get('/layered-treemap', async (req: Request, res: Response) => {
+  try {
+    const {
+      level = '0',
+      path: focusPath = '',
+      depth = '1'
+    } = req.query;
+
+    const projectRoot = process.cwd();
+    const zoomLevel = parseInt(level as string, 10);
+    const loadDepth = parseInt(depth as string, 10);
+
+    console.log(`[LayeredTreemap] 加载数据: level=${zoomLevel}, path=${focusPath}, depth=${loadDepth}`);
+
+    // 动态导入分层加载函数
+    const { generateLayeredTreemapData, ZoomLevel } = await import('./project-map-generator.js');
+
+    // 验证缩放级别
+    if (zoomLevel < ZoomLevel.PROJECT || zoomLevel > ZoomLevel.CODE) {
+      return res.status(400).json({
+        success: false,
+        error: `无效的缩放级别: ${zoomLevel}，应为 0-4`
+      });
+    }
+
+    const result = await generateLayeredTreemapData(
+      projectRoot,
+      zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
+      focusPath as string,
+      loadDepth,
+      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+    );
+
+    console.log(`[LayeredTreemap] 数据加载完成: ${result.stats.childCount} 个子节点`);
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    console.error('[LayeredTreemap] 错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/blueprint/layered-treemap/children
+ *
+ * 懒加载特定节点的子节点
+ *
+ * 查询参数:
+ * - path: 节点路径
+ * - level: 当前缩放级别
+ */
+router.get('/layered-treemap/children', async (req: Request, res: Response) => {
+  try {
+    const {
+      path: nodePath,
+      level = '1'
+    } = req.query;
+
+    if (!nodePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少节点路径参数'
+      });
+    }
+
+    const projectRoot = process.cwd();
+    const zoomLevel = parseInt(level as string, 10);
+
+    console.log(`[LayeredTreemap] 懒加载子节点: path=${nodePath}, level=${zoomLevel}`);
+
+    // 动态导入懒加载函数
+    const { loadNodeChildren, ZoomLevel } = await import('./project-map-generator.js');
+
+    const children = await loadNodeChildren(
+      projectRoot,
+      nodePath as string,
+      zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
+      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+    );
+
+    console.log(`[LayeredTreemap] 加载完成: ${children.length} 个子节点`);
+
+    res.json({
+      success: true,
+      data: children,
+    });
+  } catch (error: any) {
+    console.error('[LayeredTreemap] 懒加载错误:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============================================================================
 // 文件树 & 节点分析 API
 // ============================================================================
@@ -593,6 +698,318 @@ router.get('/file-tree', (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[File Tree Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取模块内部文件列表
+ * GET /api/blueprint/module-files?path=src/core
+ *
+ * 返回模块目录下的所有文件（带语言、行数等信息）
+ */
+router.get('/module-files', (req: Request, res: Response) => {
+  try {
+    const modulePath = req.query.path as string;
+
+    if (!modulePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    const absolutePath = path.resolve(process.cwd(), modulePath);
+
+    // 检查目录是否存在
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `目录不存在: ${modulePath}`,
+      });
+    }
+
+    // 检查是否是目录
+    if (!fs.statSync(absolutePath).isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: `路径不是目录: ${modulePath}`,
+      });
+    }
+
+    interface ModuleFileInfo {
+      id: string;
+      name: string;
+      path: string;
+      type: 'file' | 'directory';
+      language?: string;
+      lineCount?: number;
+      symbolCount?: number;
+    }
+
+    // 语言检测映射
+    const EXT_TO_LANGUAGE: Record<string, string> = {
+      '.ts': 'TypeScript',
+      '.tsx': 'TypeScript',
+      '.js': 'JavaScript',
+      '.jsx': 'JavaScript',
+      '.css': 'CSS',
+      '.scss': 'SCSS',
+      '.json': 'JSON',
+      '.md': 'Markdown',
+      '.html': 'HTML',
+      '.yml': 'YAML',
+      '.yaml': 'YAML',
+    };
+
+    // 递归读取文件列表
+    const files: ModuleFileInfo[] = [];
+
+    const readFiles = (dirPath: string, relativePath: string) => {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        // 跳过隐藏文件和 node_modules
+        if (entry.name.startsWith('.')) continue;
+        if (entry.name === 'node_modules') continue;
+        if (entry.name === 'dist') continue;
+        if (entry.name === '__pycache__') continue;
+
+        const fullPath = path.join(dirPath, entry.name);
+        const fileRelativePath = relativePath
+          ? `${relativePath}/${entry.name}`
+          : entry.name;
+
+        if (entry.isDirectory()) {
+          // 递归读取子目录
+          readFiles(fullPath, fileRelativePath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+
+          // 只处理源代码文件
+          if (!['.ts', '.tsx', '.js', '.jsx', '.css', '.scss', '.json', '.md', '.html', '.yml', '.yaml'].includes(ext)) {
+            continue;
+          }
+
+          let lineCount: number | undefined;
+          let symbolCount: number | undefined;
+
+          try {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            lineCount = content.split('\n').length;
+
+            // 简单统计符号数量
+            if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+              const matches = content.match(
+                /(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+\w+/g
+              );
+              symbolCount = matches?.length || 0;
+            }
+          } catch (e) {
+            // 忽略读取错误
+          }
+
+          files.push({
+            id: `file:${fileRelativePath}`,
+            name: entry.name,
+            path: path.join(modulePath, fileRelativePath).replace(/\\/g, '/'),
+            type: 'file',
+            language: EXT_TO_LANGUAGE[ext] || 'Other',
+            lineCount,
+            symbolCount,
+          });
+        }
+      }
+    };
+
+    readFiles(absolutePath, '');
+
+    // 按文件名排序
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({
+      success: true,
+      data: {
+        modulePath,
+        files,
+        total: files.length,
+      },
+    });
+  } catch (error: any) {
+    console.error('[Module Files Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取单个文件的详情信息
+ * GET /api/blueprint/file-detail?path=xxx
+ */
+router.get('/file-detail', (req: Request, res: Response) => {
+  try {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    const absolutePath = path.resolve(process.cwd(), filePath);
+
+    // 检查文件是否存在
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `文件不存在: ${filePath}`,
+      });
+    }
+
+    // 检查是否是文件
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) {
+      return res.status(400).json({
+        success: false,
+        error: `路径不是文件: ${filePath}`,
+      });
+    }
+
+    // 语言检测映射
+    const EXT_TO_LANGUAGE: Record<string, string> = {
+      '.ts': 'TypeScript',
+      '.tsx': 'TypeScript',
+      '.js': 'JavaScript',
+      '.jsx': 'JavaScript',
+      '.css': 'CSS',
+      '.scss': 'SCSS',
+      '.json': 'JSON',
+      '.md': 'Markdown',
+      '.html': 'HTML',
+      '.yml': 'YAML',
+      '.yaml': 'YAML',
+      '.py': 'Python',
+      '.java': 'Java',
+      '.go': 'Go',
+      '.rs': 'Rust',
+    };
+
+    const fileName = path.basename(filePath);
+    const ext = path.extname(fileName);
+    const language = EXT_TO_LANGUAGE[ext] || 'Other';
+
+    let lineCount = 0;
+    let symbolCount = 0;
+    let imports: string[] = [];
+    let exports: string[] = [];
+    let summary = '';
+    let description = '';
+    let keyPoints: string[] = [];
+
+    try {
+      const content = fs.readFileSync(absolutePath, 'utf-8');
+      lineCount = content.split('\n').length;
+
+      // 分析 TypeScript/JavaScript 文件
+      if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
+        // 统计符号数量
+        const symbolMatches = content.match(
+          /(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+\w+/g
+        );
+        symbolCount = symbolMatches?.length || 0;
+
+        // 提取 import 语句
+        const importMatches = content.match(/import\s+.*?from\s+['"](.+?)['"]/g);
+        if (importMatches) {
+          imports = importMatches.slice(0, 10).map((imp) => {
+            const match = imp.match(/from\s+['"](.+?)['"]/);
+            return match ? match[1] : imp;
+          });
+        }
+
+        // 提取 export 语句
+        const exportMatches = content.match(/export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+(\w+)/g);
+        if (exportMatches) {
+          exports = exportMatches.slice(0, 10).map((exp) => {
+            const match = exp.match(/(?:function|class|interface|type|const|let|var)\s+(\w+)/);
+            return match ? match[1] : exp;
+          });
+        }
+
+        // 基于文件内容生成简单描述
+        const hasReact = content.includes('React') || content.includes('useState') || content.includes('useEffect');
+        const hasExpress = content.includes('express') || content.includes('router.') || content.includes('Request');
+        const isTest = fileName.includes('.test.') || fileName.includes('.spec.');
+        const isComponent = hasReact && (fileName.endsWith('.tsx') || fileName.endsWith('.jsx'));
+        const isHook = hasReact && fileName.startsWith('use');
+        const isApi = hasExpress || fileName.includes('api') || fileName.includes('route');
+
+        if (isTest) {
+          summary = `${fileName.replace(/\.(test|spec)\.(ts|tsx|js|jsx)$/, '')} 的测试文件`;
+          description = `包含针对相关模块的单元测试或集成测试`;
+          keyPoints = ['测试用例', '待 AI 分析详细内容'];
+        } else if (isHook) {
+          summary = `${fileName.replace(/\.(ts|tsx)$/, '')} 自定义 Hook`;
+          description = `React 自定义 Hook，提供可复用的状态逻辑`;
+          keyPoints = ['React Hook', '状态管理', '待 AI 分析详细内容'];
+        } else if (isComponent) {
+          summary = `${fileName.replace(/\.(tsx|jsx)$/, '')} React 组件`;
+          description = `React 组件，负责 UI 渲染和交互逻辑`;
+          keyPoints = ['React 组件', 'UI 渲染', '待 AI 分析详细内容'];
+        } else if (isApi) {
+          summary = `${fileName.replace(/\.(ts|js)$/, '')} API 模块`;
+          description = `API 路由或服务端接口实现`;
+          keyPoints = ['API 端点', '请求处理', '待 AI 分析详细内容'];
+        } else {
+          summary = `${fileName} 模块`;
+          description = `${language} 代码文件`;
+          keyPoints = ['待 AI 分析详细内容'];
+        }
+      } else if (ext === '.css' || ext === '.scss') {
+        summary = `${fileName} 样式文件`;
+        description = `CSS 样式表，定义组件或页面的视觉样式`;
+        keyPoints = ['样式定义', '待 AI 分析详细内容'];
+      } else if (ext === '.json') {
+        summary = `${fileName} 配置文件`;
+        description = `JSON 格式的配置或数据文件`;
+        keyPoints = ['配置数据', '待 AI 分析详细内容'];
+      } else if (ext === '.md') {
+        summary = `${fileName} 文档`;
+        description = `Markdown 格式的文档或说明文件`;
+        keyPoints = ['文档说明', '待 AI 分析详细内容'];
+      } else {
+        summary = `${fileName} 文件`;
+        description = `${language} 代码文件`;
+        keyPoints = ['待 AI 分析详细内容'];
+      }
+    } catch (e) {
+      // 读取失败时使用默认值
+      summary = `${fileName} 文件`;
+      description = `无法读取文件内容`;
+      keyPoints = ['文件读取失败'];
+    }
+
+    res.json({
+      success: true,
+      data: {
+        path: filePath,
+        name: fileName,
+        language,
+        lineCount,
+        symbolCount,
+        imports,
+        exports,
+        annotation: {
+          summary,
+          description,
+          keyPoints,
+          confidence: 0.6, // 静态分析置信度较低
+          userModified: false,
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('[File Detail Error]', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -3468,6 +3885,7 @@ import { OnionLayer } from '../../shared/onion-types.js';
  * - forceRefresh: boolean
  * - filePath: 第四层需要的文件路径
  * - symbolId: 第四层可选的符号ID
+ * - enableAI: boolean - 是否启用 AI 分析生成关键点（默认 true）
  */
 router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
   try {
@@ -3476,6 +3894,9 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
     const forceRefresh = req.query.forceRefresh === 'true';
     const filePath = req.query.filePath as string;
     const symbolId = req.query.symbolId as string;
+    const nodeId = req.query.nodeId as string; // 直接获取 nodeId 参数
+    const fromLayer = req.query.fromLayer as string;
+    const enableAI = req.query.enableAI !== 'false'; // 默认启用 AI
 
     if (layer < 1 || layer > 4) {
       return res.status(400).json({
@@ -3490,13 +3911,20 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
     let data: any;
     let context: any;
 
-    if (contextStr) {
+    // 优先使用直接传递的 nodeId 和 fromLayer 参数
+    if (nodeId || fromLayer) {
+      context = { nodeId, fromLayer };
+    } else if (contextStr) {
+      // 兼容旧的 context JSON 格式
       try {
         context = JSON.parse(contextStr);
       } catch (e) {
         console.warn('[Onion API] 无法解析 context:', contextStr);
       }
     }
+
+    console.log(`[Onion API] 请求层级 ${layer}，nodeId: ${nodeId || context?.nodeId || '无'}`);
+
 
     switch (layer) {
       case OnionLayer.PROJECT_INTENT:
@@ -3508,7 +3936,7 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
         break;
 
       case OnionLayer.KEY_PROCESS:
-        data = await analyzeKeyProcesses(projectRoot, context?.nodeId);
+        data = await analyzeKeyProcesses(projectRoot, context?.nodeId, forceRefresh);
         break;
 
       case OnionLayer.IMPLEMENTATION:
@@ -3520,6 +3948,46 @@ router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
         }
         data = await analyzeImplementation(projectRoot, filePath, symbolId);
         break;
+    }
+
+    // 如果启用 AI 分析，且 annotation.keyPoints 包含占位符，则触发 AI 分析
+    if (enableAI && data?.annotation) {
+      const keyPoints = data.annotation.keyPoints || [];
+      const hasPlaceholder = keyPoints.some((kp: string) =>
+        kp.includes('待 AI 分析') || kp.includes('分析中')
+      );
+
+      if (hasPlaceholder) {
+        console.log(`[Onion API] 检测到占位符，触发 AI 分析: layer=${layer}`);
+
+        try {
+          const targetType = layer === OnionLayer.PROJECT_INTENT ? 'project'
+            : layer === OnionLayer.BUSINESS_DOMAIN ? 'module'
+            : layer === OnionLayer.KEY_PROCESS ? 'process'
+            : 'file';
+
+          const aiAnnotation = await generateAIAnnotation(
+            targetType,
+            data.annotation.targetId || 'project',
+            { projectRoot }
+          );
+
+          // 用 AI 分析结果更新 annotation
+          data.annotation = {
+            ...data.annotation,
+            summary: aiAnnotation.summary,
+            description: aiAnnotation.description,
+            keyPoints: aiAnnotation.keyPoints,
+            confidence: aiAnnotation.confidence,
+            analyzedAt: aiAnnotation.analyzedAt,
+          };
+
+          console.log(`[Onion API] AI 分析完成，关键点: ${aiAnnotation.keyPoints.length} 个`);
+        } catch (aiError: any) {
+          console.error('[Onion API] AI 分析失败，保持原有数据:', aiError.message);
+          // AI 分析失败不影响返回数据，保持原有占位符
+        }
+      }
     }
 
     const analysisTime = Date.now() - startTime;

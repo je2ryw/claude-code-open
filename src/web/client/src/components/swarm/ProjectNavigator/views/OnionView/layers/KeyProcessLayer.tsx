@@ -7,7 +7,7 @@
  * - 点击流程步骤可跳转到第四层（实现细节）
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   KeyProcessData,
   ProcessFlow,
@@ -126,6 +126,18 @@ export const KeyProcessLayer: React.FC<KeyProcessLayerProps> = ({
     data?.selectedProcessId || null
   );
 
+  // 当 data 变化时，同步 selectedProcessId
+  useEffect(() => {
+    if (data?.selectedProcessId) {
+      setSelectedProcessId(data.selectedProcessId);
+    } else if (data?.processes?.length) {
+      // 如果没有指定 selectedProcessId，默认选中第一个
+      setSelectedProcessId(data.processes[0].id);
+    } else {
+      setSelectedProcessId(null);
+    }
+  }, [data?.selectedProcessId, data?.processes]);
+
   // 获取选中的流程
   const selectedProcess = useMemo(() => {
     if (!data?.processes || !selectedProcessId) {
@@ -182,17 +194,22 @@ export const KeyProcessLayer: React.FC<KeyProcessLayerProps> = ({
 
   // 空数据状态
   if (!data?.processes?.length) {
+    console.log('[KeyProcessLayer] 没有流程数据，data=', data);
     return (
       <div className={styles.layerContainer}>
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>🔄</div>
-          <div className={styles.emptyTitle}>暂无流程数据</div>
+          <div className={styles.emptyIcon}>📋</div>
+          <div className={styles.emptyTitle}>暂无匹配的流程</div>
           <div className={styles.emptyText}>
-            AI 尚未分析出关键业务流程，请稍后重试
+            当前模块没有检测到关键业务流程。
+            <br />
+            <small style={{ opacity: 0.7 }}>
+              提示：流程基于入口文件（cli.ts, index.ts）自动识别
+            </small>
           </div>
           {onRefresh && (
             <button className={styles.refreshButton} onClick={onRefresh}>
-              开始分析
+              重新分析
             </button>
           )}
         </div>
@@ -240,6 +257,7 @@ export const KeyProcessLayer: React.FC<KeyProcessLayerProps> = ({
                   <h2 className={styles.detailTitle}>{selectedProcess.name}</h2>
                 </div>
                 <SemanticCard
+                  key={`semantic-${selectedProcess.id}`}
                   annotation={selectedProcess.annotation}
                   layer={OnionLayer.KEY_PROCESS}
                   className={styles.semanticCard}
@@ -263,6 +281,7 @@ export const KeyProcessLayer: React.FC<KeyProcessLayerProps> = ({
               {/* 流程图 */}
               <div className={styles.flowDiagramContainer}>
                 <ProcessFlowDiagram
+                  key={selectedProcess.id}
                   process={selectedProcess}
                   onStepClick={handleStepClick}
                 />
