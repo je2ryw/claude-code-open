@@ -268,23 +268,25 @@ const validator = new SecurityValidator();
 
 // Add custom security check
 validator.addCheck({
-  id: 'custom-mfa',
-  name: 'Multi-Factor Authentication',
-  description: 'Verify MFA is enabled',
-  severity: 'error',
+  id: 'custom-key-rotation',
+  name: 'API Key Rotation',
+  description: 'Verify API key was rotated recently',
+  severity: 'warning',
   category: 'auth',
   check: (config) => {
-    const mfaEnabled = config.auth?.mfaEnabled ?? false;
+    const lastRotated = config.auth?.lastKeyRotation;
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const isRecent = lastRotated && lastRotated > thirtyDaysAgo;
     return {
-      passed: mfaEnabled,
-      message: mfaEnabled
-        ? 'MFA is enabled'
-        : 'MFA is not enabled - highly recommended',
+      passed: isRecent,
+      message: isRecent
+        ? 'API key was rotated recently'
+        : 'API key should be rotated - recommended every 30 days',
     };
   },
   fix: (config) => ({
     ...config,
-    auth: { ...config.auth, mfaEnabled: true },
+    auth: { ...config.auth, lastKeyRotation: Date.now() },
   }),
 });
 

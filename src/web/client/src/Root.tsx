@@ -3,31 +3,7 @@ import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
 import TopNavBar from './components/swarm/TopNavBar';
-import { NavigatorProvider, useNavigatorContext } from './components/swarm/ProjectNavigator/NavigatorContext';
 import { OnionView } from './components/swarm/ProjectNavigator/views/OnionView';
-import { CodeViewPanel } from './components/swarm/ProjectNavigator/CodeViewPanel';
-
-/**
- * 独立洋葱视图页面 - 支持代码视图切换
- */
-const StandaloneOnionView: React.FC = () => {
-  const { viewMode, selectedFile, closeCodeView } = useNavigatorContext();
-
-  return (
-    <div style={{ height: '100%', overflow: 'auto', background: '#0f172a' }}>
-      {viewMode === 'onion' || viewMode === 'map' ? (
-        <OnionView />
-      ) : viewMode === 'code' && selectedFile ? (
-        <CodeViewPanel
-          filePath={selectedFile}
-          onClose={closeCodeView}
-        />
-      ) : (
-        <OnionView />
-      )}
-    </div>
-  );
-};
 
 type Page = 'chat' | 'swarm' | 'blueprint' | 'onion';
 
@@ -64,7 +40,12 @@ export default function Root() {
   const renderPage = () => {
     switch (currentPage) {
       case 'chat':
-        return <App onNavigateToBlueprint={navigateToBlueprintPage} />;
+        return (
+          <App
+            onNavigateToBlueprint={navigateToBlueprintPage}
+            onNavigateToSwarm={navigateToSwarmPage}
+          />
+        );
       case 'swarm':
         return <SwarmConsole />;
       case 'blueprint':
@@ -75,11 +56,16 @@ export default function Root() {
           />
         );
       case 'onion':
-        // 需要包裹 NavigatorProvider 来支持文件双击打开代码视图
         return (
-          <NavigatorProvider>
-            <StandaloneOnionView />
-          </NavigatorProvider>
+          <div style={{ height: '100%', overflow: 'auto', background: '#0f172a' }}>
+            <OnionView
+              onNavigateToBlueprint={(filePath) => {
+                console.log('[OnionView] 跳转到蓝图页面查看文件:', filePath);
+                // 跳转到蓝图页面
+                setCurrentPage('blueprint');
+              }}
+            />
+          </div>
         );
       default:
         return null;

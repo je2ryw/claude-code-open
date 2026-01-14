@@ -543,12 +543,15 @@ async function isTemplateEmpty(template: string): Promise<boolean> {
  * 这个函数查找消息历史中最后一个Session Memory边界标记的UUID
  * 用于实现增量压缩（只压缩新消息，不重复压缩已压缩的内容）
  *
+ * @param session 会话对象，用于获取存储的压缩状态
  * @returns 最后一次压缩的UUID，如果没有则返回null
  */
-function getLastCompactedUuid(): string | null {
-  // TODO: 实现从会话中获取最后一次压缩的UUID
-  // 官方实现可能存储在会话状态中
-  // 这里简化返回null，表示没有历史压缩
+function getLastCompactedUuid(session?: Session): string | null {
+  // 从会话状态中获取最后一次压缩的边界标记 UUID
+  // 官方实现存储在会话状态中，用于支持增量压缩
+  if (session) {
+    return session.getLastCompactedUuid() || null;
+  }
   return null;
 }
 
@@ -654,12 +657,14 @@ function createSessionMemoryCompactResult(
  * @param messages 当前消息历史
  * @param agentId 代理ID（可选）
  * @param autoCompactThreshold 自动压缩阈值（可选）
+ * @param session 会话对象（可选，用于获取压缩状态）
  * @returns 压缩结果
  */
 async function trySessionMemoryCompact(
   messages: Message[],
   agentId?: string,
-  autoCompactThreshold?: number
+  autoCompactThreshold?: number,
+  session?: Session
 ): Promise<{
   success: boolean;
   messages: Message[];
@@ -680,8 +685,8 @@ async function trySessionMemoryCompact(
   // 2. 等待异步初始化
   await waitForAsyncInit();
 
-  // 3. 获取最后一次压缩的UUID
-  const lastCompactedUuid = getLastCompactedUuid();
+  // 3. 获取最后一次压缩的UUID（从会话状态中读取）
+  const lastCompactedUuid = getLastCompactedUuid(session);
 
   // 4. 获取Session Memory模板
   const template = getSessionMemoryTemplate();
@@ -917,13 +922,15 @@ async function tryConversationSummary(
  * @param messages 消息列表
  * @param model 模型名称
  * @param client Claude客户端（用于NJ1生成摘要）
- * @returns 压缩结果 { wasCompacted: 是否压缩, messages: 处理后的消息列表 }
+ * @param session 会话对象（可选，用于获取/存储压缩状态）
+ * @returns 压缩结果 { wasCompacted: 是否压缩, messages: 处理后的消息列表, boundaryUuid?: 边界标记UUID }
  */
 async function autoCompact(
   messages: Message[],
   model: string,
-  client: ClaudeClient
-): Promise<{ wasCompacted: boolean; messages: Message[] }> {
+  client: ClaudeClient,
+  session?: Session
+): Promise<{ wasCompacted: boolean; messages: Message[]; boundaryUuid?: string }> {
   // 1. 检查是否应该自动压缩
   if (!shouldAutoCompact(messages, model)) {
     return { wasCompacted: false, messages };
@@ -939,10 +946,12 @@ async function autoCompact(
   console.log(chalk.yellow(`[AutoCompact] 超出: ${(currentTokens - threshold).toLocaleString()} tokens`));
 
   // 2. 优先尝试 TJ1 (Session Memory 压缩)
-  const tj1Result = await trySessionMemoryCompact(messages, undefined, threshold);
+  const tj1Result = await trySessionMemoryCompact(messages, undefined, threshold, session);
   if (tj1Result && tj1Result.success) {
     console.log(chalk.green(`[AutoCompact] Session Memory压缩成功，节省 ${tj1Result.savedTokens.toLocaleString()} tokens`));
-    return { wasCompacted: true, messages: tj1Result.messages };
+    // 获取边界标记的 UUID（用于增量压缩）
+    const boundaryUuid = (tj1Result.boundaryMarker as any)?.uuid;
+    return { wasCompacted: true, messages: tj1Result.messages, boundaryUuid };
   }
 
   // 3. 如果 TJ1 失败，使用 NJ1 (对话总结)
@@ -1481,12 +1490,16 @@ export class ConversationLoop {
       messages = cleanOldPersistedOutputs(messages);
 
       // 尝试自动压缩（第二+三层）
-      const compactResult = await autoCompact(messages, resolvedModel, this.client);
+      const compactResult = await autoCompact(messages, resolvedModel, this.client, this.session);
       if (compactResult.wasCompacted) {
         messages = compactResult.messages;
-        // 更新会话中的消息（如果压缩成功）
-        // 注意：这里需要小心处理，确保会话状态正确
-        // TODO: 实现会话状态更新逻辑
+        // 更新会话中的消息（压缩成功后替换整个消息列表）
+        // 对齐官方实现：直接替换会话中的消息列表，确保后续请求使用压缩后的消息
+        this.session.setMessages(messages);
+        // 如果有边界标记 UUID，保存到会话状态（用于下次增量压缩）
+        if (compactResult.boundaryUuid) {
+          this.session.setLastCompactedUuid(compactResult.boundaryUuid);
+        }
       }
 
       let response;
@@ -1704,12 +1717,16 @@ Guidelines:
       messages = cleanOldPersistedOutputs(messages);
 
       // 尝试自动压缩（第二+三层）
-      const compactResult = await autoCompact(messages, resolvedModel, this.client);
+      const compactResult = await autoCompact(messages, resolvedModel, this.client, this.session);
       if (compactResult.wasCompacted) {
         messages = compactResult.messages;
-        // 更新会话中的消息（如果压缩成功）
-        // 注意：这里需要小心处理，确保会话状态正确
-        // TODO: 实现会话状态更新逻辑
+        // 更新会话中的消息（压缩成功后替换整个消息列表）
+        // 对齐官方实现：直接替换会话中的消息列表，确保后续请求使用压缩后的消息
+        this.session.setMessages(messages);
+        // 如果有边界标记 UUID，保存到会话状态（用于下次增量压缩）
+        if (compactResult.boundaryUuid) {
+          this.session.setLastCompactedUuid(compactResult.boundaryUuid);
+        }
       }
 
       const assistantContent: ContentBlock[] = [];

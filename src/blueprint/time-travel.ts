@@ -370,13 +370,24 @@ export class TimeTravelManager extends EventEmitter {
       throw new Error('One or both checkpoints not found');
     }
 
-    // 收集任务变更
-    const taskChanges: TaskChange[] = [];
-    // TODO: 实际实现需要比较两个快照的任务状态
+    // 获取两个检查点的详细数据
+    const fromDetails = this.getCheckpointDetails(treeId, fromCheckpointId);
+    const toDetails = this.getCheckpointDetails(treeId, toCheckpointId);
 
-    // 收集代码变更
-    const codeChanges: DiffInfo[] = [];
-    // TODO: 实际实现需要比较两个快照的代码内容
+    // 收集任务变更：比较两个快照的任务状态
+    const taskChanges: TaskChange[] = this.compareTaskStatuses(
+      tree,
+      fromCheckpoint,
+      toCheckpoint,
+      fromDetails,
+      toDetails
+    );
+
+    // 收集代码变更：比较两个快照的代码内容
+    const codeChanges: DiffInfo[] = this.compareCodeSnapshots(
+      fromDetails?.codeSnapshots || [],
+      toDetails?.codeSnapshots || []
+    );
 
     const timeElapsed = toCheckpoint.timestamp.getTime() - fromCheckpoint.timestamp.getTime();
 
@@ -387,6 +398,274 @@ export class TimeTravelManager extends EventEmitter {
       codeChanges,
       timeElapsed,
     };
+  }
+
+  /**
+   * 比较两个快照的任务状态变化
+   * 遍历任务树，对比每个任务在两个时间点的状态
+   */
+  private compareTaskStatuses(
+    tree: TaskTree,
+    fromCheckpoint: CheckpointInfo,
+    toCheckpoint: CheckpointInfo,
+    fromDetails: ReturnType<typeof this.getCheckpointDetails>,
+    toDetails: ReturnType<typeof this.getCheckpointDetails>
+  ): TaskChange[] {
+    const changes: TaskChange[] = [];
+
+    // 如果两个都是全局检查点，比较整棵树的状态
+    if (fromCheckpoint.type === 'global' && toCheckpoint.type === 'global') {
+      // 获取全局检查点的树快照
+      const fromGlobalCheckpoint = tree.globalCheckpoints.find(c => c.id === fromCheckpoint.id);
+      const toGlobalCheckpoint = tree.globalCheckpoints.find(c => c.id === toCheckpoint.id);
+
+      if (fromGlobalCheckpoint && toGlobalCheckpoint) {
+        // 解析树快照
+        const fromTree = JSON.parse(fromGlobalCheckpoint.treeSnapshot) as TaskNode;
+        const toTree = JSON.parse(toGlobalCheckpoint.treeSnapshot) as TaskNode;
+
+        // 收集所有任务状态变化
+        this.collectTaskStatusChanges(fromTree, toTree, changes);
+      }
+    }
+    // 如果两个都是任务检查点且属于同一任务，比较该任务的状态
+    else if (
+      fromCheckpoint.type === 'task' &&
+      toCheckpoint.type === 'task' &&
+      fromCheckpoint.taskId === toCheckpoint.taskId
+    ) {
+      // 同一任务的不同检查点，直接比较状态
+      if (fromCheckpoint.status !== toCheckpoint.status) {
+        changes.push({
+          taskId: fromCheckpoint.taskId!,
+          taskName: fromCheckpoint.taskName || '未知任务',
+          fromStatus: fromCheckpoint.status,
+          toStatus: toCheckpoint.status,
+        });
+      }
+    }
+    // 混合情况：一个是全局检查点，一个是任务检查点
+    else if (fromCheckpoint.type === 'global' || toCheckpoint.type === 'global') {
+      // 获取全局检查点的树快照
+      const globalCheckpointInfo = fromCheckpoint.type === 'global' ? fromCheckpoint : toCheckpoint;
+      const taskCheckpointInfo = fromCheckpoint.type === 'task' ? fromCheckpoint : toCheckpoint;
+
+      const globalCheckpoint = tree.globalCheckpoints.find(c => c.id === globalCheckpointInfo.id);
+
+      if (globalCheckpoint && taskCheckpointInfo.taskId) {
+        const snapshotTree = JSON.parse(globalCheckpoint.treeSnapshot) as TaskNode;
+        const snapshotTask = taskTreeManager.findTask(snapshotTree, taskCheckpointInfo.taskId);
+        const currentTask = taskTreeManager.findTask(tree.root, taskCheckpointInfo.taskId);
+
+        if (snapshotTask && currentTask) {
+          // 根据时间顺序确定 from/to
+          const isFromGlobal = fromCheckpoint.type === 'global';
+          const fromStatus = isFromGlobal ? snapshotTask.status : taskCheckpointInfo.status;
+          const toStatus = isFromGlobal ? taskCheckpointInfo.status : snapshotTask.status;
+
+          if (fromStatus !== toStatus) {
+            changes.push({
+              taskId: taskCheckpointInfo.taskId,
+              taskName: taskCheckpointInfo.taskName || currentTask.name,
+              fromStatus,
+              toStatus,
+            });
+          }
+        }
+      }
+    }
+    // 两个不同任务的检查点
+    else if (
+      fromCheckpoint.type === 'task' &&
+      toCheckpoint.type === 'task' &&
+      fromCheckpoint.taskId !== toCheckpoint.taskId
+    ) {
+      // 分别记录两个任务的状态变化
+      if (fromCheckpoint.taskId) {
+        const fromTask = taskTreeManager.findTask(tree.root, fromCheckpoint.taskId);
+        if (fromTask && fromCheckpoint.status !== fromTask.status) {
+          changes.push({
+            taskId: fromCheckpoint.taskId,
+            taskName: fromCheckpoint.taskName || fromTask.name,
+            fromStatus: fromCheckpoint.status,
+            toStatus: fromTask.status,
+          });
+        }
+      }
+
+      if (toCheckpoint.taskId) {
+        const toTask = taskTreeManager.findTask(tree.root, toCheckpoint.taskId);
+        if (toTask && toCheckpoint.status !== toTask.status) {
+          changes.push({
+            taskId: toCheckpoint.taskId,
+            taskName: toCheckpoint.taskName || toTask.name,
+            fromStatus: toCheckpoint.status,
+            toStatus: toTask.status,
+          });
+        }
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * 递归收集任务状态变化（用于比较两个全局检查点）
+   */
+  private collectTaskStatusChanges(
+    fromNode: TaskNode,
+    toNode: TaskNode,
+    changes: TaskChange[]
+  ): void {
+    // 比较当前节点状态
+    if (fromNode.status !== toNode.status) {
+      changes.push({
+        taskId: fromNode.id,
+        taskName: fromNode.name,
+        fromStatus: fromNode.status,
+        toStatus: toNode.status,
+        iterations: toNode.retryCount - fromNode.retryCount,
+      });
+    }
+
+    // 创建子节点映射，用于匹配同 ID 的节点
+    const toChildrenMap = new Map<string, TaskNode>();
+    for (const child of toNode.children) {
+      toChildrenMap.set(child.id, child);
+    }
+
+    // 递归比较子节点
+    for (const fromChild of fromNode.children) {
+      const toChild = toChildrenMap.get(fromChild.id);
+      if (toChild) {
+        this.collectTaskStatusChanges(fromChild, toChild, changes);
+      } else {
+        // 任务在 to 快照中被删除了
+        changes.push({
+          taskId: fromChild.id,
+          taskName: fromChild.name,
+          fromStatus: fromChild.status,
+          toStatus: 'cancelled',
+        });
+      }
+    }
+
+    // 检查新增的任务
+    const fromChildrenIds = new Set(fromNode.children.map(c => c.id));
+    for (const toChild of toNode.children) {
+      if (!fromChildrenIds.has(toChild.id)) {
+        // 任务在 to 快照中新增了
+        changes.push({
+          taskId: toChild.id,
+          taskName: toChild.name,
+          fromStatus: 'pending', // 新任务从 pending 开始
+          toStatus: toChild.status,
+        });
+      }
+    }
+  }
+
+  /**
+   * 比较两个快照的代码内容差异
+   * 生成文件级别的差异信息，包括新增、修改、删除
+   */
+  private compareCodeSnapshots(
+    fromSnapshots: CodeSnapshot[],
+    toSnapshots: CodeSnapshot[]
+  ): DiffInfo[] {
+    const changes: DiffInfo[] = [];
+
+    // 创建文件路径到快照的映射
+    const fromSnapshotMap = new Map<string, CodeSnapshot>();
+    for (const snapshot of fromSnapshots) {
+      fromSnapshotMap.set(snapshot.filePath, snapshot);
+    }
+
+    const toSnapshotMap = new Map<string, CodeSnapshot>();
+    for (const snapshot of toSnapshots) {
+      toSnapshotMap.set(snapshot.filePath, snapshot);
+    }
+
+    // 检查 to 快照中的文件（新增或修改）
+    for (const [filePath, toSnapshot] of toSnapshotMap) {
+      const fromSnapshot = fromSnapshotMap.get(filePath);
+
+      if (!fromSnapshot) {
+        // 新增的文件
+        const lines = toSnapshot.content.split('\n');
+        changes.push({
+          filePath,
+          type: 'added',
+          afterContent: toSnapshot.content,
+          additions: lines.length,
+          deletions: 0,
+        });
+      } else if (fromSnapshot.hash !== toSnapshot.hash) {
+        // 文件被修改（通过 hash 快速判断）
+        const diff = this.calculateLineDiff(fromSnapshot.content, toSnapshot.content);
+        changes.push({
+          filePath,
+          type: 'modified',
+          beforeContent: fromSnapshot.content,
+          afterContent: toSnapshot.content,
+          additions: diff.additions,
+          deletions: diff.deletions,
+        });
+      }
+      // 如果 hash 相同，文件没有变化，跳过
+    }
+
+    // 检查 from 快照中存在但 to 快照中不存在的文件（已删除）
+    for (const [filePath, fromSnapshot] of fromSnapshotMap) {
+      if (!toSnapshotMap.has(filePath)) {
+        const lines = fromSnapshot.content.split('\n');
+        changes.push({
+          filePath,
+          type: 'deleted',
+          beforeContent: fromSnapshot.content,
+          additions: 0,
+          deletions: lines.length,
+        });
+      }
+    }
+
+    // 按文件路径排序，方便阅读
+    return changes.sort((a, b) => a.filePath.localeCompare(b.filePath));
+  }
+
+  /**
+   * 计算两个文本内容的行级差异统计
+   * 使用简单的最长公共子序列（LCS）算法计算新增和删除的行数
+   */
+  private calculateLineDiff(
+    beforeContent: string,
+    afterContent: string
+  ): { additions: number; deletions: number } {
+    const beforeLines = beforeContent.split('\n');
+    const afterLines = afterContent.split('\n');
+
+    // 使用 Set 进行快速差异计算（简化版本）
+    // 实际生产环境可以使用更精确的 diff 算法如 Myers diff
+    const beforeLineSet = new Set(beforeLines);
+    const afterLineSet = new Set(afterLines);
+
+    // 计算新增行数：在 after 中存在但 before 中不存在
+    let additions = 0;
+    for (const line of afterLines) {
+      if (!beforeLineSet.has(line)) {
+        additions++;
+      }
+    }
+
+    // 计算删除行数：在 before 中存在但 after 中不存在
+    let deletions = 0;
+    for (const line of beforeLines) {
+      if (!afterLineSet.has(line)) {
+        deletions++;
+      }
+    }
+
+    return { additions, deletions };
   }
 
   /**

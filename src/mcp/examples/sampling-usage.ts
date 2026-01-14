@@ -15,6 +15,9 @@ import {
   createSamplingRequest,
   createModelPreferences,
 } from '../sampling.js';
+import { createClientWithModel } from '../../core/client.js';
+import type { Message, ContentBlock } from '../../types/index.js';
+import type { ModelPreferences, SamplingMessageContent } from '../protocol.js';
 
 // ============ Example 1: Basic Sampling Setup ============
 
@@ -32,18 +35,38 @@ function example1_BasicSetup() {
   samplingManager.registerCallback('my-mcp-server', async (params) => {
     console.log('Received sampling request:', params);
 
-    // TODO: Implement actual LLM call here
-    // This is where you would call your LLM (Claude, GPT, etc.)
+    // 根据 modelPreferences 选择合适的模型
+    // intelligencePriority 越高，选择越强的模型
+    const modelAlias = selectModelByPreferences(params.modelPreferences);
 
-    // For demonstration, return a mock response
+    // 创建 Claude 客户端实例
+    const client = createClientWithModel(modelAlias);
+
+    // 将 MCP 消息格式转换为 Claude API 消息格式
+    const messages = convertMcpMessagesToClaudeFormat(params.messages);
+
+    // 调用 Claude API
+    const response = await client.createMessage(
+      messages,
+      undefined,  // 不使用工具
+      params.systemPrompt,
+      {
+        enableThinking: false,  // MCP sampling 通常不需要思考功能
+      }
+    );
+
+    // 提取响应文本
+    const responseText = extractTextFromContent(response.content);
+
+    // 将 Claude 响应转换为 MCP 格式
     const result: CreateMessageResult = {
       role: 'assistant',
       content: {
         type: 'text',
-        text: 'This is a mock response. Replace with actual LLM call.',
+        text: responseText,
       },
-      model: 'claude-3-sonnet-20240229',
-      stopReason: 'endTurn',
+      model: response.model,
+      stopReason: convertStopReason(response.stopReason),
     };
 
     return result;
@@ -145,65 +168,55 @@ function example3_CreateRequests() {
 
 /**
  * Example: Integrating sampling with Anthropic's Claude API
+ *
+ * 本示例展示如何将 MCP Sampling 与 Claude API 集成
+ * 使用项目中的 createClientWithModel 函数来调用 Claude
  */
 async function example4_ClaudeIntegration() {
   const manager = new McpSamplingManager();
 
-  // Register callback that calls Claude API
+  // 注册调用 Claude API 的回调函数
   manager.registerCallback('my-server', async (params) => {
-    // NOTE: This is pseudo-code. You'll need to import @anthropic-ai/sdk
-    // and set up authentication properly.
+    // 根据 modelPreferences 选择合适的模型
+    // 利用辅助函数自动处理模型选择逻辑
+    const modelAlias = selectModelByPreferences(params.modelPreferences);
 
-    /*
-    import Anthropic from '@anthropic-ai/sdk';
+    // 创建 Claude 客户端实例
+    // createClientWithModel 会自动处理认证（API Key 或 OAuth）
+    const client = createClientWithModel(modelAlias);
 
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    // 将 MCP 消息格式转换为 Claude API 消息格式
+    // MCP sampling 中 messages 是内容数组，需要转换为 Claude 的 Message[] 格式
+    const messages = convertMcpMessagesToClaudeFormat(params.messages);
 
-    // Convert MCP messages to Claude format
-    const messages = params.messages.map(content => ({
-      role: 'user', // You might need more sophisticated conversion logic
-      content: content.text || '',
-    }));
+    // 调用 Claude API
+    // 注意：MCP sampling 场景通常不需要工具调用功能
+    const response = await client.createMessage(
+      messages,
+      undefined,  // 不使用工具
+      params.systemPrompt,
+      {
+        enableThinking: false,  // MCP sampling 通常不需要思考功能
+      }
+    );
 
-    // Call Claude API
-    const response = await anthropic.messages.create({
-      model: 'claude-3-sonnet-20240229', // Choose based on modelPreferences
-      max_tokens: params.maxTokens,
-      messages: messages,
-      system: params.systemPrompt,
-      temperature: params.temperature,
-    });
+    // 从 Claude 响应中提取文本内容
+    // Claude 响应可能包含多个 content block，这里合并所有文本
+    const responseText = extractTextFromContent(response.content);
 
-    // Convert Claude response to MCP format
+    // 将 Claude 响应转换为 MCP CreateMessageResult 格式
     const result: CreateMessageResult = {
       role: 'assistant',
       content: {
         type: 'text',
-        text: response.content[0].type === 'text'
-          ? response.content[0].text
-          : '',
+        text: responseText,
       },
       model: response.model,
-      stopReason: response.stop_reason === 'end_turn'
-        ? 'endTurn'
-        : response.stop_reason,
+      // 转换停止原因：Claude 使用 snake_case，MCP 使用 camelCase
+      stopReason: convertStopReason(response.stopReason),
     };
 
     return result;
-    */
-
-    // Placeholder return for demonstration
-    return {
-      role: 'assistant' as const,
-      content: {
-        type: 'text',
-        text: 'Replace with actual Claude API call',
-      },
-      model: 'claude-3-sonnet-20240229',
-      stopReason: 'endTurn',
-    };
   });
 }
 
@@ -243,14 +256,35 @@ async function example5_SecurityChecks() {
       throw new Error('Human reviewer rejected the sampling request.');
     }
 
-    // Proceed with the actual LLM call
-    // ... (implement actual LLM call here)
+    // 安全检查通过后，执行实际的 LLM 调用
+    // 根据 modelPreferences 选择合适的模型
+    const modelAlias = selectModelByPreferences(params.modelPreferences);
 
+    // 创建 Claude 客户端实例
+    const client = createClientWithModel(modelAlias);
+
+    // 将 MCP 消息格式转换为 Claude API 消息格式
+    const messages = convertMcpMessagesToClaudeFormat(params.messages);
+
+    // 调用 Claude API
+    const response = await client.createMessage(
+      messages,
+      undefined,  // 安全场景通常不需要工具
+      params.systemPrompt,
+      {
+        enableThinking: false,  // MCP sampling 通常不需要思考功能
+      }
+    );
+
+    // 提取响应文本
+    const responseText = extractTextFromContent(response.content);
+
+    // 将 Claude 响应转换为 MCP 格式并返回
     return {
       role: 'assistant' as const,
-      content: { type: 'text', text: 'Response after security checks' },
-      model: 'claude-3-sonnet-20240229',
-      stopReason: 'endTurn',
+      content: { type: 'text', text: responseText },
+      model: response.model,
+      stopReason: convertStopReason(response.stopReason),
     };
   });
 }
@@ -285,14 +319,35 @@ async function example6_ErrorHandling() {
 
   manager.registerCallback('my-server', async (params) => {
     try {
-      // Attempt LLM call
-      // ... (actual implementation)
+      // 执行实际的 LLM 调用
+      // 根据 modelPreferences 选择合适的模型
+      const modelAlias = selectModelByPreferences(params.modelPreferences);
 
+      // 创建 Claude 客户端实例
+      const client = createClientWithModel(modelAlias);
+
+      // 将 MCP 消息格式转换为 Claude API 消息格式
+      const messages = convertMcpMessagesToClaudeFormat(params.messages);
+
+      // 调用 Claude API
+      const response = await client.createMessage(
+        messages,
+        undefined,  // 错误处理示例不需要工具
+        params.systemPrompt,
+        {
+          enableThinking: false,
+        }
+      );
+
+      // 提取响应文本
+      const responseText = extractTextFromContent(response.content);
+
+      // 返回 MCP 格式的响应
       return {
         role: 'assistant' as const,
-        content: { type: 'text', text: 'Success' },
-        model: 'claude-3-sonnet-20240229',
-        stopReason: 'endTurn',
+        content: { type: 'text', text: responseText },
+        model: response.model,
+        stopReason: convertStopReason(response.stopReason),
       };
     } catch (error) {
       // Log the error
@@ -321,6 +376,154 @@ async function example6_ErrorHandling() {
   }
 }
 
+// ============ LLM 调用辅助函数 ============
+
+/**
+ * 根据 MCP 模型偏好选择合适的 Claude 模型
+ *
+ * 模型选择逻辑：
+ * - intelligencePriority >= 0.8: 使用 opus (最强模型)
+ * - intelligencePriority >= 0.5: 使用 sonnet (均衡模型)
+ * - 其他情况: 使用 haiku (快速/低成本模型)
+ *
+ * 同时考虑 costPriority 和 speedPriority：
+ * - 如果 costPriority 很高 (>0.7) 或 speedPriority 很高 (>0.8)，优先选择 haiku
+ */
+function selectModelByPreferences(preferences?: ModelPreferences): string {
+  if (!preferences) {
+    // 默认使用 sonnet
+    return 'sonnet';
+  }
+
+  const {
+    intelligencePriority = 0.5,
+    costPriority = 0.5,
+    speedPriority = 0.5,
+  } = preferences;
+
+  // 如果非常注重成本或速度，使用 haiku
+  if (costPriority > 0.7 || speedPriority > 0.8) {
+    return 'haiku';
+  }
+
+  // 如果非常注重智能程度，使用 opus
+  if (intelligencePriority >= 0.8) {
+    return 'opus';
+  }
+
+  // 中等智能需求，使用 sonnet
+  if (intelligencePriority >= 0.5) {
+    return 'sonnet';
+  }
+
+  // 低智能需求，使用 haiku
+  return 'haiku';
+}
+
+/**
+ * 将 MCP 消息内容数组转换为 Claude API 消息格式
+ *
+ * MCP sampling 协议中，messages 是内容数组 (SamplingMessageContent[])
+ * 需要转换为 Claude 的 Message[] 格式
+ *
+ * 转换规则：
+ * - 所有内容都作为 user 角色的单条消息
+ * - 文本内容直接映射
+ * - 图片内容转换为 image content block
+ */
+function convertMcpMessagesToClaudeFormat(
+  mcpMessages: SamplingMessageContent[]
+): Message[] {
+  // MCP sampling 中，messages 实际上是单个用户请求的内容数组
+  // 将其合并为一条 user 消息
+  const contentBlocks: Array<{ type: string; text?: string; [key: string]: unknown }> = [];
+
+  for (const content of mcpMessages) {
+    if (content.type === 'text' && content.text) {
+      contentBlocks.push({
+        type: 'text',
+        text: content.text,
+      });
+    } else if (content.type === 'image') {
+      // 处理图片内容（如果有）
+      contentBlocks.push({
+        type: 'image',
+        source: content.source || content.data,
+      });
+    } else {
+      // 其他类型直接传递
+      contentBlocks.push(content);
+    }
+  }
+
+  // 如果只有一个文本块，简化为字符串
+  if (contentBlocks.length === 1 && contentBlocks[0].type === 'text') {
+    return [
+      {
+        role: 'user',
+        content: contentBlocks[0].text || '',
+      },
+    ];
+  }
+
+  // 返回包含多个内容块的消息
+  return [
+    {
+      role: 'user',
+      content: contentBlocks as any,
+    },
+  ];
+}
+
+/**
+ * 从 Claude 响应内容中提取文本
+ *
+ * Claude 响应可能包含多个 content block：
+ * - text: 文本响应
+ * - tool_use: 工具调用（在 sampling 场景中通常不使用）
+ */
+function extractTextFromContent(content: ContentBlock[]): string {
+  const textParts: string[] = [];
+
+  for (const block of content) {
+    if (block.type === 'text' && 'text' in block) {
+      textParts.push(block.text);
+    }
+  }
+
+  return textParts.join('\n');
+}
+
+/**
+ * 将 Claude 停止原因转换为 MCP 格式
+ *
+ * Claude API 停止原因：
+ * - 'end_turn': 正常结束
+ * - 'max_tokens': 达到 token 限制
+ * - 'stop_sequence': 遇到停止序列
+ * - 'tool_use': 工具调用（在 sampling 中不常见）
+ *
+ * MCP 停止原因：
+ * - 'endTurn': 正常结束
+ * - 'maxTokens': 达到 token 限制
+ * - 'stopSequence': 遇到停止序列
+ */
+function convertStopReason(
+  claudeReason: string
+): 'endTurn' | 'maxTokens' | 'stopSequence' | string {
+  switch (claudeReason) {
+    case 'end_turn':
+      return 'endTurn';
+    case 'max_tokens':
+      return 'maxTokens';
+    case 'stop_sequence':
+      return 'stopSequence';
+    default:
+      // 其他原因直接返回
+      return claudeReason;
+  }
+}
+
 // ============ Export Examples ============
 
 export {
@@ -330,4 +533,9 @@ export {
   example4_ClaudeIntegration,
   example5_SecurityChecks,
   example6_ErrorHandling,
+  // 导出辅助函数供外部使用
+  selectModelByPreferences,
+  convertMcpMessagesToClaudeFormat,
+  extractTextFromContent,
+  convertStopReason,
 };

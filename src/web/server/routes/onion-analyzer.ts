@@ -50,6 +50,14 @@ function getCacheKey(layer: number, contextId?: string): string {
   return `onion:${layer}:${contextId || 'root'}`;
 }
 
+/**
+ * 带缓存状态的返回结构
+ */
+interface CacheResult<T> {
+  data: T | null;
+  fromCache: boolean;
+}
+
 function getFromCache<T>(layer: number, contextId?: string): T | null {
   const key = getCacheKey(layer, contextId);
   const entry = cache.get(key);
@@ -62,6 +70,24 @@ function getFromCache<T>(layer: number, contextId?: string): T | null {
   }
 
   return entry.data as T;
+}
+
+/**
+ * 获取缓存数据，同时返回缓存状态
+ * 用于 API 返回时指示数据是否来自缓存
+ */
+function getFromCacheWithStatus<T>(layer: number, contextId?: string): CacheResult<T> {
+  const key = getCacheKey(layer, contextId);
+  const entry = cache.get(key);
+  if (!entry) return { data: null, fromCache: false };
+
+  const ttl = CACHE_TTL[layer as keyof typeof CACHE_TTL] || 60 * 60 * 1000;
+  if (Date.now() - entry.timestamp > ttl) {
+    cache.delete(key);
+    return { data: null, fromCache: false };
+  }
+
+  return { data: entry.data as T, fromCache: true };
 }
 
 function setCache<T>(layer: number, data: T, contextId?: string): void {
@@ -1744,4 +1770,217 @@ export async function generateAIAnnotation(
       ['请检查网络连接', '确认账户已登录']
     );
   }
+}
+
+// ============================================================================
+// 标注持久化（用户修改的标注）
+// ============================================================================
+
+/**
+ * 用户修改的标注存储
+ * key: annotationId
+ * 持久化到 ~/.claude/annotations.json
+ */
+const userAnnotationCache = new Map<string, SemanticAnnotation>();
+
+/** 标注文件路径 */
+const ANNOTATIONS_FILE = path.join(
+  process.env.HOME || process.env.USERPROFILE || '.',
+  '.claude',
+  'annotations.json'
+);
+
+/**
+ * 从文件加载用户标注
+ */
+function loadUserAnnotations(): void {
+  try {
+    if (fs.existsSync(ANNOTATIONS_FILE)) {
+      const content = fs.readFileSync(ANNOTATIONS_FILE, 'utf-8');
+      const annotations = JSON.parse(content) as Record<string, SemanticAnnotation>;
+      for (const [id, annotation] of Object.entries(annotations)) {
+        userAnnotationCache.set(id, annotation);
+      }
+      console.log(`[Annotation] 加载了 ${userAnnotationCache.size} 个用户标注`);
+    }
+  } catch (error) {
+    console.error('[Annotation] 加载用户标注失败:', error);
+  }
+}
+
+/**
+ * 保存用户标注到文件
+ */
+function saveUserAnnotations(): void {
+  try {
+    // 确保目录存在
+    const dir = path.dirname(ANNOTATIONS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 转换 Map 为对象
+    const annotations: Record<string, SemanticAnnotation> = {};
+    for (const [id, annotation] of userAnnotationCache.entries()) {
+      annotations[id] = annotation;
+    }
+
+    fs.writeFileSync(ANNOTATIONS_FILE, JSON.stringify(annotations, null, 2), 'utf-8');
+    console.log(`[Annotation] 保存了 ${userAnnotationCache.size} 个用户标注`);
+  } catch (error) {
+    console.error('[Annotation] 保存用户标注失败:', error);
+    throw error;
+  }
+}
+
+// 启动时加载标注
+loadUserAnnotations();
+
+/**
+ * 更新用户标注
+ * @param annotationId 标注 ID
+ * @param updates 要更新的字段
+ * @returns 更新后的标注
+ */
+export function updateAnnotation(
+  annotationId: string,
+  updates: {
+    summary?: string;
+    description?: string;
+    keyPoints?: string[];
+  }
+): SemanticAnnotation | null {
+  // 从用户标注缓存中查找
+  let annotation = userAnnotationCache.get(annotationId);
+
+  // 如果用户缓存中没有，尝试从 AI 缓存中找到原始标注
+  if (!annotation) {
+    // 遍历 AI 缓存查找匹配的标注
+    for (const [key, entry] of aiAnnotationCache.entries()) {
+      if (entry.annotation.id === annotationId) {
+        annotation = { ...entry.annotation };
+        break;
+      }
+    }
+  }
+
+  if (!annotation) {
+    console.warn(`[Annotation] 未找到标注: ${annotationId}`);
+    return null;
+  }
+
+  // 应用更新
+  const updatedAnnotation: SemanticAnnotation = {
+    ...annotation,
+    summary: updates.summary !== undefined ? updates.summary : annotation.summary,
+    description: updates.description !== undefined ? updates.description : annotation.description,
+    keyPoints: updates.keyPoints !== undefined ? updates.keyPoints : annotation.keyPoints,
+    userModified: true,  // 标记为用户已修改
+  };
+
+  // 保存到用户标注缓存
+  userAnnotationCache.set(annotationId, updatedAnnotation);
+
+  // 持久化到文件
+  saveUserAnnotations();
+
+  console.log(`[Annotation] 更新标注成功: ${annotationId}`);
+  return updatedAnnotation;
+}
+
+/**
+ * 获取用户修改的标注（如果有）
+ */
+export function getUserAnnotation(annotationId: string): SemanticAnnotation | null {
+  return userAnnotationCache.get(annotationId) || null;
+}
+
+// ============================================================================
+// 带缓存状态的分析函数（供 API 使用）
+// ============================================================================
+
+/**
+ * 分析结果包装器，包含数据和缓存状态
+ */
+export interface AnalysisResultWithCache<T> {
+  data: T;
+  fromCache: boolean;
+}
+
+/**
+ * 分析项目意图（带缓存状态）
+ */
+export async function analyzeProjectIntentWithCache(
+  projectRoot: string
+): Promise<AnalysisResultWithCache<ProjectIntentData>> {
+  // 检查缓存
+  const cacheResult = getFromCacheWithStatus<ProjectIntentData>(1);
+  if (cacheResult.data) {
+    return { data: cacheResult.data, fromCache: true };
+  }
+
+  // 执行分析
+  const data = await analyzeProjectIntent(projectRoot);
+  return { data, fromCache: false };
+}
+
+/**
+ * 分析业务领域（带缓存状态）
+ */
+export async function analyzeBusinessDomainsWithCache(
+  projectRoot: string
+): Promise<AnalysisResultWithCache<BusinessDomainData>> {
+  // 检查缓存
+  const cacheResult = getFromCacheWithStatus<BusinessDomainData>(2);
+  if (cacheResult.data) {
+    return { data: cacheResult.data, fromCache: true };
+  }
+
+  // 执行分析
+  const data = await analyzeBusinessDomains(projectRoot);
+  return { data, fromCache: false };
+}
+
+/**
+ * 分析关键流程（带缓存状态）
+ */
+export async function analyzeKeyProcessesWithCache(
+  projectRoot: string,
+  moduleId?: string,
+  forceRefresh: boolean = false
+): Promise<AnalysisResultWithCache<KeyProcessData>> {
+  const cacheKey = moduleId || 'all';
+
+  // forceRefresh 时跳过缓存
+  if (!forceRefresh) {
+    const cacheResult = getFromCacheWithStatus<KeyProcessData>(3, cacheKey);
+    if (cacheResult.data) {
+      return { data: cacheResult.data, fromCache: true };
+    }
+  }
+
+  // 执行分析
+  const data = await analyzeKeyProcesses(projectRoot, moduleId, forceRefresh);
+  return { data, fromCache: false };
+}
+
+/**
+ * 分析实现细节（带缓存状态）
+ */
+export async function analyzeImplementationWithCache(
+  projectRoot: string,
+  filePath: string,
+  symbolId?: string
+): Promise<AnalysisResultWithCache<ImplementationData>> {
+  const cacheKey = `${filePath}:${symbolId || ''}`;
+
+  // 检查缓存
+  const cacheResult = getFromCacheWithStatus<ImplementationData>(4, cacheKey);
+  if (cacheResult.data) {
+    return { data: cacheResult.data, fromCache: true };
+  }
+
+  // 执行分析
+  const data = await analyzeImplementation(projectRoot, filePath, symbolId);
+  return { data, fromCache: false };
 }

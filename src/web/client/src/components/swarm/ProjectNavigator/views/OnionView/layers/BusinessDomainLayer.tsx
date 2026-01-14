@@ -32,7 +32,8 @@ export interface BusinessDomainLayerProps {
   onDrillDown: (moduleId: string) => void;
   /** 刷新回调 */
   onRefresh?: () => void;
-  // 注意：文件双击现在通过 NavigatorContext 在 DomainGraph 中直接处理
+  /** 跳转到蓝图页面查看文件 */
+  onNavigateToBlueprint?: (filePath: string) => void;
 }
 
 /** 模块类型颜色映射 */
@@ -165,6 +166,7 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
   error,
   onDrillDown,
   onRefresh,
+  onNavigateToBlueprint,
 }) => {
   // 当前选中的模块ID
   const [selectedDomainId, setSelectedDomainId] = useState<string | undefined>();
@@ -363,7 +365,11 @@ export const BusinessDomainLayer: React.FC<BusinessDomainLayerProps> = ({
           selectedFileId={selectedFile?.file.id}
           onDomainClick={handleDomainSelect}
           onFileClick={handleFileClick}
-          // onFileDoubleClick 通过 NavigatorContext 在 DomainGraph 内部处理
+          onFileDoubleClick={(file) => {
+            if (onNavigateToBlueprint) {
+              onNavigateToBlueprint(file.path);
+            }
+          }}
         />
       </section>
 

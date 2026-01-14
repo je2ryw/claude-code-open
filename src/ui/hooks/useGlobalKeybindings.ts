@@ -222,10 +222,261 @@ function parseKeyString(keyString: string): {
   };
 }
 
-// 创建动作处理器
+/**
+ * 自定义动作注册表
+ * 存储已注册的自定义动作处理器
+ */
+const customActionRegistry: Map<string, () => void | Promise<void>> = new Map();
+
+/**
+ * 注册自定义动作处理器
+ * @param actionName 动作名称
+ * @param handler 处理器函数
+ */
+export function registerCustomAction(
+  actionName: string,
+  handler: () => void | Promise<void>
+): void {
+  customActionRegistry.set(actionName, handler);
+}
+
+/**
+ * 注销自定义动作处理器
+ * @param actionName 动作名称
+ */
+export function unregisterCustomAction(actionName: string): boolean {
+  return customActionRegistry.delete(actionName);
+}
+
+/**
+ * 获取所有已注册的自定义动作
+ */
+export function getRegisteredActions(): string[] {
+  return Array.from(customActionRegistry.keys());
+}
+
+/**
+ * 内置动作映射表
+ * 支持的内置动作及其描述
+ */
+const builtinActions: Record<string, { description: string; handler: () => void }> = {
+  // 剪贴板操作
+  'copy': {
+    description: '复制选中内容',
+    handler: () => {
+      // 复制操作由终端原生支持，此处仅作占位
+      process.stdout.write('\x1b[?1004h'); // 启用焦点报告
+    },
+  },
+  'paste': {
+    description: '粘贴剪贴板内容',
+    handler: () => {
+      // 粘贴操作由终端原生支持，此处仅作占位
+      process.stdout.write('\x1b[?1004l'); // 禁用焦点报告
+    },
+  },
+
+  // 导航操作
+  'scroll_up': {
+    description: '向上滚动',
+    handler: () => {
+      process.stdout.write('\x1b[1S'); // 向上滚动一行
+    },
+  },
+  'scroll_down': {
+    description: '向下滚动',
+    handler: () => {
+      process.stdout.write('\x1b[1T'); // 向下滚动一行
+    },
+  },
+  'scroll_page_up': {
+    description: '向上翻页',
+    handler: () => {
+      process.stdout.write('\x1b[10S'); // 向上滚动10行
+    },
+  },
+  'scroll_page_down': {
+    description: '向下翻页',
+    handler: () => {
+      process.stdout.write('\x1b[10T'); // 向下滚动10行
+    },
+  },
+
+  // 历史记录操作
+  'history_prev': {
+    description: '上一条历史记录',
+    handler: () => {
+      process.stdin.emit('keypress', '', { name: 'up' });
+    },
+  },
+  'history_next': {
+    description: '下一条历史记录',
+    handler: () => {
+      process.stdin.emit('keypress', '', { name: 'down' });
+    },
+  },
+
+  // 光标操作
+  'cursor_home': {
+    description: '移动光标到行首',
+    handler: () => {
+      process.stdout.write('\x1b[H');
+    },
+  },
+  'cursor_end': {
+    description: '移动光标到行尾',
+    handler: () => {
+      process.stdout.write('\x1b[F');
+    },
+  },
+
+  // 编辑操作
+  'clear_line': {
+    description: '清空当前行',
+    handler: () => {
+      process.stdout.write('\x1b[2K\r');
+    },
+  },
+  'clear_screen': {
+    description: '清屏',
+    handler: () => {
+      process.stdout.write('\x1b[2J\x1b[H');
+    },
+  },
+
+  // 会话操作
+  'new_session': {
+    description: '新建会话',
+    handler: () => {
+      // 触发新会话事件（需要上层组件监听）
+      process.emit('CLAUDE_NEW_SESSION' as any);
+    },
+  },
+  'save_session': {
+    description: '保存当前会话',
+    handler: () => {
+      process.emit('CLAUDE_SAVE_SESSION' as any);
+    },
+  },
+
+  // 输出操作
+  'toggle_output': {
+    description: '切换输出显示模式',
+    handler: () => {
+      process.emit('CLAUDE_TOGGLE_OUTPUT' as any);
+    },
+  },
+  'expand_output': {
+    description: '展开全部输出',
+    handler: () => {
+      process.emit('CLAUDE_EXPAND_OUTPUT' as any);
+    },
+  },
+  'collapse_output': {
+    description: '折叠全部输出',
+    handler: () => {
+      process.emit('CLAUDE_COLLAPSE_OUTPUT' as any);
+    },
+  },
+};
+
+/**
+ * 创建动作处理器
+ * 根据 action 字符串查找并返回对应的处理函数
+ *
+ * 动作查找优先级:
+ * 1. 用户自定义注册的动作 (customActionRegistry)
+ * 2. 内置动作 (builtinActions)
+ * 3. shell 命令执行 (以 "shell:" 前缀开头)
+ * 4. 事件触发 (以 "emit:" 前缀开头)
+ * 5. 未知动作（输出警告）
+ */
 function createActionHandler(action: string): () => void {
   return () => {
-    console.log(`Custom action triggered: ${action}`);
-    // TODO: 实现自定义动作分发
+    // 1. 查找用户自定义注册的动作
+    const customHandler = customActionRegistry.get(action);
+    if (customHandler) {
+      try {
+        const result = customHandler();
+        // 如果是 Promise，添加错误处理
+        if (result instanceof Promise) {
+          result.catch((err) => {
+            console.error(`[Keybinding] 自定义动作执行失败 "${action}":`, err);
+          });
+        }
+      } catch (err) {
+        console.error(`[Keybinding] 自定义动作执行失败 "${action}":`, err);
+      }
+      return;
+    }
+
+    // 2. 查找内置动作
+    const builtinAction = builtinActions[action];
+    if (builtinAction) {
+      try {
+        builtinAction.handler();
+      } catch (err) {
+        console.error(`[Keybinding] 内置动作执行失败 "${action}":`, err);
+      }
+      return;
+    }
+
+    // 3. 处理 shell 命令 (以 "shell:" 前缀开头)
+    // 格式: shell:command args
+    // 示例: shell:git status
+    if (action.startsWith('shell:')) {
+      const command = action.slice(6).trim();
+      if (command) {
+        // 触发 shell 命令执行事件（由上层组件处理）
+        // 使用类型断言绕过 process.emit 的类型检查
+        (process as any).emit('CLAUDE_SHELL_COMMAND', command);
+        return;
+      }
+    }
+
+    // 4. 处理事件触发 (以 "emit:" 前缀开头)
+    // 格式: emit:EVENT_NAME[:payload]
+    // 示例: emit:CUSTOM_EVENT:data
+    if (action.startsWith('emit:')) {
+      const parts = action.slice(5).split(':');
+      const eventName = parts[0];
+      const payload = parts.slice(1).join(':') || undefined;
+
+      if (eventName) {
+        // 使用类型断言绕过 process.emit 的类型检查
+        (process as any).emit(eventName, payload);
+        return;
+      }
+    }
+
+    // 5. 处理 URL 打开 (以 "open:" 前缀开头)
+    // 格式: open:https://example.com
+    if (action.startsWith('open:')) {
+      const url = action.slice(5).trim();
+      if (url) {
+        // 使用类型断言绕过 process.emit 的类型检查
+        (process as any).emit('CLAUDE_OPEN_URL', url);
+        return;
+      }
+    }
+
+    // 6. 处理斜杠命令 (以 "/" 开头)
+    // 格式: /command args
+    // 示例: /help, /clear, /model opus
+    if (action.startsWith('/')) {
+      const command = action.trim();
+      // 使用类型断言绕过 process.emit 的类型检查
+      (process as any).emit('CLAUDE_SLASH_COMMAND', command);
+      return;
+    }
+
+    // 未知动作，输出警告
+    console.warn(`[Keybinding] 未知动作: "${action}"，请检查键绑定配置`);
+    console.warn(
+      `[Keybinding] 可用的内置动作: ${Object.keys(builtinActions).join(', ')}`
+    );
+    console.warn(
+      `[Keybinding] 已注册的自定义动作: ${getRegisteredActions().join(', ') || '(无)'}`
+    );
   };
 }

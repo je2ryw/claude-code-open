@@ -10,7 +10,6 @@
  * - Token 存储加密
  * - 会话过期处理
  * - 完整的登出清理
- * - 多因素认证 (MFA/2FA)
  */
 
 import * as fs from 'fs';
@@ -20,8 +19,6 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import open from 'open';
 
-// 导入 MFA 模块
-import * as MFA from './mfa.js';
 // 导入 Keychain 模块
 import * as Keychain from './keychain.js';
 
@@ -46,10 +43,6 @@ export interface AuthConfig {
   userCode?: string;
   verificationUri?: string;
   interval?: number;
-  // MFA 相关
-  mfaRequired?: boolean;
-  mfaVerified?: boolean;
-  deviceId?: string; // 受信任设备 ID
   // OAuth 创建的临时 API Key（用于调用消息 API）
   oauthApiKey?: string;
   oauthApiKeyExpiresAt?: number;
@@ -256,8 +249,6 @@ export function initAuth(): AuthConfig | null {
       type: 'api_key',
       accountType: 'api',
       apiKey: envApiKey,
-      mfaRequired: false, // API Key 不需要 MFA
-      mfaVerified: true,
     };
     return currentAuth;
   }
@@ -287,8 +278,6 @@ export function initAuth(): AuthConfig | null {
             refreshToken: oauth.refreshToken,
             expiresAt: oauth.expiresAt,
             scopes: scopes,
-            mfaRequired: false,
-            mfaVerified: true,
           };
           return currentAuth;
         }
@@ -309,8 +298,6 @@ export function initAuth(): AuthConfig | null {
           type: 'api_key',
           accountType: 'api',
           apiKey: config.primaryApiKey,
-          mfaRequired: false,
-          mfaVerified: true,
         };
         return currentAuth;
       }
@@ -328,8 +315,6 @@ export function initAuth(): AuthConfig | null {
         type: 'api_key',
         accountType: 'api',
         apiKey: keychainApiKey,
-        mfaRequired: false,
-        mfaVerified: true,
       };
       return currentAuth;
     }
@@ -347,8 +332,6 @@ export function initAuth(): AuthConfig | null {
           type: 'api_key',
           accountType: 'api',
           apiKey: creds.apiKey,
-          mfaRequired: false,
-          mfaVerified: true,
         };
         return currentAuth;
       }
@@ -371,13 +354,6 @@ export function initAuth(): AuthConfig | null {
         }
       });
     }
-
-    // 检查是否需要 MFA
-    const mfaEnabled = MFA.isMFAEnabled();
-    const needsMFA = mfaEnabled && MFA.requiresMFA(auth.deviceId);
-
-    auth.mfaRequired = needsMFA;
-    auth.mfaVerified = !needsMFA; // 如果不需要 MFA，则视为已验证
 
     currentAuth = auth;
     return currentAuth;
@@ -1283,8 +1259,6 @@ export function logout(): void {
   } catch (err) {
     console.error('Failed to delete auth file:', err);
   }
-
-  // 注意：不清除 MFA 配置，因为用户可能只是登出而不是禁用 MFA
 }
 
 /**
@@ -1380,89 +1354,6 @@ function refreshToken(auth: AuthConfig): AuthConfig | null {
   console.log('Token expired, please login again using: claude setup-token');
   return null;
 }
-
-// ============ MFA 集成 ============
-
-/**
- * 执行 MFA 验证
- */
-export async function performMFAVerification(
-  method: MFA.MFAMethod,
-  code: string,
-  trustDevice = false
-): Promise<boolean> {
-  if (!currentAuth) {
-    throw new Error('Not authenticated');
-  }
-
-  const result = MFA.verifyMFA({
-    method,
-    code,
-    trustDevice,
-  });
-
-  if (result.success) {
-    // 更新认证状态
-    currentAuth.mfaVerified = true;
-
-    // 如果选择信任设备，保存设备 ID
-    if (result.deviceId) {
-      currentAuth.deviceId = result.deviceId;
-      saveAuthSecure(currentAuth);
-    }
-
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * 检查当前认证是否需要 MFA 验证
- */
-export function needsMFAVerification(): boolean {
-  if (!currentAuth) {
-    return false;
-  }
-
-  return currentAuth.mfaRequired === true && currentAuth.mfaVerified !== true;
-}
-
-/**
- * 获取 MFA 状态
- */
-export function getMFAStatus(): ReturnType<typeof MFA.getMFAStatus> {
-  return MFA.getMFAStatus();
-}
-
-// 重新导出 MFA 相关函数
-export {
-  setupTOTP,
-  verifyTOTPSetup,
-  getTOTPConfig,
-  disableTOTP,
-  verifyMFA,
-  requiresMFA,
-  getTrustedDevices,
-  removeTrustedDevice,
-  clearTrustedDevices,
-  disableMFA,
-  regenerateRecoveryCodes,
-  isMFAEnabled,
-} from './mfa.js';
-
-// 导出 MFA 类型
-export type {
-  MFAMethod,
-  MFAConfig,
-  TOTPSecret,
-  SMSConfig,
-  EmailConfig,
-  WebAuthnCredential,
-  TrustedDevice,
-  MFAVerificationRequest,
-  MFAVerificationResult,
-} from './mfa.js';
 
 // ============ 用户信息获取 ============
 

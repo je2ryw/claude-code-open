@@ -167,8 +167,35 @@ export class Session {
     this.messages.push(message);
   }
 
+  /**
+   * 设置消息列表（用于压缩后更新会话状态）
+   * 对齐官方实现：压缩后直接替换整个消息列表
+   * @param messages 新的消息列表
+   */
+  setMessages(messages: Message[]): void {
+    this.messages = [...messages];
+  }
+
   clearMessages(): void {
     this.messages = [];
+  }
+
+  /**
+   * 获取最后一次压缩的边界标记 UUID
+   * 用于增量压缩（只压缩新消息，不重复压缩已压缩的内容）
+   * @returns 最后一次压缩的 UUID，如果没有则返回 undefined
+   */
+  getLastCompactedUuid(): string | undefined {
+    return this.state.lastCompactedUuid;
+  }
+
+  /**
+   * 设置最后一次压缩的边界标记 UUID
+   * 压缩成功后调用，记录压缩点以便下次增量压缩
+   * @param uuid 边界标记的 UUID
+   */
+  setLastCompactedUuid(uuid: string): void {
+    this.state.lastCompactedUuid = uuid;
   }
 
   getTodos(): TodoItem[] {

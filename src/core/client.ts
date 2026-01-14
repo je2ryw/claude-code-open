@@ -968,6 +968,35 @@ export function resetDefaultClient(): void {
   _defaultClient = null;
 }
 
+/**
+ * 创建指定模型的客户端（复用 auth 模块的认证）
+ * 用于需要使用不同模型（如 Haiku）的场景
+ */
+export function createClientWithModel(model: string): ClaudeClient {
+  initAuth();
+  const auth = getAuth();
+
+  const config: ClientConfig = { model };
+
+  if (auth) {
+    if (auth.type === 'api_key' && auth.apiKey) {
+      config.apiKey = auth.apiKey;
+    } else if (auth.type === 'oauth') {
+      const oauthToken = auth.accessToken || auth.authToken;
+      if (oauthToken) {
+        const scopes = auth.scope || auth.scopes;
+        if (hasInferenceScope(scopes)) {
+          config.authToken = oauthToken;
+        } else if (auth.oauthApiKey) {
+          config.apiKey = auth.oauthApiKey;
+        }
+      }
+    }
+  }
+
+  return new ClaudeClient(config);
+}
+
 // 保持向后兼容性，但不推荐直接使用
 // @deprecated 使用 getDefaultClient() 代替
 export const defaultClient = new Proxy({} as ClaudeClient, {

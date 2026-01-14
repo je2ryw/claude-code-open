@@ -730,23 +730,6 @@ export interface FileEdit {
   replace_all?: boolean;
 }
 
-/**
- * Input parameters for the MultiEdit tool
- *
- * Performs multiple file edits in a single operation.
- */
-export interface MultiEditInput {
-  /**
-   * List of edits to perform
-   */
-  edits: FileEdit[];
-
-  /**
-   * Description of the changes being made
-   */
-  description?: string;
-}
-
 // ============================================================================
 // Sandbox Tool
 // ============================================================================
@@ -774,40 +757,6 @@ export interface SandboxInput {
    * Working directory for the sandbox
    */
   cwd?: string;
-}
-
-// ============================================================================
-// Tmux Tool
-// ============================================================================
-
-/**
- * Input parameters for Tmux operations
- */
-export interface TmuxInput {
-  /**
-   * The tmux operation to perform
-   */
-  operation: "create" | "send" | "capture" | "kill" | "list";
-
-  /**
-   * Session name
-   */
-  session?: string;
-
-  /**
-   * Window name or index
-   */
-  window?: string;
-
-  /**
-   * Pane index
-   */
-  pane?: string;
-
-  /**
-   * Command or text to send
-   */
-  command?: string;
 }
 
 // ============================================================================
@@ -842,6 +791,4 @@ export type ToolInputSchemas =
   | SkillInput
   | ExitPlanModeInput
   | LSPInput
-  | MultiEditInput
-  | SandboxInput
-  | TmuxInput;
+  | SandboxInput;

@@ -1,14 +1,16 @@
 import { MarkdownContent } from './MarkdownContent';
 import { ToolCall } from './ToolCall';
 import { BlueprintSummaryCard } from './BlueprintSummaryCard';
+import { coordinatorApi } from '../api/blueprint';
 import type { ChatMessage, ChatContent, ToolUse } from '../types';
 
 interface MessageProps {
   message: ChatMessage;
   onNavigateToBlueprint?: (blueprintId: string) => void;
+  onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
 }
 
-export function Message({ message, onNavigateToBlueprint }: MessageProps) {
+export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm }: MessageProps) {
   const { role, content } = message;
 
   const renderContent = (item: ChatContent, index: number) => {
@@ -62,7 +64,23 @@ export function Message({ message, onNavigateToBlueprint }: MessageProps) {
           }}
           onStartExecution={async (blueprintId) => {
             console.log('[Blueprint] 启动执行:', blueprintId);
-            // TODO: 实现启动蓝图执行的逻辑，后续需要调用 API 并跳转到蜂群页面
+            try {
+              // 1. 初始化蜂王（Queen），传入蓝图 ID
+              console.log('[Blueprint] 正在初始化蜂王...');
+              await coordinatorApi.initializeQueen(blueprintId);
+
+              // 2. 启动主循环
+              console.log('[Blueprint] 正在启动主循环...');
+              await coordinatorApi.start();
+
+              // 3. 跳转到蜂群页面
+              console.log('[Blueprint] 跳转到蜂群页面');
+              onNavigateToSwarm?.();
+            } catch (error) {
+              // 启动失败，直接抛出错误，不做降级处理
+              console.error('[Blueprint] 启动执行失败:', error);
+              throw error;
+            }
           }}
         />
       );

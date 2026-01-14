@@ -53,11 +53,10 @@ import type {
 - `BashOutputResult`
 - `KillShellResult`
 
-### 3. File Operations (4)
+### 3. File Operations (3)
 - `ReadToolResult`
 - `WriteToolResult`
 - `EditToolResult`
-- `MultiEditToolResult`
 
 ### 4. Search Tools (2)
 - `GlobToolResult`
@@ -72,7 +71,7 @@ import type {
 - `TaskOutputToolResult`
 - `ListAgentsToolResult`
 
-### 7. Other Tools (11)
+### 7. Other Tools (9)
 - `TodoWriteToolResult`
 - `NotebookEditToolResult`
 - `ListMcpResourcesToolResult`
@@ -80,10 +79,8 @@ import type {
 - `McpToolResult`
 - `AskUserQuestionToolResult`
 - `SkillToolResult`
-- `SlashCommandToolResult`
 - `EnterPlanModeToolResult`
 - `ExitPlanModeToolResult`
-- `TmuxToolResult`
 
 ## Utilities
 

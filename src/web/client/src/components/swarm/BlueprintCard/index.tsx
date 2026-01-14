@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './BlueprintCard.module.css';
 import { ProgressBar } from '../common/ProgressBar';
-import { blueprintApi } from '../../../api/blueprint';
+import { blueprintApi, coordinatorApi } from '../../../api/blueprint';
 
 /**
  * 蓝图数据类型（用于列表展示）
@@ -39,6 +39,8 @@ interface BlueprintCardProps {
   onNavigateToSwarm?: () => void;
   /** 卡片变体样式 */
   variant?: BlueprintCardVariant;
+  /** 刷新列表回调，操作完成后调用 */
+  onRefresh?: () => void;
 }
 
 /**
@@ -56,6 +58,7 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
   onClick,
   onNavigateToSwarm,
   variant = 'default',
+  onRefresh,
 }) => {
   // 状态图标映射
   const statusIcons: Record<BlueprintCardData['status'], string> = {
@@ -109,9 +112,11 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
     try {
       switch (action) {
         case 'approve':
+          // 批准蓝图并触发列表刷新
           await blueprintApi.approveBlueprint(blueprint.id, 'admin');
           console.log('[BlueprintCard] 蓝图已批准');
-          // TODO: 刷新列表或触发父组件重新加载
+          // 调用父组件传入的刷新回调，更新列表状态
+          onRefresh?.();
           break;
 
         case 'reject':
@@ -119,23 +124,34 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
           if (reason) {
             await blueprintApi.rejectBlueprint(blueprint.id, reason);
             console.log('[BlueprintCard] 蓝图已拒绝');
+            // 拒绝后也需要刷新列表
+            onRefresh?.();
           }
           break;
 
         case 'pause':
-          console.log('[BlueprintCard] 暂停功能暂未实现');
-          // TODO: 实现暂停 API
+          // 暂停执行：调用协调器的暂停接口
+          await coordinatorApi.pause();
+          console.log('[BlueprintCard] 蓝图执行已暂停');
+          // 刷新列表以更新状态显示
+          onRefresh?.();
           break;
 
         case 'resume':
-          console.log('[BlueprintCard] 恢复功能暂未实现');
-          // TODO: 实现恢复 API
+          // 恢复执行：调用协调器的恢复接口
+          await coordinatorApi.resume();
+          console.log('[BlueprintCard] 蓝图执行已恢复');
+          // 刷新列表以更新状态显示
+          onRefresh?.();
           break;
 
         case 'stop':
           if (confirm('确定要停止执行吗？')) {
-            console.log('[BlueprintCard] 停止功能暂未实现');
-            // TODO: 实现停止 API
+            // 停止执行：调用协调器的停止接口
+            await coordinatorApi.stop();
+            console.log('[BlueprintCard] 蓝图执行已停止');
+            // 刷新列表以更新状态显示
+            onRefresh?.();
           }
           break;
 

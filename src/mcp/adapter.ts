@@ -377,28 +377,174 @@ export class McpAdapter extends EventEmitter {
 
   /**
    * 适配 MCP 服务器的提示
+   *
+   * 通过 MCP 协议的 prompts/list 和 prompts/get 方法获取并适配提示
    */
   async adaptPrompts(serverName: string): Promise<PromptAdapter[]> {
-    // MCP 提示需要通过 prompts/list 和 prompts/get 获取
-    // 这需要扩展 MCP 工具来支持提示
-    // 目前返回空数组，作为占位符
+    const servers = getMcpServers();
+    const server = servers.get(serverName);
+
+    if (!server) {
+      throw new Error(`MCP server not found: ${serverName}`);
+    }
+
     const adapters: PromptAdapter[] = [];
 
-    // TODO: 实现提示列表获取和适配
-    // const prompts = await this.getMcpPrompts(serverName);
-    // for (const prompt of prompts) {
-    //   adapters.push({
-    //     mcpPrompt: prompt,
-    //     systemPrompt: this.convertPromptToSystemPrompt(prompt),
-    //     serverName,
-    //     generatePrompt: async (args) => {
-    //       return await this.getMcpPromptContent(serverName, prompt.name, args);
-    //     },
-    //   });
-    // }
+    // 获取 MCP 服务器的提示列表
+    const prompts = await this.getMcpPrompts(serverName);
+
+    for (const prompt of prompts) {
+      // 将 MCP 提示转换为系统提示
+      const systemPrompt = this.convertPromptToSystemPrompt(prompt);
+
+      adapters.push({
+        mcpPrompt: prompt,
+        systemPrompt,
+        serverName,
+        generatePrompt: async (args?: Record<string, string>) => {
+          // 调用 prompts/get 获取带参数的提示内容
+          return await this.getMcpPromptContent(serverName, prompt.name, args);
+        },
+      });
+    }
 
     this.promptAdapters.set(serverName, adapters);
     return adapters;
+  }
+
+  /**
+   * 从 MCP 服务器获取提示列表
+   * 通过 prompts/list 方法
+   */
+  private async getMcpPrompts(serverName: string): Promise<McpPrompt[]> {
+    const servers = getMcpServers();
+    const server = servers.get(serverName);
+
+    if (!server) {
+      return [];
+    }
+
+    // 检查服务器是否支持 prompts 能力
+    if (!server.capabilities.prompts) {
+      return [];
+    }
+
+    try {
+      // 调用 MCP 的 prompts/list 方法
+      const result = await callMcpTool(serverName, '__internal_prompts_list', {});
+
+      if (!result.success || !result.output) {
+        return [];
+      }
+
+      // 解析返回的提示列表
+      const parsed = JSON.parse(result.output);
+      const promptList = parsed.prompts || parsed || [];
+
+      // 转换为 McpPrompt 类型
+      return promptList.map((p: any) => ({
+        name: p.name,
+        description: p.description,
+        arguments: p.arguments?.map((arg: any) => ({
+          name: arg.name,
+          description: arg.description,
+          required: arg.required,
+        })),
+      }));
+    } catch (err) {
+      console.warn(`Failed to get prompts from MCP server ${serverName}:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * 从 MCP 服务器获取指定提示的内容
+   * 通过 prompts/get 方法
+   */
+  private async getMcpPromptContent(
+    serverName: string,
+    promptName: string,
+    args?: Record<string, string>
+  ): Promise<string> {
+    try {
+      // 调用 MCP 的 prompts/get 方法
+      const result = await callMcpTool(serverName, '__internal_prompts_get', {
+        name: promptName,
+        arguments: args || {},
+      });
+
+      if (!result.success || !result.output) {
+        throw new Error(`Failed to get prompt content: ${result.error || 'Unknown error'}`);
+      }
+
+      // 解析返回的提示内容
+      const parsed = JSON.parse(result.output);
+
+      // MCP prompts/get 返回的格式通常包含 messages 数组
+      // 每个 message 有 role 和 content 字段
+      if (parsed.messages && Array.isArray(parsed.messages)) {
+        // 提取所有消息的文本内容
+        const contents = parsed.messages
+          .map((msg: any) => {
+            if (typeof msg.content === 'string') {
+              return msg.content;
+            }
+            // content 可能是数组形式
+            if (Array.isArray(msg.content)) {
+              return msg.content
+                .filter((c: any) => c.type === 'text')
+                .map((c: any) => c.text)
+                .join('\n');
+            }
+            return '';
+          })
+          .filter((c: string) => c.length > 0);
+
+        return contents.join('\n\n');
+      }
+
+      // 如果是简单格式，直接返回
+      if (typeof parsed === 'string') {
+        return parsed;
+      }
+
+      // 尝试提取 content 字段
+      if (parsed.content) {
+        return typeof parsed.content === 'string'
+          ? parsed.content
+          : JSON.stringify(parsed.content);
+      }
+
+      return JSON.stringify(parsed);
+    } catch (err) {
+      console.error(`Failed to get prompt content for ${promptName} from ${serverName}:`, err);
+      throw err;
+    }
+  }
+
+  /**
+   * 将 MCP 提示转换为系统提示格式
+   */
+  private convertPromptToSystemPrompt(prompt: McpPrompt): string {
+    let systemPrompt = `# ${prompt.name}\n`;
+
+    if (prompt.description) {
+      systemPrompt += `\n${prompt.description}\n`;
+    }
+
+    if (prompt.arguments && prompt.arguments.length > 0) {
+      systemPrompt += '\n## 参数\n';
+      for (const arg of prompt.arguments) {
+        const required = arg.required ? ' (必需)' : ' (可选)';
+        systemPrompt += `- **${arg.name}**${required}`;
+        if (arg.description) {
+          systemPrompt += `: ${arg.description}`;
+        }
+        systemPrompt += '\n';
+      }
+    }
+
+    return systemPrompt;
   }
 
   /**

@@ -248,25 +248,6 @@ function example5CustomChecks() {
     },
   });
 
-  // Add another custom check
-  validator.addCheck({
-    id: 'custom-02',
-    name: 'Multi-Factor Authentication',
-    description: 'Check if MFA is enabled for OAuth',
-    severity: 'error',
-    category: 'auth',
-    check: (config) => {
-      if (config.auth?.type !== 'oauth') {
-        return { passed: true, message: 'Not using OAuth' };
-      }
-      // In practice, you would check MFA configuration
-      return {
-        passed: false,
-        message: 'MFA is not enabled for OAuth authentication',
-      };
-    },
-  });
-
   const config: SecurityConfig = {
     auth: {
       type: 'oauth',

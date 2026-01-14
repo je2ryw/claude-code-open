@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as zlib from 'zlib';
 import { createHash } from 'crypto';
 
 // ============ 类型定义 ============
@@ -1178,12 +1179,68 @@ export class AuditLogger {
   }
 
   /**
-   * 压缩日志（占位符 - 实际实现需要 zlib）
+   * 压缩日志文件
+   * 使用 gzip 压缩算法将日志文件压缩为 .gz 格式
+   * 压缩完成后删除原始文件
    */
   private async compressLog(filePath: string): Promise<void> {
-    // TODO: 实现日志压缩
-    // 可以使用 zlib.gzip 或第三方库
-    console.log(`Log compression not implemented: ${filePath}`);
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      console.warn(`[AuditLogger] 压缩失败: 文件不存在 ${filePath}`);
+      return;
+    }
+
+    // 构建压缩文件路径（添加 .gz 后缀）
+    const compressedPath = `${filePath}.gz`;
+
+    try {
+      // 读取原始日志内容
+      const sourceContent = fs.readFileSync(filePath);
+
+      // 使用 gzip 进行同步压缩
+      // 设置压缩级别为 6（默认级别，平衡压缩率和速度）
+      const compressedContent = zlib.gzipSync(sourceContent, {
+        level: zlib.constants.Z_DEFAULT_COMPRESSION,  // 压缩级别 6
+        memLevel: 8,   // 内存使用级别（1-9），8 是较高但不是最高
+        strategy: zlib.constants.Z_DEFAULT_STRATEGY,  // 默认压缩策略
+      });
+
+      // 写入压缩文件
+      fs.writeFileSync(compressedPath, compressedContent, { mode: 0o600 });
+
+      // 验证压缩文件是否写入成功
+      if (fs.existsSync(compressedPath)) {
+        // 删除原始文件
+        fs.unlinkSync(filePath);
+
+        // 计算压缩率
+        const originalSize = sourceContent.length;
+        const compressedSize = compressedContent.length;
+        const compressionRatio = ((1 - compressedSize / originalSize) * 100).toFixed(2);
+
+        // 输出压缩信息（调试用）
+        if (process.env.CLAUDE_CODE_DEBUG === 'true') {
+          console.log(
+            `[AuditLogger] 日志压缩完成: ${path.basename(filePath)} ` +
+            `(${originalSize} -> ${compressedSize} bytes, 压缩率 ${compressionRatio}%)`
+          );
+        }
+      } else {
+        console.error(`[AuditLogger] 压缩文件写入验证失败: ${compressedPath}`);
+      }
+    } catch (err) {
+      // 压缩失败时不删除原始文件，确保数据不丢失
+      console.error(`[AuditLogger] 压缩日志失败: ${filePath}`, err);
+
+      // 如果压缩文件部分创建，尝试清理
+      try {
+        if (fs.existsSync(compressedPath)) {
+          fs.unlinkSync(compressedPath);
+        }
+      } catch {
+        // 忽略清理错误
+      }
+    }
   }
 
   /**

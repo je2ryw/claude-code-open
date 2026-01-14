@@ -176,8 +176,6 @@ router.get('/callback', async (req: Request, res: Response) => {
       expiresAt: Date.now() + tokenResponse.expires_in * 1000,
       scope: tokenResponse.scope?.split(' ') || oauthConfig.scope,
       scopes: tokenResponse.scope?.split(' ') || oauthConfig.scope,
-      mfaRequired: false,
-      mfaVerified: true,
     };
 
     // 保存认证信息到文件
@@ -351,8 +349,6 @@ router.post('/submit-code', async (req: Request, res: Response) => {
       expiresAt: Date.now() + tokenResponse.expires_in * 1000,
       scope: tokenResponse.scope?.split(' ') || oauthConfig.scope,
       scopes: tokenResponse.scope?.split(' ') || oauthConfig.scope,
-      mfaRequired: false,
-      mfaVerified: true,
     };
 
     // 保存认证信息到文件

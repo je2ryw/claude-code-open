@@ -33,6 +33,8 @@ interface OnionViewProps {
   onNodeClick?: (nodeId: string, nodeType: string) => void;
   /** 符号选择回调 */
   onSymbolSelect?: (symbolId: string) => void;
+  /** 跳转到蓝图页面查看文件 */
+  onNavigateToBlueprint?: (filePath: string) => void;
 }
 
 /**
@@ -90,8 +92,8 @@ export const OnionView: React.FC<OnionViewProps> = ({
   initialLayer = OnionLayer.PROJECT_INTENT,
   onNodeClick,
   onSymbolSelect,
+  onNavigateToBlueprint,
 }) => {
-  // 注意：文件双击现在通过 NavigatorContext 处理，不再需要 props 传递
 
   const {
     currentLayer,
@@ -227,7 +229,6 @@ export const OnionView: React.FC<OnionViewProps> = ({
         );
 
       case OnionLayer.BUSINESS_DOMAIN:
-        // 注意：文件双击通过 NavigatorContext 处理，不再需要传递回调
         return (
           <BusinessDomainLayer
             data={data as BusinessDomainData}
@@ -235,6 +236,7 @@ export const OnionView: React.FC<OnionViewProps> = ({
             error={error}
             onDrillDown={(moduleId: string) => drillDown(OnionLayer.KEY_PROCESS, moduleId)}
             onRefresh={handleRefresh}
+            onNavigateToBlueprint={onNavigateToBlueprint}
           />
         );
 
