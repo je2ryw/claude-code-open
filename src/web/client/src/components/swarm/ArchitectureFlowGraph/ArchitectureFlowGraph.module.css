@@ -1,0 +1,287 @@
+/**
+ * 架构流程图组件样式
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  background: #0f0f23;
+  border-radius: 8px;
+  border: 1px solid #2d2d4a;
+  overflow: hidden;
+  min-height: 400px;
+}
+
+.container.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  border-radius: 0;
+  min-height: 100vh;
+}
+
+/* 类型选择器 */
+.typeSelector {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2d2d4a;
+  overflow-x: auto;
+}
+
+.typeButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid #3d3d5c;
+  border-radius: 6px;
+  color: #a0a0b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.typeButton:hover:not(:disabled) {
+  background: #2d2d4a;
+  border-color: #5d5d7c;
+  color: #e0e0f0;
+}
+
+.typeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.typeButtonActive {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  border-color: #8b5cf6;
+  color: #fff;
+}
+
+.typeButtonActive:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border-color: #a78bfa;
+}
+
+.typeIcon {
+  font-size: 14px;
+}
+
+.typeLabel {
+  font-weight: 500;
+}
+
+/* 工具栏 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #2d2d4a;
+}
+
+.toolButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #a0a0b8;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toolButton:hover:not(:disabled) {
+  background: #2d2d4a;
+  border-color: #5d5d7c;
+  color: #e0e0f0;
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoomIndicator {
+  min-width: 48px;
+  text-align: center;
+  color: #808090;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.toolDivider {
+  width: 1px;
+  height: 20px;
+  background: #3d3d5c;
+  margin: 0 4px;
+}
+
+/* 图表内容区 */
+.graphContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: hidden;
+  min-height: 300px;
+  cursor: grab;
+  user-select: none;
+}
+
+.graphContent.dragging {
+  cursor: grabbing;
+}
+
+/* 加载状态 */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #a0a0b8;
+  font-size: 13px;
+}
+
+.loadingSpinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #2d2d4a;
+  border-top-color: #7c3aed;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 错误状态 */
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.errorIcon {
+  font-size: 32px;
+}
+
+.errorText {
+  color: #f87171;
+  font-size: 13px;
+  max-width: 400px;
+}
+
+.retryButton {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retryButton:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+}
+
+/* 空状态 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #6b6b8a;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.emptyText {
+  font-size: 13px;
+}
+
+.generateButton {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
+.generateButton:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.4);
+}
+
+/* Mermaid 容器 */
+.mermaidWrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  /* 不使用 transition，避免拖动时有延迟 */
+}
+
+.mermaidContainer {
+  background: #0f0f23;
+  padding: 20px;
+  border-radius: 8px;
+  overflow: visible;
+}
+
+.mermaidContainer svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Mermaid 代码回退显示 */
+.mermaidCodeFallback {
+  margin-top: 12px;
+  padding: 12px;
+  background: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 6px;
+  max-width: 100%;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.mermaidCodeFallback pre {
+  margin: 0;
+  color: #a0a0b8;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

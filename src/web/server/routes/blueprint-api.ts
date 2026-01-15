@@ -26,11 +26,14 @@ import {
 } from '../../../blueprint/index.js';
 import { timeTravelManager } from '../../../blueprint/time-travel.js';
 import { analysisCache } from '../../../blueprint/analysis-cache.js';
+import { architectureGraphCache, type ArchitectureGraphCacheEntry } from '../../../blueprint/architecture-graph-cache.js';
 import { CallGraphBuilder } from '../../../map/call-graph-builder.js';
 import type { ModuleNode, CallGraphNode, CallGraphEdge } from '../../../map/types.js';
 import { classifySymbol, canGenerateCallGraph } from './symbol-classifier.js';
 import { calculateTotalLines, groupByDirectory, detectEntryPoints, getCoreSymbols } from './project-map-generator.js';
-import type { ModuleGraphData, ModuleGraphEdge, ModuleGraphNode } from '../../shared/module-graph-types.js';
+import { configManager } from '../../../config/index.js';
+import { getAuth } from '../../../auth/index.js';
+import { TaskManager } from '../task-manager.js';
 
 const router = Router();
 
@@ -75,86 +78,6 @@ router.get('/blueprints/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Blueprint not found' });
     }
     res.json({ success: true, data: blueprint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-const normalizeModulePath = (value: string): string =>
-  value.replace(/\\/g, '/').replace(/\/+$/, '');
-
-const toArchitectureLayer = (type: ModuleGraphNode['type']): ModuleGraphNode['architectureLayer'] => {
-  switch (type) {
-    case 'frontend':
-      return 'presentation';
-    case 'database':
-      return 'data';
-    case 'infrastructure':
-      return 'infrastructure';
-    case 'backend':
-    case 'service':
-    case 'other':
-    default:
-      return 'business';
-  }
-};
-
-/**
- * 获取蓝图模块关系图
- */
-router.get('/blueprints/:id/module-graph', (req: Request, res: Response) => {
-  try {
-    const blueprint = blueprintManager.getBlueprint(req.params.id);
-    if (!blueprint) {
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
-    }
-
-    const nodes: ModuleGraphNode[] = blueprint.modules.map(module => {
-      const fallbackPath = module.name.includes('/') || module.name.includes('\\') ? module.name : '';
-      const modulePath = normalizeModulePath(module.rootPath || fallbackPath);
-      return {
-        id: module.id,
-        name: module.name,
-        path: modulePath,
-        type: module.type,
-        architectureLayer: toArchitectureLayer(module.type),
-      };
-    });
-
-    const nodeIds = new Set(nodes.map(node => node.id));
-    const nodeIdByName = new Map(nodes.map(node => [node.name, node.id]));
-    const nodeIdByPath = new Map(nodes.map(node => [normalizeModulePath(node.path), node.id]));
-
-    const edges: ModuleGraphEdge[] = [];
-    const edgeKeys = new Set<string>();
-
-    for (const module of blueprint.modules) {
-      for (const dep of module.dependencies || []) {
-        let targetId = dep;
-        if (!nodeIds.has(targetId)) {
-          const normalized = normalizeModulePath(dep);
-          targetId = nodeIdByPath.get(normalized) || nodeIdByName.get(dep) || '';
-        }
-
-        if (!targetId || targetId === module.id || !nodeIds.has(targetId)) {
-          continue;
-        }
-
-        const key = `${module.id}->${targetId}`;
-        if (edgeKeys.has(key)) continue;
-        edgeKeys.add(key);
-
-        edges.push({
-          source: module.id,
-          target: targetId,
-          type: 'import',
-          strength: 1,
-        });
-      }
-    }
-
-    const data: ModuleGraphData = { nodes, edges };
-    res.json({ success: true, data });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -703,12 +626,13 @@ router.get('/file-content', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '缺少文件路径参数' });
     }
 
-    const absolutePath = path.resolve(process.cwd(), filePath);
+    // 支持绝对路径和相对路径
+    const isAbsolutePath = path.isAbsolute(filePath);
+    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
 
-    // 安全检查：确保路径在项目目录内
-    const cwd = process.cwd();
-    if (!absolutePath.startsWith(cwd)) {
-      return res.status(403).json({ success: false, error: '禁止访问项目目录外的文件' });
+    // 安全检查：使用 isPathSafeForFileTree 函数检查路径（与 file-tree API 保持一致）
+    if (!isPathSafeForFileTree(absolutePath)) {
+      return res.status(403).json({ success: false, error: '禁止访问系统目录' });
     }
 
     // 检查文件是否存在
@@ -790,12 +714,13 @@ router.put('/file-content', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: '内容必须是字符串' });
     }
 
-    const absolutePath = path.resolve(process.cwd(), filePath);
+    // 支持绝对路径和相对路径
+    const isAbsolutePath = path.isAbsolute(filePath);
+    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
 
-    // 安全检查：确保路径在项目目录内
-    const cwd = process.cwd();
-    if (!absolutePath.startsWith(cwd)) {
-      return res.status(403).json({ success: false, error: '禁止修改项目目录外的文件' });
+    // 安全检查：使用 isPathSafeForFileTree 函数检查路径（与 file-tree API 保持一致）
+    if (!isPathSafeForFileTree(absolutePath)) {
+      return res.status(403).json({ success: false, error: '禁止修改系统目录文件' });
     }
 
     // 检查文件是否存在
@@ -4860,6 +4785,8 @@ router.get('/projects', (req: Request, res: Response) => {
 /**
  * POST /api/blueprint/projects/open
  * 打开项目（添加到最近项目列表）
+ *
+ * 关键变更：同时切换蓝图上下文，实现蓝图与项目 1:1 绑定
  */
 router.post('/projects/open', (req: Request, res: Response) => {
   try {
@@ -4930,9 +4857,21 @@ router.post('/projects/open', (req: Request, res: Response) => {
 
     saveRecentProjects(projects);
 
+    // 切换蓝图上下文：实现蓝图与项目 1:1 绑定
+    const currentBlueprint = blueprintManager.setProject(projectPath);
+
     res.json({
       success: true,
-      data: newProject,
+      data: {
+        ...newProject,
+        // 返回该项目关联的蓝图信息（如果有）
+        blueprint: currentBlueprint ? {
+          id: currentBlueprint.id,
+          name: currentBlueprint.name,
+          status: currentBlueprint.status,
+          version: currentBlueprint.version,
+        } : null,
+      },
     });
   } catch (error: any) {
     console.error('[POST /projects/open]', error);
@@ -6446,6 +6385,446 @@ ${truncatedContent}
     res.status(500).json({
       success: false,
       error: error.message || 'AI 重构分析失败',
+    });
+  }
+});
+
+// ============================================================================
+// 架构流程图 API（AI 生成）
+// ============================================================================
+
+/** 架构图类型 */
+type ArchitectureGraphType = 'dataflow' | 'sequence' | 'toolflow' | 'modulerelation' | 'full';
+
+/** 节点路径映射项 */
+interface NodePathMapping {
+  path: string;
+  type: 'file' | 'folder';
+  line?: number;
+}
+
+// 架构图缓存已移至持久化模块: src/blueprint/architecture-graph-cache.ts
+
+/** 架构图 Prompt 模板 */
+const ARCHITECTURE_GRAPH_PROMPTS: Record<ArchitectureGraphType, string> = {
+  dataflow: `分析代码库，生成**数据流图**的 Mermaid 代码。
+
+要求：
+1. 使用 flowchart TB（从上到下）
+2. 展示从用户输入到最终输出的完整数据流
+3. 包含主要模块：入口层、核心引擎、工具系统、API层、持久化层
+4. 使用 subgraph 分组相关模块
+5. 用不同颜色区分不同类型的模块（使用 classDef）
+6. 箭头标注数据流向
+
+只返回 Mermaid 代码，不要其他解释。`,
+
+  sequence: `分析代码库，生成**流式处理序列图**的 Mermaid 代码。
+
+要求：
+1. 使用 sequenceDiagram
+2. 展示 API 调用的完整序列：用户(User) -> 主循环(MainLoop) -> API客户端(Client) -> Claude API(API) -> 流式解析(Parser)
+3. 包含流式事件：message_start, content_block_start, content_block_delta, content_block_stop, message_stop
+4. 展示工具调用的分支流程
+5. 使用 rect 标注关键阶段
+6. 使用 Note 添加重要说明
+7. **重要**：participant 标识符禁止使用 loop、alt、opt、par、rect、note 等 Mermaid 保留关键字！请使用 MainLoop 代替 Loop
+
+只返回 Mermaid 代码，不要其他解释。`,
+
+  toolflow: `分析代码库，生成**工具调用流程图**的 Mermaid 代码。
+
+要求：
+1. 使用 flowchart TB
+2. 展示工具调用的完整流程：接收 -> 权限检查 -> 执行 -> 结果处理
+3. 包含权限检查的三步流程
+4. 展示不同权限模式的分支
+5. 包含错误处理和重试逻辑
+6. 使用菱形节点表示判断
+
+只返回 Mermaid 代码，不要其他解释。`,
+
+  modulerelation: `分析代码库，生成**模块关系图**的 Mermaid 代码。
+
+要求：
+1. 使用 flowchart TB
+2. 展示核心模块之间的依赖关系
+3. 分组显示：核心引擎、工具系统、Agent系统、支持系统
+4. 用箭头标注调用关系
+5. 使用不同颜色区分模块类型
+6. 包含主要类/函数名称
+
+只返回 Mermaid 代码，不要其他解释。`,
+
+  full: `分析代码库，生成**完整系统架构图**的 Mermaid 代码。
+
+要求：
+1. 使用 flowchart TB
+2. 分层展示：用户层 -> 入口层 -> 核心引擎层 -> 工具系统层 -> 支持系统 -> 持久化层
+3. 每层使用 subgraph 包裹
+4. 展示层与层之间的数据流
+5. 包含关键模块：CLI、MainLoop(核心循环)、ClaudeClient、Session、ToolRegistry、压缩系统
+6. 使用 classDef 定义不同层的颜色
+7. 标注关键流程：用户输入 -> 消息处理 -> API调用 -> 响应解析 -> 工具执行 -> 返回结果
+8. **注意**：节点 ID 禁止使用 loop、end、subgraph 等 Mermaid 保留关键字
+
+只返回 Mermaid 代码，不要其他解释。`,
+};
+
+/** 架构图标题和描述 */
+const ARCHITECTURE_GRAPH_META: Record<ArchitectureGraphType, { title: string; description: string }> = {
+  dataflow: { title: '系统数据流图', description: '展示从用户输入到最终输出的完整数据流' },
+  sequence: { title: '流式处理序列图', description: 'API 调用和流式事件的时序关系' },
+  toolflow: { title: '工具调用流程图', description: '工具执行的权限检查和处理流程' },
+  modulerelation: { title: '模块关系图', description: '核心模块之间的依赖和调用关系' },
+  full: { title: '完整系统架构图', description: '分层展示整体系统架构' },
+};
+
+/**
+ * 获取蓝图架构流程图（AI 生成）
+ */
+router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const graphType = (req.query.type as ArchitectureGraphType) || 'full';
+    const forceRefresh = req.query.forceRefresh === 'true';
+
+    // 验证图表类型
+    if (!ARCHITECTURE_GRAPH_PROMPTS[graphType]) {
+      return res.status(400).json({
+        success: false,
+        error: `无效的图表类型: ${graphType}`,
+      });
+    }
+
+    // 检查缓存（1小时内有效），除非强制刷新
+    const cached = architectureGraphCache.get(id, graphType);
+    if (!forceRefresh && cached) {
+      console.log(`[Architecture Graph] 使用缓存: ${id}-${graphType}`);
+      return res.json({
+        success: true,
+        data: {
+          type: cached.type,
+          title: cached.title,
+          description: cached.description,
+          mermaidCode: cached.mermaidCode,
+          generatedAt: cached.generatedAt,
+          nodePathMap: cached.nodePathMap,
+        },
+        fromCache: true,
+      });
+    }
+
+    // 获取蓝图信息
+    const blueprint = blueprintManager.getBlueprint(id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+    }
+
+    // 获取项目根目录
+    const projectRoot = blueprint.projectPath || process.cwd();
+
+    console.log(`[Architecture Graph] 生成 ${graphType} 类型架构图...`);
+    console.log(`[Architecture Graph] 项目根目录: ${projectRoot}`);
+
+    // 先从蓝图提取已有的结构化信息
+    const modules = blueprint.modules || [];
+    const processes = blueprint.businessProcesses || [];
+
+    // 构建蓝图上下文（结构化的已分析信息）
+    const blueprintContext = `
+【项目基本信息】
+名称: ${blueprint.name}
+描述: ${blueprint.description || '无'}
+状态: ${blueprint.status}
+
+【已识别的系统模块】(${modules.length}个):
+${modules.map(m => `- ${m.name} (类型: ${m.type})
+  路径: ${m.rootPath || '未指定'}
+  描述: ${m.description || '无'}
+  依赖: ${(m.dependencies || []).slice(0, 5).join(', ') || '无'}`).join('\n') || '暂无模块信息'}
+
+【业务流程】(${processes.length}个):
+${processes.map(p => `- ${p.name} (${p.type}): ${p.description || '无描述'}`).join('\n') || '暂无业务流程'}
+
+【模块依赖关系】:
+${modules.flatMap(m =>
+  (m.dependencies || []).slice(0, 3).map(dep => `  ${m.name} --> ${dep}`)
+).join('\n') || '暂无依赖关系'}
+`;
+
+    // Step 1: 使用 Explore Agent 基于蓝图信息深入分析代码
+    console.log(`[Architecture Graph] Step 1: 启动 Explore Agent (基于蓝图信息补充分析)...`);
+
+    const explorePrompt = `我已经有了这个项目的蓝图分析结果，请基于这些信息深入代码库验证和补充实现细节：
+
+${blueprintContext}
+
+请针对上述蓝图信息，深入分析代码：
+
+1. **验证模块实现**：
+   - 检查上述模块的实际代码文件
+   - 找出每个模块的入口函数/类
+   - 确认模块间的真实调用关系
+
+2. **补充数据流细节**：
+   - 请求从哪个入口进入？
+   - 核心处理流程是什么？
+   - 响应如何组装返回？
+
+3. **发现关键实现**：
+   - 核心类和函数有哪些？
+   - 重要的数据结构？
+   - 配置和常量定义？
+
+请使用 Glob、Grep、Read 工具深入代码，基于蓝图信息补充实现细节。
+返回增强版的架构分析报告，要能用于生成准确的 Mermaid 架构图。`;
+
+    const taskManager = new TaskManager();
+    const exploreResult = await taskManager.executeTaskSync(
+      '基于蓝图分析代码架构',
+      explorePrompt,
+      'Explore',
+      {
+        workingDirectory: projectRoot,
+      }
+    );
+
+    console.log(`[Architecture Graph] Explore Agent 完成: ${exploreResult.success}`);
+
+    // 组合蓝图信息 + 探索结果
+    let combinedAnalysis = blueprintContext;
+    if (exploreResult.success && exploreResult.output) {
+      combinedAnalysis += `\n\n【Explore Agent 补充的实现细节】:\n${exploreResult.output}`;
+      console.log(`[Architecture Graph] 获得补充分析: ${exploreResult.output.length} 字符`);
+    } else {
+      console.log(`[Architecture Graph] Explore Agent 失败: ${exploreResult.error}，将仅使用蓝图信息`);
+    }
+
+    // Step 2: 基于组合信息生成 Mermaid 架构图
+    console.log(`[Architecture Graph] Step 2: 基于蓝图+代码分析生成 Mermaid 图...`);
+
+    const prompt = `${ARCHITECTURE_GRAPH_PROMPTS[graphType]}
+
+=== 项目架构分析（蓝图 + 代码分析）===
+${combinedAnalysis}
+
+请基于以上蓝图信息和代码分析结果，生成准确反映项目实际架构的 Mermaid 图表代码。
+确保图表中的模块名称和关系与分析结果一致。
+只返回 Mermaid 代码，不要其他解释。`;
+
+    // 获取认证信息（支持 API Key 和 OAuth）
+    const auth = getAuth();
+    const apiKey = auth?.apiKey || configManager.getApiKey();
+    const authToken = auth?.type === 'oauth' ? (auth.accessToken || auth.authToken) : undefined;
+
+    if (!apiKey && !authToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'API 未认证，请先登录或配置 API Key',
+      });
+    }
+
+    // 使用 ClaudeClient 调用 AI 生成 Mermaid 图
+    const { ClaudeClient } = await import('../../../core/client.js');
+    const client = new ClaudeClient({
+      apiKey,
+      authToken,
+      baseUrl: process.env.ANTHROPIC_BASE_URL,
+    });
+
+    const response = await client.createMessage(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      '你是一个专业的软件架构师，擅长使用 Mermaid 绘制架构图。基于代码分析结果生成准确的架构图。只返回 Mermaid 代码，不要其他解释。'
+    );
+
+    // 提取 Mermaid 代码
+    let mermaidCode = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        mermaidCode = block.text;
+        break;
+      }
+    }
+
+    // 清理代码（移除 markdown 代码块标记）
+    mermaidCode = mermaidCode
+      .replace(/```mermaid\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    // 修复 Mermaid 保留关键字冲突
+    // 在 sequenceDiagram 中，loop/alt/opt/par/rect/note 是保留关键字
+    // 将这些作为参与者 ID 使用时会导致解析错误
+    mermaidCode = mermaidCode
+      // 修复 participant Loop -> participant MainLoop
+      .replace(/participant\s+Loop\b/gi, 'participant MainLoop')
+      .replace(/actor\s+Loop\b/gi, 'actor MainLoop')
+      // 修复消息中的 Loop 引用 (如 User->>Loop: 改为 User->>MainLoop:)
+      .replace(/->>Loop\s*:/g, '->>MainLoop:')
+      .replace(/-->>Loop\s*:/g, '-->>MainLoop:')
+      .replace(/Loop\s*->>/g, 'MainLoop->>')
+      .replace(/Loop\s*-->>/g, 'MainLoop-->>');
+
+    // 修复方括号内包含斜杠的节点标签（Mermaid 词法错误）
+    // 例如: ChatAPI[/api/chat] -> ChatAPI["/api/chat"]
+    // 方括号内的斜杠会导致 Mermaid 词法解析失败
+    mermaidCode = mermaidCode
+      .replace(/(\w+)\[([^\]"]*\/[^\]"]*)\]/g, '$1["$2"]');
+
+    console.log(`[Architecture Graph] Mermaid 代码已清理，长度: ${mermaidCode.length}`);
+
+    const meta = ARCHITECTURE_GRAPH_META[graphType];
+    const generatedAt = new Date().toLocaleString('zh-CN');
+
+    // 从蓝图 modules 中生成节点路径映射
+    const nodePathMap: Record<string, NodePathMapping> = {};
+    const fs = await import('fs');
+    const pathModule = await import('path');
+
+    // 构建模块名称 -> 路径 的映射（用于后续模糊匹配）
+    const moduleNameToPath = new Map<string, string>();
+
+    // 从蓝图 modules 中提取路径映射
+    for (const mod of modules) {
+      if (mod.rootPath) {
+        // 使用模块名称作为 key（移除空格以增加匹配率）
+        const normalizedName = mod.name.replace(/\s+/g, '');
+        nodePathMap[normalizedName] = {
+          path: mod.rootPath,
+          type: 'folder',
+        };
+        // 也添加原始名称
+        nodePathMap[mod.name] = {
+          path: mod.rootPath,
+          type: 'folder',
+        };
+        // 添加模块 ID
+        if (mod.id) {
+          nodePathMap[mod.id] = {
+            path: mod.rootPath,
+            type: 'folder',
+          };
+        }
+        // 记录到映射表，用于模糊匹配
+        moduleNameToPath.set(mod.name.toLowerCase(), mod.rootPath);
+        moduleNameToPath.set(normalizedName.toLowerCase(), mod.rootPath);
+      }
+    }
+
+    console.log(`[Architecture Graph] 从蓝图 modules 获取 ${moduleNameToPath.size} 个路径映射`);
+
+    // 从 Mermaid 代码中提取节点 ID，智能匹配文件路径
+    // 匹配 Mermaid 节点定义: NodeId[Label] 或 NodeId(Label) 或 NodeId{Label}
+    // 支持中文、英文、数字、下划线
+    const nodeIdPattern = /([\w\u4e00-\u9fa5]+)[\[\(\{]/g;
+    let match: RegExpExecArray | null;
+    const extractedNodeIds = new Set<string>();
+
+    while ((match = nodeIdPattern.exec(mermaidCode)) !== null) {
+      extractedNodeIds.add(match[1]);
+    }
+
+    console.log(`[Architecture Graph] 从 Mermaid 代码中提取到 ${extractedNodeIds.size} 个节点 ID`);
+
+    // 为未映射的节点尝试智能推断路径
+    for (const nodeId of extractedNodeIds) {
+      if (nodePathMap[nodeId]) continue; // 已有映射，跳过
+
+      // 首先尝试模糊匹配蓝图模块名称
+      const nodeIdLower = nodeId.toLowerCase();
+      for (const [moduleName, modulePath] of moduleNameToPath) {
+        // 模块名称包含节点 ID 或节点 ID 包含模块名称
+        if (moduleName.includes(nodeIdLower) || nodeIdLower.includes(moduleName)) {
+          nodePathMap[nodeId] = {
+            path: modulePath,
+            type: 'folder',
+          };
+          console.log(`[Architecture Graph] 模糊匹配模块: ${nodeId} -> ${modulePath}`);
+          break;
+        }
+      }
+
+      if (nodePathMap[nodeId]) continue; // 已匹配，跳过文件系统查找
+
+      // 常见的文件/目录名称模式（按优先级排序）
+      const possiblePaths = [
+        // 精确匹配
+        `src/${nodeId}`,
+        `src/${nodeId}.ts`,
+        `src/${nodeId}.tsx`,
+        `src/core/${nodeId}.ts`,
+        `src/tools/${nodeId}.ts`,
+        `src/web/${nodeId}`,
+        // 小写匹配
+        `src/${nodeId.toLowerCase()}`,
+        `src/${nodeId.toLowerCase()}.ts`,
+        `src/core/${nodeId.toLowerCase()}.ts`,
+        `src/tools/${nodeId.toLowerCase()}.ts`,
+        // 驼峰转连字符
+        `src/${nodeId.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '')}`,
+        // 常见目录
+        `src/components/${nodeId}`,
+        `src/services/${nodeId}`,
+        `src/utils/${nodeId}`,
+        `src/hooks/${nodeId}`,
+        `src/api/${nodeId}`,
+        // Web 相关
+        `src/web/client/src/${nodeId}`,
+        `src/web/server/${nodeId}`,
+      ];
+
+      // 检查哪个路径存在
+      for (const relativePath of possiblePaths) {
+        const fullPath = pathModule.join(projectRoot, relativePath);
+        try {
+          const stat = fs.statSync(fullPath);
+          nodePathMap[nodeId] = {
+            path: relativePath,
+            type: stat.isDirectory() ? 'folder' : 'file',
+          };
+          console.log(`[Architecture Graph] 文件系统匹配: ${nodeId} -> ${relativePath}`);
+          break;
+        } catch {
+          // 路径不存在，继续尝试
+        }
+      }
+    }
+
+    console.log(`[Architecture Graph] 最终节点路径映射: ${Object.keys(nodePathMap).length} 个`);
+    console.log(`[Architecture Graph] 映射详情:`, Object.keys(nodePathMap));
+
+    // 保存缓存
+    architectureGraphCache.set(id, graphType, {
+      type: graphType,
+      title: meta.title,
+      description: meta.description,
+      mermaidCode,
+      generatedAt,
+      timestamp: Date.now(),
+      nodePathMap,
+    });
+
+    console.log(`[Architecture Graph] 生成完成: ${mermaidCode.length} 字符`);
+
+    res.json({
+      success: true,
+      data: {
+        type: graphType,
+        title: meta.title,
+        description: meta.description,
+        mermaidCode,
+        generatedAt,
+        nodePathMap,
+      },
+      fromCache: false,
+    });
+  } catch (error: any) {
+    console.error('[Architecture Graph] 错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'AI 生成架构图失败',
     });
   }
 });

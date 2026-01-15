@@ -102,6 +102,9 @@ export interface Blueprint {
   version: string;
   status: BlueprintStatus;
 
+  // 项目关联（蓝图与项目 1:1 绑定）
+  projectPath: string;                    // 关联的项目路径
+
   // 核心内容
   businessProcesses: BusinessProcess[];   // 业务流程
   modules: SystemModule[];                // 系统模块

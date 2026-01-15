@@ -9,8 +9,7 @@ import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, fo
 import { ProjectSelector, Project } from '../ProjectSelector';
 import { ContextMenu, MenuItem, getFileContextMenuItems, getFolderContextMenuItems, getEmptyContextMenuItems } from '../ContextMenu';
 import { FileDialog, DialogType } from '../FileDialog';
-import { ModuleGraph, ModuleFile } from '../ModuleGraph/ModuleGraph';
-import type { ModuleGraphData } from '../../../../../shared/module-graph-types';
+import { ArchitectureFlowGraph, type ArchitectureGraphData, type ArchitectureGraphType, type NodePathMapping } from '../ArchitectureFlowGraph';
 
 // 悬浮框位置状态
 interface TooltipPosition {
@@ -198,12 +197,11 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     moduleCount: number;
   } | null>(null);
 
-  // 模块关系图数据
-  const [moduleGraph, setModuleGraph] = useState<ModuleGraphData | null>(null);
-  const [moduleGraphLoading, setModuleGraphLoading] = useState(false);
-  const [moduleGraphError, setModuleGraphError] = useState<string | null>(null);
-  const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>();
-  const [selectedModuleFileId, setSelectedModuleFileId] = useState<string | undefined>();
+  // 架构流程图数据
+  const [architectureGraph, setArchitectureGraph] = useState<ArchitectureGraphData | null>(null);
+  const [architectureGraphLoading, setArchitectureGraphLoading] = useState(false);
+  const [architectureGraphError, setArchitectureGraphError] = useState<string | null>(null);
+  const [selectedArchitectureType, setSelectedArchitectureType] = useState<ArchitectureGraphType>('full');
 
   // ============ 新手模式相关状态 ============
   // 新手模式开关（默认开启）
@@ -452,23 +450,47 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   /**
    * 初始化项目：
    * 1. 尝试获取当前工作目录
-   * 2. 如果成功，设置项目信息并加载文件树
+   * 2. 如果成功，设置项目信息、切换蓝图上下文并加载文件树
    * 3. 如果失败，使用默认的 'src' 目录
+   *
+   * 蓝图与项目 1:1 绑定，初始化时会自动切换到对应的蓝图
    */
   const initializeProject = useCallback(async () => {
+    // 如果已经初始化过，不再重复执行（防止覆盖用户手动选择的项目）
+    if (projectInitializedRef.current) {
+      return;
+    }
+    projectInitializedRef.current = true;
+
     try {
       // 尝试获取当前工作目录
       const cwd = await projectApi.getCurrentWorkingDirectory();
       if (cwd && cwd.path) {
+        // 调用 openProject API 切换蓝图上下文
+        const result = await projectApi.openProject(cwd.path);
+
         // 设置当前项目信息
         setCurrentProject({
-          id: 'cwd',
-          name: cwd.name || cwd.path.split(/[\\/]/).pop() || 'Project',
-          path: cwd.path,
+          id: result.id,
+          name: result.name,
+          path: result.path,
         });
-        setProjectRoot(cwd.path);
+        setProjectRoot(result.path);
+
+        // 更新蓝图信息（如果该项目有关联的蓝图）
+        if (result.blueprint) {
+          setBlueprintInfo({
+            name: result.blueprint.name,
+            description: '',
+            status: result.blueprint.status,
+            moduleCount: 0,
+          });
+        } else {
+          setBlueprintInfo(null);
+        }
+
         // 使用当前工作目录加载文件树
-        loadFileTree(cwd.path);
+        loadFileTree(result.path);
         return;
       }
     } catch (err) {
@@ -480,14 +502,31 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       const recentProjects = await projectApi.getRecentProjects();
       if (recentProjects && recentProjects.length > 0) {
         const lastProject = recentProjects[0];
+
+        // 调用 openProject API 切换蓝图上下文
+        const result = await projectApi.openProject(lastProject.path);
+
         setCurrentProject({
-          id: lastProject.id,
-          name: lastProject.name,
-          path: lastProject.path,
+          id: result.id,
+          name: result.name,
+          path: result.path,
         });
-        setProjectRoot(lastProject.path);
+        setProjectRoot(result.path);
+
+        // 更新蓝图信息
+        if (result.blueprint) {
+          setBlueprintInfo({
+            name: result.blueprint.name,
+            description: '',
+            status: result.blueprint.status,
+            moduleCount: 0,
+          });
+        } else {
+          setBlueprintInfo(null);
+        }
+
         // 使用最近项目路径加载文件树
-        loadFileTree(lastProject.path);
+        loadFileTree(result.path);
         return;
       }
     } catch (err) {
@@ -517,21 +556,24 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   };
 
-  const loadModuleGraph = useCallback(async () => {
-    setModuleGraphLoading(true);
-    setModuleGraphError(null);
+  // 加载架构流程图（AI 生成）
+  const loadArchitectureGraph = useCallback(async (type: ArchitectureGraphType, forceRefresh: boolean = false) => {
+    setArchitectureGraphLoading(true);
+    setArchitectureGraphError(null);
+    setSelectedArchitectureType(type);
     try {
-      const response = await fetch(`/api/blueprint/blueprints/${blueprintId}/module-graph`);
+      const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}${forceRefresh ? '&forceRefresh=true' : ''}`;
+      const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
-        setModuleGraph(result.data);
+        setArchitectureGraph(result.data);
       } else {
-        throw new Error(result.error || '加载模块关系图失败');
+        throw new Error(result.error || 'AI 生成架构图失败');
       }
     } catch (err) {
-      setModuleGraphError(err instanceof Error ? err.message : '加载模块关系图失败');
+      setArchitectureGraphError(err instanceof Error ? err.message : 'AI 生成架构图失败');
     } finally {
-      setModuleGraphLoading(false);
+      setArchitectureGraphLoading(false);
     }
   }, [blueprintId]);
 
@@ -539,8 +581,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   useEffect(() => {
     initializeProject();
     loadBlueprintInfo();
-    loadModuleGraph();
-  }, [blueprintId, initializeProject, loadModuleGraph]);
+  }, [blueprintId, initializeProject]);
 
   // 模拟目录树（当 API 不可用时）
   const createMockFileTree = (): FileTreeNode => ({
@@ -1007,16 +1048,39 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   /**
    * 处理项目切换
+   * 蓝图与项目 1:1 绑定，切换项目时同时切换蓝图
    */
   const handleProjectChange = useCallback(async (project: Project) => {
     setCurrentProject(project);
     setProjectRoot(project.path);
+
+    // 调用后端 API 切换项目，同时会切换蓝图上下文
+    try {
+      const result = await projectApi.openProject(project.path);
+
+      // 更新蓝图信息（如果该项目有关联的蓝图）
+      if (result.blueprint) {
+        setBlueprintInfo({
+          name: result.blueprint.name,
+          description: '',
+          status: result.blueprint.status,
+          moduleCount: 0,
+        });
+      } else {
+        // 该项目还没有蓝图
+        setBlueprintInfo(null);
+      }
+    } catch (err) {
+      console.warn('切换项目时更新蓝图信息失败:', err);
+    }
+
     // 重新加载文件树，传入项目路径作为根目录
     loadFileTree(project.path);
   }, [loadFileTree]);
 
   /**
    * 打开系统原生的文件夹选择对话框
+   * 蓝图与项目 1:1 绑定，打开新项目时会切换蓝图
    */
   const handleOpenFolder = useCallback(async () => {
     try {
@@ -1024,16 +1088,30 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       const selectedPath = await projectApi.showFolderDialog();
 
       if (selectedPath) {
-        // 用户选择了文件夹，打开项目
-        const project = await projectApi.openProject(selectedPath);
+        // 用户选择了文件夹，打开项目（同时切换蓝图上下文）
+        const result = await projectApi.openProject(selectedPath);
         setCurrentProject({
-          id: project.id,
-          name: project.name,
-          path: project.path,
+          id: result.id,
+          name: result.name,
+          path: result.path,
         });
-        setProjectRoot(project.path);
+        setProjectRoot(result.path);
+
+        // 更新蓝图信息（如果该项目有关联的蓝图）
+        if (result.blueprint) {
+          setBlueprintInfo({
+            name: result.blueprint.name,
+            description: '',
+            status: result.blueprint.status,
+            moduleCount: 0,
+          });
+        } else {
+          // 该项目还没有蓝图
+          setBlueprintInfo(null);
+        }
+
         // 传入项目路径作为根目录加载文件树
-        loadFileTree(project.path);
+        loadFileTree(result.path);
       }
       // 如果 selectedPath 为 null，说明用户取消了选择，不做任何操作
     } catch (error: any) {
@@ -1298,6 +1376,32 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   };
 
+  // 处理架构图节点点击 - 跳转到对应的文件/文件夹
+  const handleArchitectureNodeClick = (nodeId: string, mapping: NodePathMapping) => {
+    console.log(`[Architecture] 节点点击: ${nodeId} -> ${mapping.path}`);
+
+    // 构建完整路径（如果是相对路径，需要加上项目根目录）
+    let fullPath = mapping.path;
+    if (!fullPath.includes(':') && !fullPath.startsWith('/')) {
+      // 相对路径，加上项目根目录
+      fullPath = `${currentProjectPath}/${mapping.path}`.replace(/\\/g, '/');
+    }
+
+    // 使用已有的 handleSelectNode 逻辑来选择并展示文件/文件夹
+    const isFile = mapping.type === 'file';
+    handleSelectNode(fullPath, isFile);
+
+    // 如果有行号，可以滚动到对应行（需要等 editor 加载完成）
+    if (mapping.line && isFile) {
+      // 延迟执行，等待 editor 加载
+      setTimeout(() => {
+        // Monaco editor 滚动到指定行
+        // 这里可以通过 editorRef 来实现，但目前 editorRef 没有暴露
+        console.log(`[Architecture] 跳转到行: ${mapping.line}`);
+      }, 500);
+    }
+  };
+
   // 切换展开
   const toggleExpand = (path: string) => {
     setExpandedPaths(prev => {
@@ -1324,8 +1428,22 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       const sidebarRect = sidebarRef.current?.getBoundingClientRect();
 
       // 计算悬浮框位置（显示在节点右侧）
-      const x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
-      const y = rect.top;
+      let x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
+      let y = rect.top;
+
+      // 悬浮框尺寸（根据 CSS 定义）
+      const tooltipWidth = 480;  // max-width
+      const tooltipHeight = 400; // 估计高度
+
+      // 检查右边界，如果超出则显示在左侧
+      if (x + tooltipWidth > window.innerWidth - 16) {
+        x = Math.max(16, (sidebarRect ? sidebarRect.left : rect.left) - tooltipWidth - 8);
+      }
+
+      // 检查底部边界，如果超出则向上调整
+      if (y + tooltipHeight > window.innerHeight - 16) {
+        y = Math.max(16, window.innerHeight - tooltipHeight - 16);
+      }
 
       setTooltip({
         x,
@@ -1344,6 +1462,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   // 用于追踪鼠标是否在悬浮框上
   const isMouseOnTooltipRef = useRef(false);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 用于防止初始化函数覆盖用户手动选择的项目
+  const projectInitializedRef = useRef<boolean>(false);
 
   // 处理鼠标离开文件/文件夹节点
   const handleNodeMouseLeave = useCallback(() => {
@@ -1474,8 +1594,22 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       const rect = (e.target as HTMLElement).getBoundingClientRect();
       const sidebarRect = sidebarRef.current?.getBoundingClientRect();
 
-      const x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
-      const y = rect.top;
+      let x = sidebarRect ? sidebarRect.right + 8 : rect.right + 8;
+      let y = rect.top;
+
+      // 悬浮框尺寸（根据 CSS 定义）
+      const tooltipWidth = 480;  // max-width
+      const tooltipHeight = 400; // 估计高度
+
+      // 检查右边界，如果超出则显示在左侧
+      if (x + tooltipWidth > window.innerWidth - 16) {
+        x = Math.max(16, (sidebarRect ? sidebarRect.left : rect.left) - tooltipWidth - 8);
+      }
+
+      // 检查底部边界，如果超出则向上调整
+      if (y + tooltipHeight > window.innerHeight - 16) {
+        y = Math.max(16, window.innerHeight - tooltipHeight - 16);
+      }
 
       // 立即计算本地数据（0ms）
       const content = editedContent || fileContent?.content || '';
@@ -3392,54 +3526,21 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           </div>
 
           <section className={styles.moduleGraphSection}>
-            <div className={styles.moduleGraphHeader}>
-              <div>
-                <h3 className={styles.moduleGraphTitle}>模块关系图</h3>
-                <p className={styles.moduleGraphHint}>基于蓝图模块依赖生成</p>
-              </div>
-              <button
-                className={styles.moduleGraphRefresh}
-                onClick={loadModuleGraph}
-                disabled={moduleGraphLoading}
-              >
-                {moduleGraphLoading ? '加载中...' : '刷新'}
-              </button>
-            </div>
-
+            {/* 架构流程图 */}
             <div className={styles.moduleGraphBody}>
-              {moduleGraphLoading && (
-                <div className={styles.moduleGraphState}>正在加载模块关系图...</div>
-              )}
-              {!moduleGraphLoading && moduleGraphError && (
-                <div className={styles.moduleGraphError}>
-                  <span>{moduleGraphError}</span>
-                  <button className={styles.moduleGraphRetry} onClick={loadModuleGraph}>
-                    重试
-                  </button>
-                </div>
-              )}
-              {!moduleGraphLoading && !moduleGraphError && moduleGraph?.nodes?.length ? (
-                <ModuleGraph
-                  domains={moduleGraph.nodes}
-                  relationships={moduleGraph.edges}
-                  selectedDomainId={selectedModuleId}
-                  selectedFileId={selectedModuleFileId}
-                  onDomainClick={(moduleId) => {
-                    setSelectedModuleId(prev => (prev === moduleId ? undefined : moduleId));
-                    setSelectedModuleFileId(undefined);
-                  }}
-                  onFileClick={(file: ModuleFile) => {
-                    setSelectedModuleFileId(file.id);
-                    setSelectedModuleId(undefined);
-                  }}
-                  onFileDoubleClick={(file: ModuleFile) => {
-                    handleSelectNode(file.path, true);
-                  }}
-                />
-              ) : null}
-              {!moduleGraphLoading && !moduleGraphError && !moduleGraph?.nodes?.length && (
-                <div className={styles.moduleGraphEmpty}>暂无模块关系数据</div>
-              )}
+              <ArchitectureFlowGraph
+                blueprintId={blueprintId}
+                data={architectureGraph}
+                loading={architectureGraphLoading}
+                error={architectureGraphError}
+                onRefresh={loadArchitectureGraph}
+                selectedType={selectedArchitectureType}
+                onTypeChange={(type) => {
+                  setSelectedArchitectureType(type);
+                  loadArchitectureGraph(type);
+                }}
+                onNodeClick={handleArchitectureNodeClick}
+              />
             </div>
           </section>
         </div>
@@ -3785,12 +3886,32 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
                     <span className={styles.tabIcon}>📝</span>
                     <span className={styles.tabName}>代码编辑</span>
                     {hasUnsavedChanges && <span className={styles.unsavedDot}>●</span>}
+                    <span
+                      className={styles.tabClose}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPath(null);
+                      }}
+                      title="关闭"
+                    >
+                      ×
+                    </span>
                   </div>
                 ) : (
                   /* 目录显示分析tab */
                   <div className={`${styles.tab} ${styles.activeTab}`}>
                     <span className={styles.tabIcon}>🔍</span>
                     <span className={styles.tabName}>分析</span>
+                    <span
+                      className={styles.tabClose}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPath(null);
+                      }}
+                      title="关闭"
+                    >
+                      ×
+                    </span>
                   </div>
                 )}
               </>

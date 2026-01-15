@@ -1457,6 +1457,19 @@ export class ConversationLoop {
       return false;
     }
 
+    // 3.5 acceptEdits 模式 - 官方 v2.1.2 Shift+Tab 快捷切换
+    // 自动接受文件编辑操作，其他操作仍需询问
+    if (this.options.permissionMode === 'acceptEdits') {
+      const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+      if (editTools.includes(toolName)) {
+        if (this.options.verbose) {
+          console.log(chalk.green(`[Permission] Auto-accepted edit tool in acceptEdits mode: ${toolName}`));
+        }
+        return true;
+      }
+      // 非编辑工具继续走后面的询问流程
+    }
+
     // 4. 显示权限请求对话框
     console.log(chalk.yellow('\n┌─────────────────────────────────────────┐'));
     console.log(chalk.yellow('│          Permission Request             │'));
@@ -1679,7 +1692,9 @@ export class ConversationLoop {
 
     if (auth.type === 'oauth') {
       // 检查是否有 user:inference scope (Claude.ai 订阅用户)
-      const hasInferenceScope = auth.scope?.includes('user:inference');
+      // 注意：AuthConfig 同时有 scope 和 scopes 两个字段，需要都检查
+      const scopes = auth.scopes || auth.scope || [];
+      const hasInferenceScope = scopes.includes('user:inference');
 
       if (hasInferenceScope) {
         // Claude.ai 订阅用户：尝试使用 authToken
@@ -2208,6 +2223,26 @@ Guidelines:
    */
   getModel(): string {
     return this.client.getModel();
+  }
+
+  /**
+   * 设置权限模式 - 官方 v2.1.2 Shift+Tab 快捷切换支持
+   * @param mode 权限模式
+   */
+  setPermissionMode(mode: PermissionMode): void {
+    this.options.permissionMode = mode;
+    // 同步更新 promptContext
+    if (this.promptContext) {
+      this.promptContext.permissionMode = mode;
+    }
+  }
+
+  /**
+   * 获取当前权限模式
+   * @returns 当前权限模式
+   */
+  getPermissionMode(): PermissionMode | undefined {
+    return this.options.permissionMode;
   }
 
   /**

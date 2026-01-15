@@ -325,6 +325,10 @@ export class TaskManager {
     let toolCallCounter = 0;
 
     try {
+      // 日志：子 agent 开始执行
+      console.log(`[SubAgent:${task.agentType}] 🚀 启动任务: ${task.description}`);
+      console.log(`[SubAgent:${task.agentType}] 📝 Prompt: ${task.prompt.substring(0, 100)}${task.prompt.length > 100 ? '...' : ''}`);
+
       // 调用 SubagentStart Hook
       await runSubagentStartHooks(task.id, task.agentType);
 
@@ -384,6 +388,12 @@ export class TaskManager {
               task.toolUseCount = toolCallCounter;
               task.lastToolInfo = event.toolName;
 
+              // 日志输出子 agent 工具执行过程
+              const inputPreview = event.toolInput
+                ? JSON.stringify(event.toolInput).substring(0, 200)
+                : '';
+              console.log(`[SubAgent:${task.agentType}] 🔧 Tool #${toolCallCounter}: ${event.toolName}${inputPreview ? ` | Input: ${inputPreview}${inputPreview.length >= 200 ? '...' : ''}` : ''}`);
+
               // 推送到前端
               this.sendSubagentToolStart(task.id, toolCall);
 
@@ -401,6 +411,14 @@ export class TaskManager {
                 toolCall.result = event.toolResult;
                 toolCall.error = event.toolError;
                 toolCall.endTime = Date.now();
+                const duration = toolCall.endTime - toolCall.startTime;
+
+                // 日志输出子 agent 工具执行结果
+                const resultPreview = event.toolResult
+                  ? String(event.toolResult).substring(0, 150).replace(/\n/g, ' ')
+                  : '';
+                const statusIcon = event.toolError ? '❌' : '✅';
+                console.log(`[SubAgent:${task.agentType}] ${statusIcon} Tool ${event.toolName} (${duration}ms)${event.toolError ? ` | Error: ${event.toolError}` : resultPreview ? ` | Result: ${resultPreview}${resultPreview.length >= 150 ? '...' : ''}` : ''}`);
 
                 // 从活动列表移除
                 activeToolCalls.delete(event.toolName);
@@ -430,6 +448,14 @@ export class TaskManager {
       task.status = 'completed';
       task.endTime = new Date();
       task.result = textChunks.join('');
+      const totalDuration = task.endTime.getTime() - task.startTime.getTime();
+
+      // 日志：子 agent 完成
+      console.log(`[SubAgent:${task.agentType}] ✅ 任务完成 (耗时: ${totalDuration}ms, 工具调用: ${toolCallCounter}次)`);
+      if (task.result) {
+        const resultPreview = task.result.substring(0, 200).replace(/\n/g, ' ');
+        console.log(`[SubAgent:${task.agentType}] 📤 结果: ${resultPreview}${task.result.length > 200 ? '...' : ''}`);
+      }
 
       // 保存输出到缓冲区
       this.outputBuffers.set(task.id, task.result);
@@ -445,6 +471,10 @@ export class TaskManager {
       task.status = 'failed';
       task.endTime = new Date();
       task.error = error instanceof Error ? error.message : String(error);
+      const totalDuration = task.endTime.getTime() - task.startTime.getTime();
+
+      // 日志：子 agent 失败
+      console.log(`[SubAgent:${task.agentType}] ❌ 任务失败 (耗时: ${totalDuration}ms): ${task.error}`);
 
       // 发送状态更新
       this.sendTaskStatus(task);

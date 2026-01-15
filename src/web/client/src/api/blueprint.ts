@@ -952,6 +952,19 @@ export interface RecentProject {
 }
 
 /**
+ * 打开项目的返回结果（包含蓝图信息）
+ */
+export interface OpenProjectResult extends RecentProject {
+  // 该项目关联的蓝图（如果有）
+  blueprint: {
+    id: string;
+    name: string;
+    status: string;
+    version: string;
+  } | null;
+}
+
+/**
  * 项目管理 API 封装
  */
 export const projectApi = {
@@ -965,8 +978,9 @@ export const projectApi = {
 
   /**
    * 打开项目（添加到最近列表）
+   * 同时会切换蓝图上下文，返回该项目关联的蓝图信息
    */
-  openProject: async (projectPath: string): Promise<RecentProject> => {
+  openProject: async (projectPath: string): Promise<OpenProjectResult> => {
     const response = await fetch('/api/blueprint/projects/open', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

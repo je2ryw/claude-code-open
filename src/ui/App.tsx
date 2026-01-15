@@ -543,6 +543,9 @@ export const App: React.FC<AppProps> = ({
   const handlePermissionModeChange = useCallback((mode: 'default' | 'acceptEdits' | 'plan') => {
     setQuickPermissionMode(mode);
 
+    // 同步权限模式到 ConversationLoop - 让权限模式真正生效
+    loop.setPermissionMode(mode);
+
     // 如果是 Plan Mode，同时更新 planMode 状态
     if (mode === 'plan') {
       setPlanMode(true);
@@ -559,7 +562,7 @@ export const App: React.FC<AppProps> = ({
       addMessage('assistant', modeMessage);
       addActivity(`Permission mode: ${mode}`);
     }
-  }, [addMessage, addActivity]);
+  }, [loop, addMessage, addActivity]);
 
   // 处理登录方法选择
   const handleLoginSelect = useCallback(async (method: LoginMethod) => {

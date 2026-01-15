@@ -46,10 +46,64 @@ const getBlueprintFilePath = (id: string): string => {
 export class BlueprintManager extends EventEmitter {
   private blueprints: Map<string, Blueprint> = new Map();
   private currentBlueprintId: string | null = null;
+  private currentProjectPath: string | null = null;
 
   constructor() {
     super();
     this.loadAllBlueprints();
+  }
+
+  // --------------------------------------------------------------------------
+  // 项目切换（蓝图与项目 1:1 绑定）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 设置当前项目路径
+   * 蓝图会自动切换到该项目关联的蓝图
+   */
+  setProject(projectPath: string): Blueprint | null {
+    // 规范化路径
+    const normalizedPath = this.normalizePath(projectPath);
+    this.currentProjectPath = normalizedPath;
+
+    // 查找该项目的蓝图
+    const blueprint = this.getBlueprintByProject(normalizedPath);
+    if (blueprint) {
+      this.currentBlueprintId = blueprint.id;
+      this.emit('project:changed', normalizedPath, blueprint);
+    } else {
+      this.currentBlueprintId = null;
+      this.emit('project:changed', normalizedPath, null);
+    }
+
+    return blueprint;
+  }
+
+  /**
+   * 获取当前项目路径
+   */
+  getCurrentProjectPath(): string | null {
+    return this.currentProjectPath;
+  }
+
+  /**
+   * 根据项目路径获取蓝图
+   */
+  getBlueprintByProject(projectPath: string): Blueprint | null {
+    const normalizedPath = this.normalizePath(projectPath);
+    for (const blueprint of this.blueprints.values()) {
+      if (this.normalizePath(blueprint.projectPath) === normalizedPath) {
+        return blueprint;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 规范化路径（处理 Windows 和 Unix 路径差异）
+   */
+  private normalizePath(p: string): string {
+    return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   }
 
   // --------------------------------------------------------------------------
@@ -60,16 +114,24 @@ export class BlueprintManager extends EventEmitter {
    * 创建新蓝图（草稿状态）
    *
    * 单蓝图约束：一个项目只有一个蓝图
-   * - 如果已有蓝图且处于 draft 状态，返回现有蓝图
-   * - 如果已有蓝图且处于其他状态，抛出错误
-   * - 如果没有蓝图，创建新的
+   * - 如果当前项目已有蓝图且处于 draft 状态，返回现有蓝图
+   * - 如果当前项目已有蓝图且处于其他状态，抛出错误
+   * - 如果当前项目没有蓝图，创建新的
+   *
+   * @param name 蓝图名称
+   * @param description 蓝图描述
+   * @param projectPath 可选的项目路径，如果不传则使用当前项目路径
    */
-  createBlueprint(name: string, description: string): Blueprint {
-    // 单蓝图约束：检查是否已有蓝图
-    const existingBlueprints = this.getAllBlueprints();
-    if (existingBlueprints.length > 0) {
-      const existing = existingBlueprints[0];
+  createBlueprint(name: string, description: string, projectPath?: string): Blueprint {
+    // 确定项目路径
+    const targetProjectPath = projectPath || this.currentProjectPath;
+    if (!targetProjectPath) {
+      throw new Error('请先设置项目路径，再创建蓝图。调用 setProject(path) 或传入 projectPath 参数。');
+    }
 
+    // 单蓝图约束：检查当前项目是否已有蓝图
+    const existing = this.getBlueprintByProject(targetProjectPath);
+    if (existing) {
       // 如果已有蓝图处于 draft 状态，清空并重新生成
       if (existing.status === 'draft') {
         existing.name = name;
@@ -109,10 +171,9 @@ export class BlueprintManager extends EventEmitter {
       id: uuidv4(),
       name,
       description,
-      version: existingBlueprints.length > 0
-        ? this.incrementVersion(existingBlueprints[0].version)
-        : '1.0.0',
+      version: existing ? this.incrementVersion(existing.version) : '1.0.0',
       status: 'draft',
+      projectPath: targetProjectPath, // 关联项目路径
       businessProcesses: [],
       modules: [],
       nfrs: [],
@@ -149,12 +210,27 @@ export class BlueprintManager extends EventEmitter {
 
   /**
    * 获取当前项目的蓝图（单蓝图约束）
+   * 只返回当前项目关联的蓝图
    */
   getCurrentBlueprint(): Blueprint | null {
+    // 优先使用 currentBlueprintId
     if (this.currentBlueprintId) {
-      return this.getBlueprint(this.currentBlueprintId);
+      const blueprint = this.getBlueprint(this.currentBlueprintId);
+      // 确保蓝图属于当前项目
+      if (blueprint && this.currentProjectPath) {
+        if (this.normalizePath(blueprint.projectPath) === this.normalizePath(this.currentProjectPath)) {
+          return blueprint;
+        }
+      }
+      return blueprint;
     }
-    // 返回最新的蓝图
+
+    // 如果有当前项目，返回该项目的蓝图
+    if (this.currentProjectPath) {
+      return this.getBlueprintByProject(this.currentProjectPath);
+    }
+
+    // 兜底：返回最新的蓝图（向后兼容）
     const blueprints = this.getAllBlueprints();
     if (blueprints.length === 0) return null;
     return blueprints.sort((a, b) =>
@@ -616,6 +692,7 @@ export class BlueprintManager extends EventEmitter {
 
   /**
    * 加载蓝图
+   * 对于旧蓝图（没有 projectPath），使用当前工作目录作为默认值
    */
   private loadBlueprint(id: string): Blueprint | null {
     try {
@@ -623,8 +700,13 @@ export class BlueprintManager extends EventEmitter {
       if (!fs.existsSync(filePath)) return null;
 
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      // 兼容旧蓝图：如果没有 projectPath，使用当前工作目录
+      const projectPath = data.projectPath || process.cwd();
+
       return {
         ...data,
+        projectPath, // 确保始终有 projectPath
         createdAt: new Date(data.createdAt),
         updatedAt: new Date(data.updatedAt),
         approvedAt: data.approvedAt ? new Date(data.approvedAt) : undefined,
