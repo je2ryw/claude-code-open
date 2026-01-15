@@ -339,6 +339,160 @@ export function truncateMcpOutput(output: string, maxTokens?: number): string {
   return `${start}\n\n... [${omittedChars} characters / ~${omittedTokens} tokens omitted] ...\n\n${end}`;
 }
 
+/**
+ * 检查命令是否存在于系统 PATH 中
+ * @param command - 要检查的命令
+ * @returns boolean - 命令是否存在
+ */
+export function commandExists(command: string): boolean {
+  const { execSync } = require('child_process') as typeof import('child_process');
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    execSync(`${whichCmd} ${command}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 获取系统默认编辑器
+ * 优先级：$VISUAL > $EDITOR > 系统默认编辑器
+ * @returns string | null - 编辑器命令或 null
+ */
+export function getDefaultEditor(): string | null {
+  // 首先检查 VISUAL 环境变量
+  if (process.env.VISUAL?.trim()) {
+    return process.env.VISUAL.trim();
+  }
+
+  // 然后检查 EDITOR 环境变量
+  if (process.env.EDITOR?.trim()) {
+    return process.env.EDITOR.trim();
+  }
+
+  // Windows 使用 notepad
+  if (process.platform === 'win32') {
+    return 'notepad';
+  }
+
+  // Unix/macOS 尝试常见编辑器
+  const commonEditors = ['code', 'vi', 'nano', 'vim'];
+  for (const editor of commonEditors) {
+    if (commandExists(editor)) {
+      return editor;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 外部编辑器打开结果
+ */
+export interface ExternalEditorResult {
+  success: boolean;
+  content?: string;
+  error?: string;
+}
+
+/**
+ * 在外部编辑器中打开文件
+ * @param filePath - 要打开的文件路径
+ * @returns Promise<ExternalEditorResult> - 打开结果
+ */
+export async function openInExternalEditor(filePath: string): Promise<ExternalEditorResult> {
+  const { execSync } = require('child_process') as typeof import('child_process');
+  const editor = getDefaultEditor();
+
+  if (!editor) {
+    return {
+      success: false,
+      error: 'No editor available. Please set $EDITOR or $VISUAL environment variable.',
+    };
+  }
+
+  try {
+    // 同步执行编辑器命令，等待编辑器关闭
+    // Windows 使用 cmd.exe，Unix 使用默认 shell
+    const shellOption = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+    execSync(`${editor} "${filePath}"`, {
+      stdio: 'inherit',
+      shell: shellOption,
+    });
+
+    // 读取编辑后的内容
+    const fsPromises = require('fs/promises') as typeof import('fs/promises');
+    const content = await fsPromises.readFile(filePath, 'utf-8');
+
+    return {
+      success: true,
+      content,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: `Failed to launch editor: ${errorMessage}`,
+    };
+  }
+}
+
+/**
+ * 创建临时文件用于外部编辑器
+ * @param content - 初始内容
+ * @param extension - 文件扩展名（默认 .md）
+ * @returns Promise<string> - 临时文件路径
+ */
+export async function createTempFileForEditor(
+  content: string = '',
+  extension: string = '.md'
+): Promise<string> {
+  const os = require('os') as typeof import('os');
+  const path = require('path') as typeof import('path');
+  const fsPromises = require('fs/promises') as typeof import('fs/promises');
+
+  const tempDir = os.tmpdir();
+  const tempFileName = `claude-code-${Date.now()}${extension}`;
+  const tempFilePath = path.join(tempDir, tempFileName);
+
+  await fsPromises.writeFile(tempFilePath, content, 'utf-8');
+
+  return tempFilePath;
+}
+
+/**
+ * 使用外部编辑器编辑内容
+ * @param initialContent - 初始内容
+ * @returns Promise<ExternalEditorResult> - 编辑结果
+ */
+export async function editInExternalEditor(initialContent: string = ''): Promise<ExternalEditorResult> {
+  const fsPromises = require('fs/promises') as typeof import('fs/promises');
+
+  try {
+    // 创建临时文件
+    const tempFilePath = await createTempFileForEditor(initialContent);
+
+    // 打开编辑器
+    const result = await openInExternalEditor(tempFilePath);
+
+    // 清理临时文件（无论成功与否）
+    try {
+      await fsPromises.unlink(tempFilePath);
+    } catch {
+      // 忽略删除失败
+    }
+
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: `Failed to create temp file: ${errorMessage}`,
+    };
+  }
+}
+
 // Re-export attribution utilities
 export { getAttribution, getCommitAttribution, getPRAttribution, isAttributionEnabled } from './attribution.js';
 

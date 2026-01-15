@@ -1,9 +1,18 @@
 /**
  * Rate Limiting and Retry System
  * Handles API rate limits and automatic retries
+ *
+ * v2.1.6: Fixed rate limit warning appearing at low usage after weekly reset
+ *         (now requires 70% usage)
  */
 
 import { EventEmitter } from 'events';
+
+/**
+ * 账户使用率警告显示阈值
+ * v2.1.6: 只有当使用率 >= 70% 时才显示速率限制警告
+ */
+export const RATE_LIMIT_WARNING_THRESHOLD = 0.7; // 70%
 
 export interface RateLimitConfig {
   maxRequestsPerMinute?: number;
@@ -440,3 +449,310 @@ export class BudgetManager {
 // Default instances
 export const rateLimiter = new RateLimiter();
 export const budgetManager = new BudgetManager();
+
+// ============================================================================
+// v2.1.6: 账户使用率警告系统
+// 修复：周重置后低使用率情况下误显示速率限制警告的问题
+// 新增：只有当使用率 >= 70% 时才显示警告
+// ============================================================================
+
+/**
+ * 账户使用率状态
+ */
+export interface AccountUsageState {
+  /** 当前已使用量 */
+  used: number;
+  /** 总限额 */
+  limit: number;
+  /** 使用率重置时间（周期性重置） */
+  resetAt: Date;
+  /** 上次更新时间 */
+  lastUpdated: Date;
+  /** 是否是周期重置后的首次检查 */
+  isPostReset: boolean;
+}
+
+/**
+ * 账户使用率警告配置
+ */
+export interface AccountUsageWarningConfig {
+  /** 显示警告的阈值（默认 70%） */
+  warningThreshold: number;
+  /** 是否启用周期重置检测 */
+  enableResetDetection: boolean;
+  /** 重置周期（毫秒，默认 7 天） */
+  resetPeriodMs: number;
+}
+
+const DEFAULT_USAGE_WARNING_CONFIG: AccountUsageWarningConfig = {
+  warningThreshold: RATE_LIMIT_WARNING_THRESHOLD, // 70%
+  enableResetDetection: true,
+  resetPeriodMs: 7 * 24 * 60 * 60 * 1000, // 7 days (weekly)
+};
+
+/**
+ * 账户使用率管理器
+ * v2.1.6: 实现智能的使用率警告显示逻辑
+ */
+export class AccountUsageManager extends EventEmitter {
+  private state: AccountUsageState;
+  private config: AccountUsageWarningConfig;
+  private lastWarningShown: Date | null = null;
+  private warningCooldownMs: number = 60000; // 1分钟冷却
+
+  constructor(config: Partial<AccountUsageWarningConfig> = {}) {
+    super();
+    this.config = { ...DEFAULT_USAGE_WARNING_CONFIG, ...config };
+    this.state = {
+      used: 0,
+      limit: 0,
+      resetAt: new Date(Date.now() + this.config.resetPeriodMs),
+      lastUpdated: new Date(),
+      isPostReset: false,
+    };
+  }
+
+  /**
+   * 更新账户使用率状态
+   * @param used 当前已使用量
+   * @param limit 总限额
+   * @param resetAt 重置时间（可选）
+   */
+  updateUsage(used: number, limit: number, resetAt?: Date): void {
+    const previousState = { ...this.state };
+
+    // 检测周期重置
+    const now = new Date();
+    if (this.config.enableResetDetection && resetAt) {
+      // 如果新的重置时间比当前重置时间晚，说明发生了周期重置
+      if (resetAt.getTime() > this.state.resetAt.getTime()) {
+        this.state.isPostReset = true;
+        this.emit('usage-reset', {
+          previousUsed: previousState.used,
+          previousLimit: previousState.limit,
+          newResetAt: resetAt,
+        });
+      }
+    }
+
+    // 更新状态
+    this.state.used = used;
+    this.state.limit = limit;
+    if (resetAt) {
+      this.state.resetAt = resetAt;
+    }
+    this.state.lastUpdated = now;
+
+    // 如果使用率从高降到低（超过30%的下降），可能是周期重置
+    const previousPercentage = this.calculatePercentage(previousState.used, previousState.limit);
+    const currentPercentage = this.getUsagePercentage();
+
+    if (previousPercentage > 0.5 && currentPercentage < 0.2) {
+      this.state.isPostReset = true;
+    }
+
+    // 一旦使用率再次上升到一定程度，清除重置标记
+    if (this.state.isPostReset && currentPercentage >= 0.3) {
+      this.state.isPostReset = false;
+    }
+
+    this.emit('usage-updated', {
+      used,
+      limit,
+      percentage: currentPercentage,
+      isPostReset: this.state.isPostReset,
+    });
+  }
+
+  /**
+   * 获取使用百分比
+   * v2.1.6: 核心方法 - 计算当前使用率
+   * @returns 使用率（0-1 之间的小数）
+   */
+  getUsagePercentage(): number {
+    return this.calculatePercentage(this.state.used, this.state.limit);
+  }
+
+  /**
+   * 计算百分比（内部辅助方法）
+   */
+  private calculatePercentage(used: number, limit: number): number {
+    if (limit <= 0) {
+      return 0;
+    }
+    return Math.min(1, Math.max(0, used / limit));
+  }
+
+  /**
+   * 判断是否应该显示速率限制警告
+   * v2.1.6: 核心方法 - 只有当使用率 >= 70% 时才显示警告
+   *
+   * 逻辑：
+   * 1. 检查使用率是否达到阈值（默认 70%）
+   * 2. 考虑周期重置后的状态（避免重置后误报）
+   * 3. 应用冷却机制（避免频繁显示）
+   *
+   * @returns 是否应该显示警告
+   */
+  shouldShowRateLimitWarning(): boolean {
+    const percentage = this.getUsagePercentage();
+
+    // v2.1.6: 使用率必须达到 70% 才显示警告
+    if (percentage < this.config.warningThreshold) {
+      return false;
+    }
+
+    // 周期重置后立即不显示警告（因为数据可能不准确）
+    if (this.state.isPostReset) {
+      return false;
+    }
+
+    // 检查冷却时间
+    if (this.lastWarningShown) {
+      const timeSinceLastWarning = Date.now() - this.lastWarningShown.getTime();
+      if (timeSinceLastWarning < this.warningCooldownMs) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * 获取警告消息
+   * @returns 警告消息文本，如果不应显示警告则返回 null
+   */
+  getWarningMessage(): string | null {
+    if (!this.shouldShowRateLimitWarning()) {
+      return null;
+    }
+
+    const percentage = this.getUsagePercentage();
+    const percentageDisplay = Math.round(percentage * 100);
+    const remaining = this.state.limit - this.state.used;
+    const resetTime = this.formatResetTime();
+
+    this.lastWarningShown = new Date();
+
+    if (percentage >= 0.95) {
+      return `You're at ${percentageDisplay}% of your usage limit. You have very little remaining capacity. Resets ${resetTime}.`;
+    } else if (percentage >= 0.85) {
+      return `You're at ${percentageDisplay}% of your usage limit. Consider pacing your usage. Resets ${resetTime}.`;
+    } else {
+      return `You're approaching your usage limit (${percentageDisplay}%). Resets ${resetTime}.`;
+    }
+  }
+
+  /**
+   * 格式化重置时间
+   */
+  private formatResetTime(): string {
+    const now = new Date();
+    const diffMs = this.state.resetAt.getTime() - now.getTime();
+
+    if (diffMs <= 0) {
+      return 'soon';
+    }
+
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 1) {
+      return `in ${diffDays} days`;
+    } else if (diffDays === 1) {
+      return 'tomorrow';
+    } else if (diffHours > 1) {
+      return `in ${diffHours} hours`;
+    } else {
+      return 'within the hour';
+    }
+  }
+
+  /**
+   * 获取当前状态
+   */
+  getState(): AccountUsageState {
+    return { ...this.state };
+  }
+
+  /**
+   * 获取配置
+   */
+  getConfig(): AccountUsageWarningConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * 设置警告阈值
+   * @param threshold 阈值（0-1 之间的小数）
+   */
+  setWarningThreshold(threshold: number): void {
+    if (threshold < 0 || threshold > 1) {
+      throw new Error('Threshold must be between 0 and 1');
+    }
+    this.config.warningThreshold = threshold;
+  }
+
+  /**
+   * 设置冷却时间
+   * @param cooldownMs 冷却时间（毫秒）
+   */
+  setWarningCooldown(cooldownMs: number): void {
+    this.warningCooldownMs = cooldownMs;
+  }
+
+  /**
+   * 手动标记为周期重置后状态
+   */
+  markAsPostReset(): void {
+    this.state.isPostReset = true;
+  }
+
+  /**
+   * 清除周期重置后状态标记
+   */
+  clearPostResetFlag(): void {
+    this.state.isPostReset = false;
+  }
+
+  /**
+   * 重置所有状态
+   */
+  reset(): void {
+    this.state = {
+      used: 0,
+      limit: 0,
+      resetAt: new Date(Date.now() + this.config.resetPeriodMs),
+      lastUpdated: new Date(),
+      isPostReset: false,
+    };
+    this.lastWarningShown = null;
+    this.emit('state-reset');
+  }
+
+  /**
+   * 获取统计信息
+   */
+  getStats(): {
+    usagePercentage: number;
+    used: number;
+    limit: number;
+    remaining: number;
+    isPostReset: boolean;
+    shouldShowWarning: boolean;
+    resetAt: Date;
+  } {
+    return {
+      usagePercentage: this.getUsagePercentage(),
+      used: this.state.used,
+      limit: this.state.limit,
+      remaining: Math.max(0, this.state.limit - this.state.used),
+      isPostReset: this.state.isPostReset,
+      shouldShowWarning: this.shouldShowRateLimitWarning(),
+      resetAt: this.state.resetAt,
+    };
+  }
+}
+
+// 默认账户使用率管理器实例
+export const accountUsageManager = new AccountUsageManager();

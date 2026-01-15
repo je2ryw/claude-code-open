@@ -21,6 +21,13 @@
 
 import * as path from 'path';
 import { minimatch } from 'minimatch';
+import {
+  checkShellSecurity,
+  splitCompoundCommand,
+  canSafelyMatchWildcardRule,
+  normalizeCommand,
+  type ShellSecurityCheckResult,
+} from './shell-security.js';
 
 // ============ 类型定义 ============
 
@@ -402,6 +409,11 @@ export class RuleMatcher {
 
   /**
    * 匹配 Bash 命令
+   *
+   * 安全修复 (CVE-2.1.6, CVE-2.1.7):
+   * - 在匹配前检测 shell 操作符
+   * - 复合命令需要拆分检查每个子命令
+   * - 行续行符会阻止通配符匹配
    */
   private static matchBashCommand(
     matcher: ParameterMatcher,
@@ -412,11 +424,54 @@ export class RuleMatcher {
       return false;
     }
 
+    // 规范化命令
+    const normalizedCmd = normalizeCommand(command);
+
+    // 安全检查：检测 shell 操作符
+    const securityCheck = checkShellSecurity(normalizedCmd);
+
+    // CVE-2.1.6: 如果包含行续行符，拒绝通配符匹配
+    if (securityCheck.hasLineContinuation) {
+      // 行续行符只允许精确匹配
+      if (matcher.type !== 'exact') {
+        return false;
+      }
+    }
+
+    // CVE-2.1.7: 如果是复合命令，需要检查每个子命令
+    if (securityCheck.isCompoundCommand && securityCheck.subcommands) {
+      // 对于通配符和前缀匹配，检查是否安全
+      if (matcher.type === 'prefix' || matcher.type === 'glob' || matcher.type === 'any') {
+        const safeCheck = canSafelyMatchWildcardRule(normalizedCmd, matcher.pattern);
+        if (!safeCheck.canMatch) {
+          // 不安全，需要检查每个子命令是否都匹配
+          return this.matchAllSubcommands(securityCheck.subcommands, matcher);
+        }
+      }
+    }
+
+    // 普通命令匹配逻辑
+    return this.matchSingleBashCommand(normalizedCmd, matcher);
+  }
+
+  /**
+   * 匹配单个 Bash 命令（不含 shell 操作符）
+   */
+  private static matchSingleBashCommand(
+    command: string,
+    matcher: ParameterMatcher
+  ): boolean {
     switch (matcher.type) {
+      case 'any':
+        // 匹配任意命令
+        return true;
+
       case 'prefix':
         // 前缀匹配 (如 "npm:*" 匹配 "npm install lodash")
         if (matcher.commandPrefix) {
-          return command.startsWith(matcher.commandPrefix);
+          const prefix = matcher.commandPrefix;
+          // 精确匹配前缀，或者前缀后跟空格
+          return command === prefix || command.startsWith(prefix + ' ');
         }
         return false;
 
@@ -435,6 +490,39 @@ export class RuleMatcher {
       default:
         return false;
     }
+  }
+
+  /**
+   * 检查所有子命令是否都匹配规则
+   *
+   * 当命令包含 shell 操作符时，需要确保每个子命令都符合权限规则
+   */
+  private static matchAllSubcommands(
+    subcommands: string[],
+    matcher: ParameterMatcher
+  ): boolean {
+    // 每个子命令都必须匹配
+    for (const subcmd of subcommands) {
+      const trimmedSubcmd = subcmd.trim();
+      if (!trimmedSubcmd) continue;
+
+      // 递归检查子命令的安全性
+      const subSecurityCheck = checkShellSecurity(trimmedSubcmd);
+
+      // 如果子命令仍然是复合命令，递归处理
+      if (subSecurityCheck.isCompoundCommand && subSecurityCheck.subcommands) {
+        if (!this.matchAllSubcommands(subSecurityCheck.subcommands, matcher)) {
+          return false;
+        }
+      } else {
+        // 简单命令，直接匹配
+        if (!this.matchSingleBashCommand(trimmedSubcmd, matcher)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   /**

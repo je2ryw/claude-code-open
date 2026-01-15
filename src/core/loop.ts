@@ -6,6 +6,7 @@
 import { ClaudeClient, type ClientConfig } from './client.js';
 import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
+import { isToolSearchEnabled } from '../tools/mcp.js';
 import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
 import chalk from 'chalk';
 import {
@@ -20,6 +21,7 @@ import { runPermissionRequestHooks } from '../hooks/index.js';
 import * as readline from 'readline';
 import { setParentModelContext } from '../tools/agent.js';
 import { configManager } from '../config/index.js';
+import { accountUsageManager } from '../ratelimit/index.js';
 
 // ============================================================================
 // 持久化输出常量
@@ -80,6 +82,111 @@ const MICROCOMPACT_THRESHOLD = 40000;
  * 官方值：Ly5 = 3
  */
 const KEEP_RECENT_COUNT = 3;
+
+// ============================================================================
+// v2.1.6: 速率限制警告集成
+// ============================================================================
+
+/**
+ * 速率限制信息接口
+ * 对齐官方 anthropic-ratelimit-unified-* 响应头
+ */
+interface RateLimitInfo {
+  /** 使用率状态: allowed, allowed_warning, rejected */
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  /** 使用率 (0-1) */
+  utilization?: number;
+  /** 重置时间 (Unix timestamp in seconds) */
+  resetsAt?: number;
+  /** 限制类型: five_hour, seven_day, overage 等 */
+  rateLimitType?: string;
+  /** 是否支持回退 */
+  unifiedRateLimitFallbackAvailable: boolean;
+  /** 是否使用超额 */
+  isUsingOverage: boolean;
+}
+
+/**
+ * 从响应头中提取速率限制信息
+ * 对齐官方 lrB 函数
+ *
+ * @param headers 响应头对象 (Response.headers)
+ * @returns 速率限制信息
+ */
+function parseRateLimitHeaders(headers: Headers): RateLimitInfo {
+  const status = (headers.get('anthropic-ratelimit-unified-status') || 'allowed') as 'allowed' | 'allowed_warning' | 'rejected';
+  const resetStr = headers.get('anthropic-ratelimit-unified-reset');
+  const resetsAt = resetStr ? Number(resetStr) : undefined;
+  const fallbackAvailable = headers.get('anthropic-ratelimit-unified-fallback') === 'available';
+  const representativeClaim = headers.get('anthropic-ratelimit-unified-representative-claim');
+  const overageStatus = headers.get('anthropic-ratelimit-unified-overage-status');
+
+  // 检测是否使用超额
+  const isUsingOverage = status === 'rejected' && (overageStatus === 'allowed' || overageStatus === 'allowed_warning');
+
+  // 构建基础信息
+  const info: RateLimitInfo = {
+    status,
+    resetsAt,
+    unifiedRateLimitFallbackAvailable: fallbackAvailable,
+    isUsingOverage,
+  };
+
+  // 添加限制类型
+  if (representativeClaim) {
+    info.rateLimitType = representativeClaim;
+  }
+
+  // 尝试从具体的 claim 头中获取使用率
+  // 官方支持的 claim 类型: 5h (five_hour), 7d (seven_day), overage
+  const claimTypes = ['5h', '7d', 'overage'];
+  for (const claim of claimTypes) {
+    const utilizationStr = headers.get(`anthropic-ratelimit-unified-${claim}-utilization`);
+    const thresholdStr = headers.get(`anthropic-ratelimit-unified-${claim}-surpassed-threshold`);
+
+    if (utilizationStr !== null) {
+      info.utilization = Number(utilizationStr);
+      if (thresholdStr !== null && info.status === 'allowed') {
+        info.status = 'allowed_warning';
+      }
+      break;
+    }
+  }
+
+  return info;
+}
+
+/**
+ * 更新账户使用率状态并显示警告
+ * 对齐官方 pG0 函数
+ *
+ * @param headers 响应头对象
+ * @param verbose 是否显示详细日志
+ */
+function updateRateLimitStatus(headers: Headers, verbose?: boolean): void {
+  const info = parseRateLimitHeaders(headers);
+
+  // 更新 accountUsageManager 状态
+  if (info.utilization !== undefined && info.resetsAt !== undefined) {
+    // 计算 used 和 limit（根据使用率反推）
+    // 假设基础限额为 100（实际限额取决于订阅类型）
+    const baseLimit = 100;
+    const used = Math.round(info.utilization * baseLimit);
+    const resetDate = new Date(info.resetsAt * 1000);
+
+    accountUsageManager.updateUsage(used, baseLimit, resetDate);
+
+    if (verbose) {
+      console.log(chalk.gray(`[RateLimit] Status: ${info.status}, Utilization: ${Math.round(info.utilization * 100)}%`));
+    }
+  }
+
+  // 获取并显示警告消息
+  const warningMessage = accountUsageManager.getWarningMessage();
+  if (warningMessage) {
+    console.log(chalk.yellow(`\n[Rate Limit Warning] ${warningMessage}\n`));
+  }
+}
 
 // ============================================================================
 // 工具结果处理辅助函数
@@ -213,6 +320,181 @@ function findToolNameForResult(messages: Message[], toolUseId: string): string {
     }
   }
   return '';
+}
+
+// ============================================================================
+// 孤立工具结果验证和修复（v2.1.7 修复）
+// ============================================================================
+
+/**
+ * 默认的孤立工具错误消息
+ * 对齐官方实现
+ */
+const ORPHANED_TOOL_ERROR_MESSAGE = 'Tool execution was interrupted during streaming. The tool call did not complete successfully.';
+
+/**
+ * 验证并修复孤立的 tool_result
+ *
+ * 问题场景：
+ * 当流式执行中断时（网络错误、用户中止、sibling tool 失败等），
+ * assistant 消息中可能已经有了 tool_use 块，但 user 消息中缺少对应的 tool_result。
+ * 这会导致 Anthropic API 报错，因为 API 要求每个 tool_use 都必须有对应的 tool_result。
+ *
+ * 此函数会：
+ * 1. 收集所有 assistant 消息中的 tool_use IDs
+ * 2. 收集所有 user 消息中的 tool_result IDs
+ * 3. 找出缺少 tool_result 的 tool_use（孤立的 tool_use）
+ * 4. 为每个孤立的 tool_use 创建一个 error tool_result
+ * 5. 将这些 error tool_result 追加到最后一个 user 消息中，或创建新的 user 消息
+ *
+ * 对齐 v2.1.7 的 "Fixed orphaned tool_result errors when sibling tools fail during streaming execution" 修复
+ *
+ * @param messages 消息列表
+ * @returns 修复后的消息列表
+ */
+export function validateToolResults(messages: Message[]): Message[] {
+  if (messages.length === 0) {
+    return messages;
+  }
+
+  // 1. 收集所有 tool_use IDs（从 assistant 消息中）
+  const toolUseIds = new Set<string>();
+  const toolUseNames = new Map<string, string>(); // id -> name 映射
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (
+          typeof block === 'object' &&
+          'type' in block &&
+          block.type === 'tool_use' &&
+          'id' in block &&
+          typeof block.id === 'string'
+        ) {
+          toolUseIds.add(block.id);
+          if ('name' in block && typeof block.name === 'string') {
+            toolUseNames.set(block.id, block.name);
+          }
+        }
+      }
+    }
+  }
+
+  // 如果没有任何 tool_use，直接返回
+  if (toolUseIds.size === 0) {
+    return messages;
+  }
+
+  // 2. 收集所有 tool_result IDs（从 user 消息中）
+  const toolResultIds = new Set<string>();
+
+  for (const msg of messages) {
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (
+          typeof block === 'object' &&
+          'type' in block &&
+          block.type === 'tool_result' &&
+          'tool_use_id' in block &&
+          typeof block.tool_use_id === 'string'
+        ) {
+          toolResultIds.add(block.tool_use_id);
+        }
+      }
+    }
+  }
+
+  // 3. 找出孤立的 tool_use（有 tool_use 但没有对应的 tool_result）
+  const orphanedToolUseIds: string[] = [];
+  for (const id of toolUseIds) {
+    if (!toolResultIds.has(id)) {
+      orphanedToolUseIds.push(id);
+    }
+  }
+
+  // 如果没有孤立的 tool_use，直接返回
+  if (orphanedToolUseIds.length === 0) {
+    return messages;
+  }
+
+  // 4. 创建 error tool_result 块
+  const errorToolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string; is_error: boolean }> = [];
+  for (const id of orphanedToolUseIds) {
+    const toolName = toolUseNames.get(id) || 'unknown';
+    errorToolResults.push({
+      type: 'tool_result',
+      tool_use_id: id,
+      content: `Error: ${ORPHANED_TOOL_ERROR_MESSAGE} (Tool: ${toolName})`,
+      is_error: true,
+    });
+  }
+
+  // 5. 将 error tool_result 追加到消息列表
+  // 策略：找到最后一条 assistant 消息之后的 user 消息，如果没有则创建一个新的
+  const result = [...messages];
+
+  // 从后往前找最后一个 assistant 消息的索引
+  let lastAssistantIndex = -1;
+  for (let i = result.length - 1; i >= 0; i--) {
+    if (result[i].role === 'assistant') {
+      lastAssistantIndex = i;
+      break;
+    }
+  }
+
+  if (lastAssistantIndex === -1) {
+    // 没有 assistant 消息，这不应该发生，但为了安全起见
+    return messages;
+  }
+
+  // 检查最后一个 assistant 消息之后是否有 user 消息包含 tool_result
+  let targetUserMsgIndex = -1;
+  for (let i = lastAssistantIndex + 1; i < result.length; i++) {
+    const msg = result[i];
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      // 检查是否包含 tool_result
+      const hasToolResult = msg.content.some(
+        (block) =>
+          typeof block === 'object' &&
+          'type' in block &&
+          block.type === 'tool_result'
+      );
+      if (hasToolResult) {
+        targetUserMsgIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (targetUserMsgIndex !== -1) {
+    // 追加到现有的 user 消息中
+    const existingUserMsg = result[targetUserMsgIndex];
+    if (Array.isArray(existingUserMsg.content)) {
+      result[targetUserMsgIndex] = {
+        ...existingUserMsg,
+        content: [...existingUserMsg.content, ...errorToolResults],
+      };
+    }
+  } else {
+    // 在最后一个 assistant 消息之后创建新的 user 消息
+    const newUserMsg: Message = {
+      role: 'user',
+      content: errorToolResults,
+    };
+    // 插入到 lastAssistantIndex + 1 位置
+    result.splice(lastAssistantIndex + 1, 0, newUserMsg);
+  }
+
+  // 输出调试信息
+  if (orphanedToolUseIds.length > 0) {
+    console.log(chalk.yellow(`[validateToolResults] Fixed ${orphanedToolUseIds.length} orphaned tool_use(s):`));
+    for (const id of orphanedToolUseIds) {
+      const toolName = toolUseNames.get(id) || 'unknown';
+      console.log(chalk.yellow(`  - ${toolName} (${id})`));
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -1314,6 +1596,19 @@ export class ConversationLoop {
       tools = tools.filter(t => !disallowed.has(t.name));
     }
 
+    // v2.1.7: MCP 工具搜索自动模式
+    // 当 MCP 工具描述超过上下文窗口的 10% * 2.5 = 25% 时，自动启用延迟加载模式
+    // 延迟加载模式下，MCP 工具不会直接暴露给模型，而是通过 MCPSearch 工具按需发现
+    const toolSearchEnabled = isToolSearchEnabled(resolvedModel, tools);
+    if (toolSearchEnabled) {
+      // 过滤掉所有 MCP 工具（以 mcp__ 开头的工具），只保留 MCPSearch
+      tools = tools.filter(t => !t.name.startsWith('mcp__') || t.name === 'MCPSearch');
+
+      if (options.verbose || options.debug) {
+        console.log(chalk.blue('[MCP] Tool search auto mode enabled: MCP tools will be loaded on-demand via MCPSearch'));
+      }
+    }
+
     this.tools = tools;
   }
 
@@ -1488,6 +1783,10 @@ export class ConversationLoop {
       // 使用智能触发机制（环境变量 + token 阈值 + 最小节省）
       let messages = this.session.getMessages();
       messages = cleanOldPersistedOutputs(messages);
+
+      // v2.1.7 修复：验证并修复孤立的 tool_result
+      // 确保每个 tool_use 都有对应的 tool_result
+      messages = validateToolResults(messages);
 
       // 尝试自动压缩（第二+三层）
       const compactResult = await autoCompact(messages, resolvedModel, this.client, this.session);
@@ -1716,6 +2015,10 @@ Guidelines:
       let messages = this.session.getMessages();
       messages = cleanOldPersistedOutputs(messages);
 
+      // v2.1.7 修复：验证并修复孤立的 tool_result
+      // 确保每个 tool_use 都有对应的 tool_result
+      messages = validateToolResults(messages);
+
       // 尝试自动压缩（第二+三层）
       const compactResult = await autoCompact(messages, resolvedModel, this.client, this.session);
       if (compactResult.wasCompacted) {
@@ -1766,6 +2069,11 @@ Guidelines:
             const tool = toolCalls.get(currentToolId);
             if (tool) {
               tool.input += event.input || '';
+            }
+          } else if (event.type === 'response_headers') {
+            // v2.1.6: 处理响应头中的速率限制信息
+            if (event.headers) {
+              updateRateLimitStatus(event.headers, this.options.verbose);
             }
           } else if (event.type === 'error') {
             console.error(chalk.red(`[Loop] Stream error: ${event.error}`));

@@ -10,3 +10,6 @@ export { useTerminalSize, useTerminalWidth, useTerminalHeight } from './useTermi
 export type { TerminalSize } from './useTerminalSize.js';
 
 export { useRewind } from './useRewind.js';
+
+export { useClaudeMdImport, getApprovedClaudeMdContent } from './useClaudeMdImport.js';
+export type { ClaudeMdImportState } from './useClaudeMdImport.js';

@@ -15,6 +15,66 @@ export interface CompletionItem {
   priority?: number;
   /** 别名列表 */
   aliases?: string[];
+  /** 图标 (v2.1.6) - 用于在补全列表中显示图标 */
+  icon?: string;
+}
+
+/**
+ * 获取补全项图标 (v2.1.6)
+ * @param type 补全项类型
+ * @param label 补全项标签（用于特殊类型的判断）
+ */
+export function getCompletionIcon(type: CompletionItem['type'], label?: string): string {
+  switch (type) {
+    case 'directory':
+      return '📁';
+    case 'file':
+      // 根据文件扩展名返回不同图标
+      if (label) {
+        const ext = label.split('.').pop()?.toLowerCase();
+        switch (ext) {
+          case 'ts':
+          case 'tsx':
+          case 'js':
+          case 'jsx':
+            return '📜';
+          case 'json':
+            return '📋';
+          case 'md':
+            return '📝';
+          case 'css':
+          case 'scss':
+          case 'less':
+            return '🎨';
+          case 'html':
+            return '🌐';
+          case 'py':
+            return '🐍';
+          case 'rs':
+            return '🦀';
+          case 'go':
+            return '🐹';
+          case 'sh':
+          case 'bash':
+            return '💻';
+          case 'png':
+          case 'jpg':
+          case 'jpeg':
+          case 'gif':
+          case 'svg':
+            return '🖼️';
+          default:
+            return '📄';
+        }
+      }
+      return '📄';
+    case 'command':
+      return '⚡';
+    case 'mention':
+      return '📎';
+    default:
+      return '';
+  }
 }
 
 /**

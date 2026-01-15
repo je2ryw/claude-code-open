@@ -116,18 +116,18 @@ const OAUTH_SCOPES = ['org:create_api_key', 'user:profile', 'user:inference', 'u
 export const OAUTH_ENDPOINTS: Record<'claude.ai' | 'console', OAuthConfig> = {
   'claude.ai': {
     clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-    authorizationEndpoint: 'https://claude.ai/oauth/authorize',
-    deviceCodeEndpoint: 'https://claude.ai/oauth/device/code',
-    tokenEndpoint: 'https://console.anthropic.com/v1/oauth/token',
-    redirectUri: 'https://console.anthropic.com/oauth/code/callback',  // 使用官方的回调页面
+    authorizationEndpoint: 'https://platform.claude.com/oauth/authorize',
+    deviceCodeEndpoint: 'https://platform.claude.com/oauth/device/code',
+    tokenEndpoint: 'https://platform.claude.com/v1/oauth/token',
+    redirectUri: 'https://platform.claude.com/oauth/code/callback',  // 使用官方的回调页面
     scope: OAUTH_SCOPES,
   },
   console: {
     clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-    authorizationEndpoint: 'https://console.anthropic.com/oauth/authorize',
-    deviceCodeEndpoint: 'https://console.anthropic.com/oauth/device/code',
-    tokenEndpoint: 'https://console.anthropic.com/v1/oauth/token',
-    redirectUri: 'https://console.anthropic.com/oauth/code/callback',  // 使用官方的回调页面
+    authorizationEndpoint: 'https://platform.claude.com/oauth/authorize',
+    deviceCodeEndpoint: 'https://platform.claude.com/oauth/device/code',
+    tokenEndpoint: 'https://platform.claude.com/v1/oauth/token',
+    redirectUri: 'https://platform.claude.com/oauth/code/callback',  // 使用官方的回调页面
     scope: OAUTH_SCOPES,
   },
 };
@@ -1205,7 +1205,7 @@ export async function setupToken(readline: {
     console.log('│       Claude Code Token Setup           │');
     console.log('╰─────────────────────────────────────────╯\n');
     console.log('You can get your API key from:');
-    console.log('  https://console.anthropic.com/settings/keys\n');
+    console.log('  https://platform.claude.com/settings/keys\n');
 
     readline.question('Enter your Anthropic API key: ', async (apiKey) => {
       apiKey = apiKey.trim();

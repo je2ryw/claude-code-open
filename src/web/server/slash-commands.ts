@@ -496,6 +496,42 @@ const tasksCommand: SlashCommand = {
       };
     }
 
+    // 生成单个任务详情的辅助函数
+    const formatTaskDetail = (task: ReturnType<typeof taskManager.getTask>) => {
+      if (!task) return '';
+
+      let message = `任务详情: ${task.description}\n`;
+      message += `=`.repeat(50) + '\n\n';
+      message += `ID: ${task.id}\n`;
+      message += `类型: ${task.agentType}\n`;
+      message += `状态: ${task.status}\n`;
+      message += `开始时间: ${task.startTime.toLocaleString('zh-CN')}\n`;
+
+      if (task.endTime) {
+        const duration = ((task.endTime.getTime() - task.startTime.getTime()) / 1000).toFixed(1);
+        message += `结束时间: ${task.endTime.toLocaleString('zh-CN')}\n`;
+        message += `耗时: ${duration}s\n`;
+      }
+
+      if (task.progress) {
+        message += `\n进度: ${task.progress.current}/${task.progress.total}\n`;
+        if (task.progress.message) {
+          message += `消息: ${task.progress.message}\n`;
+        }
+      }
+
+      const output = taskManager.getTaskOutput(task.id);
+      if (output) {
+        message += `\n输出:\n${'-'.repeat(50)}\n${output}\n`;
+      } else if (task.status === 'running') {
+        message += `\n任务正在运行中，暂无输出。\n`;
+      } else if (task.error) {
+        message += `\n错误:\n${task.error}\n`;
+      }
+
+      return message;
+    };
+
     // 默认行为：列出所有任务
     if (!args || args.length === 0) {
       const tasks = taskManager.listTasks();
@@ -507,6 +543,16 @@ const tasksCommand: SlashCommand = {
         };
       }
 
+      // v2.1.6 改进：只有一个任务时直接显示详情
+      if (tasks.length === 1) {
+        const task = tasks[0];
+        return {
+          success: true,
+          message: formatTaskDetail(task),
+        };
+      }
+
+      // 多个任务时：显示列表
       let message = '后台任务列表\n\n';
 
       tasks.forEach((task, idx) => {
@@ -599,36 +645,7 @@ const tasksCommand: SlashCommand = {
         };
       }
 
-      let message = `任务详情: ${task.description}\n`;
-      message += `=`.repeat(50) + '\n\n';
-      message += `ID: ${task.id}\n`;
-      message += `类型: ${task.agentType}\n`;
-      message += `状态: ${task.status}\n`;
-      message += `开始时间: ${task.startTime.toLocaleString('zh-CN')}\n`;
-
-      if (task.endTime) {
-        const duration = ((task.endTime.getTime() - task.startTime.getTime()) / 1000).toFixed(1);
-        message += `结束时间: ${task.endTime.toLocaleString('zh-CN')}\n`;
-        message += `耗时: ${duration}s\n`;
-      }
-
-      if (task.progress) {
-        message += `\n进度: ${task.progress.current}/${task.progress.total}\n`;
-        if (task.progress.message) {
-          message += `消息: ${task.progress.message}\n`;
-        }
-      }
-
-      const output = taskManager.getTaskOutput(taskId);
-      if (output) {
-        message += `\n输出:\n${'-'.repeat(50)}\n${output}\n`;
-      } else if (task.status === 'running') {
-        message += `\n任务正在运行中，暂无输出。\n`;
-      } else if (task.error) {
-        message += `\n错误:\n${task.error}\n`;
-      }
-
-      return { success: true, message };
+      return { success: true, message: formatTaskDetail(task) };
     }
 
     // /tasks list (等同于默认行为)
@@ -2499,7 +2516,7 @@ const upgradeCommand: SlashCommand = {
         '  • API Pro: 更高速率限制\n' +
         '  • API 企业: 自定义配额和支持\n\n' +
         '升级步骤:\n' +
-        '  1. 访问: https://console.anthropic.com\n' +
+        '  1. 访问: https://platform.claude.com\n' +
         '  2. 登录您的账户\n' +
         '  3. 进入 Billing 页面\n' +
         '  4. 选择合适的计划\n\n' +
@@ -2519,7 +2536,7 @@ const passesCommand: SlashCommand = {
       message: 'API 使用额度\n\n' +
         'Claude Code 使用 Anthropic API。\n\n' +
         '查看额度:\n' +
-        '  1. 访问: https://console.anthropic.com\n' +
+        '  1. 访问: https://platform.claude.com\n' +
         '  2. 进入 Usage 页面\n' +
         '  3. 查看当前余额和使用情况\n\n' +
         '充值额度:\n' +

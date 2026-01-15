@@ -27,7 +27,7 @@ import { TodoWriteTool } from './todo.js';
 import { TaskTool, TaskOutputTool } from './agent.js';
 import { NotebookEditTool } from './notebook.js';
 import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
-import { MCPSearchTool } from './mcp.js';
+import { MCPSearchTool, ListMcpResourcesTool, ReadMcpResourceTool } from './mcp.js';
 import { AskUserQuestionTool } from './ask.js';
 import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
 import { LSPTool } from './lsp.js';
@@ -81,6 +81,10 @@ export function registerAllTools(): void {
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留
   toolRegistry.register(new MCPSearchTool());
+
+  // 11. MCP 资源工具 (2个) - v2.1.6 新增
+  toolRegistry.register(new ListMcpResourcesTool());
+  toolRegistry.register(new ReadMcpResourceTool());
 }
 
 // 自动注册

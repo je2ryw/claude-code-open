@@ -4,6 +4,125 @@
 
 import type { SlashCommand, CommandContext, CommandResult } from './types.js';
 import { commandRegistry } from './registry.js';
+import { execSync } from 'child_process';
+
+// ============ npm 版本获取 ============
+
+interface NpmVersions {
+  latest: string | null;
+  stable: string | null;
+}
+
+/**
+ * 获取 npm 上 @anthropic-ai/claude-code 的版本信息
+ * 使用 npm view 命令获取 dist-tags
+ */
+async function fetchNpmVersions(): Promise<NpmVersions> {
+  const PACKAGE_URL = '@anthropic-ai/claude-code';
+
+  try {
+    // 使用 npm view 获取 dist-tags (包含 latest 和 stable)
+    const result = execSync(
+      `npm view ${PACKAGE_URL} dist-tags --json --prefer-online`,
+      {
+        timeout: 5000,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      }
+    );
+
+    const distTags = JSON.parse(result.trim());
+    return {
+      latest: typeof distTags.latest === 'string' ? distTags.latest : null,
+      stable: typeof distTags.stable === 'string' ? distTags.stable : null,
+    };
+  } catch (error) {
+    // 如果 dist-tags 失败，尝试单独获取版本
+    try {
+      const latestResult = execSync(
+        `npm view ${PACKAGE_URL}@latest version --prefer-online`,
+        { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+
+      let stableVersion: string | null = null;
+      try {
+        const stableResult = execSync(
+          `npm view ${PACKAGE_URL}@stable version --prefer-online`,
+          { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        stableVersion = stableResult.trim() || null;
+      } catch {
+        // stable 版本可能不存在
+      }
+
+      return {
+        latest: latestResult.trim() || null,
+        stable: stableVersion,
+      };
+    } catch {
+      return { latest: null, stable: null };
+    }
+  }
+}
+
+/**
+ * 检查 auto-updates 是否被禁用
+ * 返回禁用原因，如果未禁用返回 null
+ */
+function getAutoUpdatesDisabledReason(): string | null {
+  // 检查环境变量
+  if (process.env.DISABLE_AUTOUPDATER === '1' || process.env.DISABLE_AUTOUPDATER === 'true') {
+    return 'DISABLE_AUTOUPDATER set';
+  }
+  if (process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) {
+    return 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC set';
+  }
+
+  // 检查配置文件
+  try {
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+
+    const configPath = path.join(os.homedir(), '.claude', 'settings.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.autoUpdates === false) {
+        // 官方逻辑：如果 installMethod 是 native 且 autoUpdatesProtectedForNative 为 true，则不算禁用
+        if (config.installMethod !== 'native' || config.autoUpdatesProtectedForNative !== true) {
+          return 'config';
+        }
+      }
+    }
+  } catch {
+    // 配置读取失败时忽略
+  }
+
+  return null;
+}
+
+/**
+ * 获取 auto-update channel
+ */
+function getAutoUpdateChannel(): string {
+  try {
+    const os = require('os');
+    const path = require('path');
+    const fs = require('fs');
+
+    const configPath = path.join(os.homedir(), '.claude', 'settings.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.autoUpdatesChannel) {
+        return config.autoUpdatesChannel;
+      }
+    }
+  } catch {
+    // 配置读取失败时使用默认值
+  }
+
+  return 'latest';
+}
 
 // /help - 显示帮助信息 (官方风格)
 export const helpCommand: SlashCommand = {
@@ -268,12 +387,12 @@ function getShortModelName(fullModelName: string): string {
   return fullModelName;
 }
 
-// /doctor - 运行诊断 (官方风格)
+// /doctor - 运行诊断 (官方风格，v2.1.6+ 增加 Updates 部分)
 export const doctorCommand: SlashCommand = {
   name: 'doctor',
   description: 'Diagnose and verify your Claude Code installation and settings',
   category: 'general',
-  execute: (ctx: CommandContext): CommandResult => {
+  execute: async (ctx: CommandContext): Promise<CommandResult> => {
     const { config } = ctx;
     const memUsage = process.memoryUsage();
     const apiKeySet = !!(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
@@ -308,6 +427,35 @@ export const doctorCommand: SlashCommand = {
     diagnostics += `  ✓ Bash available\n`;
     diagnostics += `  ✓ File operations available\n`;
     diagnostics += `  ✓ Web fetch available\n\n`;
+
+    // ===== Updates 部分 (v2.1.6+) =====
+    diagnostics += `Updates\n`;
+
+    // Auto-updates 状态
+    const disabledReason = getAutoUpdatesDisabledReason();
+    const autoUpdatesStatus = disabledReason ? `disabled (${disabledReason})` : 'enabled';
+    diagnostics += `  └ Auto-updates: ${autoUpdatesStatus}\n`;
+
+    // Auto-update channel
+    const channel = getAutoUpdateChannel();
+    diagnostics += `  └ Auto-update channel: ${channel}\n`;
+
+    // 异步获取 npm 版本
+    try {
+      const versions = await fetchNpmVersions();
+      if (versions.stable) {
+        diagnostics += `  └ Stable version: ${versions.stable}\n`;
+      }
+      if (versions.latest) {
+        diagnostics += `  └ Latest version: ${versions.latest}\n`;
+      }
+      if (!versions.latest && !versions.stable) {
+        diagnostics += `  └ Failed to fetch versions\n`;
+      }
+    } catch {
+      diagnostics += `  └ Failed to fetch versions\n`;
+    }
+    diagnostics += '\n';
 
     // 总结
     if (apiKeySet) {

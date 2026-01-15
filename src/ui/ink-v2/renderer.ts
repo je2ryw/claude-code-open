@@ -426,11 +426,20 @@ function arraysEqual(a: number[], b: number[]): boolean {
 
 /**
  * 计算样式差异
+ * 只返回实际变化的样式代码，优化渲染性能
  */
 function getStyleDiff(prev: number[], next: number[]): number[] {
   if (next.length === 0 && prev.length > 0) {
     return [0];  // 重置所有样式
   }
-  // 简单实现：直接返回新样式（可以优化为只返回差异）
-  return next;
+
+  // 只返回实际变化的样式
+  const diff: number[] = [];
+  const maxLen = Math.max(prev.length, next.length);
+  for (let i = 0; i < maxLen; i++) {
+    if ((prev[i] ?? 0) !== (next[i] ?? 0)) {
+      diff.push(next[i] ?? 0);
+    }
+  }
+  return diff.length > 0 ? diff : next;
 }

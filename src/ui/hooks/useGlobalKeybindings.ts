@@ -1,12 +1,20 @@
 /**
  * 全局快捷键管理 Hook
- * 实现 Ctrl+O, Ctrl+T, Ctrl+S, Ctrl+Z, Ctrl+_ 等全局快捷键
+ * 实现 Ctrl+O, Ctrl+T, Ctrl+S, Ctrl+Z, Ctrl+_, Ctrl+G 等全局快捷键
  */
 
 import { useInput } from 'ink';
 import { useCallback, useRef, useState } from 'react';
 import type { UserConfig } from '../../config/index.js';
 import { isBackgroundTasksDisabled } from '../../utils/env-check.js';
+import {
+  editInExternalEditor,
+  getDefaultEditor,
+  type ExternalEditorResult,
+} from '../../utils/index.js';
+
+// 重新导出 ExternalEditorResult 类型，方便外部使用
+export type { ExternalEditorResult };
 
 export interface GlobalKeybinding {
   key: string;
@@ -28,8 +36,11 @@ export interface UseGlobalKeybindingsOptions {
   onStashPrompt?: (prompt: string) => void;
   onUndo?: () => void;
   onThinkingToggle?: () => void;
-  onBackgroundTask?: () => void; // 新增：后台运行当前任务
+  onBackgroundTask?: () => void; // 后台运行当前任务
+  onExternalEditor?: (result: ExternalEditorResult) => void; // 外部编辑器回调
+  onEditorError?: (error: string) => void; // 编辑器错误显示回调 (v2.1.6)
   getCurrentInput?: () => string;
+  setCurrentInput?: (value: string) => void; // 设置输入内容
   disabled?: boolean;
 }
 
@@ -43,11 +54,15 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
     onUndo,
     onThinkingToggle,
     onBackgroundTask,
+    onExternalEditor,
+    onEditorError,
     getCurrentInput,
+    setCurrentInput,
     disabled = false,
   } = options;
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const stashedPromptRef = useRef<string>('');
 
   // 内置快捷键映射
@@ -126,6 +141,40 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
       category: 'System',
       enabled: () => !isBackgroundTasksDisabled(),
     },
+    {
+      key: 'g',
+      ctrl: true,
+      handler: async () => {
+        // 清除之前的错误
+        setEditorError(null);
+
+        // 获取当前输入内容
+        const currentContent = getCurrentInput ? getCurrentInput() : '';
+
+        // 调用外部编辑器
+        const result = await editInExternalEditor(currentContent);
+
+        if (result.success) {
+          // 编辑成功，更新输入内容
+          if (setCurrentInput && result.content !== undefined) {
+            setCurrentInput(result.content);
+          }
+          onExternalEditor?.(result);
+        } else {
+          // 编辑失败，显示错误信息 (v2.1.6 新功能)
+          const errorMsg = result.error || 'Unknown editor error';
+          setEditorError(errorMsg);
+          onEditorError?.(errorMsg);
+
+          // 5秒后自动清除错误信息
+          setTimeout(() => {
+            setEditorError(null);
+          }, 5000);
+        }
+      },
+      description: 'Open in external editor (Ctrl+G)',
+      category: 'Edit',
+    },
   ];
 
   // 合并自定义键绑定
@@ -176,6 +225,8 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
   return {
     keybindings: allKeybindings,
     stashedPrompt: stashedPromptRef.current,
+    editorError, // v2.1.6: 编辑器错误信息
+    clearEditorError: () => setEditorError(null), // 手动清除错误信息
   };
 }
 
@@ -376,6 +427,15 @@ const builtinActions: Record<string, { description: string; handler: () => void 
     description: '折叠全部输出',
     handler: () => {
       process.emit('CLAUDE_COLLAPSE_OUTPUT' as any);
+    },
+  },
+
+  // 外部编辑器操作 (v2.1.6)
+  'external_editor': {
+    description: '在外部编辑器中编辑当前输入 (Ctrl+G)',
+    handler: () => {
+      // 触发外部编辑器事件（由上层组件处理）
+      (process as any).emit('CLAUDE_EXTERNAL_EDITOR');
     },
   },
 };

@@ -235,10 +235,21 @@ export function renderBlock(block: MarkdownBlock): string {
       }
 
     case 'list':
-      return '  ' + chalk.cyan('•') + ' ' + renderInlineMarkdown(block.content);
+      // 列表项可能包含多行，需要正确处理
+      const listContent = renderInlineMarkdown(block.content);
+      const listLines = listContent.split('\n');
+      return listLines.map((line, index) => {
+        if (index === 0) {
+          return '  ' + chalk.cyan('•') + ' ' + line;
+        }
+        // 后续行需要对齐到第一行的内容位置
+        return '    ' + line;
+      }).join('\n');
 
     case 'quote':
-      return chalk.gray('  │ ') + chalk.italic(block.content);
+      // 引用块可能包含多行，需要逐行处理
+      const quoteLines = block.content.split('\n');
+      return quoteLines.map(line => chalk.gray('  │ ') + chalk.italic(line)).join('\n');
 
     case 'table':
       if (block.tableData) {
@@ -250,42 +261,68 @@ export function renderBlock(block: MarkdownBlock): string {
       return chalk.gray('\n  ' + '─'.repeat(60) + '\n');
 
     case 'text':
-      return '  ' + renderInlineMarkdown(block.content);
+      // 文本块可能包含多行，需要为每行添加缩进
+      const textContent = renderInlineMarkdown(block.content);
+      return textContent.split('\n').map(line => '  ' + line).join('\n');
 
     default:
-      return '  ' + block.content;
+      // 默认情况也需要处理多行
+      return block.content.split('\n').map(line => '  ' + line).join('\n');
   }
 }
 
 /**
+ * 逐行应用样式，避免 ANSI 转义序列跨越换行符
+ *
+ * 问题：当 chalk.bold("line1\nline2") 时，会生成 "\x1b[1mline1\nline2\x1b[22m"
+ * 这导致样式代码跨越换行符，在某些终端中会造成渲染错位
+ *
+ * 解决方案：将文本按换行符分割，对每行单独应用样式，然后重新合并
+ * 结果变为 "\x1b[1mline1\x1b[22m\n\x1b[1mline2\x1b[22m"
+ */
+function applyStylePerLine(text: string, styleFn: (s: string) => string): string {
+  // 如果文本不包含换行符，直接应用样式
+  if (!text.includes('\n')) {
+    return styleFn(text);
+  }
+
+  // 按换行符分割，逐行应用样式后重新合并
+  return text.split('\n').map(line => styleFn(line)).join('\n');
+}
+
+/**
  * 渲染内联 Markdown（粗体、斜体、代码、链接等）
+ *
+ * v2.1.6 修复：确保样式在换行处正确重置，避免多行文本中样式错位
  */
 function renderInlineMarkdown(text: string): string {
   let result = text;
 
-  // 代码片段 `code`
+  // 代码片段 `code` - 使用 applyStylePerLine 处理可能跨行的内容
   result = result.replace(/`([^`]+)`/g, (_, code) => {
-    return chalk.yellow.inverse(` ${code} `);
+    return applyStylePerLine(` ${code} `, (s) => chalk.yellow.inverse(s));
   });
 
-  // 粗体 **text**
-  result = result.replace(/\*\*(.+?)\*\*/g, (_, text) => {
-    return chalk.bold(text);
+  // 粗体 **text** - 使用 dotall 模式 (s flag) 使 .+? 匹配换行符
+  result = result.replace(/\*\*(.+?)\*\*/gs, (_, matchedText) => {
+    return applyStylePerLine(matchedText, (s) => chalk.bold(s));
   });
 
-  // 斜体 *text*
-  result = result.replace(/\*(.+?)\*/g, (_, text) => {
-    return chalk.italic(text);
+  // 斜体 *text* - 由于粗体已经先被处理，剩余的单独 * 就是斜体
+  result = result.replace(/\*(.+?)\*/gs, (_, matchedText) => {
+    return applyStylePerLine(matchedText, (s) => chalk.italic(s));
   });
 
-  // 链接 [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
-    return chalk.blue.underline(text) + chalk.gray.dim(` (${url})`);
+  // 链接 [text](url) - 链接文本可能跨行
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
+    const styledText = applyStylePerLine(linkText, (s) => chalk.blue.underline(s));
+    const styledUrl = applyStylePerLine(` (${url})`, (s) => chalk.gray.dim(s));
+    return styledText + styledUrl;
   });
 
   // 删除线 ~~text~~
-  result = result.replace(/~~(.+?)~~/g, (_, text) => {
-    return chalk.strikethrough(text);
+  result = result.replace(/~~(.+?)~~/gs, (_, matchedText) => {
+    return applyStylePerLine(matchedText, (s) => chalk.strikethrough(s));
   });
 
   return result;

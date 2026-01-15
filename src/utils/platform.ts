@@ -105,9 +105,54 @@ export function getSessionsDir(): string {
 
 /**
  * 获取临时目录
+ * 支持 CLAUDE_CODE_TMPDIR 环境变量覆盖
  */
 export function getTempDir(): string {
-  return os.tmpdir();
+  if (process.env.CLAUDE_CODE_TMPDIR) {
+    return process.env.CLAUDE_CODE_TMPDIR;
+  }
+  if (isWindows()) {
+    return process.env.TEMP || 'C:\\Temp';
+  }
+  return '/tmp';
+}
+
+/**
+ * 获取安全的临时目录路径（用于 shell 命令）
+ * 在 Windows 上，临时目录路径可能包含 \t 或 \n 这样的字符序列，
+ * 这些会被 shell 误解为转义序列（制表符或换行符）。
+ * 此函数确保路径在传递给 shell 时是安全的。
+ */
+export function getSafeTempDir(): string {
+  const tmpDir = getTempDir();
+  // 在 Windows 上，使用正斜杠来避免反斜杠被误解为转义序列
+  // 或者对反斜杠进行双重转义
+  if (isWindows()) {
+    // 使用 path.normalize 确保路径正确，然后转换为正斜杠
+    return path.normalize(tmpDir).replace(/\\/g, '/');
+  }
+  return tmpDir;
+}
+
+/**
+ * 转义路径中的特殊字符，使其可以安全地在 shell 命令中使用
+ * 主要用于 Windows 上防止 \t, \n 等被误解为转义序列
+ */
+export function escapePathForShell(filePath: string): string {
+  if (isWindows()) {
+    // 在 Windows 上，将反斜杠替换为正斜杠
+    // 这在大多数情况下都能正常工作（包括 Git Bash, PowerShell 等）
+    return filePath.replace(/\\/g, '/');
+  }
+  return filePath;
+}
+
+/**
+ * 双重转义路径中的反斜杠，用于需要在字符串中保留原始反斜杠的场景
+ * 例如：C:\Users\Test 变成 C:\\Users\\Test
+ */
+export function doubleEscapeBackslashes(filePath: string): string {
+  return filePath.replace(/\\/g, '\\\\');
 }
 
 /**
@@ -537,6 +582,145 @@ export function getPlatformEnv(): Record<string, string> {
 }
 
 // ============================================================================
+// 终端标题设置 (v2.1.6+)
+// v2.1.7: 添加终端标题 spinner 动画，使用等宽 braille 字符避免抖动
+// ============================================================================
+
+// 当前终端标题后缀（如项目名）
+let currentTerminalTitleSuffix = '';
+
+// 静态图标
+const TERMINAL_TITLE_STATIC_ICON = '✳';
+
+// v2.1.7: 等宽 braille 字符用于终端标题 spinner
+// 这些字符宽度相同，避免终端标题宽度变化导致的抖动
+const TERMINAL_TITLE_SPINNER_FRAMES = ['⠂', '⠐'];
+
+// 动画间隔 (毫秒)
+const TERMINAL_TITLE_ANIMATION_INTERVAL = 960;
+
+// 动画状态
+let titleSpinnerTimer: ReturnType<typeof setInterval> | null = null;
+let titleSpinnerFrameIndex = 0;
+
+/**
+ * 内部函数：设置终端标题
+ * @param icon 图标字符
+ * @param suffix 后缀
+ */
+function setTerminalTitleInternal(icon: string, suffix?: string): void {
+  // 检查是否禁用终端标题
+  if (process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE) {
+    return;
+  }
+
+  const fullTitle = suffix ? `${icon} ${suffix}` : icon;
+
+  if (isWindows()) {
+    process.title = fullTitle;
+  } else {
+    // 使用 ANSI 转义序列设置终端标题
+    // \x1B]0;...\x07 - 设置图标名称和窗口标题
+    process.stdout.write(`\x1B]0;${fullTitle}\x07`);
+  }
+}
+
+/**
+ * 设置终端标题后缀
+ *
+ * @param suffix 标题后缀（如项目名）
+ */
+export function setTerminalTitle(title: string, suffix?: string): void {
+  // 检查是否禁用终端标题
+  if (process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE) {
+    return;
+  }
+
+  // 存储后缀
+  currentTerminalTitleSuffix = suffix ? `${title} ${suffix}` : title;
+
+  // 如果没有在播放动画，立即更新标题
+  if (!titleSpinnerTimer) {
+    setTerminalTitleInternal(TERMINAL_TITLE_STATIC_ICON, currentTerminalTitleSuffix);
+  }
+}
+
+/**
+ * 设置终端标题后缀（不包含图标）
+ *
+ * @param suffix 标题后缀
+ */
+export function setTerminalTitleSuffix(suffix: string): void {
+  currentTerminalTitleSuffix = suffix;
+
+  // 如果没有在播放动画，立即更新标题
+  if (!titleSpinnerTimer) {
+    setTerminalTitleInternal(TERMINAL_TITLE_STATIC_ICON, currentTerminalTitleSuffix);
+  }
+}
+
+/**
+ * 重置终端标题为 "Claude Code"
+ */
+export function resetTerminalTitle(): void {
+  setTerminalTitleSuffix('Claude Code');
+}
+
+/**
+ * 获取当前终端标题后缀
+ */
+export function getTerminalTitle(): string {
+  return currentTerminalTitleSuffix;
+}
+
+/**
+ * v2.1.7: 开始终端标题 spinner 动画
+ *
+ * 使用等宽 braille 字符避免终端标题宽度变化导致的抖动
+ */
+export function startTerminalTitleSpinner(): void {
+  // 检查是否禁用终端标题
+  if (process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE) {
+    return;
+  }
+
+  // 如果已经在播放动画，不重复启动
+  if (titleSpinnerTimer) {
+    return;
+  }
+
+  titleSpinnerFrameIndex = 0;
+
+  titleSpinnerTimer = setInterval(() => {
+    titleSpinnerFrameIndex = (titleSpinnerFrameIndex + 1) % TERMINAL_TITLE_SPINNER_FRAMES.length;
+    const frame = TERMINAL_TITLE_SPINNER_FRAMES[titleSpinnerFrameIndex] ?? TERMINAL_TITLE_STATIC_ICON;
+    setTerminalTitleInternal(frame, currentTerminalTitleSuffix);
+  }, TERMINAL_TITLE_ANIMATION_INTERVAL);
+}
+
+/**
+ * v2.1.7: 停止终端标题 spinner 动画
+ *
+ * 恢复静态图标
+ */
+export function stopTerminalTitleSpinner(): void {
+  if (titleSpinnerTimer) {
+    clearInterval(titleSpinnerTimer);
+    titleSpinnerTimer = null;
+  }
+
+  // 恢复静态图标
+  setTerminalTitleInternal(TERMINAL_TITLE_STATIC_ICON, currentTerminalTitleSuffix);
+}
+
+/**
+ * v2.1.7: 检查终端标题 spinner 是否正在运行
+ */
+export function isTerminalTitleSpinnerRunning(): boolean {
+  return titleSpinnerTimer !== null;
+}
+
+// ============================================================================
 // 沙箱兼容性
 // ============================================================================
 
@@ -619,6 +803,9 @@ export default {
   getConfigDir,
   getSessionsDir,
   getTempDir,
+  getSafeTempDir,
+  escapePathForShell,
+  doubleEscapeBackslashes,
   normalizePath,
   toUnixPath,
   toPlatformPath,
@@ -654,4 +841,14 @@ export default {
   // 沙箱
   getSandboxCapabilities,
   getRecommendedSandbox,
+
+  // 终端标题
+  setTerminalTitle,
+  setTerminalTitleSuffix,
+  resetTerminalTitle,
+  getTerminalTitle,
+  // v2.1.7: 终端标题 spinner 动画
+  startTerminalTitleSpinner,
+  stopTerminalTitleSpinner,
+  isTerminalTitleSpinnerRunning,
 };

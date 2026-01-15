@@ -45,3 +45,14 @@ export { HistorySearch } from './HistorySearch.js';
 export type { HistorySearchProps } from './HistorySearch.js';
 export { ResumeSession } from './ResumeSession.js';
 export { PluginsDialog } from '../PluginsDialog.js';
+export { TrustDialog, useTrustDialog } from './TrustDialog.js';
+export type { TrustDialogProps } from './TrustDialog.js';
+export { ClaudeMdImportDialog, scanClaudeMdFiles } from './ClaudeMdImportDialog.js';
+export type {
+  ClaudeMdFile,
+  ClaudeMdSource,
+  ClaudeMdApprovalResult,
+  ClaudeMdImportDialogProps
+} from './ClaudeMdImportDialog.js';
+export { StatsPanel } from './StatsPanel.js';
+export type { default as StatsPanelProps } from './StatsPanel.js';

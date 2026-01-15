@@ -12,6 +12,11 @@
  * v2.1.0 改进:
  * - Tab hint 移到底部 footer
  * - 关闭对话框后恢复光标
+ *
+ * v2.1.6 改进:
+ * - 添加反馈面板功能，用户拒绝时可以提供反馈文本
+ * - 修复在反馈输入框中输入 'n' 时面板错误关闭的问题
+ * - 在输入反馈文本时禁用全局快捷键处理
  */
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
@@ -42,6 +47,8 @@ export interface PermissionDecision {
   allowed: boolean;
   scope: PermissionScope;
   remember: boolean;
+  /** v2.1.6: 用户拒绝时提供的反馈文本 */
+  feedback?: string;
 }
 
 export interface PermissionPromptProps {
@@ -86,6 +93,14 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
   const [quickMode, setQuickMode] = useState<QuickPermissionMode>('default');
   const lastShiftTabTimeRef = useRef<number>(0);
   const shiftTabCountRef = useRef<number>(0);
+
+  // v2.1.6: 反馈面板状态
+  // showFeedbackInput: 控制反馈输入面板的显示
+  // feedbackText: 存储用户输入的反馈文本
+  // feedbackCursor: 文本光标位置
+  const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackCursor, setFeedbackCursor] = useState(0);
 
   // v2.1.0 改进：组件卸载时恢复光标
   useEffect(() => {
@@ -178,8 +193,105 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
     }
   }, [onDecision]);
 
+  // v2.1.6: 提交反馈并拒绝操作
+  const submitFeedbackAndDeny = useCallback(() => {
+    onDecision({
+      allowed: false,
+      scope: 'once',
+      remember: false,
+      feedback: feedbackText.trim() || undefined,
+    });
+    // 重置反馈面板状态
+    setShowFeedbackInput(false);
+    setFeedbackText('');
+    setFeedbackCursor(0);
+  }, [onDecision, feedbackText]);
+
+  // v2.1.6: 取消反馈输入，返回选项列表
+  const cancelFeedbackInput = useCallback(() => {
+    setShowFeedbackInput(false);
+    setFeedbackText('');
+    setFeedbackCursor(0);
+  }, []);
+
   // 处理用户输入
   useInput((input, key) => {
+    // ===== v2.1.6: 反馈面板输入处理 =====
+    // 当反馈面板显示时，所有按键都应作为文本输入处理
+    // 只有 ESC（取消）和 Enter（提交）是特殊按键
+    if (showFeedbackInput) {
+      // ESC - 取消反馈输入，返回选项列表
+      if (key.escape) {
+        cancelFeedbackInput();
+        return;
+      }
+
+      // Enter - 提交反馈并执行拒绝操作
+      if (key.return) {
+        submitFeedbackAndDeny();
+        return;
+      }
+
+      // Backspace - 删除光标前的字符
+      if (key.backspace || key.delete) {
+        if (feedbackCursor > 0) {
+          setFeedbackText((prev) => prev.slice(0, feedbackCursor - 1) + prev.slice(feedbackCursor));
+          setFeedbackCursor((prev) => prev - 1);
+        }
+        return;
+      }
+
+      // 左方向键 - 光标左移
+      if (key.leftArrow) {
+        setFeedbackCursor((prev) => Math.max(0, prev - 1));
+        return;
+      }
+
+      // 右方向键 - 光标右移
+      if (key.rightArrow) {
+        setFeedbackCursor((prev) => Math.min(feedbackText.length, prev + 1));
+        return;
+      }
+
+      // Ctrl+A - 光标移到开头
+      if (key.ctrl && input === 'a') {
+        setFeedbackCursor(0);
+        return;
+      }
+
+      // Ctrl+E - 光标移到结尾
+      if (key.ctrl && input === 'e') {
+        setFeedbackCursor(feedbackText.length);
+        return;
+      }
+
+      // Ctrl+U - 清除光标前的所有文本
+      if (key.ctrl && input === 'u') {
+        setFeedbackText((prev) => prev.slice(feedbackCursor));
+        setFeedbackCursor(0);
+        return;
+      }
+
+      // Ctrl+K - 清除光标后的所有文本
+      if (key.ctrl && input === 'k') {
+        setFeedbackText((prev) => prev.slice(0, feedbackCursor));
+        return;
+      }
+
+      // 普通字符输入（包括 'n', 'y' 等所有字符）
+      // 这是关键修复：在反馈面板中，任何字符都应该作为普通文本输入
+      if (input && !key.ctrl && !key.meta && !key.upArrow && !key.downArrow) {
+        setFeedbackText((prev) => prev.slice(0, feedbackCursor) + input + prev.slice(feedbackCursor));
+        setFeedbackCursor((prev) => prev + input.length);
+        return;
+      }
+
+      // 其他按键在反馈模式下忽略
+      return;
+    }
+
+    // ===== 以下是非反馈模式（正常选项列表）的处理逻辑 =====
+
     // 检测 Shift+Tab (转义序列 \x1b[Z 或 key.tab && key.shift)
     if (key.tab && key.shift) {
       handleShiftTab();
@@ -198,6 +310,11 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
       setSelected((prev) => (prev < options.length - 1 ? prev + 1 : 0));
     } else if (key.return) {
       const option = options[selected];
+      // v2.1.6: 如果选中的是拒绝选项，显示反馈面板
+      if (!option.allowed && option.scope === 'once') {
+        setShowFeedbackInput(true);
+        return;
+      }
       onDecision({
         allowed: option.allowed,
         scope: option.scope,
@@ -207,6 +324,11 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
       // 快捷键
       const option = options.find((o) => o.key === input || o.key.toLowerCase() === input);
       if (option) {
+        // v2.1.6: 如果按 'n' 键拒绝，显示反馈面板而不是直接拒绝
+        if (!option.allowed && option.key.toLowerCase() === 'n' && option.scope === 'once') {
+          setShowFeedbackInput(true);
+          return;
+        }
         onDecision({
           allowed: option.allowed,
           scope: option.scope,
@@ -364,54 +486,87 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
         </Box>
       )}
 
-      {/* 选项列表 */}
-      <Box marginTop={2} flexDirection="column">
-        {options.map((option, index) => {
-          const isSelected = index === selected;
+      {/* 选项列表 - 当反馈面板显示时隐藏 */}
+      {!showFeedbackInput && (
+        <Box marginTop={2} flexDirection="column">
+          {options.map((option, index) => {
+            const isSelected = index === selected;
 
-          return (
-            <Box key={option.key} marginBottom={index < options.length - 1 ? 0 : 0}>
-              <Text color={isSelected ? 'cyan' : 'gray'}>
-                {isSelected ? '❯ ' : '  '}
-              </Text>
-              <Text
-                color={isSelected ? 'cyan' : 'white'}
-                bold={isSelected}
-              >
-                [{option.key}] {option.label}
-              </Text>
-              {isSelected && option.description && (
-                <Text color="gray" dimColor>
-                  {' '}
-                  - {option.description}
+            return (
+              <Box key={option.key} marginBottom={index < options.length - 1 ? 0 : 0}>
+                <Text color={isSelected ? 'cyan' : 'gray'}>
+                  {isSelected ? '❯ ' : '  '}
                 </Text>
-              )}
-            </Box>
-          );
-        })}
-      </Box>
+                <Text
+                  color={isSelected ? 'cyan' : 'white'}
+                  bold={isSelected}
+                >
+                  [{option.key}] {option.label}
+                </Text>
+                {isSelected && option.description && (
+                  <Text color="gray" dimColor>
+                    {' '}
+                    - {option.description}
+                  </Text>
+                )}
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+
+      {/* v2.1.6: 反馈面板 */}
+      {showFeedbackInput && (
+        <Box marginTop={2} flexDirection="column">
+          <Box>
+            <Text color="yellow" bold>
+              Provide feedback (optional):
+            </Text>
+          </Box>
+          <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+            {/* 反馈输入框 - 带光标显示 */}
+            <Text>
+              {feedbackText.slice(0, feedbackCursor)}
+            </Text>
+            <Text backgroundColor="gray" color="black">
+              {feedbackText[feedbackCursor] || ' '}
+            </Text>
+            <Text>
+              {feedbackText.slice(feedbackCursor + 1)}
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>
+              Enter: submit and deny · ESC: cancel
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {/* Footer 提示区域 - v2.1.0 改进：Tab hint 移到底部 */}
-      <Box marginTop={2} flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-        {/* 主操作提示 */}
-        <Box justifyContent="space-between">
-          <Text color="gray" dimColor>
-            ↑/↓ navigate · enter select · shortcut key
-          </Text>
-          <Text color="cyan" dimColor>
-            Tab: auto-complete
-          </Text>
+      {/* v2.1.6: 当反馈面板显示时隐藏 footer */}
+      {!showFeedbackInput && (
+        <Box marginTop={2} flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+          {/* 主操作提示 */}
+          <Box justifyContent="space-between">
+            <Text color="gray" dimColor>
+              ↑/↓ navigate · enter select · shortcut key
+            </Text>
+            <Text color="cyan" dimColor>
+              Tab: auto-complete
+            </Text>
+          </Box>
+          {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 功能 */}
+          <Box justifyContent="space-between">
+            <Text color="gray" dimColor>
+              y: allow once · n: deny · s: session
+            </Text>
+            <Text color="cyan" dimColor>
+              Shift+Tab: mode switch
+            </Text>
+          </Box>
         </Box>
-        {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 功能 */}
-        <Box justifyContent="space-between">
-          <Text color="gray" dimColor>
-            y: allow once · n: deny · s: session
-          </Text>
-          <Text color="cyan" dimColor>
-            Shift+Tab: mode switch
-          </Text>
-        </Box>
-      </Box>
+      )}
 
       {/* 当前快捷模式指示 */}
       {quickMode !== 'default' && (

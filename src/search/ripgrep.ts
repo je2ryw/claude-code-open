@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { execSync, spawn, SpawnOptions } from 'child_process';
+import { escapePathForShell, isWindows } from '../utils/platform.js';
 
 // ES module 兼容性：获取当前文件目录
 const __filename = fileURLToPath(import.meta.url);
@@ -475,9 +476,12 @@ export async function downloadVendoredRg(targetDir: string): Promise<string> {
       );
     } else {
       // Unix: 使用 curl + tar
+      // 使用 escapePathForShell 确保路径在 shell 中是安全的（尽管 Unix 上通常没问题）
       const tempFile = path.join(os.tmpdir(), archiveName);
-      execSync(`curl -L -o "${tempFile}" "${downloadUrl}"`, { encoding: 'utf-8' });
-      execSync(`tar -xzf "${tempFile}" -C "${targetDir}" --strip-components=1`, { encoding: 'utf-8' });
+      const safeTempFile = escapePathForShell(tempFile);
+      const safeTargetDir = escapePathForShell(targetDir);
+      execSync(`curl -L -o "${safeTempFile}" "${downloadUrl}"`, { encoding: 'utf-8' });
+      execSync(`tar -xzf "${safeTempFile}" -C "${safeTargetDir}" --strip-components=1`, { encoding: 'utf-8' });
       fs.unlinkSync(tempFile);
 
       // 重命名并设置权限

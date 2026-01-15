@@ -3,9 +3,8 @@ import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
 import TopNavBar from './components/swarm/TopNavBar';
-import { OnionView } from './components/swarm/ProjectNavigator/views/OnionView';
 
-type Page = 'chat' | 'swarm' | 'blueprint' | 'onion';
+type Page = 'chat' | 'swarm' | 'blueprint';
 
 /**
  * 根组件 - 处理顶层导航和页面路由
@@ -54,18 +53,6 @@ export default function Root() {
             initialBlueprintId={selectedBlueprintId}
             onNavigateToSwarm={navigateToSwarmPage}
           />
-        );
-      case 'onion':
-        return (
-          <div style={{ height: '100%', overflow: 'auto', background: '#0f172a' }}>
-            <OnionView
-              onNavigateToBlueprint={(filePath) => {
-                console.log('[OnionView] 跳转到蓝图页面查看文件:', filePath);
-                // 跳转到蓝图页面
-                setCurrentPage('blueprint');
-              }}
-            />
-          </div>
         );
       default:
         return null;

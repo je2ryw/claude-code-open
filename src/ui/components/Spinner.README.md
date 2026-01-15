@@ -26,7 +26,7 @@ import { Spinner, MultiSpinner, StatusIndicator } from './ui/components';
 ]} />
 ```
 
-## 🎨 Animation Types (15+)
+## 🎨 Animation Types (16+)
 
 ```tsx
 type SpinnerType =
@@ -44,7 +44,8 @@ type SpinnerType =
   | 'clock'         // 🕐🕑🕒...🕛
   | 'arrow'         // ←↖↑↗→↘↓↙
   | 'bouncingBar'   // [    ] [=   ] [==  ]...
-  | 'bouncingBall'; // ( ●    ) (  ●   )...
+  | 'bouncingBall'  // ( ●    ) (  ●   )...
+  | 'terminalTitle' // ⠂⠐ (v2.1.7: 等宽字符，用于终端标题，避免抖动)
 ```
 
 ## 📊 Status Types (5)

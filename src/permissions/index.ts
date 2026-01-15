@@ -42,6 +42,8 @@ export interface PermissionDecision {
   remember?: boolean;
   scope?: 'once' | 'session' | 'always';
   reason?: string;
+  /** v2.1.7: 用户在接受权限提示时提供的可选反馈 */
+  feedback?: string;
 }
 
 // 权限规则
@@ -105,6 +107,10 @@ interface AuditLogEntry {
   reason: string;
   scope?: 'once' | 'session' | 'always';
   user?: boolean;  // 是否由用户手动决定
+  /** v2.1.7: 用户在接受权限提示时提供的可选反馈 */
+  feedback?: string;
+  /** v2.1.7: 是否包含反馈 */
+  hasFeedback?: boolean;
 }
 
 // 权限管理器
@@ -390,6 +396,7 @@ export class PermissionManager {
     console.log('  [a] Always allow for this session');
     console.log('  [A] Always allow (remember)');
     console.log('  [N] Never allow (remember)');
+    console.log('  [f] Yes, allow once with feedback');
 
     const rl = readline.createInterface({
       input: process.stdin,
@@ -397,11 +404,21 @@ export class PermissionManager {
     });
 
     return new Promise((resolve) => {
-      rl.question('\nYour choice [y/n/a/A/N]: ', (answer) => {
-        rl.close();
-
+      rl.question('\nYour choice [y/n/a/A/N/f]: ', async (answer) => {
         const choice = answer.trim().toLowerCase();
         const key = this.getPermissionKey(request);
+
+        // v2.1.7: 处理带反馈的选项
+        if (choice === 'f') {
+          rl.question('Enter feedback (optional): ', (feedbackInput) => {
+            rl.close();
+            const feedback = feedbackInput.trim() || undefined;
+            resolve({ allowed: true, scope: 'once', feedback });
+          });
+          return;
+        }
+
+        rl.close();
 
         switch (choice) {
           case 'y':
@@ -784,6 +801,9 @@ export class PermissionManager {
       reason: decision.reason || 'No reason provided',
       scope: decision.scope,
       user: decision.scope !== undefined,  // 如果有 scope，说明是用户决定的
+      // v2.1.7: 记录用户反馈
+      feedback: decision.feedback,
+      hasFeedback: !!decision.feedback,
     };
 
     try {
@@ -889,3 +909,9 @@ export const permissionManager = new PermissionManager();
 
 // ============ T071: 细粒度工具权限控制 ============
 export * from './tools.js';
+
+// ============ Shell 安全检查 (CVE-2.1.6, CVE-2.1.7 修复) ============
+export * from './shell-security.js';
+
+// ============ 权限规则解析器 ============
+export * from './rule-parser.js';

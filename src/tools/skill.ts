@@ -412,6 +412,54 @@ async function loadSkillsFromDirectory(
 }
 
 /**
+ * 发现嵌套的 .claude/skills 目录 (v2.1.6+)
+ *
+ * 搜索当前工作目录下所有子目录中的 .claude/skills 目录
+ * 用于支持 monorepo 等场景
+ */
+function discoverNestedSkillsDirectories(rootDir: string, maxDepth: number = 3): string[] {
+  const result: string[] = [];
+
+  function scanDir(dir: string, depth: number): void {
+    if (depth > maxDepth) return;
+
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        // 跳过隐藏目录（除了 .claude）
+        if (entry.name.startsWith('.') && entry.name !== '.claude') continue;
+
+        // 跳过常见的不需要扫描的目录
+        if (['node_modules', 'vendor', 'dist', 'build', 'out', '.git', '__pycache__', '.venv', 'venv'].includes(entry.name)) {
+          continue;
+        }
+
+        const subDirPath = path.join(dir, entry.name);
+
+        // 检查是否有 .claude/skills 目录
+        if (entry.name === '.claude') {
+          const skillsDir = path.join(subDirPath, 'skills');
+          if (fs.existsSync(skillsDir) && fs.statSync(skillsDir).isDirectory()) {
+            result.push(skillsDir);
+          }
+        } else {
+          // 继续递归扫描
+          scanDir(subDirPath, depth + 1);
+        }
+      }
+    } catch {
+      // 忽略无法访问的目录
+    }
+  }
+
+  scanDir(rootDir, 0);
+  return result;
+}
+
+/**
  * 获取已启用的插件列表（对齐官网 u7 函数）
  *
  * enabledPlugins 格式：{ "plugin-name@marketplace": true/false }
@@ -586,6 +634,32 @@ export async function initializeSkills(): Promise<void> {
   const projectSkills = await loadSkillsFromDirectory(projectSkillsDir, 'project');
   for (const skill of projectSkills) {
     allSkillsWithPath.push({ skill, filePath: skill.filePath });
+  }
+
+  // 4. v2.1.6+: 发现并加载嵌套的 .claude/skills 目录
+  // 搜索当前工作目录下子目录中的 .claude/skills 目录
+  const nestedSkillsDirs = discoverNestedSkillsDirectories(process.cwd());
+  for (const nestedDir of nestedSkillsDirs) {
+    // 避免重复加载根目录的 skills
+    if (nestedDir === projectSkillsDir) continue;
+
+    const nestedSkills = await loadSkillsFromDirectory(nestedDir, 'project');
+    for (const skill of nestedSkills) {
+      // 添加子目录路径前缀以区分来源
+      const relativePath = path.relative(process.cwd(), nestedDir);
+      const parentDir = path.dirname(path.dirname(relativePath)); // 获取 .claude 的父目录
+      const prefixedSkillName = parentDir ? `${skill.skillName}@${parentDir}` : skill.skillName;
+
+      // 重新设置 skillName 以包含路径前缀
+      // source 保持为 'project'，但在 skillName 中添加路径信息以区分来源
+      const modifiedSkill = {
+        ...skill,
+        skillName: prefixedSkillName,
+        // source 必须是 'user' | 'plugin' | 'project'，使用 project 表示嵌套的项目级 skills
+      };
+
+      allSkillsWithPath.push({ skill: modifiedSkill, filePath: skill.filePath });
+    }
   }
 
   // 基于 inode 去重（对齐官网 JN0 函数）

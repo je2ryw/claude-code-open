@@ -1119,3 +1119,117 @@ export const fileOperationApi = {
     return handleResponse(response);
   },
 };
+
+// ============================================================================
+// AI Hover API - 智能悬停提示
+// ============================================================================
+
+/**
+ * AI Hover 请求参数
+ */
+export interface AIHoverRequest {
+  /** 文件路径 */
+  filePath: string;
+  /** 符号名称 */
+  symbolName: string;
+  /** 符号类型 */
+  symbolKind?: string;
+  /** 代码上下文 */
+  codeContext: string;
+  /** 行号 */
+  line?: number;
+  /** 列号 */
+  column?: number;
+  /** 语言 */
+  language?: string;
+  /** 类型签名 */
+  typeSignature?: string;
+}
+
+/**
+ * AI Hover 返回结果
+ */
+export interface AIHoverResult {
+  /** 是否成功 */
+  success: boolean;
+  /** 简短描述 */
+  brief?: string;
+  /** 详细说明 */
+  detail?: string;
+  /** 参数说明 */
+  params?: Array<{
+    name: string;
+    type: string;
+    description: string;
+  }>;
+  /** 返回值说明 */
+  returns?: {
+    type: string;
+    description: string;
+  };
+  /** 使用示例 */
+  examples?: string[];
+  /** 相关链接 */
+  seeAlso?: string[];
+  /** 注意事项 */
+  notes?: string[];
+  /** 错误信息 */
+  error?: string;
+  /** 是否来自缓存 */
+  fromCache?: boolean;
+}
+
+/**
+ * AI Hover API
+ * 注意：AI Hover API 返回格式与其他 API 不同，直接返回结果对象而不是包装在 data 字段中
+ */
+export const aiHoverApi = {
+  /**
+   * 生成智能悬停文档
+   */
+  generate: async (request: AIHoverRequest): Promise<AIHoverResult> => {
+    const response = await fetch('/api/ai-hover/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return {
+        success: false,
+        error: error.error || `HTTP ${response.status}: ${response.statusText}`,
+      };
+    }
+
+    // AI Hover API 直接返回 AIHoverResult，不需要解包 data 字段
+    return await response.json();
+  },
+
+  /**
+   * 清空缓存
+   */
+  clearCache: async (): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch('/api/ai-hover/clear-cache', {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+
+  /**
+   * 获取缓存统计
+   */
+  getCacheStats: async (): Promise<{
+    success: boolean;
+    data: { size: number; maxSize: number; ttl: string };
+  }> => {
+    const response = await fetch('/api/ai-hover/cache-stats');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return await response.json();
+  },
+};

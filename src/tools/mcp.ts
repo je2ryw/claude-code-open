@@ -110,19 +110,177 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 优雅地终止 MCP 服务器进程
+ *
+ * 按照官方实现，使用 SIGINT -> SIGTERM -> SIGKILL 的优雅关闭序列
+ * 这确保 MCP 服务器有机会清理资源并正常退出
+ *
+ * 注意：Windows 上的信号处理与 Unix 不同：
+ * - SIGINT: Windows 上会终止进程（类似 Ctrl+C）
+ * - SIGTERM: Windows 上等同于 SIGINT
+ * - SIGKILL: Windows 上强制终止进程
+ *
+ * @param name 服务器名称
+ * @param pid 进程 ID
+ */
+async function gracefullyTerminateProcess(name: string, pid: number): Promise<void> {
+  const CLEANUP_TIMEOUT = 600; // 600ms 总超时
+  const isWindows = process.platform === 'win32';
+
+  return new Promise((resolve) => {
+    let terminated = false;
+
+    // 定期检查进程是否已退出
+    const checkInterval = setInterval(() => {
+      try {
+        // process.kill(pid, 0) 不发送信号，只检查进程是否存在
+        process.kill(pid, 0);
+      } catch {
+        // 进程不存在，已退出
+        if (!terminated) {
+          terminated = true;
+          clearInterval(checkInterval);
+          clearTimeout(cleanupTimeout);
+          if (process.env.DEBUG) {
+            console.log(`[MCP] ${name}: Process exited cleanly`);
+          }
+          resolve();
+        }
+      }
+    }, 50);
+
+    // 总超时，防止无限等待
+    const cleanupTimeout = setTimeout(() => {
+      if (!terminated) {
+        terminated = true;
+        clearInterval(checkInterval);
+        if (process.env.DEBUG) {
+          console.log(`[MCP] ${name}: Cleanup timeout reached, stopping process monitoring`);
+        }
+        resolve();
+      }
+    }, CLEANUP_TIMEOUT);
+
+    // 开始优雅关闭序列
+    (async () => {
+      try {
+        // Windows 上直接使用 SIGTERM 终止进程（Node.js 在 Windows 上会映射到 TerminateProcess）
+        if (isWindows) {
+          if (process.env.DEBUG) {
+            console.log(`[MCP] ${name}: Terminating process (Windows)`);
+          }
+          try {
+            // Windows 上 SIGTERM 会调用 TerminateProcess API
+            process.kill(pid, 'SIGTERM');
+          } catch (err) {
+            if (process.env.DEBUG) {
+              console.log(`[MCP] ${name}: Error terminating: ${err}`);
+            }
+          }
+          return;
+        }
+
+        // Unix 系统使用标准的 SIGINT -> SIGTERM -> SIGKILL 序列
+        // 1. 发送 SIGINT
+        if (process.env.DEBUG) {
+          console.log(`[MCP] ${name}: Sending SIGINT`);
+        }
+        try {
+          process.kill(pid, 'SIGINT');
+        } catch (err) {
+          if (process.env.DEBUG) {
+            console.log(`[MCP] ${name}: Error sending SIGINT: ${err}`);
+          }
+          return;
+        }
+
+        // 等待 100ms
+        await sleep(100);
+        if (terminated) return;
+
+        // 2. 检查是否退出，如果没有发送 SIGTERM
+        try {
+          process.kill(pid, 0);
+          if (process.env.DEBUG) {
+            console.log(`[MCP] ${name}: SIGINT failed, sending SIGTERM`);
+          }
+          try {
+            process.kill(pid, 'SIGTERM');
+          } catch (err) {
+            if (process.env.DEBUG) {
+              console.log(`[MCP] ${name}: Error sending SIGTERM: ${err}`);
+            }
+            terminated = true;
+            clearInterval(checkInterval);
+            clearTimeout(cleanupTimeout);
+            resolve();
+            return;
+          }
+        } catch {
+          // 进程已退出
+          return;
+        }
+
+        // 等待 400ms
+        await sleep(400);
+        if (terminated) return;
+
+        // 3. 检查是否退出，如果没有发送 SIGKILL
+        try {
+          process.kill(pid, 0);
+          if (process.env.DEBUG) {
+            console.log(`[MCP] ${name}: SIGTERM failed, sending SIGKILL`);
+          }
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch (err) {
+            if (process.env.DEBUG) {
+              console.log(`[MCP] ${name}: Error sending SIGKILL: ${err}`);
+            }
+          }
+        } catch {
+          // 进程已退出
+          return;
+        }
+      } catch {
+        // 忽略错误，让超时机制处理
+      }
+    })();
+  });
+}
+
+/**
  * 断开 MCP 服务器连接
+ *
+ * 使用优雅关闭序列，确保 MCP 服务器进程被正确清理，
+ * 防止出现孤儿进程
  */
 export async function disconnectMcpServer(name: string): Promise<void> {
   const server = mcpServers.get(name);
   if (!server) return;
 
   if (server.process) {
-    try {
-      server.process.kill();
-      server.process = undefined;
-    } catch (err) {
-      console.error(`Failed to kill MCP server process ${name}:`, err);
+    const pid = server.process.pid;
+    if (pid) {
+      try {
+        // 使用优雅关闭序列
+        await gracefullyTerminateProcess(name, pid);
+      } catch (err) {
+        console.error(`[MCP] Failed to gracefully terminate ${name}:`, err);
+        // 如果优雅关闭失败，尝试强制 kill
+        try {
+          server.process.kill('SIGKILL');
+        } catch {}
+      }
+    } else {
+      // 没有 pid，直接 kill
+      try {
+        server.process.kill();
+      } catch (err) {
+        console.error(`[MCP] Failed to kill ${name}:`, err);
+      }
     }
+    server.process = undefined;
   }
 
   server.connected = false;
@@ -622,16 +780,244 @@ export function getServerStatus(name: string): {
   };
 }
 
-// ============ MCP Search 工具 ============
+// ============ MCP Tool Search 自动模式常量（v2.1.7） ============
 
 /**
- * MCP工具搜索工具 - 用于查找和加载MCP工具
- * 这是官方强制要求的工具，必须在调用MCP工具前使用
+ * MCP 工具描述阈值百分比（对齐官方 heB 常量）
+ * 当 MCP 工具描述的字符数超过上下文窗口的 10% 时，启用延迟加载模式
  */
-export class MCPSearchTool extends BaseTool<MCPSearchInput, MCPSearchToolResult> {
-  name = 'MCPSearch';
+const MCP_TOOL_THRESHOLD_PERCENT = 0.1; // 10%
 
-  description = `Search for or select MCP tools to make them available for use.
+/**
+ * 阈值乘数（对齐官方 At8 常量）
+ * 实际阈值 = contextWindowSize * MCP_TOOL_THRESHOLD_PERCENT * MCP_THRESHOLD_MULTIPLIER
+ * = contextWindowSize * 0.1 * 2.5 = contextWindowSize * 0.25 (25%)
+ */
+const MCP_THRESHOLD_MULTIPLIER = 2.5;
+
+/**
+ * 默认上下文窗口大小（tokens）
+ * 对齐官方 VT9 常量
+ */
+const DEFAULT_CONTEXT_WINDOW = 200000;
+
+/**
+ * 1M 上下文窗口大小
+ */
+const LARGE_CONTEXT_WINDOW = 1000000;
+
+/**
+ * 不支持 tool_reference 的模型列表（对齐官方 Bt8 常量）
+ * 这些模型不支持延迟加载模式
+ */
+const TOOL_SEARCH_UNSUPPORTED_MODELS = ['haiku'];
+
+/**
+ * MCP 模式类型
+ * - 'tst': 强制启用 Tool Search（延迟加载）
+ * - 'tst-auto': 自动判断（默认）
+ * - 'mcp-cli': MCP CLI 模式
+ * - 'standard': 标准模式（不延迟加载）
+ */
+export type McpMode = 'tst' | 'tst-auto' | 'mcp-cli' | 'standard';
+
+/**
+ * 获取上下文窗口大小（字符数）
+ * 对齐官方 Jq 函数
+ * @param model 模型名称
+ * @param betas Beta 功能列表（可选）
+ * @returns 上下文窗口大小（tokens）
+ */
+export function getContextWindowSize(model: string, betas?: string[]): number {
+  // 检查是否是 1M 模型
+  if (model.includes('[1m]') || (betas?.includes('max-tokens-1m') && model.includes('claude-sonnet-4-5'))) {
+    return LARGE_CONTEXT_WINDOW;
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * 获取自动工具搜索阈值（字符数）
+ * 对齐官方 geB 函数
+ * @param model 模型名称
+ * @returns 阈值（字符数）
+ */
+export function getAutoToolSearchCharThreshold(model: string): number {
+  const contextWindow = getContextWindowSize(model);
+  // 阈值 = 上下文窗口 * 10% * 2.5 = 上下文窗口 * 25%
+  return Math.floor(contextWindow * MCP_TOOL_THRESHOLD_PERCENT * MCP_THRESHOLD_MULTIPLIER);
+}
+
+/**
+ * 获取 MCP 模式（对齐官方 Qt8 / k9A 函数）
+ * @returns MCP 模式
+ */
+export function getMcpMode(): McpMode {
+  // 环境变量控制
+  if (process.env.ENABLE_TOOL_SEARCH === 'auto') {
+    return 'tst-auto';
+  }
+  if (process.env.ENABLE_TOOL_SEARCH === '1' || process.env.ENABLE_TOOL_SEARCH === 'true') {
+    return 'tst';
+  }
+  if (process.env.ENABLE_MCP_CLI === '1' || process.env.ENABLE_MCP_CLI === 'true') {
+    return 'mcp-cli';
+  }
+  if (process.env.ENABLE_MCP_CLI === '0' || process.env.ENABLE_MCP_CLI === 'false') {
+    return 'standard';
+  }
+  if (process.env.ENABLE_TOOL_SEARCH === '0' || process.env.ENABLE_TOOL_SEARCH === 'false') {
+    return 'standard';
+  }
+  // 默认使用自动模式
+  return 'tst-auto';
+}
+
+/**
+ * 检查模型是否支持 tool_reference 块
+ * 对齐官方 ueB 函数
+ * @param model 模型名称
+ * @returns 是否支持
+ */
+export function modelSupportsToolReference(model: string): boolean {
+  const modelLower = model.toLowerCase();
+  for (const unsupported of TOOL_SEARCH_UNSUPPORTED_MODELS) {
+    if (modelLower.includes(unsupported.toLowerCase())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 检查 MCPSearch 工具是否可用
+ * 对齐官方 meB 函数
+ * @param tools 工具列表
+ * @returns 是否可用
+ */
+export function isMcpSearchToolAvailable(tools: Array<{ name: string }>): boolean {
+  return tools.some((t) => t.name === 'MCPSearch');
+}
+
+/**
+ * 计算所有 MCP 工具描述的字符数
+ * 对齐官方 Zt8 函数
+ * @returns 总字符数
+ */
+export function calculateMcpToolDescriptionChars(): number {
+  let totalChars = 0;
+
+  for (const server of mcpServers.values()) {
+    for (const tool of server.tools) {
+      // 计算工具描述的字符数
+      // 官方实现调用 tool.prompt()，这里简化为使用 description
+      const description = tool.description || '';
+      const inputSchemaStr = JSON.stringify(tool.inputSchema || {});
+
+      // 估算完整的工具 prompt 大小
+      // 包括：工具名、描述、输入 schema
+      const fullToolPrompt = `${tool.name}\n${description}\n${inputSchemaStr}`;
+      totalChars += fullToolPrompt.length;
+    }
+  }
+
+  return totalChars;
+}
+
+/**
+ * 判断是否应该启用 MCP 工具搜索（延迟加载）
+ * 对齐官方 RZ0 / isToolSearchEnabled 函数
+ *
+ * 逻辑：
+ * 1. 检查模型是否支持 tool_reference 块
+ * 2. 检查 MCPSearch 工具是否可用
+ * 3. 根据 MCP 模式决定：
+ *    - tst: 强制启用
+ *    - tst-auto: 自动判断（MCP 工具描述超过阈值时启用）
+ *    - mcp-cli/standard: 不启用
+ *
+ * @param model 模型名称
+ * @param tools 工具列表
+ * @returns 是否启用延迟加载
+ */
+export function isToolSearchEnabled(model: string, tools: Array<{ name: string }>): boolean {
+  const mcpToolCount = Array.from(mcpServers.values()).reduce((sum, s) => sum + s.tools.length, 0);
+
+  // 1. 检查模型是否支持 tool_reference 块
+  if (!modelSupportsToolReference(model)) {
+    if (process.env.DEBUG) {
+      console.log(`[MCP] Tool search disabled for model '${model}': model does not support tool_reference blocks.`);
+    }
+    return false;
+  }
+
+  // 2. 检查 MCPSearch 工具是否可用
+  if (!isMcpSearchToolAvailable(tools)) {
+    if (process.env.DEBUG) {
+      console.log('[MCP] Tool search disabled: MCPSearchTool is not available (may have been disallowed via disallowedTools).');
+    }
+    return false;
+  }
+
+  // 3. 根据 MCP 模式决定
+  const mode = getMcpMode();
+
+  switch (mode) {
+    case 'tst':
+      // 强制启用
+      if (process.env.DEBUG) {
+        console.log(`[MCP] Tool search enabled (tst mode), mcpToolCount=${mcpToolCount}`);
+      }
+      return true;
+
+    case 'tst-auto': {
+      // 自动判断：计算 MCP 工具描述总字符数
+      const mcpToolDescriptionChars = calculateMcpToolDescriptionChars();
+      const threshold = getAutoToolSearchCharThreshold(model);
+      const enabled = mcpToolDescriptionChars >= threshold;
+
+      if (process.env.DEBUG) {
+        console.log(`[MCP] Auto tool search ${enabled ? 'enabled' : 'disabled'}: ${mcpToolDescriptionChars} chars (threshold: ${threshold}, ${Math.round(MCP_TOOL_THRESHOLD_PERCENT * 100)}% of context)`);
+      }
+
+      return enabled;
+    }
+
+    case 'mcp-cli':
+    case 'standard':
+      // 不启用
+      if (process.env.DEBUG) {
+        console.log(`[MCP] Tool search disabled (${mode} mode)`);
+      }
+      return false;
+  }
+}
+
+/**
+ * 乐观检查是否启用工具搜索（不进行实际计算）
+ * 对齐官方 Zd / isToolSearchEnabledOptimistic 函数
+ * @returns 是否可能启用
+ */
+export function isToolSearchEnabledOptimistic(): boolean {
+  const mode = getMcpMode();
+  switch (mode) {
+    case 'tst':
+    case 'tst-auto':
+      return true;
+    case 'mcp-cli':
+    case 'standard':
+      return false;
+  }
+}
+
+/**
+ * 生成 MCPSearch 工具的动态描述（对齐官方 F9A 函数）
+ * 包含所有可用的 MCP 工具列表
+ * @param tools MCP 工具列表
+ * @returns 描述字符串
+ */
+export function generateMcpSearchDescription(tools: Array<{ name: string }>): string {
+  const baseDescription = `Search for or select MCP tools to make them available for use.
 
 **MANDATORY PREREQUISITE - THIS IS A HARD REQUIREMENT**
 
@@ -680,6 +1066,100 @@ User: Read my slack messages
 Assistant: [Directly calls mcp__slack__read_channel without loading it first]
 WRONG - You must load the tool FIRST using this tool
 </bad-example>`;
+
+  // 如果有 MCP 工具，添加可用工具列表
+  if (tools.length > 0) {
+    const toolList = tools.map((t) => t.name).join('\n');
+    return `${baseDescription}
+
+Available MCP tools (must be loaded before use):
+${toolList}`;
+  }
+
+  return baseDescription;
+}
+
+// ============ MCP Search 工具 ============
+
+/**
+ * MCP工具搜索工具 - 用于查找和加载MCP工具
+ * 这是官方强制要求的工具，必须在调用MCP工具前使用
+ */
+export class MCPSearchTool extends BaseTool<MCPSearchInput, MCPSearchToolResult> {
+  name = 'MCPSearch';
+
+  // 静态描述（不包含工具列表）
+  private static baseDescription = `Search for or select MCP tools to make them available for use.
+
+**MANDATORY PREREQUISITE - THIS IS A HARD REQUIREMENT**
+
+You MUST use this tool to load MCP tools BEFORE calling them directly.
+
+This is a BLOCKING REQUIREMENT - MCP tools listed below are NOT available until you load them using this tool.
+
+**Why this is non-negotiable:**
+- MCP tools are deferred and not loaded until discovered via this tool
+- Calling an MCP tool without first loading it will fail
+
+**Query modes:**
+
+1. **Direct selection** - Use \`select:<tool_name>\` when you know exactly which tool you need:
+   - "select:mcp__slack__read_channel"
+   - "select:mcp__filesystem__list_directory"
+   - Returns just that tool if it exists
+
+2. **Keyword search** - Use keywords when you're unsure which tool to use:
+   - "list directory" - find tools for listing directories
+   - "read file" - find tools for reading files
+   - "slack message" - find slack messaging tools
+   - Returns up to 5 matching tools ranked by relevance
+
+**CORRECT Usage Patterns:**
+
+<example>
+User: List files in the src directory
+Assistant: I can see mcp__filesystem__list_directory in the available tools. Let me select it.
+[Calls MCPSearch with query: "select:mcp__filesystem__list_directory"]
+[Calls the MCP tool]
+</example>
+
+<example>
+User: I need to work with slack somehow
+Assistant: Let me search for slack tools.
+[Calls MCPSearch with query: "slack"]
+Assistant: Found several options including mcp__slack__read_channel.
+[Calls the MCP tool]
+</example>
+
+**INCORRECT Usage Pattern - NEVER DO THIS:**
+
+<bad-example>
+User: Read my slack messages
+Assistant: [Directly calls mcp__slack__read_channel without loading it first]
+WRONG - You must load the tool FIRST using this tool
+</bad-example>`;
+
+  /**
+   * 获取动态描述（包含可用工具列表）
+   */
+  get description(): string {
+    // 生成可用工具列表
+    const tools: string[] = [];
+    for (const [serverName, server] of mcpServers) {
+      for (const tool of server.tools) {
+        tools.push(`mcp__${serverName}__${tool.name}`);
+      }
+    }
+
+    if (tools.length > 0) {
+      return `${MCPSearchTool.baseDescription}
+
+Available MCP tools (must be loaded before use):
+${tools.join('\n')}`;
+    }
+
+    return MCPSearchTool.baseDescription;
+  }
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -901,5 +1381,264 @@ export function registerMcpToolsToRegistry(
   for (const toolDef of tools) {
     const mcpTool = new McpTool(serverName, toolDef);
     registry.register(mcpTool);
+  }
+}
+
+// ============ MCP Resource 工具 ============
+
+/**
+ * 列出 MCP 资源工具
+ * 列出已配置 MCP 服务器中的可用资源
+ */
+export class ListMcpResourcesTool extends BaseTool<ListMcpResourcesInput, ToolResult> {
+  name = 'listMcpResources';
+
+  description = `List available resources from configured MCP servers.
+Each resource object includes a 'server' field indicating which server it's from.
+
+Usage examples:
+- List all resources from all servers: \`listMcpResources\`
+- List resources from a specific server: \`listMcpResources({ server: "myserver" })\`
+
+List available resources from configured MCP servers.
+Each returned resource will include all standard MCP resource fields plus a 'server' field
+indicating which server the resource belongs to.
+
+Parameters:
+- server (optional): The name of a specific MCP server to get resources from. If not provided,
+  resources from all servers will be returned.`;
+
+  getInputSchema(): ToolDefinition['inputSchema'] {
+    return {
+      type: 'object',
+      properties: {
+        server: {
+          type: 'string',
+          description: 'Optional server name to filter resources by',
+        },
+        refresh: {
+          type: 'boolean',
+          description: 'Whether to refresh the resource list from the server',
+        },
+      },
+      required: [],
+    };
+  }
+
+  async execute(input: ListMcpResourcesInput): Promise<ToolResult> {
+    const { server, refresh = false } = input;
+
+    const results: Array<{
+      server: string;
+      uri: string;
+      name: string;
+      description?: string;
+      mimeType?: string;
+    }> = [];
+
+    // 确定要查询的服务器列表
+    const serversToQuery: string[] = [];
+    if (server) {
+      if (!mcpServers.has(server)) {
+        return {
+          success: false,
+          error: `MCP server not found: ${server}. Available servers: ${Array.from(mcpServers.keys()).join(', ') || 'none'}`,
+        };
+      }
+      serversToQuery.push(server);
+    } else {
+      serversToQuery.push(...mcpServers.keys());
+    }
+
+    // 遍历服务器获取资源
+    for (const serverName of serversToQuery) {
+      const serverState = mcpServers.get(serverName);
+      if (!serverState) continue;
+
+      // 确保服务器已连接
+      if (!serverState.connected) {
+        const connected = await connectMcpServer(serverName);
+        if (!connected) {
+          console.error(`Failed to connect to MCP server: ${serverName}`);
+          continue;
+        }
+      }
+
+      // 检查服务器是否支持资源
+      if (!serverState.capabilities.resources) {
+        continue;
+      }
+
+      // 获取资源列表（可选刷新缓存）
+      let resources: McpResource[];
+      if (refresh) {
+        await refreshResourceCache(serverName);
+        resources = serverState.resources;
+      } else {
+        // 检查缓存
+        if (serverState.resourcesCache && Date.now() - serverState.resourcesCache.timestamp < RESOURCE_CACHE_TTL) {
+          resources = serverState.resourcesCache.data;
+        } else {
+          await refreshResourceCache(serverName);
+          resources = serverState.resources;
+        }
+      }
+
+      // 添加服务器信息到每个资源
+      for (const resource of resources) {
+        results.push({
+          server: serverName,
+          ...resource,
+        });
+      }
+    }
+
+    if (results.length === 0) {
+      return {
+        success: true,
+        output: server
+          ? `No resources found for server: ${server}`
+          : 'No resources found from any MCP server.',
+      };
+    }
+
+    const output = results
+      .map((r) => `[${r.server}] ${r.name}: ${r.uri}${r.description ? ` - ${r.description}` : ''}`)
+      .join('\n');
+
+    return {
+      success: true,
+      output: `Found ${results.length} resource(s):\n\n${output}`,
+    };
+  }
+}
+
+/**
+ * 读取 MCP 资源工具
+ * 从 MCP 服务器读取特定资源
+ */
+export class ReadMcpResourceTool extends BaseTool<ReadMcpResourceInput, ToolResult> {
+  name = 'readMcpResource';
+
+  description = `Reads a specific resource from an MCP server.
+- server: The name of the MCP server to read from
+- uri: The URI of the resource to read
+
+Usage examples:
+- Read a resource from a server: \`readMcpResource({ server: "myserver", uri: "my-resource-uri" })\`
+
+Reads a specific resource from an MCP server, identified by server name and resource URI.
+
+Parameters:
+- server (required): The name of the MCP server from which to read the resource
+- uri (required): The URI of the resource to read`;
+
+  getInputSchema(): ToolDefinition['inputSchema'] {
+    return {
+      type: 'object',
+      properties: {
+        server: {
+          type: 'string',
+          description: 'The MCP server name',
+        },
+        uri: {
+          type: 'string',
+          description: 'The resource URI to read',
+        },
+      },
+      required: ['server', 'uri'],
+    };
+  }
+
+  async execute(input: ReadMcpResourceInput): Promise<ToolResult> {
+    const { server, uri } = input;
+
+    // 验证服务器存在
+    const serverState = mcpServers.get(server);
+    if (!serverState) {
+      return {
+        success: false,
+        error: `MCP server not found: ${server}. Available servers: ${Array.from(mcpServers.keys()).join(', ') || 'none'}`,
+      };
+    }
+
+    // 确保服务器已连接
+    if (!serverState.connected) {
+      const connected = await connectMcpServer(server);
+      if (!connected) {
+        return {
+          success: false,
+          error: `Failed to connect to MCP server: ${server}`,
+        };
+      }
+    }
+
+    // 检查服务器是否支持资源
+    if (!serverState.capabilities.resources) {
+      return {
+        success: false,
+        error: `MCP server ${server} does not support resources.`,
+      };
+    }
+
+    try {
+      // 调用 resources/read
+      const result = await sendMcpMessage(server, 'resources/read', {
+        uri,
+      });
+
+      if (!result) {
+        return {
+          success: false,
+          error: `Failed to read resource: ${uri} from server ${server}`,
+        };
+      }
+
+      // 解析结果
+      const resourceResult = result as {
+        contents?: Array<{
+          uri: string;
+          mimeType?: string;
+          text?: string;
+          blob?: string;
+        }>;
+      };
+
+      if (!resourceResult.contents || resourceResult.contents.length === 0) {
+        return {
+          success: false,
+          error: `Resource not found or empty: ${uri}`,
+        };
+      }
+
+      // 处理内容
+      const contents = resourceResult.contents;
+      let output = '';
+
+      for (const content of contents) {
+        if (content.text) {
+          output += content.text;
+        } else if (content.blob) {
+          // 对于二进制内容，返回 base64 信息
+          output += `[Binary content: ${content.mimeType || 'application/octet-stream'}, ${content.blob.length} bytes (base64)]`;
+        }
+      }
+
+      // 使用统一的输出持久化机制
+      const maxTokens = MAX_MCP_OUTPUT_TOKENS();
+      const maxChars = maxTokens * 4;
+
+      const persistResult = persistLargeOutputSync(output, {
+        toolName: 'ReadMcpResource',
+        maxLength: maxChars,
+      });
+
+      return { success: true, output: persistResult.content };
+    } catch (err) {
+      return {
+        success: false,
+        error: `Error reading MCP resource: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
+    }
   }
 }

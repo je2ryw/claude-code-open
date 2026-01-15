@@ -5,6 +5,9 @@
  * 策略：
  * - 小模型 (≤50k): 使用 80% 作为输入空间，保留 20% 给输出
  * - 大模型 (>50k): 保留固定 50k 作为输出空间
+ *
+ * v2.1.7 修复：上下文窗口阻塞限制使用"有效上下文窗口"计算
+ * 有效上下文窗口 = 总窗口 - max_output_tokens
  */
 
 import { getModelContextWindow } from './enhanced.js';
@@ -13,6 +16,7 @@ import { getModelContextWindow } from './enhanced.js';
 const SMALL_MODEL_THRESHOLD = 50000; // rH9 = 50000
 const RESERVE_TOKENS_LARGE = 50000; // 大模型保留 50k 给输出
 const RESERVE_RATIO_SMALL = 0.2; // 小模型保留 20% 给输出
+const DEFAULT_MAX_OUTPUT_TOKENS = 32000; // 默认最大输出 tokens
 
 /**
  * 计算可用输入上下文大小
@@ -82,6 +86,59 @@ export function getContextWindowConfig(modelId: string): {
     output,
     ratio,
   };
+}
+
+/**
+ * 计算有效上下文窗口大小 (v2.1.7+)
+ *
+ * 有效上下文窗口 = 总窗口 - max_output_tokens
+ * 用于上下文窗口阻塞限制计算
+ *
+ * @param modelId 模型 ID
+ * @param maxOutputTokens 最大输出 tokens（默认 32000）
+ * @returns 有效上下文窗口大小
+ */
+export function calculateEffectiveContextWindow(
+  modelId: string,
+  maxOutputTokens: number = DEFAULT_MAX_OUTPUT_TOKENS
+): number {
+  const contextWindow = getModelContextWindow(modelId);
+  return Math.max(0, contextWindow - maxOutputTokens);
+}
+
+/**
+ * 检查是否接近上下文阻塞限制 (v2.1.7+)
+ *
+ * 使用有效上下文窗口而不是完整上下文窗口进行计算
+ *
+ * @param modelId 模型 ID
+ * @param currentTokens 当前使用的 tokens
+ * @param maxOutputTokens 最大输出 tokens
+ * @param threshold 阈值（默认 0.9，即 90%）
+ * @returns 是否接近限制
+ */
+export function isNearContextBlockingLimit(
+  modelId: string,
+  currentTokens: number,
+  maxOutputTokens: number = DEFAULT_MAX_OUTPUT_TOKENS,
+  threshold: number = 0.9
+): boolean {
+  const effectiveWindow = calculateEffectiveContextWindow(modelId, maxOutputTokens);
+  return currentTokens >= effectiveWindow * threshold;
+}
+
+/**
+ * 获取上下文阻塞限制 (v2.1.7+)
+ *
+ * @param modelId 模型 ID
+ * @param maxOutputTokens 最大输出 tokens
+ * @returns 上下文阻塞限制（tokens）
+ */
+export function getContextBlockingLimit(
+  modelId: string,
+  maxOutputTokens: number = DEFAULT_MAX_OUTPUT_TOKENS
+): number {
+  return calculateEffectiveContextWindow(modelId, maxOutputTokens);
 }
 
 /**

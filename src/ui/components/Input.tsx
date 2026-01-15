@@ -2,13 +2,20 @@
  * Input 组件
  * 用户输入框 - 仿官方 Claude Code 风格
  * 支持斜杠命令、文件路径、@mention 自动补全
+ *
+ * v2.1.6: 添加 Kitty 键盘协议支持
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { getCompletions, applyCompletion, type CompletionItem, truncateDescription } from '../autocomplete/index.js';
+import { getCompletions, applyCompletion, type CompletionItem, truncateDescription, getCompletionIcon } from '../autocomplete/index.js';
 import { getHistoryManager } from '../utils/history-manager.js';
 import { HistorySearch } from './HistorySearch.js';
+import {
+  isShiftEnter,
+  isShiftTab,
+  parseKittyKey,
+} from '../utils/kitty-keyboard.js';
 
 // 官方 claude 颜色
 const CLAUDE_COLOR = '#D77757';
@@ -383,9 +390,10 @@ export const Input: React.FC<InputProps> = ({
     (input, key) => {
       if (disabled) return;
 
-      // 检测 Shift+Enter 的转义序列 (\x1b\r)
+      // 检测 Shift+Enter 的转义序列
+      // v2.1.6: 支持 Kitty 键盘协议 (CSI 13;2 u) 和传统格式 (\x1b\r)
       // 需要终端配置支持（详见 /terminal-setup 命令）
-      if (input === '\x1b' && key.return) {
+      if (isShiftEnter(input) || (input === '\x1b' && key.return)) {
         // 插入换行符而非提交
         if (vimModeEnabled) saveToUndoStack();
         setValue((prev) => {
@@ -398,8 +406,8 @@ export const Input: React.FC<InputProps> = ({
       }
 
       // ===== Shift+Tab 权限模式快捷切换 (官方 v2.1.2) =====
-      // 检测 Shift+Tab (key.tab && key.shift 或转义序列 \x1b[Z)
-      if ((key.tab && key.shift) || input === '\x1b[Z') {
+      // v2.1.6: 支持 Kitty 键盘协议 (CSI 9;2 u) 和传统格式 (\x1b[Z)
+      if ((key.tab && key.shift) || isShiftTab(input)) {
         const now = Date.now();
         const timeSinceLastPress = now - lastShiftTabTimeRef.current;
 
@@ -1149,27 +1157,33 @@ export const Input: React.FC<InputProps> = ({
         />
       )}
 
-      {/* 补全建议列表 */}
+      {/* 补全建议列表 - v2.1.6: 添加图标支持 */}
       {showCompletionList && !reverseSearchMode && (
         <Box flexDirection="column" marginBottom={1}>
-          {completions.map((item, index) => (
-            <Box key={`${item.type}-${item.label}-${index}`}>
-              <Text
-                backgroundColor={index === selectedCompletionIndex ? 'gray' : undefined}
-                color={index === selectedCompletionIndex ? 'white' : undefined}
-              >
-                <Text color={CLAUDE_COLOR} bold={index === selectedCompletionIndex}>
-                  {item.label}
+          {completions.map((item, index) => {
+            // v2.1.6: 获取图标（优先使用项目自带的 icon，否则根据类型生成）
+            const icon = item.icon || getCompletionIcon(item.type, item.label);
+            return (
+              <Box key={`${item.type}-${item.label}-${index}`}>
+                <Text
+                  backgroundColor={index === selectedCompletionIndex ? 'gray' : undefined}
+                  color={index === selectedCompletionIndex ? 'white' : undefined}
+                >
+                  {/* v2.1.6: 显示图标 */}
+                  {icon && <Text>{icon} </Text>}
+                  <Text color={CLAUDE_COLOR} bold={index === selectedCompletionIndex}>
+                    {item.label}
+                  </Text>
+                  {item.aliases && item.aliases.length > 0 && (
+                    <Text dimColor> ({item.aliases.join(', ')})</Text>
+                  )}
+                  {item.description && (
+                    <Text dimColor> - {truncateDescription(item.description)}</Text>
+                  )}
                 </Text>
-                {item.aliases && item.aliases.length > 0 && (
-                  <Text dimColor> ({item.aliases.join(', ')})</Text>
-                )}
-                {item.description && (
-                  <Text dimColor> - {truncateDescription(item.description)}</Text>
-                )}
-              </Text>
-            </Box>
-          ))}
+              </Box>
+            );
+          })}
         </Box>
       )}
 

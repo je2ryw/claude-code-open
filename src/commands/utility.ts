@@ -10,6 +10,7 @@ import * as os from 'os';
 import { generateTerminalConfig, detectTerminalType, formatConfigAsMarkdown } from '../utils/terminal-setup.js';
 import React from 'react';
 import { SkillsDialog } from '../ui/components/SkillsDialog.js';
+import { StatsPanel } from '../ui/components/StatsPanel.js';
 import { isDemoMode } from '../utils/env-check.js';
 
 // /cost - 费用统计 (官方风格)
@@ -46,7 +47,7 @@ export const costCommand: SlashCommand = {
     costInfo += `  Sonnet 4: $3/$15 per 1M tokens (in/out)\n`;
     costInfo += `  Haiku 3.5: $0.25/$1.25 per 1M tokens (in/out)\n\n`;
 
-    costInfo += `For detailed billing: https://console.anthropic.com/billing`;
+    costInfo += `For detailed billing: https://platform.claude.com/billing`;
 
     ctx.ui.addMessage('assistant', costInfo);
     return { success: true };
@@ -79,7 +80,7 @@ Usage Limits:
   claude.ai: Plan-based limits
 
 To check API limits:
-  https://console.anthropic.com/settings
+  https://platform.claude.com/settings
 
 To check claude.ai limits:
   https://claude.ai/settings
@@ -516,92 +517,27 @@ export const skillsCommand: SlashCommand = {
   },
 };
 
-// /stats - 使用统计 (官方风格 - 显示真实统计数据)
+// /stats - 使用统计 (官方风格 v2.1.6+: 交互式统计面板)
+// 支持按 r 键循环切换日期范围: Last 7 days / Last 30 days / All time
 export const statsCommand: SlashCommand = {
   name: 'stats',
   description: 'Show your Claude Code usage statistics and activity',
   category: 'utility',
   execute: (ctx: CommandContext): CommandResult => {
-    const stats = ctx.session.getStats();
-    const durationMins = Math.floor(stats.duration / 60000);
-    const durationSecs = Math.floor((stats.duration % 60000) / 1000);
+    // v2.1.6+: 返回交互式 JSX 组件，由 App.tsx 显示为交互式对话框
+    // 用户可以按 r 键在日期范围间循环: Last 7 days / Last 30 days / All time
+    // 用户可以按 Tab 键在 Overview 和 Models 标签间切换
+    const jsx = React.createElement(StatsPanel, {
+      sessionStats: ctx.session.getStats(),
+      modelDisplayName: ctx.config.modelDisplayName,
+    });
 
-    // 尝试获取会话历史统计
-    const sessionsDir = path.join(os.homedir(), '.claude', 'sessions');
-    let totalSessions = 0;
-    let totalMessages = 0;
-
-    if (fs.existsSync(sessionsDir)) {
-      try {
-        const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
-        totalSessions = files.length;
-
-        // 统计最近几个会话的消息数
-        for (const file of files.slice(-10)) {
-          try {
-            const sessionPath = path.join(sessionsDir, file);
-            const sessionData = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
-            totalMessages += sessionData.messages?.length || 0;
-          } catch {
-            // 忽略解析错误
-          }
-        }
-      } catch {
-        // 忽略目录读取错误
-      }
-    }
-
-    let statsInfo = `╭─ Claude Code Statistics ────────────────────────────╮
-│                                                     │
-│  Current Session                                    │
-│    Session ID: ${ctx.session.id.substring(0, 8)}...                          │
-│    Messages:   ${String(stats.messageCount).padEnd(36)}│
-│    Duration:   ${durationMins}m ${durationSecs}s${' '.repeat(Math.max(0, 32 - String(durationMins).length - String(durationSecs).length))}│
-│    Est. Cost:  ${stats.totalCost.padEnd(36)}│
-│                                                     │
-│  Token Usage                                        │`;
-
-    // 显示模型使用情况
-    const modelUsage = stats.modelUsage || {};
-    if (Object.keys(modelUsage).length > 0) {
-      for (const [model, tokens] of Object.entries(modelUsage)) {
-        const modelName = model.includes('sonnet') ? 'Sonnet' :
-                         model.includes('opus') ? 'Opus' :
-                         model.includes('haiku') ? 'Haiku' : model;
-        statsInfo += `\n│    ${modelName.padEnd(12)} ${String(tokens).toLocaleString().padEnd(27)}│`;
-      }
-    } else {
-      statsInfo += `\n│    (no token data yet)                              │`;
-    }
-
-    statsInfo += `
-│                                                     │
-│  Historical Data                                    │
-│    Total Sessions: ${String(totalSessions).padEnd(32)}│
-│    Recent Messages: ${String(totalMessages).padEnd(31)}│
-│                                                     │
-│  Model: ${ctx.config.modelDisplayName.padEnd(43)}│`;
-
-    // IS_DEMO 模式下隐藏敏感信息 - 官网实现:
-    // if(A.organization&&!process.env.IS_DEMO)Q.push({label:"Organization",value:A.organization});
-    // if(A.email&&!process.env.IS_DEMO)Q.push({label:"Email",value:A.email});
-    if (!isDemoMode()) {
-      // 显示 organization（如果存在）
-      if (ctx.config.organization) {
-        statsInfo += `\n│  Organization: ${ctx.config.organization.padEnd(36)}│`;
-      }
-      // 显示 email（如果存在）- 这里需要从 session 或 config 中获取
-      // 暂时只显示 organization，因为 email 需要从认证模块获取
-    }
-
-    statsInfo += `
-│                                                     │
-╰─────────────────────────────────────────────────────╯
-
-For detailed billing: https://console.anthropic.com/billing`;
-
-    ctx.ui.addMessage('assistant', statsInfo);
-    return { success: true };
+    return {
+      success: true,
+      action: 'showJsx',
+      jsx,
+      shouldHidePromptInput: true,
+    };
   },
 };
 

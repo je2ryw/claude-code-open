@@ -339,6 +339,126 @@ Available servers: ${Object.keys(allServers).join(', ') || 'none'}`);
         break;
       }
 
+      case 'enable': {
+        // v2.1.6: 启用 MCP 服务器
+        const serverName = args[1];
+        if (!serverName) {
+          ctx.ui.addMessage('assistant', 'Usage: /mcp enable <server-name>');
+          return { success: false };
+        }
+
+        // 检查服务器是否存在
+        if (!allServers[serverName]) {
+          ctx.ui.addMessage('assistant', `No MCP server found with name: "${serverName}"
+
+Available servers: ${Object.keys(allServers).join(', ') || 'none'}`);
+          return { success: false };
+        }
+
+        try {
+          // 读取禁用列表
+          const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+          const settings = fs.existsSync(settingsPath)
+            ? JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+            : {};
+
+          // 初始化禁用列表
+          if (!Array.isArray(settings.disabledMcpServers)) {
+            settings.disabledMcpServers = [];
+          }
+
+          // 检查服务器是否已启用
+          const isDisabled = settings.disabledMcpServers.includes(serverName);
+          if (!isDisabled) {
+            ctx.ui.addMessage('assistant', `MCP server "${serverName}" is already enabled.`);
+            return { success: true };
+          }
+
+          // 从禁用列表中移除服务器
+          settings.disabledMcpServers = settings.disabledMcpServers.filter(
+            (name: string) => name !== serverName
+          );
+
+          // 保存配置
+          fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+
+          ctx.ui.addMessage('assistant', `✓ MCP server "${serverName}" enabled
+
+The server will be connected on next restart or when explicitly connected.
+
+To connect now without restarting:
+  /mcp test ${serverName}`);
+          return { success: true };
+        } catch (error) {
+          ctx.ui.addMessage('assistant', `Error enabling server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          return { success: false };
+        }
+      }
+
+      case 'disable': {
+        // v2.1.6: 禁用 MCP 服务器
+        const serverName = args[1];
+        if (!serverName) {
+          ctx.ui.addMessage('assistant', 'Usage: /mcp disable <server-name>');
+          return { success: false };
+        }
+
+        // 检查服务器是否存在
+        if (!allServers[serverName]) {
+          ctx.ui.addMessage('assistant', `No MCP server found with name: "${serverName}"
+
+Available servers: ${Object.keys(allServers).join(', ') || 'none'}`);
+          return { success: false };
+        }
+
+        try {
+          // 读取禁用列表
+          const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+          const settings = fs.existsSync(settingsPath)
+            ? JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+            : {};
+
+          // 初始化禁用列表
+          if (!Array.isArray(settings.disabledMcpServers)) {
+            settings.disabledMcpServers = [];
+          }
+
+          // 检查服务器是否已禁用
+          const isDisabled = settings.disabledMcpServers.includes(serverName);
+          if (isDisabled) {
+            ctx.ui.addMessage('assistant', `MCP server "${serverName}" is already disabled.`);
+            return { success: true };
+          }
+
+          // 添加到禁用列表
+          settings.disabledMcpServers.push(serverName);
+
+          // 保存配置
+          fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+
+          // 尝试断开连接（如果已连接）
+          try {
+            const { disconnectMcpServer } = await import('../tools/mcp.js');
+            await disconnectMcpServer(serverName);
+          } catch {
+            // 忽略断开连接错误
+          }
+
+          ctx.ui.addMessage('assistant', `✓ MCP server "${serverName}" disabled
+
+The server will not connect on next startup.
+
+To re-enable the server:
+  /mcp enable ${serverName}`);
+          return { success: true };
+        } catch (error) {
+          ctx.ui.addMessage('assistant', `Error disabling server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          return { success: false };
+        }
+      }
+
       default:
         ctx.ui.addMessage('assistant', `Unknown action: ${action}
 
@@ -347,7 +467,9 @@ Available commands:
   /mcp add <name>        - Add a new server
   /mcp remove <name>     - Remove a server
   /mcp get <name>        - Get server details
-  /mcp test <name>       - Test server connection`);
+  /mcp test <name>       - Test server connection
+  /mcp enable <name>     - Enable a disabled server
+  /mcp disable <name>    - Disable a server`);
         return { success: false };
     }
 

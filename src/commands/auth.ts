@@ -74,7 +74,7 @@ Current status: ${authStatus}`);
 │  Login Methods:                                    │
 │                                                    │
 │  1. API Key (Recommended for developers)           │
-│     • Get key from: https://console.anthropic.com  │
+│     • Get key from: https://platform.claude.com  │
 │     • Command: /login --api-key                    │
 │     • Best for: Pay-per-use API billing            │
 │                                                    │
@@ -122,7 +122,7 @@ for developers using Claude Code.
 Steps:
 
 1. Get your API key:
-   Visit: https://console.anthropic.com/settings/keys
+   Visit: https://platform.claude.com/settings/keys
    Create or copy an existing key
 
 2. Set the API key (choose one method):
@@ -356,7 +356,7 @@ To upgrade:
   3. Complete payment
   4. Restart Claude Code to use your new limits
 
-API Pricing (console.anthropic.com):
+API Pricing (platform.claude.com):
   • Pay per token used
   • No subscription required
   • Best for developers and variable usage
@@ -459,7 +459,7 @@ ${
   • You're using usage-based billing
   • Extra usage not applicable
   • Pay only for what you use
-  • Set spend limits at https://console.anthropic.com
+  • Set spend limits at https://platform.claude.com
 
 Current Status:
   • Billing: Per-token usage
@@ -502,9 +502,9 @@ Extra usage is not applicable when using API keys.
 You're already on usage-based billing - you pay only for what you use.
 
 To manage your API usage:
-  • Set spend limits: https://console.anthropic.com/settings/limits
-  • View usage: https://console.anthropic.com/settings/usage
-  • Manage billing: https://console.anthropic.com/settings/billing`
+  • Set spend limits: https://platform.claude.com/settings/limits
+  • View usage: https://platform.claude.com/settings/usage
+  • Manage billing: https://platform.claude.com/settings/billing`
     : `To enable extra usage for your Claude subscription:
 
 1. Visit Claude Settings:
@@ -659,7 +659,7 @@ Alternative Options:
 For API Users:
   If you're using API keys, you're already on usage-based billing.
   Extra usage is not needed - you pay only for what you use.
-  Manage spend limits at: https://console.anthropic.com
+  Manage spend limits at: https://platform.claude.com
 
 For Claude.ai Users:
   Manage extra usage at: https://claude.ai/settings
@@ -722,7 +722,7 @@ When you reach your API rate limits, you have several options:
 │    • Pay only for what you use                       │
 │    • No subscription required                        │
 │    • Set custom spend limits                         │
-│    • Get API key: https://console.anthropic.com      │
+│    • Get API key: https://platform.claude.com      │
 └─────────────────────────────────────────────────────┘
 
 Current Status:

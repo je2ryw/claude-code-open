@@ -20,6 +20,7 @@ import {
 } from '../hooks/index.js';
 import type { Message } from '../types/index.js';
 import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, CODE_ANALYZER_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
+import { notificationManager, type AgentCompletionResult } from '../notifications/index.js';
 
 // 代理类型定义（参照官方）
 export interface AgentTypeDefinition {
@@ -625,6 +626,9 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         agent.endTime = new Date();
         addAgentHistory(agent, 'completed', 'Agent completed successfully');
         saveAgentState(agent);
+
+        // v2.1.7: 发送代理完成通知，包含内联结果显示
+        this.sendAgentCompletionNotification(agent);
       })
       .catch((error) => {
         // 执行失败
@@ -633,6 +637,9 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         agent.endTime = new Date();
         addAgentHistory(agent, 'failed', `Agent failed: ${agent.error}`);
         saveAgentState(agent);
+
+        // v2.1.7: 发送代理失败通知
+        this.sendAgentCompletionNotification(agent);
       });
   }
 
@@ -811,6 +818,60 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
 
       throw error;
     }
+  }
+
+  /**
+   * 发送代理完成通知（v2.1.7 功能）
+   * 在代理执行完成后发送通知，包含内联的最终响应摘要
+   */
+  private sendAgentCompletionNotification(agent: BackgroundAgent): void {
+    // 计算执行时长
+    const duration = agent.endTime && agent.startTime
+      ? agent.endTime.getTime() - agent.startTime.getTime()
+      : undefined;
+
+    // 获取代理状态
+    const status: AgentCompletionResult['status'] =
+      agent.status === 'completed' ? 'completed' :
+      agent.status === 'failed' ? 'failed' : 'killed';
+
+    // 获取结果内容
+    const result = agent.result?.output || agent.error;
+
+    // 生成结果摘要（v2.1.6: 限制为最多3行）
+    let resultSummary: string | undefined;
+    if (result) {
+      // 移除多余空白行，提取有意义的内容，并限制为最多3行
+      const cleanedResult = result
+        .split('\n')
+        .filter((line: string) => line.trim())
+        .slice(0, 3)  // v2.1.6: 限制为最多3行
+        .join('\n')
+        .trim();
+      // 如果原始内容超过3行，添加省略号
+      const originalLineCount = result.split('\n').filter((line: string) => line.trim()).length;
+      const needsEllipsis = originalLineCount > 3;
+      resultSummary = cleanedResult.length > 500
+        ? cleanedResult.substring(0, 497) + '...'
+        : needsEllipsis
+          ? cleanedResult + '\n...'
+          : cleanedResult;
+    }
+
+    // 获取转录文件路径
+    const transcriptPath = getAgentFilePath(agent.id);
+
+    // 发送通知
+    notificationManager.notifyAgentCompletion({
+      agentId: agent.id,
+      agentType: agent.agentType,
+      description: agent.description,
+      status,
+      result,
+      resultSummary,
+      duration,
+      transcriptPath,
+    });
   }
 }
 

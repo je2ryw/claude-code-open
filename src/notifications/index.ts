@@ -8,7 +8,22 @@ import * as os from 'os';
 import { EventEmitter } from 'events';
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
-export type NotificationKind = 'task_complete' | 'error' | 'permission_required' | 'update_available' | 'message' | 'custom';
+export type NotificationKind = 'task_complete' | 'agent_complete' | 'error' | 'permission_required' | 'update_available' | 'message' | 'custom';
+
+/**
+ * Agent completion result for inline display in notifications
+ * (v2.1.7 feature: inline display of agent's final response)
+ */
+export interface AgentCompletionResult {
+  agentId: string;
+  agentType: string;
+  description: string;
+  status: 'completed' | 'failed' | 'killed';
+  result?: string;
+  resultSummary?: string;  // 摘要版本的结果
+  duration?: number;       // 执行时长（毫秒）
+  transcriptPath?: string; // 完整转录文件路径
+}
 
 export interface Notification {
   id: string;
@@ -20,6 +35,7 @@ export interface Notification {
   read: boolean;
   actions?: NotificationAction[];
   data?: Record<string, unknown>;
+  agentResult?: AgentCompletionResult;  // v2.1.7: inline agent result
 }
 
 export interface NotificationAction {
@@ -110,6 +126,7 @@ export class NotificationManager extends EventEmitter {
     message: string;
     actions?: NotificationAction[];
     data?: Record<string, unknown>;
+    agentResult?: AgentCompletionResult;
   }): Notification | null {
     if (!this.isEnabled()) {
       return null;
@@ -131,6 +148,7 @@ export class NotificationManager extends EventEmitter {
       read: false,
       actions: options.actions,
       data: options.data,
+      agentResult: options.agentResult,
     };
 
     // Add to list
@@ -308,6 +326,56 @@ export class NotificationManager extends EventEmitter {
       kind: 'task_complete',
       title: 'Task Complete',
       message: taskName,
+    });
+  }
+
+  /**
+   * Send agent completion notification with inline result display
+   * (v2.1.7 feature: inline display of agent's final response in task notifications)
+   *
+   * @param result Agent completion result containing status and response
+   * @returns Notification object or null if notifications are disabled
+   */
+  notifyAgentCompletion(result: AgentCompletionResult): Notification | null {
+    const statusText = result.status === 'completed' ? 'completed successfully' :
+                       result.status === 'failed' ? 'failed' : 'was killed';
+
+    // 生成结果摘要（如果结果太长则截断）
+    const maxSummaryLength = 200;
+    let resultSummary = result.resultSummary || result.result;
+    if (resultSummary && resultSummary.length > maxSummaryLength) {
+      resultSummary = resultSummary.substring(0, maxSummaryLength - 3) + '...';
+    }
+
+    // 格式化持续时间
+    const durationStr = result.duration
+      ? ` in ${(result.duration / 1000).toFixed(1)}s`
+      : '';
+
+    // 构建消息
+    let message = `Agent "${result.description}" ${statusText}${durationStr}`;
+    if (resultSummary && result.status === 'completed') {
+      message += `\n\nResult: ${resultSummary}`;
+    }
+    if (result.transcriptPath) {
+      message += `\n\nFull transcript: ${result.transcriptPath}`;
+    }
+
+    return this.notify({
+      type: result.status === 'completed' ? 'success' :
+            result.status === 'failed' ? 'error' : 'warning',
+      kind: 'agent_complete',
+      title: `Agent ${result.status === 'completed' ? 'Complete' : result.status === 'failed' ? 'Failed' : 'Killed'}`,
+      message,
+      agentResult: {
+        ...result,
+        resultSummary,
+      },
+      data: {
+        agentId: result.agentId,
+        agentType: result.agentType,
+        status: result.status,
+      },
     });
   }
 
