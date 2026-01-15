@@ -12,8 +12,8 @@
  */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { DomainNode, DomainRelationship } from '../../../../../../../../../web/shared/onion-types';
-import styles from './DomainGraph.module.css';
+import { ModuleGraphEdge, ModuleGraphNode } from '../../../../../shared/module-graph-types';
+import styles from './ModuleGraph.module.css';
 
 /** 模块内部文件信息 */
 export interface ModuleFile {
@@ -35,11 +35,11 @@ export interface ExpandedModuleData {
   error?: string;
 }
 
-export interface DomainGraphProps {
+export interface ModuleGraphProps {
   /** 领域节点列表 */
-  domains: DomainNode[];
+  domains: ModuleGraphNode[];
   /** 关系列表 */
-  relationships: DomainRelationship[];
+  relationships: ModuleGraphEdge[];
   /** 当前选中的领域ID */
   selectedDomainId?: string;
   /** 当前选中的文件ID */
@@ -55,13 +55,13 @@ export interface DomainGraphProps {
 }
 
 /** 模块类型颜色映射 */
-const DOMAIN_TYPE_COLORS: Record<DomainNode['type'], string> = {
-  core: '#ff6b6b',
-  presentation: '#4ecdc4',
-  data: '#45b7d1',
-  utility: '#96ceb4',
-  infrastructure: '#dda0dd',
-  unknown: '#888888',
+const DOMAIN_TYPE_COLORS: Record<ModuleGraphNode['type'], string> = {
+  frontend: '#3b82f6',
+  backend: '#10b981',
+  database: '#f59e0b',
+  service: '#22c55e',
+  infrastructure: '#94a3b8',
+  other: '#64748b',
 };
 
 /** 节点尺寸 */
@@ -88,15 +88,15 @@ interface NodePosition {
  * 智能布局算法（支持展开状态）
  */
 const calculateLayout = (
-  domains: DomainNode[],
-  relationships: DomainRelationship[] = [],
+  domains: ModuleGraphNode[],
+  relationships: ModuleGraphEdge[] = [],
   expandedModules: Map<string, ExpandedModuleData>
 ): Map<string, NodePosition> => {
   const positions = new Map<string, NodePosition>();
   if (domains.length === 0) return positions;
 
   // 按架构层级分组
-  const layerGroups: Record<string, DomainNode[]> = {
+  const layerGroups: Record<string, ModuleGraphNode[]> = {
     presentation: [],
     business: [],
     data: [],
@@ -148,7 +148,7 @@ const calculateLayout = (
     });
 
     // 重新排列：最重要的放中间
-    const arranged: DomainNode[] = new Array(sortedNodes.length);
+    const arranged: ModuleGraphNode[] = new Array(sortedNodes.length);
     const mid = Math.floor(sortedNodes.length / 2);
 
     sortedNodes.forEach((node, i) => {
@@ -290,7 +290,7 @@ const calculateParentChildPath = (
  * 模块节点组件（支持拖动和双击展开）
  */
 const DomainNodeComponent: React.FC<{
-  domain: DomainNode;
+  domain: ModuleGraphNode;
   position: NodePosition;
   isSelected: boolean;
   isDragging: boolean;
@@ -523,7 +523,7 @@ const FileNodeComponent: React.FC<{
  * 关系连接线组件
  */
 const RelationshipLine: React.FC<{
-  relationship: DomainRelationship;
+  relationship: ModuleGraphEdge;
   fromPos: NodePosition;
   toPos: NodePosition;
   isHighlighted: boolean;
@@ -568,7 +568,7 @@ const RelationshipLine: React.FC<{
 /**
  * 模块关系图主组件
  */
-export const DomainGraph: React.FC<DomainGraphProps> = ({
+export const ModuleGraph: React.FC<ModuleGraphProps> = ({
   domains,
   relationships,
   selectedDomainId,
@@ -681,7 +681,7 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
 
   // 判断关系是否高亮
   const isRelationshipHighlighted = useCallback(
-    (rel: DomainRelationship) => {
+    (rel: ModuleGraphEdge) => {
       if (!selectedDomainId) return false;
       return rel.source === selectedDomainId || rel.target === selectedDomainId;
     },
@@ -703,6 +703,7 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
     async (domainId: string) => {
       const domain = domains.find((d) => d.id === domainId);
       if (!domain) return;
+      if (!domain.path) return;
 
       // 触发外部回调
       if (onDomainDoubleClick) {
@@ -1116,13 +1117,13 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
                     position={filePos}
                     isSelected={file.id === selectedFileId}
                     onClick={() => {
-                      console.log('[DomainGraph] 单击文件:', file.path);
+                      console.log('[ModuleGraph] 单击文件:', file.path);
                       if (onFileClick) {
                         onFileClick(file, moduleId);
                       }
                     }}
                     onDoubleClick={() => {
-                      console.log('[DomainGraph] 双击文件:', file.path);
+                      console.log('[ModuleGraph] 双击文件:', file.path);
                       if (onFileDoubleClick) {
                         onFileDoubleClick(file, moduleId);
                       }
@@ -1153,4 +1154,4 @@ export const DomainGraph: React.FC<DomainGraphProps> = ({
   );
 };
 
-export default DomainGraph;
+export default ModuleGraph;

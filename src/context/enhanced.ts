@@ -94,6 +94,9 @@ export interface ContextWindowStats {
   total_output_tokens: number;      // 累积输出 tokens
   context_window_size: number;      // 上下文窗口大小
   current_usage: TokenUsage | null; // 最近一次 API 调用的使用情况
+  // v2.1.6+ 状态行新增字段
+  used_percentage: number | null;      // 上下文使用百分比 (0-100)
+  remaining_percentage: number | null; // 上下文剩余百分比 (0-100)
 }
 
 /**
@@ -161,11 +164,15 @@ export class ContextWindowManager {
    * 获取统计信息
    */
   getStats(): ContextWindowStats {
+    const usedPercentage = this.getUsagePercentage();
     return {
       total_input_tokens: this.totalInputTokens,
       total_output_tokens: this.totalOutputTokens,
       context_window_size: this.contextWindowSize,
       current_usage: this.currentUsage,
+      // v2.1.6+ 状态行新增字段
+      used_percentage: this.currentUsage ? Math.round(usedPercentage) : null,
+      remaining_percentage: this.currentUsage ? Math.round(100 - usedPercentage) : null,
     };
   }
 

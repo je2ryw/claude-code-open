@@ -86,6 +86,10 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const blueprintRouter = await import('./routes/blueprint-api.js');
   app.use('/api/blueprint', blueprintRouter.default);
 
+  // AI Hover API 路由（智能悬停提示）
+  const aiHoverRouter = await import('./routes/ai-hover.js');
+  app.use('/api/ai-hover', aiHoverRouter.default);
+
   // 检测开发模式
   const isDev = process.env.NODE_ENV !== 'production' && !process.argv[1]?.includes('dist');
   const clientPath = path.join(__dirname, '../client');

@@ -25,9 +25,77 @@ import { scheduleCleanup } from './session/cleanup.js';
 import { createPluginCommand } from './plugins/cli.js';
 import type { PermissionMode, OutputFormat, InputFormat } from './types/index.js';
 import { VERSION_FULL } from './version.js';
+import { resetTerminalTitle } from './utils/platform.js';
+import { disconnectAllMcpServers } from './tools/mcp.js';
 
 // 工作目录列表
 const additionalDirectories: string[] = [];
+
+// 全局 MCP 进程清理标志，防止重复清理
+let mcpCleanupScheduled = false;
+
+/**
+ * 确保所有 MCP 服务器进程在程序退出前被正确清理
+ *
+ * 这个函数会在以下情况被调用：
+ * 1. 正常退出 (beforeExit)
+ * 2. 收到 SIGINT/SIGTERM 信号
+ * 3. 发生未捕获的异常
+ * 4. mcp list --status 或 mcp get --status 命令完成后
+ *
+ * v2.1.6 修复: 防止 mcp list 和 mcp get 命令留下孤儿进程
+ *
+ * @param resetFlag 是否在清理后重置标志，允许后续再次清理（用于命令级清理）
+ */
+async function cleanupMcpServers(resetFlag = false): Promise<void> {
+  if (mcpCleanupScheduled && !resetFlag) return;
+  mcpCleanupScheduled = true;
+
+  try {
+    await disconnectAllMcpServers();
+  } catch (err) {
+    // 静默处理清理错误，避免干扰用户
+    if (process.env.DEBUG) {
+      console.error('[MCP] Cleanup error:', err);
+    }
+  }
+
+  // 如果是命令级清理，重置标志以允许后续清理
+  if (resetFlag) {
+    mcpCleanupScheduled = false;
+  }
+}
+
+// 注册进程退出时的 MCP 清理
+process.on('beforeExit', async () => {
+  await cleanupMcpServers();
+});
+
+// 注册 SIGINT 信号处理（Ctrl+C）
+process.on('SIGINT', async () => {
+  await cleanupMcpServers();
+  process.exit(0);
+});
+
+// 注册 SIGTERM 信号处理
+process.on('SIGTERM', async () => {
+  await cleanupMcpServers();
+  process.exit(0);
+});
+
+// 注册未捕获异常处理
+process.on('uncaughtException', async (err) => {
+  console.error('Uncaught exception:', err);
+  await cleanupMcpServers();
+  process.exit(1);
+});
+
+// 注册未处理的 Promise 拒绝
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  await cleanupMcpServers();
+  process.exit(1);
+});
 
 const program = new Command();
 
@@ -110,6 +178,9 @@ program
     // T504: action_handler_start - Action 处理器开始
     await emitLifecycleEvent('action_handler_start');
 
+    // v2.1.6: 设置终端标题为 "Claude Code"
+    resetTerminalTitle();
+
     // ✅ 启动时自动清理过期数据（异步，不阻塞）
     scheduleCleanup();
 
@@ -125,7 +196,8 @@ program
 
     // 检查是否需要显示登录选择器
     // 只在没有 prompt 且没有认证凭据时显示
-    if (!prompt && !options.print && !options.text) {
+    // v2.1.6: 添加 resume 检查，避免 --resume 时登录菜单闪现
+    if (!prompt && !options.print && !options.text && options.resume === undefined) {
       const { shouldShowLoginSelector } = await import('./ui/LoginSelector.js');
 
       if (shouldShowLoginSelector()) {
@@ -748,7 +820,8 @@ mcpCommand
 mcpCommand
   .command('list')
   .description('List configured MCP servers')
-  .action(() => {
+  .option('--status', 'Check connection status of each server (starts and stops server processes)')
+  .action(async (options) => {
     const servers = configManager.getMcpServers();
     const serverNames = Object.keys(servers);
 
@@ -758,17 +831,58 @@ mcpCommand
     }
 
     console.log(chalk.bold('\nConfigured MCP Servers:\n'));
-    serverNames.forEach(name => {
-      const config = servers[name];
-      console.log(chalk.cyan(`  ${name}`));
-      console.log(chalk.gray(`    Type: ${config.type}`));
-      if (config.command) {
-        console.log(chalk.gray(`    Command: ${config.command} ${(config.args || []).join(' ')}`));
+
+    // 如果请求状态，需要连接服务器检测
+    if (options.status) {
+      const { registerMcpServer, connectMcpServer, getServerStatus } = await import('./tools/mcp.js');
+
+      for (const name of serverNames) {
+        const config = servers[name];
+        console.log(chalk.cyan(`  ${name}`));
+        console.log(chalk.gray(`    Type: ${config.type}`));
+        if (config.command) {
+          console.log(chalk.gray(`    Command: ${config.command} ${(config.args || []).join(' ')}`));
+        }
+        if (config.url) {
+          console.log(chalk.gray(`    URL: ${config.url}`));
+        }
+
+        // 尝试连接并获取状态
+        try {
+          registerMcpServer(name, config);
+          const connected = await connectMcpServer(name, false); // 不重试
+          const status = getServerStatus(name);
+
+          if (connected && status) {
+            console.log(chalk.green(`    Status: Connected`));
+            console.log(chalk.gray(`    Tools: ${status.toolCount}`));
+            console.log(chalk.gray(`    Resources: ${status.resourceCount}`));
+          } else {
+            console.log(chalk.yellow(`    Status: Not connected`));
+          }
+        } catch (err) {
+          console.log(chalk.red(`    Status: Error - ${err instanceof Error ? err.message : err}`));
+        }
       }
-      if (config.url) {
-        console.log(chalk.gray(`    URL: ${config.url}`));
-      }
-    });
+
+      // v2.1.6 修复: 确保所有启动的 MCP 进程都被清理
+      console.log(chalk.gray('\nCleaning up MCP server processes...'));
+      await cleanupMcpServers(true); // resetFlag = true 允许后续再次清理
+      console.log(chalk.gray('Done.'));
+    } else {
+      // 不检查状态，只显示配置
+      serverNames.forEach(name => {
+        const config = servers[name];
+        console.log(chalk.cyan(`  ${name}`));
+        console.log(chalk.gray(`    Type: ${config.type}`));
+        if (config.command) {
+          console.log(chalk.gray(`    Command: ${config.command} ${(config.args || []).join(' ')}`));
+        }
+        if (config.url) {
+          console.log(chalk.gray(`    URL: ${config.url}`));
+        }
+      });
+    }
     console.log();
   });
 
@@ -776,7 +890,8 @@ mcpCommand
 mcpCommand
   .command('get <name>')
   .description('Get details about an MCP server')
-  .action(async (name) => {
+  .option('--status', 'Check connection status (starts and stops the server process)')
+  .action(async (name, options) => {
     const servers = configManager.getMcpServers();
     const config = servers[name];
 
@@ -806,8 +921,37 @@ mcpCommand
       });
     }
 
-    // 状态信息（运行时才能获取）
-    console.log(chalk.gray('\n  Status: Run Claude Code to see connection status'))
+    // 如果请求状态，尝试连接服务器
+    if (options.status) {
+      const { registerMcpServer, connectMcpServer, getServerStatus } = await import('./tools/mcp.js');
+
+      console.log(chalk.gray('\n  Checking connection status...'));
+
+      try {
+        registerMcpServer(name, config);
+        const connected = await connectMcpServer(name, false); // 不重试
+        const status = getServerStatus(name);
+
+        if (connected && status) {
+          console.log(chalk.green(`  Status: Connected`));
+          console.log(`  Capabilities: ${status.capabilities.join(', ') || 'none'}`);
+          console.log(`  Tools: ${status.toolCount}`);
+          console.log(`  Resources: ${status.resourceCount}`);
+        } else {
+          console.log(chalk.yellow(`  Status: Not connected`));
+        }
+      } catch (err) {
+        console.log(chalk.red(`  Status: Error - ${err instanceof Error ? err.message : err}`));
+      }
+
+      // v2.1.6 修复: 确保启动的 MCP 进程被清理
+      console.log(chalk.gray('\n  Cleaning up MCP server process...'));
+      await cleanupMcpServers(true); // resetFlag = true 允许后续再次清理
+      console.log(chalk.gray('  Done.'));
+    } else {
+      // 不检查状态时的提示
+      console.log(chalk.gray('\n  Status: Use --status flag to check connection status'));
+    }
 
     console.log();
   });
@@ -997,7 +1141,7 @@ program
   .action(async () => {
     console.log(chalk.bold('\nSetup Authentication Token\n'));
     console.log(chalk.gray('This feature requires a Claude subscription.'));
-    console.log(chalk.gray('Visit https://console.anthropic.com to get your API key.\n'));
+    console.log(chalk.gray('Visit https://platform.claude.com to get your API key.\n'));
 
     const rl = readline.createInterface({
       input: process.stdin,
@@ -1371,7 +1515,7 @@ program
       console.log(`Current Status: ${chalk.cyan(authStatus)}\n`);
       console.log(chalk.bold('Login Methods:\n'));
       console.log('  1. API Key (Recommended for developers)');
-      console.log('     • Get key from: https://console.anthropic.com');
+      console.log('     • Get key from: https://platform.claude.com');
       console.log(chalk.cyan('     • Command: claude login --api-key\n'));
       console.log('  2. OAuth with Claude.ai Account');
       console.log('     • For Claude Pro/Max subscribers');
@@ -1393,7 +1537,7 @@ program
       console.log('for developers using Claude Code.\n');
       console.log(chalk.bold('Steps:\n'));
       console.log('1. Get your API key:');
-      console.log(chalk.cyan('   Visit: https://console.anthropic.com/settings/keys'));
+      console.log(chalk.cyan('   Visit: https://platform.claude.com/settings/keys'));
       console.log('   Create or copy an existing key\n');
       console.log('2. Set the API key (choose one method):\n');
       console.log('   a) Environment variable (recommended):');
@@ -1731,13 +1875,13 @@ apiCommand
       console.log(`Error: ${error instanceof Error ? error.message : String(error)}\n`);
       console.log('Common Issues:\n');
       console.log('1. Invalid API Key:');
-      console.log('   • Verify the key at https://console.anthropic.com/settings/keys');
+      console.log('   • Verify the key at https://platform.claude.com/settings/keys');
       console.log('   • Try regenerating your API key\n');
       console.log('2. Network Issues:');
       console.log('   • Check your internet connection');
       console.log('   • Verify firewall settings\n');
       console.log('3. Rate Limits:');
-      console.log('   • Visit https://console.anthropic.com/settings/limits\n');
+      console.log('   • Visit https://platform.claude.com/settings/limits\n');
     }
   });
 

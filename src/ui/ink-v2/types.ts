@@ -95,3 +95,55 @@ export interface InkV2Options {
   ink2?: boolean;
   onFlicker?: (height: number, rows: number, ink2: boolean, reason: string) => void;
 }
+
+// 元素渲染状态缓存（用于 display:none 视觉伪影修复）
+// 官方实现: G21 = new WeakMap
+export interface ElementRenderState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Yoga Display 枚举（与 yoga-layout 对应）
+export enum Display {
+  Flex = 0,
+  None = 1,
+}
+
+// DOM 元素接口（简化版，用于渲染）
+export interface DOMElement {
+  nodeName: string;
+  yogaNode?: YogaNode;
+  childNodes: DOMElement[];
+  style: ElementStyle;
+  internal_static?: boolean;
+  dirty: boolean;
+}
+
+// Yoga 节点接口
+export interface YogaNode {
+  getDisplay(): Display;
+  getComputedLeft(): number;
+  getComputedTop(): number;
+  getComputedWidth(): number;
+  getComputedHeight(): number;
+  getComputedBorder(edge: number): number;
+}
+
+// 元素样式接口
+export interface ElementStyle {
+  textWrap?: string;
+  overflow?: string;
+  overflowX?: string;
+  overflowY?: string;
+}
+
+// DOM 渲染选项
+export interface DOMRenderOptions {
+  offsetX?: number;
+  offsetY?: number;
+  skipStaticElements?: boolean;
+  prevScreen?: ScreenData;
+  ink2?: boolean;
+}

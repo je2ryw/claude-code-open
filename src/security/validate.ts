@@ -383,7 +383,7 @@ export const DEFAULT_SECURITY_CHECKS: SecurityCheck[] = [
         trustedDomains: config.network?.trustedDomains || [
           'api.anthropic.com',
           'claude.ai',
-          'console.anthropic.com',
+          'platform.claude.com',
         ],
       },
     }),
@@ -1083,7 +1083,7 @@ export function createSecurityConfigFromUserConfig(userConfig: UserConfig): Secu
     network: {
       enableSSL: true,
       allowExternalRequests: true,
-      trustedDomains: ['api.anthropic.com', 'claude.ai', 'console.anthropic.com'],
+      trustedDomains: ['api.anthropic.com', 'claude.ai', 'platform.claude.com'],
     },
     execution: {
       sandboxEnabled: false,
@@ -1120,7 +1120,7 @@ export function createDefaultSecureConfig(): SecurityConfig {
     network: {
       enableSSL: true,
       allowExternalRequests: true,
-      trustedDomains: ['api.anthropic.com', 'claude.ai', 'console.anthropic.com'],
+      trustedDomains: ['api.anthropic.com', 'claude.ai', 'platform.claude.com'],
     },
     filesystem: {
       restrictToWorkdir: true,

@@ -42,6 +42,8 @@ export interface PermissionResponse {
   remember?: boolean;
   scope?: 'once' | 'session' | 'always';
   timedOut?: boolean;
+  /** v2.1.7: 用户在接受权限提示时提供的可选反馈 */
+  feedback?: string;
 }
 
 /**
@@ -68,6 +70,10 @@ export interface PermissionHistoryEntry {
   scope?: 'once' | 'session' | 'always';
   reason?: string;
   user: boolean;
+  /** v2.1.7: 用户在接受权限提示时提供的可选反馈 */
+  feedback?: string;
+  /** v2.1.7: 是否包含反馈 */
+  hasFeedback?: boolean;
 }
 
 /**
@@ -197,6 +203,7 @@ export class PermissionUI {
 
   /**
    * 获取用户决策
+   * v2.1.7: 添加反馈收集功能
    */
   private async getUserDecision(request: PermissionRequest): Promise<PermissionResponse> {
     const readline = await import('readline');
@@ -207,6 +214,7 @@ export class PermissionUI {
     console.log(`    ${chalk.yellow('[s]')} Allow for this session`);
     console.log(`    ${chalk.green('[A]')} Always allow (remember)`);
     console.log(`    ${chalk.red('[N]')} Never allow (remember)`);
+    console.log(`    ${chalk.magenta('[f]')} Yes, allow once with feedback`);
     console.log();
 
     const rl = readline.createInterface({
@@ -216,9 +224,21 @@ export class PermissionUI {
 
     return new Promise((resolve) => {
       rl.question(chalk.white('  Your choice: '), (answer) => {
+        const choice = answer.trim().toLowerCase();
+
+        // v2.1.7: 处理带反馈的选项
+        if (choice === 'f') {
+          rl.question(chalk.white('  Enter feedback (optional): '), (feedbackInput) => {
+            rl.close();
+            const feedback = feedbackInput.trim() || undefined;
+            console.log();
+            resolve({ allowed: true, scope: 'once', remember: false, feedback });
+          });
+          return;
+        }
+
         rl.close();
 
-        const choice = answer.trim().toLowerCase();
         let response: PermissionResponse;
 
         switch (choice) {
@@ -359,6 +379,7 @@ export class PermissionUI {
   /**
    * 显示权限历史
    * 从审计日志中读取并展示权限决策历史
+   * v2.1.7: 添加反馈信息显示
    */
   showPermissionHistory(history: PermissionHistoryEntry[], limit: number = 20): void {
     console.log(chalk.bold.cyan('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
@@ -383,7 +404,12 @@ export class PermissionUI {
         ? chalk.yellow(' [USER]')
         : chalk.gray(' [AUTO]');
 
-      console.log(`  ${chalk.gray(time)} ${decision}${userDecision}`);
+      // v2.1.7: 显示是否包含反馈
+      const feedbackBadge = entry.hasFeedback
+        ? chalk.magenta(' [FEEDBACK]')
+        : '';
+
+      console.log(`  ${chalk.gray(time)} ${decision}${userDecision}${feedbackBadge}`);
       console.log(`    ${chalk.cyan(entry.tool)} - ${chalk.white(entry.type)}`);
 
       if (entry.resource) {
@@ -395,6 +421,14 @@ export class PermissionUI {
 
       if (entry.reason) {
         console.log(`    ${chalk.gray('Reason:')} ${entry.reason}`);
+      }
+
+      // v2.1.7: 显示反馈内容
+      if (entry.feedback) {
+        const feedbackStr = entry.feedback.length > 80
+          ? entry.feedback.slice(0, 77) + '...'
+          : entry.feedback;
+        console.log(`    ${chalk.magenta('Feedback:')} ${feedbackStr}`);
       }
 
       if (index < entries.length - 1) {
@@ -674,6 +708,7 @@ export function createPermissionBanner(status: PermissionStatus): string {
 
 /**
  * 格式化权限决策
+ * v2.1.7: 添加反馈信息显示
  */
 export function formatPermissionDecision(decision: PermissionDecision): string {
   const allowed = decision.allowed
@@ -688,7 +723,12 @@ export function formatPermissionDecision(decision: PermissionDecision): string {
     ? chalk.gray(`- ${decision.reason}`)
     : '';
 
-  return `${allowed} ${scope} ${reason}`.trim();
+  // v2.1.7: 添加反馈显示
+  const feedback = decision.feedback
+    ? chalk.magenta(`[Feedback: ${decision.feedback.length > 30 ? decision.feedback.slice(0, 27) + '...' : decision.feedback}]`)
+    : '';
+
+  return `${allowed} ${scope} ${reason} ${feedback}`.trim();
 }
 
 /**

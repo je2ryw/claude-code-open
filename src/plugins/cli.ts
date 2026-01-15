@@ -5,6 +5,7 @@
 
 import { Command } from 'commander';
 import { pluginManager } from './index.js';
+import { escapePathForShell, isWindows } from '../utils/platform.js';
 
 /**
  * 创建插件 CLI 命令
@@ -372,13 +373,16 @@ async function installFromNpm(packageName: string, targetDir: string): Promise<b
 
   try {
     // 创建临时目录进行安装
+    // 使用 path.join 确保路径分隔符正确
     const tempDir = path.join(os.tmpdir(), `claude-plugin-${Date.now()}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
     console.log(`  Downloading ${packageName} from npm...`);
 
     // 使用 npm pack 下载包
-    execSync(`npm pack ${packageName}`, { cwd: tempDir, stdio: 'pipe' });
+    // 在 Windows 上确保路径安全
+    const safeTempDir = escapePathForShell(tempDir);
+    execSync(`npm pack ${packageName}`, { cwd: safeTempDir, stdio: 'pipe' });
 
     // 找到下载的 tgz 文件
     const files = fs.readdirSync(tempDir);
@@ -392,7 +396,9 @@ async function installFromNpm(packageName: string, targetDir: string): Promise<b
     console.log(`  Extracting package...`);
 
     // 解压 tgz 文件
-    execSync(`tar -xzf "${tgzFile}"`, { cwd: tempDir, stdio: 'pipe' });
+    // 在 Windows 上，使用转义后的路径确保安全
+    const safeTgzFile = escapePathForShell(tgzFile);
+    execSync(`tar -xzf "${safeTgzFile}"`, { cwd: safeTempDir, stdio: 'pipe' });
 
     // npm pack 解压后的目录通常是 'package'
     const extractedDir = path.join(tempDir, 'package');
@@ -432,6 +438,9 @@ async function installFromNpm(packageName: string, targetDir: string): Promise<b
 
 /**
  * 使用 git 更新插件
+ * v2.1.7: 修复了 git submodules 未完全初始化的问题
+ * - 克隆时使用 --recurse-submodules 和 --shallow-submodules 标志
+ * - 拉取后执行 git submodule update --init --recursive
  */
 async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean> {
   const { execSync } = await import('child_process');
@@ -445,6 +454,16 @@ async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean
       // 如果是 git 仓库，执行 git pull
       console.log(`  Pulling latest changes from git...`);
       execSync('git pull', { cwd: targetDir, stdio: 'pipe' });
+
+      // v2.1.7: 拉取后更新子模块，确保子模块完全初始化
+      console.log(`  Updating submodules...`);
+      try {
+        execSync('git submodule update --init --recursive', { cwd: targetDir, stdio: 'pipe' });
+      } catch (submoduleErr) {
+        // 子模块更新失败不应阻止主仓库更新成功
+        const submoduleErrMsg = submoduleErr instanceof Error ? submoduleErr.message : String(submoduleErr);
+        console.warn(`  Warning: submodule update failed: ${submoduleErrMsg}`);
+      }
     } else {
       // 否则克隆仓库
       console.log(`  Cloning from ${gitUrl}...`);
@@ -460,7 +479,31 @@ async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean
         cloneUrl = cloneUrl.slice(4);
       }
 
-      execSync(`git clone "${cloneUrl}" "${targetDir}"`, { stdio: 'pipe' });
+      // v2.1.7: 使用 --recurse-submodules 和 --shallow-submodules 克隆
+      // 这确保子模块在克隆时就被完全初始化
+      try {
+        execSync(`git clone --recurse-submodules --shallow-submodules "${cloneUrl}" "${targetDir}"`, { stdio: 'pipe' });
+      } catch (cloneErr) {
+        // 如果带子模块克隆失败，尝试普通克隆后再初始化子模块
+        const cloneErrMsg = cloneErr instanceof Error ? cloneErr.message : String(cloneErr);
+        console.warn(`  Clone with submodules failed, trying fallback: ${cloneErrMsg}`);
+
+        // 清理可能的部分克隆
+        if (fs.existsSync(targetDir)) {
+          fs.rmSync(targetDir, { recursive: true });
+        }
+
+        // 普通克隆
+        execSync(`git clone "${cloneUrl}" "${targetDir}"`, { stdio: 'pipe' });
+
+        // 然后初始化子模块
+        try {
+          execSync('git submodule update --init --recursive', { cwd: targetDir, stdio: 'pipe' });
+        } catch (submoduleErr) {
+          const submoduleErrMsg = submoduleErr instanceof Error ? submoduleErr.message : String(submoduleErr);
+          console.warn(`  Warning: submodule initialization failed: ${submoduleErrMsg}`);
+        }
+      }
     }
 
     // 记录更新源

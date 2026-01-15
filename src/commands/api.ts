@@ -250,7 +250,7 @@ To view detailed costs:
   /session stats       Show full session statistics
 
 To check API limits:
-  Visit https://console.anthropic.com/settings/limits`;
+  Visit https://platform.claude.com/settings/limits`;
 
   ctx.ui.addMessage('assistant', usageInfo);
   return { success: true };
@@ -359,7 +359,7 @@ Common Issues:
 
 1. Invalid API Key:
    • Check that your key starts with "sk-ant-"
-   • Verify the key at https://console.anthropic.com/settings/keys
+   • Verify the key at https://platform.claude.com/settings/keys
    • Try regenerating your API key
 
 2. Network Issues:
@@ -369,7 +369,7 @@ Common Issues:
 
 3. Rate Limits:
    • You may have exceeded rate limits
-   • Visit https://console.anthropic.com/settings/limits
+   • Visit https://platform.claude.com/settings/limits
    • Wait a few minutes and try again
 
 To update your API key:
@@ -470,10 +470,10 @@ Security Notes:
   • Never commit API keys to git
   • Use environment variables in production
   • Rotate keys regularly
-  • Set spend limits at console.anthropic.com
+  • Set spend limits at platform.claude.com
 
 Get your API key:
-  https://console.anthropic.com/settings/keys`;
+  https://platform.claude.com/settings/keys`;
 
       ctx.ui.addMessage('assistant', setInfo);
       return { success: true };

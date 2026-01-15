@@ -226,7 +226,7 @@ When Rate Limited:
 
 To Increase Limits:
 
-  • Upgrade your API plan at console.anthropic.com
+  • Upgrade your API plan at platform.claude.com
   • For enterprise needs, contact Anthropic sales
 
 Environment Variables:
@@ -234,7 +234,7 @@ Environment Variables:
   ANTHROPIC_RATE_LIMIT_RETRY=5       Max retry attempts
   ANTHROPIC_RATE_LIMIT_WAIT=120      Max wait time (seconds)
 
-Check usage: https://console.anthropic.com/settings/usage`;
+Check usage: https://platform.claude.com/settings/usage`;
 
     ctx.ui.addMessage('assistant', rateLimitInfo);
     return { success: true };
@@ -327,7 +327,7 @@ Current Usage Status:
 
 To Request More Usage:
 
-  1. Visit console.anthropic.com/settings
+  1. Visit platform.claude.com/settings
   2. Navigate to Usage & Limits
   3. Request limit increase or upgrade plan
 

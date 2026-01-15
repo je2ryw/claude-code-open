@@ -58,6 +58,8 @@ function processWideChars(chars: Array<{ value: string; styles: number[] }>): Ar
 }
 
 export class Screen {
+  private static readonly MAX_CACHE_SIZE = 10000;
+
   readonly width: number;
   readonly height: number;
   readonly ink2: boolean;
@@ -75,6 +77,16 @@ export class Screen {
     this.height = options.height;
     this.ink2 = options.ink2 ?? false;
     this.stylePool = options.stylePool;
+  }
+
+  /**
+   * 强制执行字符缓存大小限制
+   * 当缓存超过最大大小时清空缓存，防止内存泄漏
+   */
+  private enforceCharCacheLimit(): void {
+    if (this.charCache.size > Screen.MAX_CACHE_SIZE) {
+      this.charCache.clear();
+    }
   }
 
   /**
@@ -209,6 +221,7 @@ export class Screen {
               chars = processWideChars(chars) as typeof chars;
             }
             this.charCache.set(line, chars);
+            this.enforceCharCacheLimit();
           }
 
           let currentX = x;

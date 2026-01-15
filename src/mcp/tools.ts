@@ -529,6 +529,181 @@ export class McpToolManager {
   }
 }
 
+// ============ MCP 工具搜索模式 (v2.1.7+) ============
+
+/**
+ * MCP 工具搜索模式
+ * - 'tst-auto': 自动模式（默认），当工具描述超过阈值时启用搜索
+ * - 'tst': 强制启用工具搜索
+ * - 'mcp-cli': MCP CLI 模式
+ * - 'standard': 标准模式，不使用工具搜索
+ */
+export type McpToolSearchMode = 'tst-auto' | 'tst' | 'mcp-cli' | 'standard';
+
+// 官方常量（来自 cli.js）
+const TOOL_SEARCH_CONTEXT_RATIO = 0.1;  // heB = 0.1 (10% 的上下文窗口)
+const TOOL_SEARCH_CHAR_MULTIPLIER = 2.5; // At8 = 2.5 (字符数乘数)
+
+/**
+ * 获取 MCP 工具搜索模式 (v2.1.7+)
+ *
+ * 基于官方 Qt8() 函数实现
+ * 默认返回 'tst-auto'（自动模式）
+ */
+export function getMcpToolSearchMode(): McpToolSearchMode {
+  // 环境变量 ENABLE_TOOL_SEARCH="auto" 显式启用自动模式
+  if (process.env.ENABLE_TOOL_SEARCH === 'auto') {
+    return 'tst-auto';
+  }
+
+  // 环境变量显式启用工具搜索
+  if (process.env.ENABLE_TOOL_SEARCH === 'true' || process.env.ENABLE_TOOL_SEARCH === '1') {
+    return 'tst';
+  }
+
+  // 环境变量启用 MCP CLI 模式
+  if (process.env.ENABLE_MCP_CLI === 'true' || process.env.ENABLE_MCP_CLI === '1') {
+    return 'mcp-cli';
+  }
+
+  // 环境变量显式禁用 MCP CLI
+  if (process.env.ENABLE_MCP_CLI === 'false' || process.env.ENABLE_MCP_CLI === '0') {
+    return 'standard';
+  }
+
+  // 环境变量显式禁用工具搜索
+  if (process.env.ENABLE_TOOL_SEARCH === 'false' || process.env.ENABLE_TOOL_SEARCH === '0') {
+    return 'standard';
+  }
+
+  // v2.1.7+: 默认启用自动模式
+  return 'tst-auto';
+}
+
+/**
+ * 获取外部 MCP 工具搜索模式
+ *
+ * 基于官方 k9A() 函数实现
+ */
+export function getExternalMcpToolSearchMode(): McpToolSearchMode {
+  if (process.env.ENABLE_TOOL_SEARCH === 'auto') {
+    return 'tst-auto';
+  }
+
+  if (process.env.ENABLE_TOOL_SEARCH === 'true' || process.env.ENABLE_TOOL_SEARCH === '1') {
+    return 'tst';
+  }
+
+  if (process.env.ENABLE_EXPERIMENTAL_MCP_CLI === 'true' || process.env.ENABLE_EXPERIMENTAL_MCP_CLI === '1') {
+    return 'mcp-cli';
+  }
+
+  if (process.env.ENABLE_TOOL_SEARCH === 'false' || process.env.ENABLE_TOOL_SEARCH === '0') {
+    return 'standard';
+  }
+
+  if (process.env.ENABLE_EXPERIMENTAL_MCP_CLI === 'false' || process.env.ENABLE_EXPERIMENTAL_MCP_CLI === '0') {
+    return 'standard';
+  }
+
+  // v2.1.7+: 默认启用自动模式
+  return 'tst-auto';
+}
+
+/**
+ * 计算自动工具搜索的字符阈值 (v2.1.7+)
+ *
+ * 基于官方 geB() 函数实现
+ * 当 MCP 工具描述超过这个阈值时，自动启用工具搜索
+ *
+ * 计算公式：contextWindow * 0.1 * 2.5
+ *
+ * @param contextWindowSize 上下文窗口大小
+ * @returns 字符阈值
+ */
+export function getAutoToolSearchCharThreshold(contextWindowSize: number): number {
+  return Math.floor(contextWindowSize * TOOL_SEARCH_CONTEXT_RATIO * TOOL_SEARCH_CHAR_MULTIPLIER);
+}
+
+/**
+ * 计算 MCP 工具描述的总字符数
+ *
+ * @param tools MCP 工具列表
+ * @returns 总字符数
+ */
+export function calculateMcpToolsCharCount(tools: McpTool[]): number {
+  let totalChars = 0;
+
+  for (const tool of tools) {
+    // 工具名称
+    totalChars += tool.name.length;
+
+    // 工具描述
+    if (tool.description) {
+      totalChars += tool.description.length;
+    }
+
+    // 输入 schema（JSON 序列化）
+    if (tool.inputSchema) {
+      totalChars += JSON.stringify(tool.inputSchema).length;
+    }
+  }
+
+  return totalChars;
+}
+
+/**
+ * 检查是否应该启用工具搜索 (v2.1.7+)
+ *
+ * 基于官方 RZ0() 函数实现
+ *
+ * @param mode 当前工具搜索模式
+ * @param tools MCP 工具列表
+ * @param contextWindowSize 上下文窗口大小
+ * @returns 是否应该启用工具搜索
+ */
+export function shouldEnableToolSearch(
+  mode: McpToolSearchMode,
+  tools: McpTool[],
+  contextWindowSize: number
+): boolean {
+  // 强制启用模式
+  if (mode === 'tst') {
+    return true;
+  }
+
+  // 标准模式或 MCP CLI 模式，不启用工具搜索
+  if (mode === 'standard' || mode === 'mcp-cli') {
+    return false;
+  }
+
+  // 自动模式：检查工具描述是否超过阈值
+  if (mode === 'tst-auto') {
+    const mcpTools = tools.filter(t => t.serverName !== undefined);
+    if (mcpTools.length === 0) {
+      return false;
+    }
+
+    const toolsCharCount = calculateMcpToolsCharCount(mcpTools);
+    const threshold = getAutoToolSearchCharThreshold(contextWindowSize);
+
+    // 当工具描述超过阈值时启用工具搜索
+    return toolsCharCount >= threshold;
+  }
+
+  return false;
+}
+
+/**
+ * 检查工具搜索是否乐观启用
+ *
+ * @returns 是否乐观启用
+ */
+export function isToolSearchEnabledOptimistic(): boolean {
+  const mode = getExternalMcpToolSearchMode();
+  return mode === 'tst' || mode === 'tst-auto';
+}
+
 // ============ 辅助函数 ============
 
 /**

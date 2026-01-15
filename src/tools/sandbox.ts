@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getGlobalAppState } from './planmode.js';
 import type { ToolPermissionContext } from './planmode.js';
+import { escapePathForShell, isWindows } from '../utils/platform.js';
 
 // ============ 类型定义 ============
 
@@ -571,7 +572,9 @@ async function executeWithSeatbelt(
   const profile = getSeatbeltProfile(cwd, { writablePaths, readOnlyPaths, network });
 
   // 创建临时配置文件
-  const profilePath = path.join(os.tmpdir(), `claude-sandbox-${Date.now()}.sb`);
+  // 使用 path.join 确保正确的路径分隔符，避免手动拼接字符串导致的转义序列问题
+  const tmpDir = os.tmpdir();
+  const profilePath = path.join(tmpDir, `claude-sandbox-${Date.now()}.sb`);
 
   try {
     fs.writeFileSync(profilePath, profile);
@@ -652,6 +655,7 @@ async function executeWithSeatbelt(
 
 /**
  * 直接执行命令（无沙箱）
+ * 跨平台支持：Windows 使用 cmd/powershell，Unix 使用 bash
  */
 async function executeDirectly(
   command: string,
@@ -659,16 +663,45 @@ async function executeDirectly(
 ): Promise<SandboxResult> {
   const { cwd, env, timeout } = options;
 
+  // 在 Windows 上，需要对路径进行特殊处理
+  // 临时目录路径可能包含 \t 或 \n 这样的字符，会被 shell 误解为转义序列
+  const safeEnv = { ...process.env, ...env };
+
+  // 确保 TMPDIR 和 TEMP 路径在 Windows 上是安全的
+  if (isWindows()) {
+    if (safeEnv.TMPDIR) {
+      safeEnv.TMPDIR = escapePathForShell(safeEnv.TMPDIR);
+    }
+    if (safeEnv.TEMP) {
+      safeEnv.TEMP = escapePathForShell(safeEnv.TEMP);
+    }
+    if (safeEnv.TMP) {
+      safeEnv.TMP = escapePathForShell(safeEnv.TMP);
+    }
+  }
+
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let killed = false;
 
-    const proc = spawn('bash', ['-c', command], {
-      cwd,
-      env: { ...process.env, ...env },
+    // 在 Windows 上使用 shell: true 来处理命令
+    // 这样可以让系统选择正确的 shell (cmd 或 powershell)
+    const spawnOptions: any = {
+      cwd: escapePathForShell(cwd),
+      env: safeEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    };
+
+    let proc;
+    if (isWindows()) {
+      // Windows: 使用 shell: true 让 Node.js 自动选择合适的 shell
+      spawnOptions.shell = true;
+      proc = spawn(command, [], spawnOptions);
+    } else {
+      // Unix: 使用 bash -c
+      proc = spawn('bash', ['-c', command], spawnOptions);
+    }
 
     const timeoutId = setTimeout(() => {
       killed = true;

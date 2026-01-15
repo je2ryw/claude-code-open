@@ -1218,20 +1218,35 @@ ${context}
   private extractImportsFromFiles(files: string[]): string[] {
     const imports = new Set<string>();
 
-    // 只检查前 10 个文件
-    for (const file of files.slice(0, 10)) {
+    const normalizeImport = (sourceFile: string, importPath: string): string | null => {
+      const normalized = importPath.replace(/\\/g, '/');
+      if (normalized.startsWith('.')) {
+        const resolved = path.resolve(path.dirname(sourceFile), normalized);
+        const relative = path.relative(this.config.rootDir, resolved);
+        if (relative.startsWith('..')) {
+          return null;
+        }
+        return relative.replace(/\\/g, '/');
+      }
+      if (normalized.startsWith('src/')) {
+        return normalized;
+      }
+      return null;
+    };
+
+    // 只检查前 15 个文件
+    for (const file of files.slice(0, 15)) {
       if (!file.endsWith('.ts') && !file.endsWith('.tsx') && !file.endsWith('.js')) continue;
 
       try {
         const content = fs.readFileSync(file, 'utf-8');
-        // 提取相对路径导入
-        const importMatches = content.matchAll(/import\s+.*from\s+['"](\.[^'"]+)['"]/g);
+        // 提取导入路径（相对路径或 src/ 前缀）
+        const importMatches = content.matchAll(/(?:import|export)\s+.*from\s+['"]([^'"]+)['"]/g);
         for (const match of importMatches) {
           const importPath = match[1];
-          // 提取模块名（如 ../core -> core, ../../web/client -> web/client）
-          const parts = importPath.split('/').filter(p => p !== '.' && p !== '..');
-          if (parts.length > 0) {
-            imports.add(parts[0]);
+          const normalized = normalizeImport(file, importPath);
+          if (normalized) {
+            imports.add(normalized);
           }
         }
       } catch {
@@ -1506,9 +1521,21 @@ ${context}
     // 创建蓝图
     const blueprint = blueprintManager.createBlueprint(codebase.name, codebase.description);
 
-    // 添加模块
+    const normalizeModulePath = (value: string): string =>
+      value.replace(/\\/g, '/').replace(/\/+$/, '');
+
+    // 添加模块（先建立 ID 映射）
+    const moduleIdByRootPath = new Map<string, string>();
+    const moduleIdByName = new Map<string, string>();
+    const createdModules: Array<{
+      id: string;
+      rootPath: string;
+      imports: string[];
+    }> = [];
+
     for (const module of codebase.modules) {
-      blueprintManager.addModule(blueprint.id, {
+      const rootPath = normalizeModulePath(module.rootPath || module.name);
+      const created = blueprintManager.addModule(blueprint.id, {
         name: module.name,
         description: module.aiDescription || `${module.name} 模块 - ${module.type}`,
         type: module.type,
@@ -1516,7 +1543,57 @@ ${context}
         dependencies: [],
         interfaces: [],
         techStack: this.inferTechStack(codebase, module),
+        rootPath,
       });
+      moduleIdByRootPath.set(rootPath, created.id);
+      moduleIdByName.set(module.name, created.id);
+      createdModules.push({
+        id: created.id,
+        rootPath,
+        imports: module.imports || [],
+      });
+    }
+
+    // 解析模块依赖关系（基于导入路径）
+    const updatedBlueprint = blueprintManager.getBlueprint(blueprint.id);
+    if (updatedBlueprint) {
+      const rootPaths = [...moduleIdByRootPath.keys()].sort((a, b) => b.length - a.length);
+      const moduleIdSet = new Set(updatedBlueprint.modules.map(m => m.id));
+
+      for (const created of createdModules) {
+        const dependencies = new Set<string>();
+        for (const importPath of created.imports) {
+          const normalizedImport = normalizeModulePath(importPath);
+          if (!normalizedImport) continue;
+
+          let matchedRootPath = rootPaths.find(p =>
+            normalizedImport === p || normalizedImport.startsWith(`${p}/`)
+          );
+
+          if (!matchedRootPath && !normalizedImport.includes('/')) {
+            const matches = rootPaths.filter(p => p.split('/').pop() === normalizedImport);
+            if (matches.length === 1) {
+              matchedRootPath = matches[0];
+            }
+          }
+
+          const targetId = matchedRootPath
+            ? moduleIdByRootPath.get(matchedRootPath)
+            : moduleIdByName.get(normalizedImport);
+
+          if (targetId && targetId !== created.id && moduleIdSet.has(targetId)) {
+            dependencies.add(targetId);
+          }
+        }
+
+        const targetModule = updatedBlueprint.modules.find(m => m.id === created.id);
+        if (targetModule) {
+          targetModule.dependencies = [...dependencies];
+        }
+      }
+
+      updatedBlueprint.updatedAt = new Date();
+      blueprintManager.saveBlueprint(updatedBlueprint);
     }
 
     // 添加业务流程

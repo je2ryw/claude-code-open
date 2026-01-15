@@ -43,6 +43,15 @@ export {
   saveCursor,
   restoreCursor,
 } from './output.js';
+export {
+  renderDOMElement,
+  getElementRenderState,
+  setElementRenderState,
+  deleteElementRenderState,
+  clearElementRenderStateCache,
+  handleDisplayNoneTransition,
+  handleMultipleDisplayNoneTransitions,
+} from './dom-renderer.js';
 
 // 导入依赖
 import type { InkV2Options, FrameData } from './types.js';

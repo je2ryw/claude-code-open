@@ -36,7 +36,7 @@ const McpServerConfigSchema = z.object({
 
 const UserConfigSchema = z.object({
   // 版本控制
-  version: z.string().default('2.1.4'),
+  version: z.string().default('2.1.7'),
 
   // 语言配置 (v2.1.0+) - 配置 Claude 的响应语言
   // 官方格式：language: "japanese" 会添加到系统提示词
@@ -113,6 +113,9 @@ const UserConfigSchema = z.object({
   /** UI 提示和进度 (P2) */
   spinnerTipsEnabled: z.boolean().default(true).optional(),
   terminalProgressBarEnabled: z.boolean().default(true).optional(),
+
+  /** 响应耗时显示 (v2.1.7+) */
+  showTurnDuration: z.boolean().default(true).optional(),
 
   // Git 配置
   includeCoAuthoredBy: z.boolean().default(true), // 是否在 git commit 中添加 Claude 署名（已弃用，使用 attribution）
@@ -247,7 +250,7 @@ export type UserConfig = z.infer<typeof UserConfigSchema>;
 // ============ 默认配置 ============
 
 const DEFAULT_CONFIG: Partial<UserConfig> = {
-  version: '2.1.4',
+  version: '2.1.7',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,
@@ -294,6 +297,9 @@ const DEFAULT_CONFIG: Partial<UserConfig> = {
   /** UI 提示和进度 */
   spinnerTipsEnabled: true,
   terminalProgressBarEnabled: true,
+
+  /** 响应耗时显示 (v2.1.7+) */
+  showTurnDuration: true,
 
   /** Session Manager */
   sessionManager: {
@@ -552,6 +558,11 @@ function getEnvConfig(): Partial<UserConfig> {
       shellPrefix: process.env.CLAUDE_CODE_SHELL_PREFIX,
       dontInheritEnv: parseEnvBoolean(process.env.CLAUDE_CODE_DONT_INHERIT_ENV),
     };
+  }
+
+  // ===== 临时目录配置 (v2.1.5+) =====
+  if (process.env.CLAUDE_CODE_TMPDIR) {
+    (config as any).tmpDir = process.env.CLAUDE_CODE_TMPDIR;
   }
 
   // ===== UI/UX 扩展 =====
@@ -1639,6 +1650,7 @@ export class ConfigManager {
 
   /**
    * 备份配置文件
+   * v2.1.6 修复: 检查是否已存在相同内容的备份，避免重复备份文件累积
    */
   private backupConfig(filePath: string): void {
     if (!fs.existsSync(filePath)) return;
@@ -1648,12 +1660,41 @@ export class ConfigManager {
       fs.mkdirSync(backupDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = path.basename(filePath, '.json');
-    const backupPath = path.join(backupDir, `${filename}.${timestamp}.json`);
 
     try {
-      fs.copyFileSync(filePath, backupPath);
+      // 读取当前配置文件内容
+      const currentContent = fs.readFileSync(filePath, { encoding: 'utf-8' });
+
+      // 获取现有备份文件列表
+      const existingBackups = fs.readdirSync(backupDir)
+        .filter(f => f.startsWith(filename) && f.endsWith('.json'));
+
+      // 检查是否已存在相同内容的备份
+      let duplicateFound = false;
+      for (const backupFile of existingBackups) {
+        try {
+          const backupPath = path.join(backupDir, backupFile);
+          const backupContent = fs.readFileSync(backupPath, { encoding: 'utf-8' });
+          if (currentContent === backupContent) {
+            duplicateFound = true;
+            this.debugLog(`Skipping backup - identical content already exists: ${backupFile}`);
+            break;
+          }
+        } catch {
+          // 忽略无法读取的备份文件
+        }
+      }
+
+      // 如果没有找到相同内容的备份，才创建新备份
+      if (!duplicateFound) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = path.join(backupDir, `${filename}.${timestamp}.json`);
+        fs.copyFileSync(filePath, backupPath);
+        this.debugLog(`Config backed up to: ${backupPath}`);
+      }
+
+      // 清理旧的备份文件
       this.cleanOldBackups(backupDir, filename);
     } catch (error) {
       console.warn(`备份配置失败: ${error}`);

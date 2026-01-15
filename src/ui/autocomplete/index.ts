@@ -104,7 +104,7 @@ export type {
   CompletionResult,
 } from './types.js';
 
-export { truncateDescription } from './types.js';
+export { truncateDescription, getCompletionIcon } from './types.js';
 
 // 重新导出命令列表
 export { ALL_COMMANDS } from './commands.js';

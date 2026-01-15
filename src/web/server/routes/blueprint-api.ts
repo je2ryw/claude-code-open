@@ -30,6 +30,7 @@ import { CallGraphBuilder } from '../../../map/call-graph-builder.js';
 import type { ModuleNode, CallGraphNode, CallGraphEdge } from '../../../map/types.js';
 import { classifySymbol, canGenerateCallGraph } from './symbol-classifier.js';
 import { calculateTotalLines, groupByDirectory, detectEntryPoints, getCoreSymbols } from './project-map-generator.js';
+import type { ModuleGraphData, ModuleGraphEdge, ModuleGraphNode } from '../../shared/module-graph-types.js';
 
 const router = Router();
 
@@ -74,6 +75,86 @@ router.get('/blueprints/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Blueprint not found' });
     }
     res.json({ success: true, data: blueprint });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+const normalizeModulePath = (value: string): string =>
+  value.replace(/\\/g, '/').replace(/\/+$/, '');
+
+const toArchitectureLayer = (type: ModuleGraphNode['type']): ModuleGraphNode['architectureLayer'] => {
+  switch (type) {
+    case 'frontend':
+      return 'presentation';
+    case 'database':
+      return 'data';
+    case 'infrastructure':
+      return 'infrastructure';
+    case 'backend':
+    case 'service':
+    case 'other':
+    default:
+      return 'business';
+  }
+};
+
+/**
+ * 获取蓝图模块关系图
+ */
+router.get('/blueprints/:id/module-graph', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.getBlueprint(req.params.id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+    }
+
+    const nodes: ModuleGraphNode[] = blueprint.modules.map(module => {
+      const fallbackPath = module.name.includes('/') || module.name.includes('\\') ? module.name : '';
+      const modulePath = normalizeModulePath(module.rootPath || fallbackPath);
+      return {
+        id: module.id,
+        name: module.name,
+        path: modulePath,
+        type: module.type,
+        architectureLayer: toArchitectureLayer(module.type),
+      };
+    });
+
+    const nodeIds = new Set(nodes.map(node => node.id));
+    const nodeIdByName = new Map(nodes.map(node => [node.name, node.id]));
+    const nodeIdByPath = new Map(nodes.map(node => [normalizeModulePath(node.path), node.id]));
+
+    const edges: ModuleGraphEdge[] = [];
+    const edgeKeys = new Set<string>();
+
+    for (const module of blueprint.modules) {
+      for (const dep of module.dependencies || []) {
+        let targetId = dep;
+        if (!nodeIds.has(targetId)) {
+          const normalized = normalizeModulePath(dep);
+          targetId = nodeIdByPath.get(normalized) || nodeIdByName.get(dep) || '';
+        }
+
+        if (!targetId || targetId === module.id || !nodeIds.has(targetId)) {
+          continue;
+        }
+
+        const key = `${module.id}->${targetId}`;
+        if (edgeKeys.has(key)) continue;
+        edgeKeys.add(key);
+
+        edges.push({
+          source: module.id,
+          target: targetId,
+          type: 'import',
+          strength: 1,
+        });
+      }
+    }
+
+    const data: ModuleGraphData = { nodes, edges };
+    res.json({ success: true, data });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -10,6 +10,7 @@ import { execInSandbox, SandboxResult as BwrapResult } from './bubblewrap.js';
 import { execInSeatbelt, SeatbeltResult } from './seatbelt.js';
 import { execInDocker, DockerResult } from './docker.js';
 import { ResourceLimiter, ResourceLimits, buildUlimitArgs } from './resource-limits.js';
+import { isWindows, escapePathForShell } from '../utils/platform.js';
 
 // ============================================================================
 // Type Definitions
@@ -112,6 +113,29 @@ export async function executeInSandbox(
 }
 
 /**
+ * 准备安全的环境变量（处理 Windows 临时目录路径转义问题）
+ */
+function prepareSafeEnv(env?: Record<string, string>): NodeJS.ProcessEnv {
+  const safeEnv = { ...(env || process.env) };
+
+  // 在 Windows 上，临时目录路径可能包含 \t 或 \n 这样的字符
+  // 这些会被 shell 误解为转义序列，需要进行处理
+  if (isWindows()) {
+    if (safeEnv.TMPDIR) {
+      safeEnv.TMPDIR = escapePathForShell(safeEnv.TMPDIR);
+    }
+    if (safeEnv.TEMP) {
+      safeEnv.TEMP = escapePathForShell(safeEnv.TEMP);
+    }
+    if (safeEnv.TMP) {
+      safeEnv.TMP = escapePathForShell(safeEnv.TMP);
+    }
+  }
+
+  return safeEnv as NodeJS.ProcessEnv;
+}
+
+/**
  * Execute without sandbox
  */
 async function executeUnsandboxed(
@@ -129,9 +153,12 @@ async function executeUnsandboxed(
     }
   }
 
+  // 准备安全的环境变量
+  const safeEnv = prepareSafeEnv(config.environmentVariables);
+
   return new Promise((resolve) => {
     const proc = child_process.spawn(command, args, {
-      env: config.environmentVariables || process.env,
+      env: safeEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: config.resourceLimits?.maxExecutionTime,
     });
@@ -184,12 +211,28 @@ async function executeWithUlimit(
 
   const fullCommand = `ulimit ${ulimitArgs.join(' ')} && ${command} ${args.join(' ')}`;
 
+  // 准备安全的环境变量
+  const safeEnv = prepareSafeEnv(config.environmentVariables);
+
   return new Promise((resolve) => {
-    const proc = child_process.spawn('sh', ['-c', fullCommand], {
-      env: config.environmentVariables || process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: config.resourceLimits?.maxExecutionTime,
-    });
+    // ulimit 是 Unix 专属命令，在 Windows 上不可用
+    // 如果在 Windows 上调用此函数，应该直接使用 shell: true
+    let proc;
+    if (isWindows()) {
+      // Windows 上不支持 ulimit，直接执行命令
+      proc = child_process.spawn(`${command} ${args.join(' ')}`, [], {
+        env: safeEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: config.resourceLimits?.maxExecutionTime,
+        shell: true,
+      });
+    } else {
+      proc = child_process.spawn('sh', ['-c', fullCommand], {
+        env: safeEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: config.resourceLimits?.maxExecutionTime,
+      });
+    }
 
     let stdout = '';
     let stderr = '';

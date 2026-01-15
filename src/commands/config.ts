@@ -164,6 +164,7 @@ export const configCommand: SlashCommand = {
 │  Commands:                                          │
 │    /config                    Show this panel       │
 │    /config list               List all settings    │
+│    /config search <term>      Search settings      │
 │    /config get <key>          View a setting        │
 │    /config set <key> <value>  Set a value           │
 │    /config reset              Reset all settings   │
@@ -221,6 +222,71 @@ export const configCommand: SlashCommand = {
       listInfo += `╰────────────────────────────────────────────────────╯`;
 
       ctx.ui.addMessage('assistant', listInfo);
+      return { success: true };
+    }
+
+    // /config search <term> - 搜索配置项 (v2.1.6+)
+    if (action === 'search') {
+      const searchTerm = args.slice(1).join(' ').toLowerCase().trim();
+
+      if (!searchTerm) {
+        ctx.ui.addMessage('assistant', `Usage: /config search <term>
+
+Search through all configuration settings by key, description, or value.
+
+Examples:
+  /config search model
+  /config search token
+  /config search theme`);
+        return { success: false };
+      }
+
+      // 搜索匹配的配置项
+      const matchedItems = CONFIG_ITEMS.filter(item => {
+        const currentValue = config[item.key] ?? item.defaultValue;
+        const valueStr = typeof currentValue === 'object'
+          ? JSON.stringify(currentValue)
+          : String(currentValue);
+
+        return (
+          item.key.toLowerCase().includes(searchTerm) ||
+          item.description.toLowerCase().includes(searchTerm) ||
+          valueStr.toLowerCase().includes(searchTerm) ||
+          (item.example && item.example.toLowerCase().includes(searchTerm))
+        );
+      });
+
+      if (matchedItems.length === 0) {
+        ctx.ui.addMessage('assistant', `No settings match "${searchTerm}"
+
+Try a different search term, or use /config list to see all available settings.`);
+        return { success: true };
+      }
+
+      let searchResult = `╭─ Search Results for "${searchTerm}" ─────────────────╮\n`;
+      searchResult += `│  Found ${matchedItems.length} matching setting${matchedItems.length > 1 ? 's' : ''}                           │\n`;
+      searchResult += `│                                                    │\n`;
+
+      for (const item of matchedItems) {
+        const currentValue = config[item.key] ?? item.defaultValue;
+        const valueStr = typeof currentValue === 'object'
+          ? JSON.stringify(currentValue).substring(0, 20) + '...'
+          : currentValue.toString();
+
+        // 高亮匹配的部分
+        searchResult += `│  ${item.key.padEnd(20)} │\n`;
+        searchResult += `│    Current: ${valueStr.padEnd(36)} │\n`;
+        searchResult += `│    ${item.description.substring(0, 44).padEnd(44)} │\n`;
+        if (item !== matchedItems[matchedItems.length - 1]) {
+          searchResult += `│                                                    │\n`;
+        }
+      }
+
+      searchResult += `│                                                    │\n`;
+      searchResult += `│  Use /config get <key> to view full details       │\n`;
+      searchResult += `╰────────────────────────────────────────────────────╯`;
+
+      ctx.ui.addMessage('assistant', searchResult);
       return { success: true };
     }
 
@@ -1613,7 +1679,7 @@ export const privacySettingsCommand: SlashCommand = {
 │                                                     │
 │  For more information:                              │
 │    Consumer Terms: https://www.anthropic.com/legal  │
-│    Privacy Policy: https://console.anthropic.com/   │
+│    Privacy Policy: https://platform.claude.com/   │
 │                     settings/privacy                │
 │    Documentation:  https://code.claude.com/privacy  │
 │                                                     │

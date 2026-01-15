@@ -43,6 +43,11 @@ import { VERSION_FULL } from '../version.js';
 // 信任管理模块 - 修复 v2.1.3 home 目录信任问题
 import { trustManager, initializeTrustManager } from '../trust/index.js';
 import { TrustDialog, useTrustDialog } from './components/TrustDialog.js';
+// CLAUDE.md 导入审批对话框 - v2.1.6 新增
+import { ClaudeMdImportDialog, scanClaudeMdFiles, type ClaudeMdFile, type ClaudeMdApprovalResult } from './components/ClaudeMdImportDialog.js';
+import { useClaudeMdImport } from './hooks/useClaudeMdImport.js';
+// v2.1.7: 终端标题 spinner - 避免标题抖动
+import { startTerminalTitleSpinner, stopTerminalTitleSpinner } from '../utils/platform.js';
 
 interface AppProps {
   model: string;
@@ -110,6 +115,65 @@ const DEFAULT_SUGGESTIONS = [
   'help me fix this bug',
 ];
 
+// v2.1.7 Turn Duration 相关常量（对齐官方 nT2 数组）
+const TURN_DURATION_VERBS = [
+  'Baked',
+  'Brewed',
+  'Churned',
+  'Cogitated',
+  'Cooked',
+  'Crunched',
+  'Sautéed',
+  'Worked',
+];
+
+/**
+ * 格式化时间（对齐官方 QI 函数）
+ * @param ms 毫秒数
+ * @returns 格式化的时间字符串
+ */
+function formatDuration(ms: number): string {
+  if (ms < 60000) {
+    if (ms === 0) return '0s';
+    if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${Math.round(ms / 1000).toString()}s`;
+  }
+
+  let days = Math.floor(ms / 86400000);
+  let hours = Math.floor((ms % 86400000) / 3600000);
+  let minutes = Math.floor((ms % 3600000) / 60000);
+  let seconds = Math.round((ms % 60000) / 1000);
+
+  // 处理进位
+  if (seconds === 60) {
+    seconds = 0;
+    minutes++;
+  }
+  if (minutes === 60) {
+    minutes = 0;
+    hours++;
+  }
+  if (hours === 24) {
+    hours = 0;
+    days++;
+  }
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * 随机选择一个动词（对齐官方 Wg 函数）
+ */
+function getRandomVerb(): string {
+  return TURN_DURATION_VERBS[Math.floor(Math.random() * TURN_DURATION_VERBS.length)];
+}
+
 export const App: React.FC<AppProps> = ({
   model,
   initialPrompt,
@@ -124,6 +188,8 @@ export const App: React.FC<AppProps> = ({
   const [toolCalls, setToolCalls] = useState<ToolCallItem[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  // v2.1.7 修复：本地斜杠命令标志，防止 spinner 短暂闪烁
+  const [isLocalCommand, setIsLocalCommand] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
 
   // 新增：流式块数组，用于按时间顺序交织显示文本和工�?
@@ -169,6 +235,11 @@ export const App: React.FC<AppProps> = ({
   // 权限模式状态 - 官方 v2.1.2 Shift+Tab 快捷切换
   const [quickPermissionMode, setQuickPermissionMode] = useState<'default' | 'acceptEdits' | 'plan'>('default');
 
+  // v2.1.7 Turn Duration 状态 - 显示每个 Turn 的耗时
+  const [turnDuration, setTurnDuration] = useState<{ durationMs: number; verb: string } | null>(null);
+  // 记录 turn 开始时间的 ref
+  const turnStartTimeRef = useRef<number | null>(null);
+
   // 信任对话框状态 - 修复 v2.1.3 home 目录信任问题
   const {
     showDialog: showTrustDialog,
@@ -177,6 +248,10 @@ export const App: React.FC<AppProps> = ({
     handleReject: handleTrustReject,
     TrustDialogComponent,
   } = useTrustDialog(process.cwd());
+
+  // CLAUDE.md 导入审批状态 - v2.1.6 新增
+  const claudeMdImport = useClaudeMdImport(process.cwd());
+  const [showClaudeMdDialog, setShowClaudeMdDialog] = useState(false);
 
   // 会话 ID
   const sessionId = useRef(uuidv4());
@@ -349,6 +424,8 @@ export const App: React.FC<AppProps> = ({
       if (isProcessing) {
         loop.abort();
         setIsProcessing(false);
+        // v2.1.7: 停止终端标题 spinner 动画
+        stopTerminalTitleSpinner();
         // 添加中断提示到当前流式块
         // v2.1.0 改进：中断消息从红色改为灰色，减少视觉干扰
         setStreamBlocks((prev) => [
@@ -425,6 +502,42 @@ export const App: React.FC<AppProps> = ({
       },
     ]);
   }, []);
+
+  // CLAUDE.md 导入审批处理函数 - v2.1.6 新增
+  // 处理 CLAUDE.md 导入审批完成
+  const handleClaudeMdApprovalComplete = useCallback((result: ClaudeMdApprovalResult) => {
+    claudeMdImport.handleApprovalResult(result);
+    setShowClaudeMdDialog(false);
+
+    if (result.approved) {
+      addMessage('assistant', `Imported ${result.approvedFiles.length} CLAUDE.md file(s).\n\nProject instructions have been loaded.`);
+      addActivity(`Imported ${result.approvedFiles.length} CLAUDE.md files`);
+    } else {
+      addActivity('CLAUDE.md import declined');
+    }
+  }, [claudeMdImport, addMessage, addActivity]);
+
+  // 处理 CLAUDE.md 导入取消
+  const handleClaudeMdCancel = useCallback(() => {
+    setShowClaudeMdDialog(false);
+    claudeMdImport.skipApproval();
+    addActivity('CLAUDE.md import skipped');
+  }, [claudeMdImport, addActivity]);
+
+  // 检查是否需要显示 CLAUDE.md 导入对话框
+  useEffect(() => {
+    // 只在信任目录后且有待审批文件时显示
+    if (directoryTrusted && claudeMdImport.needsApproval && !claudeMdImport.loading) {
+      // 只对外部文件显示审批对话框，项目内文件默认信任
+      const hasExternalFiles = claudeMdImport.pendingFiles.some(f => f.source === 'external');
+      if (hasExternalFiles) {
+        setShowClaudeMdDialog(true);
+      } else {
+        // 自动批准项目内的文件
+        claudeMdImport.skipApproval();
+      }
+    }
+  }, [directoryTrusted, claudeMdImport.needsApproval, claudeMdImport.loading, claudeMdImport.pendingFiles, claudeMdImport.skipApproval]);
 
   // 处理 Shift+Tab 权限模式切换 - 官方 v2.1.2
   const handlePermissionModeChange = useCallback((mode: 'default' | 'acceptEdits' | 'plan') => {
@@ -565,14 +678,25 @@ export const App: React.FC<AppProps> = ({
   // 处理消息
   const handleSubmit = useCallback(
     async (input: string) => {
-      // 隐藏欢迎屏幕
-      if (showWelcome) setShowWelcome(false);
-
-      // 斜杠命令
+      // 斜杠命令 - v2.1.7 修复：在任何状态更新前先判断
+      // 确保本地命令（如 /model, /theme, /config）不会触发 spinner 闪烁
       if (input.startsWith('/')) {
-        await handleSlashCommand(input);
+        // 设置本地命令标志，防止 spinner 显示
+        setIsLocalCommand(true);
+        // 只有在非斜杠命令时才隐藏欢迎屏幕（避免不必要的状态更新）
+        if (showWelcome) setShowWelcome(false);
+        // 直接执行命令，不设置任何可能触发 spinner 的状态
+        try {
+          await handleSlashCommand(input);
+        } finally {
+          // 确保无论命令执行成功与否，都重置本地命令标志
+          setIsLocalCommand(false);
+        }
         return;
       }
+
+      // 隐藏欢迎屏幕（非斜杠命令时）
+      if (showWelcome) setShowWelcome(false);
 
       // 添加用户消息
       addMessage('user', input);
@@ -585,6 +709,14 @@ export const App: React.FC<AppProps> = ({
       setStreamBlocks([]);
       setActiveTextBlockId(null);
       setConnectionStatus('connecting');
+
+      // v2.1.7: 启动终端标题 spinner 动画
+      // 使用等宽 braille 字符避免标题宽度变化导致的抖动
+      startTerminalTitleSpinner();
+
+      // v2.1.7 Turn Duration: 清除上一次的耗时显示，记录开始时间
+      setTurnDuration(null);
+      turnStartTimeRef.current = Date.now();
 
       const startTime = Date.now();
       // 使用局部变量累积响应，避免闭包陷阱
@@ -607,6 +739,8 @@ export const App: React.FC<AppProps> = ({
 
             // 重置 UI 状�?
             setIsProcessing(false);
+            // v2.1.7: 停止终端标题 spinner 动画（任务移到后台）
+            stopTerminalTitleSpinner();
             setCurrentResponse('');
             setStreamBlocks([]);
             setActiveTextBlockId(null);
@@ -787,13 +921,36 @@ export const App: React.FC<AppProps> = ({
         }
         addActivity(`Conversation: ${input.slice(0, 30)}...`);
         setConnectionStatus('connected');
+
+        // v2.1.7 Turn Duration: 计算并显示耗时
+        // 对齐官方实现：只在 turn 时间超过 30 秒时显示
+        if (turnStartTimeRef.current !== null) {
+          const turnEndTime = Date.now();
+          const durationMs = turnEndTime - turnStartTimeRef.current;
+          // 官方实现：只有当耗时超过 30 秒时才显示
+          if (durationMs > 30000) {
+            // 检查配置是否启用显示
+            if (configManager.get('showTurnDuration') !== false) {
+              setTurnDuration({
+                durationMs,
+                verb: getRandomVerb(),
+              });
+            }
+          }
+          turnStartTimeRef.current = null;
+        }
       } catch (err) {
         addMessage('assistant', `Error: ${err}`);
         addActivity(`Error occurred`);
         setConnectionStatus('error');
+
+        // 即使出错也要清理 turn start time
+        turnStartTimeRef.current = null;
       }
 
       setIsProcessing(false);
+      // v2.1.7: 停止终端标题 spinner 动画（处理完成）
+      stopTerminalTitleSpinner();
       setCurrentResponse(''); // 清空当前响应，因为已添加到消息列�?
       // 关键修复：清�?streamBlocks，避免消息重复显�?
       // 消息已经被添加到 messages 数组中，�?Static 组件渲染历史记录
@@ -855,6 +1012,17 @@ export const App: React.FC<AppProps> = ({
 
       {/* 信任对话框 - 修复 v2.1.3 home 目录信任问题 */}
       {TrustDialogComponent}
+
+      {/* CLAUDE.md 导入审批对话框 - v2.1.6 新增 */}
+      {showClaudeMdDialog && (
+        <ClaudeMdImportDialog
+          files={claudeMdImport.pendingFiles}
+          cwd={process.cwd()}
+          onComplete={handleClaudeMdApprovalComplete}
+          onCancel={handleClaudeMdCancel}
+          showDetails={false}
+        />
+      )}
 
       {/* 官方 local-jsx 命令：显示命令返回的 JSX 组件（如 /chrome 设置界面�?resume 会话选择器）*/}
       {commandJsx && (
@@ -978,9 +1146,23 @@ export const App: React.FC<AppProps> = ({
           return null;
         })}
 
+        {/* v2.1.7 Turn Duration 显示 - 对齐官方 Lb5 组件 */}
+        {/* 只在 Turn 完成后显示，且耗时超过 30 秒 */}
+        {turnDuration && !isProcessing && (
+          <Box flexDirection="row" marginTop={1}>
+            <Box minWidth={2}>
+              <Text dimColor>○ </Text>
+            </Box>
+            <Text dimColor>
+              {turnDuration.verb} for {formatDuration(turnDuration.durationMs)}
+            </Text>
+          </Box>
+        )}
+
         {/* 加载中指示器（仅在没有任何块时显示）*/}
         {/* v2.1.0 改进：等待首个响应时的 spinner 反馈 */}
-        {isProcessing && streamBlocks.length === 0 && (
+        {/* v2.1.7 修复：本地命令执行时不显示 spinner */}
+        {isProcessing && !isLocalCommand && streamBlocks.length === 0 && (
           <Box marginLeft={2}>
             <Spinner
               label="Thinking..."

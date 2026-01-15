@@ -5,6 +5,8 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import * as os from 'os';
+import { isWindows, escapePathForShell } from '../utils/platform.js';
 
 export type ShellStatus = 'running' | 'completed' | 'failed' | 'paused' | 'terminated';
 
@@ -79,12 +81,41 @@ export class ShellManager extends EventEmitter {
     const cwd = options.cwd || process.cwd();
     const maxRuntime = options.maxRuntime || this.defaultMaxRuntime;
 
-    // 创建进程
-    const proc = spawn('bash', ['-c', command], {
-      cwd,
-      env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // 准备安全的环境变量，处理 Windows 临时目录路径转义问题
+    const safeEnv = { ...process.env };
+    if (isWindows()) {
+      if (safeEnv.TMPDIR) {
+        safeEnv.TMPDIR = escapePathForShell(safeEnv.TMPDIR);
+      }
+      if (safeEnv.TEMP) {
+        safeEnv.TEMP = escapePathForShell(safeEnv.TEMP);
+      }
+      if (safeEnv.TMP) {
+        safeEnv.TMP = escapePathForShell(safeEnv.TMP);
+      }
+    }
+
+    // 确保工作目录路径在 Windows 上是安全的
+    const safeCwd = isWindows() ? escapePathForShell(cwd) : cwd;
+
+    // 创建进程（跨平台支持）
+    let proc: ChildProcess;
+    if (isWindows()) {
+      // Windows: 使用 shell: true 让 Node.js 自动选择合适的 shell
+      proc = spawn(command, [], {
+        cwd: safeCwd,
+        env: safeEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+      });
+    } else {
+      // Unix: 使用 bash -c
+      proc = spawn('bash', ['-c', command], {
+        cwd,
+        env: safeEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
 
     // 创建 shell 状态
     const shell: BackgroundShell = {

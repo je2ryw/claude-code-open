@@ -16,6 +16,7 @@ import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 import { processGitCommitCommand } from '../utils/git-helper.js';
 import { configManager } from '../config/index.js';
 import { isBackgroundTasksDisabled } from '../utils/env-check.js';
+import { escapePathForShell } from '../utils/platform.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -721,11 +722,41 @@ Important:
     const taskId = uuidv4();
     const outputFile = getTaskOutputPath(taskId);
 
-    const proc = spawn('bash', ['-c', command], {
-      cwd: process.cwd(),
-      env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // 准备环境变量，确保临时目录路径在 Windows 上是安全的
+    const safeEnv = { ...process.env };
+    if (IS_WINDOWS) {
+      if (safeEnv.TMPDIR) {
+        safeEnv.TMPDIR = escapePathForShell(safeEnv.TMPDIR);
+      }
+      if (safeEnv.TEMP) {
+        safeEnv.TEMP = escapePathForShell(safeEnv.TEMP);
+      }
+      if (safeEnv.TMP) {
+        safeEnv.TMP = escapePathForShell(safeEnv.TMP);
+      }
+    }
+
+    // 获取当前工作目录，确保路径在 Windows 上是安全的
+    const safeCwd = IS_WINDOWS ? escapePathForShell(process.cwd()) : process.cwd();
+
+    // 跨平台命令执行
+    let proc;
+    if (IS_WINDOWS) {
+      // Windows: 使用 shell: true 让 Node.js 自动选择合适的 shell
+      proc = spawn(command, [], {
+        cwd: safeCwd,
+        env: safeEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+      });
+    } else {
+      // Unix: 使用 bash -c
+      proc = spawn('bash', ['-c', command], {
+        cwd: process.cwd(),
+        env: safeEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    }
 
     // 创建输出文件流
     const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });

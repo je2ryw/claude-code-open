@@ -657,7 +657,7 @@ export class ClaudeClient {
       signal?: AbortSignal;
     }
   ): AsyncGenerator<{
-    type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_delta' | 'stop' | 'usage' | 'error';
+    type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_delta' | 'stop' | 'usage' | 'error' | 'response_headers';
     text?: string;
     thinking?: string;
     id?: string;
@@ -672,6 +672,8 @@ export class ClaudeClient {
       thinkingTokens?: number;
     };
     error?: string;
+    /** v2.1.6: 响应头（用于速率限制警告） */
+    headers?: Headers;
   }> {
     let stream: any;
     let retryCount = 0;
@@ -845,6 +847,21 @@ export class ClaudeClient {
               thinkingTokens,
             },
           };
+
+          // v2.1.6: 获取响应头用于速率限制警告
+          // 对齐官方 pG0 函数：在流结束后获取响应头
+          try {
+            const { response } = await stream.withResponse();
+            if (response?.headers) {
+              yield { type: 'response_headers', headers: response.headers };
+            }
+          } catch (headerError) {
+            // 获取响应头失败不应影响正常流程
+            if (this.debug) {
+              console.warn('[ClaudeClient] Failed to get response headers:', headerError);
+            }
+          }
+
           yield { type: 'stop', stopReason: finalMessage?.stop_reason || 'end_turn' };
         } else if (event.type === 'error') {
           const errorEvent = event as any;

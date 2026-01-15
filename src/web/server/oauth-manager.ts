@@ -16,14 +16,14 @@ export const OAUTH_CONSTANTS = {
   SCOPES: ['user:profile', 'user:inference', 'user:sessions:claude_code'],
 
   // 生产环境 URLs
-  AUTHORIZE_URL: 'https://console.anthropic.com/oauth/authorize',
+  AUTHORIZE_URL: 'https://platform.claude.com/oauth/authorize',
   CLAUDE_AI_AUTHORIZE_URL: 'https://claude.ai/oauth/authorize',
-  TOKEN_URL: 'https://console.anthropic.com/v1/oauth/token',
+  TOKEN_URL: 'https://platform.claude.com/v1/oauth/token',
   API_KEY_URL: 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key',
   ROLES_URL: 'https://api.anthropic.com/api/oauth/claude_cli/roles',
-  CONSOLE_SUCCESS_URL: 'https://console.anthropic.com/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
-  CLAUDEAI_SUCCESS_URL: 'https://console.anthropic.com/oauth/code/success?app=claude-code',
-  CALLBACK_URL: 'https://console.anthropic.com/oauth/code/callback',
+  CONSOLE_SUCCESS_URL: 'https://platform.claude.com/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
+  CLAUDEAI_SUCCESS_URL: 'https://platform.claude.com/oauth/code/success?app=claude-code',
+  CALLBACK_URL: 'https://platform.claude.com/oauth/code/callback',
 
   // 本地开发 URLs（用于测试）
   DEV_AUTHORIZE_URL: 'http://localhost:3000/oauth/authorize',

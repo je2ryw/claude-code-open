@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import styles from './BlueprintDetailContent.module.css';
-import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject } from '../../../api/blueprint';
+import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject, aiHoverApi, AIHoverResult } from '../../../api/blueprint';
 import { getSyntaxExplanation, extractKeywordsFromLine, SyntaxExplanation } from '../../../utils/syntaxDictionary';
 import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, formatJSDocBrief, hasValidJSDoc } from '../../../utils/jsdocParser';
 // VS Code 风格组件
 import { ProjectSelector, Project } from '../ProjectSelector';
 import { ContextMenu, MenuItem, getFileContextMenuItems, getFolderContextMenuItems, getEmptyContextMenuItems } from '../ContextMenu';
 import { FileDialog, DialogType } from '../FileDialog';
+import { ModuleGraph, ModuleFile } from '../ModuleGraph/ModuleGraph';
+import type { ModuleGraphData } from '../../../../../shared/module-graph-types';
 
 // 悬浮框位置状态
 interface TooltipPosition {
@@ -196,6 +198,13 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     moduleCount: number;
   } | null>(null);
 
+  // 模块关系图数据
+  const [moduleGraph, setModuleGraph] = useState<ModuleGraphData | null>(null);
+  const [moduleGraphLoading, setModuleGraphLoading] = useState(false);
+  const [moduleGraphError, setModuleGraphError] = useState<string | null>(null);
+  const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>();
+  const [selectedModuleFileId, setSelectedModuleFileId] = useState<string | undefined>();
+
   // ============ 新手模式相关状态 ============
   // 新手模式开关（默认开启）
   const [beginnerMode, setBeginnerMode] = useState<boolean>(() => {
@@ -241,6 +250,25 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const [refactorSuggestions, setRefactorSuggestions] = useState<RefactorSuggestion[]>([]);
   const [refactorEnabled, setRefactorEnabled] = useState(false);
   const [refactorLoading, setRefactorLoading] = useState(false);
+
+  // ============ 右侧行详情面板状态 ============
+  // 当前悬停的行号
+  const [hoverLine, setHoverLine] = useState<number | null>(null);
+  // 行级 AI 分析缓存（filePath:lineNumber -> 分析结果）
+  const lineAnalysisCacheRef = useRef<Map<string, {
+    lineContent: string;
+    keywords: string[];
+    aiAnalysis: AIHoverResult | null;
+    loading: boolean;
+  }>>(new Map());
+  // 右侧面板显示的行分析数据
+  const [lineAnalysis, setLineAnalysis] = useState<{
+    lineNumber: number;
+    lineContent: string;
+    keywords: Array<{ keyword: string; brief: string; detail?: string; example?: string }>;
+    aiAnalysis: AIHoverResult | null;
+    loading: boolean;
+  } | null>(null);
 
   // ============ 项目管理和文件操作状态 ============
 
@@ -470,12 +498,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     loadFileTree();
   }, [loadFileTree]);
 
-  // 组件挂载时初始化项目和蓝图信息
-  useEffect(() => {
-    initializeProject();
-    loadBlueprintInfo();
-  }, [blueprintId, initializeProject]);
-
   const loadBlueprintInfo = async () => {
     try {
       const response = await fetch(`/api/blueprint/blueprints/${blueprintId}`);
@@ -494,6 +516,31 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       console.error('加载蓝图信息失败:', err);
     }
   };
+
+  const loadModuleGraph = useCallback(async () => {
+    setModuleGraphLoading(true);
+    setModuleGraphError(null);
+    try {
+      const response = await fetch(`/api/blueprint/blueprints/${blueprintId}/module-graph`);
+      const result = await response.json();
+      if (result.success) {
+        setModuleGraph(result.data);
+      } else {
+        throw new Error(result.error || '加载模块关系图失败');
+      }
+    } catch (err) {
+      setModuleGraphError(err instanceof Error ? err.message : '加载模块关系图失败');
+    } finally {
+      setModuleGraphLoading(false);
+    }
+  }, [blueprintId]);
+
+  // 组件挂载时初始化项目和蓝图信息
+  useEffect(() => {
+    initializeProject();
+    loadBlueprintInfo();
+    loadModuleGraph();
+  }, [blueprintId, initializeProject, loadModuleGraph]);
 
   // 模拟目录树（当 API 不可用时）
   const createMockFileTree = (): FileTreeNode => ({
@@ -1849,60 +1896,197 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       hoverProviderRef.current = null;
     }
 
-    // 注册增强的 Hover Provider（在新手模式下添加语法解释）
+    // 前端 AI Hover 缓存
+    const aiHoverCache = new Map<string, AIHoverResult>();
+
+    // 格式化 AI Hover 结果为 Markdown
+    const formatAIHoverResult = (result: AIHoverResult): string[] => {
+      const contents: string[] = [];
+
+      if (result.brief) {
+        contents.push(`**🤖 AI 文档** ${result.fromCache ? '*(缓存)*' : ''}`);
+        contents.push(result.brief);
+      }
+
+      if (result.detail) {
+        contents.push(`\n*${result.detail}*`);
+      }
+
+      // 参数说明
+      if (result.params && result.params.length > 0) {
+        contents.push(`\n**参数：**`);
+        result.params.forEach(p => {
+          contents.push(`- \`${p.name}\`: ${p.type} - ${p.description}`);
+        });
+      }
+
+      // 返回值
+      if (result.returns) {
+        contents.push(`\n**返回值：** ${result.returns.type} - ${result.returns.description}`);
+      }
+
+      // 使用示例
+      if (result.examples && result.examples.length > 0) {
+        contents.push(`\n**示例：**`);
+        result.examples.forEach(ex => {
+          contents.push(`\`\`\`typescript\n${ex}\n\`\`\``);
+        });
+      }
+
+      // 注意事项
+      if (result.notes && result.notes.length > 0) {
+        contents.push(`\n**注意：**`);
+        result.notes.forEach(note => {
+          contents.push(`- ${note}`);
+        });
+      }
+
+      return contents;
+    };
+
+    // 注册增强的 Hover Provider（精简悬浮 + 右侧面板详情）
     const hoverProvider = monaco.languages.registerHoverProvider(['typescript', 'javascript', 'typescriptreact', 'javascriptreact'], {
-      provideHover: (model: any, position: any) => {
-        // 只在新手模式下增强（使用 ref 获取最新值）
+      provideHover: async (model: any, position: any) => {
+        // 只在新手模式下增强
         if (!beginnerModeRef.current) return null;
 
         const word = model.getWordAtPosition(position);
         if (!word) return null;
 
-        const lineContent = model.getLineContent(position.lineNumber);
+        const lineNumber = position.lineNumber;
+        const lineContent = model.getLineContent(lineNumber);
+        const range = new monaco.Range(lineNumber, word.startColumn, lineNumber, word.endColumn);
 
-        // 检查是否是关键字
-        const syntaxExp = getSyntaxExplanation(word.word);
-        if (syntaxExp) {
+        // 提取行内所有关键字
+        const keywords = extractKeywordsFromLine(lineContent);
+        const keywordExplanations = keywords
+          .map(kw => getSyntaxExplanation(kw))
+          .filter((exp): exp is SyntaxExplanation => exp !== undefined);
+
+        // 当前单词的解释
+        const currentWordExp = getSyntaxExplanation(word.word);
+
+        // 更新右侧面板（以行为单位）
+        const cacheKey = `${selectedPath}:${lineNumber}`;
+        const cached = lineAnalysisCacheRef.current.get(cacheKey);
+
+        // 如果缓存的行内容不同，清除缓存
+        if (cached && cached.lineContent !== lineContent) {
+          lineAnalysisCacheRef.current.delete(cacheKey);
+        }
+
+        // 更新当前悬停行
+        setHoverLine(lineNumber);
+
+        // 立即显示静态内容到右侧面板
+        const staticKeywords = keywordExplanations.map(exp => ({
+          keyword: exp.keyword,
+          brief: exp.brief,
+          detail: exp.detail,
+          example: exp.example,
+        }));
+
+        // 检查缓存
+        const existingCache = lineAnalysisCacheRef.current.get(cacheKey);
+        if (existingCache && existingCache.lineContent === lineContent) {
+          // 使用缓存数据
+          setLineAnalysis({
+            lineNumber,
+            lineContent,
+            keywords: staticKeywords,
+            aiAnalysis: existingCache.aiAnalysis,
+            loading: existingCache.loading,
+          });
+        } else {
+          // 显示静态内容，标记 AI 加载中
+          setLineAnalysis({
+            lineNumber,
+            lineContent,
+            keywords: staticKeywords,
+            aiAnalysis: null,
+            loading: true,
+          });
+
+          // 缓存初始状态
+          lineAnalysisCacheRef.current.set(cacheKey, {
+            lineContent,
+            keywords: keywords,
+            aiAnalysis: null,
+            loading: true,
+          });
+
+          // 异步调用 AI 分析整行
+          (async () => {
+            try {
+              // 获取上下文（±5行），并在每行前加行号，用 >>> 标记当前行
+              const startLine = Math.max(1, lineNumber - 5);
+              const endLine = Math.min(model.getLineCount(), lineNumber + 5);
+              const contextLines: string[] = [];
+              for (let i = startLine; i <= endLine; i++) {
+                const prefix = i === lineNumber ? '>>>' : '   ';
+                const lineNum = String(i).padStart(4, ' ');
+                contextLines.push(`${prefix} ${lineNum} | ${model.getLineContent(i)}`);
+              }
+
+              const aiResult = await aiHoverApi.generate({
+                filePath: selectedPath || '',
+                symbolName: lineContent.trim(),  // 使用当前行的实际代码作为符号名
+                codeContext: contextLines.join('\n'),
+                line: lineNumber,
+                language: 'typescript',
+              });
+
+              // 更新缓存
+              lineAnalysisCacheRef.current.set(cacheKey, {
+                lineContent,
+                keywords: keywords,
+                aiAnalysis: aiResult.success ? aiResult : null,
+                loading: false,
+              });
+
+              // 如果仍在当前行，更新面板
+              setLineAnalysis(prev => {
+                if (prev && prev.lineNumber === lineNumber) {
+                  return {
+                    ...prev,
+                    aiAnalysis: aiResult.success ? aiResult : null,
+                    loading: false,
+                  };
+                }
+                return prev;
+              });
+            } catch (error) {
+              console.warn('[AI Line Analysis] 调用失败:', error);
+              lineAnalysisCacheRef.current.set(cacheKey, {
+                lineContent,
+                keywords: keywords,
+                aiAnalysis: null,
+                loading: false,
+              });
+              setLineAnalysis(prev => {
+                if (prev && prev.lineNumber === lineNumber) {
+                  return { ...prev, loading: false };
+                }
+                return prev;
+              });
+            }
+          })();
+        }
+
+        // 悬浮框只显示简短的一行摘要
+        if (currentWordExp) {
           return {
-            range: new monaco.Range(
-              position.lineNumber,
-              word.startColumn,
-              position.lineNumber,
-              word.endColumn
-            ),
-            contents: [
-              { value: `**📖 ${syntaxExp.keyword}** \`${syntaxExp.category}\`` },
-              { value: syntaxExp.brief },
-              ...(syntaxExp.detail ? [{ value: `*${syntaxExp.detail}*` }] : []),
-              ...(syntaxExp.example ? [{ value: `\`\`\`typescript\n${syntaxExp.example}\n\`\`\`` }] : []),
-            ]
+            range,
+            contents: [{ value: `**${currentWordExp.keyword}** - ${currentWordExp.brief}` }]
           };
         }
 
-        // 检查当前行的关键字
-        const keywords = extractKeywordsFromLine(lineContent);
-        if (keywords.length > 0) {
-          const explanations = keywords
-            .map(kw => getSyntaxExplanation(kw))
-            .filter((exp): exp is SyntaxExplanation => exp !== undefined)
-            .slice(0, 3);
-
-          if (explanations.length > 0) {
-            return {
-              range: new monaco.Range(
-                position.lineNumber,
-                word.startColumn,
-                position.lineNumber,
-                word.endColumn
-              ),
-              contents: [
-                { value: '**📖 本行语法提示** *(新手模式)*' },
-                ...explanations.map(exp => ({
-                  value: `\`${exp.keyword}\` - ${exp.brief}`
-                }))
-              ]
-            };
-          }
+        // 非关键字：显示"查看右侧面板"提示
+        if (word.word.length > 1 && !/^\d+$/.test(word.word)) {
+          return {
+            range,
+            contents: [{ value: `\`${word.word}\` → 详情见右侧面板` }]
+          };
         }
 
         return null;
@@ -2773,92 +2957,174 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             )}
           </div>
         </div>
-        <div className={styles.monacoContainer}>
-          <Editor
-            height="100%"
-            language={language}
-            value={editedContent}
-            onChange={handleEditorChange}
-            onMount={handleEditorDidMount}
-            theme="vs-dark"
-            options={{
-              readOnly: !isEditing,
-              minimap: { enabled: true },
-              glyphMargin: true,
-              fontSize: 14,
-              fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
-              fontLigatures: true,
-              lineNumbers: 'on',
-              wordWrap: 'off',
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              folding: true,
-              foldingStrategy: 'indentation',
-              showFoldingControls: 'mouseover',
-              bracketPairColorization: {
-                enabled: true,
-              },
-              guides: {
-                bracketPairs: true,
-                indentation: true,
-              },
-              renderWhitespace: 'selection',
-              cursorBlinking: 'smooth',
-              cursorSmoothCaretAnimation: 'on',
-              smoothScrolling: true,
-              tabSize: 2,
-              formatOnPaste: true,
-              formatOnType: true,
-              suggest: {
-                showMethods: true,
-                showFunctions: true,
-                showConstructors: true,
-                showFields: true,
-                showVariables: true,
-                showClasses: true,
-                showStructs: true,
-                showInterfaces: true,
-                showModules: true,
-                showProperties: true,
-                showEvents: true,
-                showOperators: true,
-                showUnits: true,
-                showValues: true,
-                showConstants: true,
-                showEnums: true,
-                showEnumMembers: true,
-                showKeywords: true,
-                showWords: true,
-                showColors: true,
-                showFiles: true,
-                showReferences: true,
-                showFolders: true,
-                showTypeParameters: true,
-                showSnippets: true,
-              },
-              quickSuggestions: {
-                other: true,
-                comments: true,
-                strings: true,
-              },
-              // LSP 相关选项
-              gotoLocation: {
-                multiple: 'goto',
-                multipleDefinitions: 'goto',
-                multipleTypeDefinitions: 'goto',
-                multipleDeclarations: 'goto',
-                multipleImplementations: 'goto',
-                multipleReferences: 'goto',
-              },
-              hover: {
-                enabled: true,
-                delay: 300,
-              },
-              parameterHints: {
-                enabled: true,
-              },
-            }}
-          />
+        <div className={styles.editorWithPanel}>
+          <div className={styles.monacoContainer}>
+            <Editor
+              height="100%"
+              language={language}
+              value={editedContent}
+              onChange={handleEditorChange}
+              onMount={handleEditorDidMount}
+              theme="vs-dark"
+              options={{
+                readOnly: !isEditing,
+                minimap: { enabled: true },
+                glyphMargin: true,
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
+                fontLigatures: true,
+                lineNumbers: 'on',
+                wordWrap: 'off',
+                automaticLayout: true,
+                scrollBeyondLastLine: false,
+                folding: true,
+                foldingStrategy: 'indentation',
+                showFoldingControls: 'mouseover',
+                bracketPairColorization: {
+                  enabled: true,
+                },
+                guides: {
+                  bracketPairs: true,
+                  indentation: true,
+                },
+                renderWhitespace: 'selection',
+                cursorBlinking: 'smooth',
+                cursorSmoothCaretAnimation: 'on',
+                smoothScrolling: true,
+                tabSize: 2,
+                formatOnPaste: true,
+                formatOnType: true,
+                suggest: {
+                  showMethods: true,
+                  showFunctions: true,
+                  showConstructors: true,
+                  showFields: true,
+                  showVariables: true,
+                  showClasses: true,
+                  showStructs: true,
+                  showInterfaces: true,
+                  showModules: true,
+                  showProperties: true,
+                  showEvents: true,
+                  showOperators: true,
+                  showUnits: true,
+                  showValues: true,
+                  showConstants: true,
+                  showEnums: true,
+                  showEnumMembers: true,
+                  showKeywords: true,
+                  showWords: true,
+                  showColors: true,
+                  showFiles: true,
+                  showReferences: true,
+                  showFolders: true,
+                  showTypeParameters: true,
+                  showSnippets: true,
+                },
+                quickSuggestions: {
+                  other: true,
+                  comments: true,
+                  strings: true,
+                },
+                gotoLocation: {
+                  multiple: 'goto',
+                  multipleDefinitions: 'goto',
+                  multipleTypeDefinitions: 'goto',
+                  multipleDeclarations: 'goto',
+                  multipleImplementations: 'goto',
+                  multipleReferences: 'goto',
+                },
+                hover: {
+                  enabled: true,
+                  delay: 200,
+                  sticky: false,
+                  above: false,
+                },
+                parameterHints: {
+                  enabled: true,
+                },
+              }}
+            />
+          </div>
+
+          {/* 右侧行详情面板 */}
+          {beginnerMode && lineAnalysis && (
+            <div className={styles.lineDetailPanel}>
+              <div className={styles.lineDetailHeader}>
+                <span className={styles.lineDetailTitle}>📖 第 {lineAnalysis.lineNumber} 行</span>
+                {lineAnalysis.loading && <span className={styles.lineDetailLoading}>AI 分析中...</span>}
+              </div>
+
+              <div className={styles.lineDetailCode}>
+                <code>{lineAnalysis.lineContent.trim()}</code>
+              </div>
+
+              {/* 关键字解释 */}
+              {lineAnalysis.keywords.length > 0 && (
+                <div className={styles.lineDetailSection}>
+                  <div className={styles.lineDetailSectionTitle}>语法关键字</div>
+                  {lineAnalysis.keywords.map((kw, idx) => (
+                    <div key={idx} className={styles.lineDetailKeyword}>
+                      <span className={styles.keywordName}>{kw.keyword}</span>
+                      <span className={styles.keywordBrief}>{kw.brief}</span>
+                      {kw.detail && <div className={styles.keywordDetail}>{kw.detail}</div>}
+                      {kw.example && (
+                        <pre className={styles.keywordExample}>{kw.example}</pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* AI 分析结果 */}
+              {lineAnalysis.aiAnalysis && (
+                <div className={styles.lineDetailSection}>
+                  <div className={styles.lineDetailSectionTitle}>🤖 AI 分析</div>
+                  {lineAnalysis.aiAnalysis.brief && (
+                    <div className={styles.aiAnalysisBrief}>{lineAnalysis.aiAnalysis.brief}</div>
+                  )}
+                  {lineAnalysis.aiAnalysis.detail && (
+                    <div className={styles.aiAnalysisDetail}>{lineAnalysis.aiAnalysis.detail}</div>
+                  )}
+                  {lineAnalysis.aiAnalysis.params && lineAnalysis.aiAnalysis.params.length > 0 && (
+                    <div className={styles.aiAnalysisParams}>
+                      <div className={styles.paramTitle}>参数:</div>
+                      {lineAnalysis.aiAnalysis.params.map((p, i) => (
+                        <div key={i} className={styles.paramItem}>
+                          <code>{p.name}</code>
+                          <span className={styles.paramType}>{p.type}</span>
+                          <span className={styles.paramDesc}>{p.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {lineAnalysis.aiAnalysis.returns && (
+                    <div className={styles.aiAnalysisReturns}>
+                      <span className={styles.returnLabel}>返回:</span>
+                      <code>{lineAnalysis.aiAnalysis.returns.type}</code>
+                      <span>{lineAnalysis.aiAnalysis.returns.description}</span>
+                    </div>
+                  )}
+                  {lineAnalysis.aiAnalysis.examples && lineAnalysis.aiAnalysis.examples.length > 0 && (
+                    <div className={styles.aiAnalysisExamples}>
+                      <div className={styles.exampleTitle}>示例:</div>
+                      {lineAnalysis.aiAnalysis.examples.map((ex, i) => (
+                        <pre key={i} className={styles.exampleCode}>{ex}</pre>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 加载占位 */}
+              {lineAnalysis.loading && !lineAnalysis.aiAnalysis && (
+                <div className={styles.lineDetailLoading}>
+                  <div className={styles.loadingSpinner}></div>
+                  <span>正在分析代码...</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className={styles.codeFooter}>
           <span className={styles.codeModified}>
@@ -3080,48 +3346,102 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     if (!selectedPath) {
       return (
         <div className={styles.welcomePage}>
-          <h2 className={styles.welcomeTitle}>
-            {blueprintInfo?.name || '代码仓库浏览器'}
-          </h2>
-          <p className={styles.welcomeDesc}>
-            {blueprintInfo?.description || '点击左侧目录树浏览代码结构，选中节点后 AI 将自动分析其语义信息。'}
-          </p>
+          <div className={styles.welcomeHero}>
+            <h2 className={styles.welcomeTitle}>
+              {blueprintInfo?.name || '代码仓库浏览器'}
+            </h2>
+            <p className={styles.welcomeDesc}>
+              {blueprintInfo?.description || '点击左侧目录树浏览代码结构，选中节点后 AI 将自动分析其语义信息。'}
+            </p>
 
-          <div className={styles.welcomeStats}>
-            <div className={styles.welcomeStat}>
-              <span className={styles.welcomeStatValue}>{analysisCache.size}</span>
-              <span className={styles.welcomeStatLabel}>已分析</span>
-            </div>
-            {blueprintInfo && (
+            <div className={styles.welcomeStats}>
               <div className={styles.welcomeStat}>
-                <span className={styles.welcomeStatValue}>{blueprintInfo.moduleCount}</span>
-                <span className={styles.welcomeStatLabel}>模块</span>
+                <span className={styles.welcomeStatValue}>{analysisCache.size}</span>
+                <span className={styles.welcomeStatLabel}>已分析</span>
               </div>
-            )}
+              {blueprintInfo && (
+                <div className={styles.welcomeStat}>
+                  <span className={styles.welcomeStatValue}>{blueprintInfo.moduleCount}</span>
+                  <span className={styles.welcomeStatLabel}>模块</span>
+                </div>
+              )}
+            </div>
+
+            <div className={styles.welcomeHint}>
+              ← 点击左侧目录开始浏览
+            </div>
+
+            <div className={styles.welcomeTips}>
+              <div className={styles.tipItem}>
+                <span className={styles.tipIcon}>📁</span>
+                <span>点击目录展开/折叠</span>
+              </div>
+              <div className={styles.tipItem}>
+                <span className={styles.tipIcon}>🔍</span>
+                <span>选中节点自动分析语义</span>
+              </div>
+              <div className={styles.tipItem}>
+                <span className={styles.tipIcon}>●</span>
+                <span>绿点表示已分析</span>
+              </div>
+              <div className={styles.tipItem}>
+                <span className={styles.tipIcon}>🏛️</span>
+                <span>点击文件查看类/方法结构</span>
+              </div>
+            </div>
           </div>
 
-          <div className={styles.welcomeHint}>
-            ← 点击左侧目录开始浏览
-          </div>
+          <section className={styles.moduleGraphSection}>
+            <div className={styles.moduleGraphHeader}>
+              <div>
+                <h3 className={styles.moduleGraphTitle}>模块关系图</h3>
+                <p className={styles.moduleGraphHint}>基于蓝图模块依赖生成</p>
+              </div>
+              <button
+                className={styles.moduleGraphRefresh}
+                onClick={loadModuleGraph}
+                disabled={moduleGraphLoading}
+              >
+                {moduleGraphLoading ? '加载中...' : '刷新'}
+              </button>
+            </div>
 
-          <div className={styles.welcomeTips}>
-            <div className={styles.tipItem}>
-              <span className={styles.tipIcon}>📁</span>
-              <span>点击目录展开/折叠</span>
+            <div className={styles.moduleGraphBody}>
+              {moduleGraphLoading && (
+                <div className={styles.moduleGraphState}>正在加载模块关系图...</div>
+              )}
+              {!moduleGraphLoading && moduleGraphError && (
+                <div className={styles.moduleGraphError}>
+                  <span>{moduleGraphError}</span>
+                  <button className={styles.moduleGraphRetry} onClick={loadModuleGraph}>
+                    重试
+                  </button>
+                </div>
+              )}
+              {!moduleGraphLoading && !moduleGraphError && moduleGraph?.nodes?.length ? (
+                <ModuleGraph
+                  domains={moduleGraph.nodes}
+                  relationships={moduleGraph.edges}
+                  selectedDomainId={selectedModuleId}
+                  selectedFileId={selectedModuleFileId}
+                  onDomainClick={(moduleId) => {
+                    setSelectedModuleId(prev => (prev === moduleId ? undefined : moduleId));
+                    setSelectedModuleFileId(undefined);
+                  }}
+                  onFileClick={(file: ModuleFile) => {
+                    setSelectedModuleFileId(file.id);
+                    setSelectedModuleId(undefined);
+                  }}
+                  onFileDoubleClick={(file: ModuleFile) => {
+                    handleSelectNode(file.path, true);
+                  }}
+                />
+              ) : null}
+              {!moduleGraphLoading && !moduleGraphError && !moduleGraph?.nodes?.length && (
+                <div className={styles.moduleGraphEmpty}>暂无模块关系数据</div>
+              )}
             </div>
-            <div className={styles.tipItem}>
-              <span className={styles.tipIcon}>🔍</span>
-              <span>选中节点自动分析语义</span>
-            </div>
-            <div className={styles.tipItem}>
-              <span className={styles.tipIcon}>●</span>
-              <span>绿点表示已分析</span>
-            </div>
-            <div className={styles.tipItem}>
-              <span className={styles.tipIcon}>🏛️</span>
-              <span>点击文件查看类/方法结构</span>
-            </div>
-          </div>
+          </section>
         </div>
       );
     }

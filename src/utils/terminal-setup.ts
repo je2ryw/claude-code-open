@@ -1,6 +1,11 @@
 /**
  * 终端配置生成器
  * 为不同终端生成 Shift+Enter 多行输入配置
+ *
+ * v2.1.6: 添加 Kitty 键盘协议支持说明
+ * - Kitty、WezTerm、Ghostty、iTerm2 原生支持 Shift+Enter
+ * - 这些终端使用渐进增强键盘协议 (Progressive Enhancement Keyboard Protocol)
+ * - 无需额外配置即可使用多行输入功能
  */
 
 import { platform } from 'os';
@@ -31,11 +36,13 @@ config.keys = {
 return config`,
   });
 
-  // Kitty
+  // Kitty - v2.1.6: 原生支持 Kitty 键盘协议，通常无需配置
   configs.push({
     terminal: 'Kitty',
-    config: `# ~/.config/kitty/kitty.conf
+    config: `# Kitty 使用渐进增强键盘协议，Shift+Enter 通常开箱即用。
+# 如果遇到问题，可以添加以下配置到 ~/.config/kitty/kitty.conf:
 map shift+enter send_text all \\e\\r`,
+    instructions: 'Kitty natively supports Shift+Enter via the progressive enhancement keyboard protocol. No configuration needed in most cases.',
   });
 
   // Alacritty
