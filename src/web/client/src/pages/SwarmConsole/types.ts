@@ -100,11 +100,20 @@ export type SwarmClientMessage =
 export type SwarmServerMessage =
   | { type: 'swarm:state'; payload: SwarmStatePayload }
   | { type: 'swarm:task_update'; payload: TaskUpdatePayload }
+  | { type: 'swarm:task_completed'; payload: TaskCompletedPayload }
   | { type: 'swarm:worker_update'; payload: WorkerUpdatePayload }
   | { type: 'swarm:queen_update'; payload: QueenUpdatePayload }
   | { type: 'swarm:timeline_event'; payload: TimelineEvent }
   | { type: 'swarm:completed'; payload: SwarmCompletedPayload }
   | { type: 'swarm:error'; payload: SwarmErrorPayload }
+  | { type: 'swarm:paused'; payload: SwarmControlPayload }
+  | { type: 'swarm:resumed'; payload: SwarmControlPayload }
+  | { type: 'swarm:stopped'; payload: SwarmControlPayload }
+  | { type: 'worker:paused'; payload: WorkerControlPayload }
+  | { type: 'worker:resumed'; payload: WorkerControlPayload }
+  | { type: 'worker:terminated'; payload: WorkerControlPayload }
+  | { type: 'worker:removed'; payload: WorkerRemovedPayload }
+  | { type: 'swarm:stats_update'; payload: StatsUpdatePayload }
   | { type: 'pong' };
 
 // ============= WebSocket Payload 类型 =============
@@ -121,6 +130,16 @@ export interface SwarmStatePayload {
 export interface TaskUpdatePayload {
   taskId: string;
   updates: Partial<TaskNode>;
+}
+
+export interface TaskCompletedPayload {
+  taskId: string;
+  taskTitle: string;
+  workerId: string | null;
+  status: 'passed' | 'failed';
+  result?: string;
+  error?: string;
+  timestamp: string;
 }
 
 export interface WorkerUpdatePayload {
@@ -145,6 +164,32 @@ export interface SwarmErrorPayload {
   timestamp: string;
 }
 
+export interface SwarmControlPayload {
+  blueprintId: string;
+  success: boolean;
+  message?: string;
+  timestamp: string;
+}
+
+export interface WorkerControlPayload {
+  workerId: string;
+  success: boolean;
+  message?: string;
+  timestamp: string;
+}
+
+export interface WorkerRemovedPayload {
+  workerId: string;
+  blueprintId: string;
+  reason: string;
+  timestamp: string;
+}
+
+export interface StatsUpdatePayload {
+  blueprintId: string;
+  stats: Stats;
+}
+
 // ============= 状态类型 =============
 
 export type SwarmConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -165,6 +210,7 @@ export interface SwarmState {
 export interface UseSwarmWebSocketReturn {
   connected: boolean;
   status: SwarmConnectionStatus;
+  lastPongTime: number | null;
   subscribe: (blueprintId: string) => void;
   unsubscribe: (blueprintId: string) => void;
   pauseSwarm: (blueprintId: string) => void;

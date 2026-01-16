@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import {
   Message,
@@ -23,6 +23,27 @@ import type {
 } from './types';
 
 type Status = 'idle' | 'thinking' | 'streaming' | 'tool_executing';
+
+// 防抖函数
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T & { cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const debouncedFn = ((...args: Parameters<T>) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      fn(...args);
+      timeoutId = null;
+    }, delay);
+  }) as T & { cancel: () => void };
+  debouncedFn.cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+  return debouncedFn;
+}
 
 // 获取 WebSocket URL
 function getWebSocketUrl(): string {
@@ -56,6 +77,27 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
 
   // 当前正在构建的消息
   const currentMessageRef = useRef<ChatMessage | null>(null);
+
+  // 防抖的会话列表刷新函数（500ms 内多次调用只会执行最后一次）
+  const refreshSessionsRef = useRef<ReturnType<typeof debounce> | null>(null);
+
+  // 初始化防抖函数
+  useEffect(() => {
+    refreshSessionsRef.current = debounce(() => {
+      if (connected) {
+        send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+      }
+    }, 500);
+
+    return () => {
+      refreshSessionsRef.current?.cancel();
+    };
+  }, [connected, send]);
+
+  // 刷新会话列表（防抖）
+  const refreshSessions = useCallback(() => {
+    refreshSessionsRef.current?.();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = addMessageHandler((msg: WSMessage) => {
@@ -163,6 +205,8 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
             currentMessageRef.current = null;
           }
           setStatus('idle');
+          // 刷新会话列表以更新消息计数
+          refreshSessions();
           break;
 
         case 'error':
@@ -191,8 +235,8 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         case 'session_switched':
           // 清空消息列表，等待服务器发送历史消息
           setMessages([]);
-          // 刷新会话列表以更新排序
-          send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+          // 刷新会话列表以更新排序（使用防抖）
+          refreshSessions();
           break;
 
         case 'history':
@@ -219,6 +263,21 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
               prev.map(s => (s.id === payload.sessionId ? { ...s, name: payload.name as string } : s))
             );
           }
+          break;
+
+        case 'session_created':
+          // 新会话创建成功后（通常在发送第一条消息后触发）
+          // 刷新列表以显示新创建的会话
+          if (payload.sessionId) {
+            // 立即刷新会话列表（不使用防抖），确保新会话立即显示
+            send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+          }
+          break;
+
+        case 'session_new_ready':
+          // 临时会话已就绪（官方规范：会话尚未持久化，不刷新列表）
+          // 等待用户发送第一条消息后才会创建持久化会话
+          console.log('[App] 临时会话已就绪:', payload.sessionId);
           break;
 
         // 子 agent 相关消息处理
@@ -302,7 +361,7 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     });
 
     return unsubscribe;
-  }, [addMessageHandler, model, send]);
+  }, [addMessageHandler, model, send, refreshSessions]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -311,9 +370,10 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     }
   }, [messages]);
 
-  // 请求会话列表
+  // 连接成功后请求会话列表
   useEffect(() => {
     if (connected) {
+      // 首次连接时直接发送，不使用防抖（确保立即获取列表）
       send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
     }
   }, [connected, send]);
@@ -342,11 +402,10 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
 
   const handleNewSession = useCallback(() => {
     setMessages([]);
-    send({ type: 'clear_history' });
-    setTimeout(() => {
-      send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
-    }, 500);
-  }, [send]);
+    // 官方规范：创建临时会话，不立即持久化
+    // 会话只有在发送第一条消息后才会出现在列表中
+    send({ type: 'session_new', payload: { model } });
+  }, [send, model]);
 
   // 文件处理
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {

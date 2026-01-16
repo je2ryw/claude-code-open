@@ -16,7 +16,7 @@ import { ShortcutHelp } from './components/ShortcutHelp.js';
 import { LoginSelector, type LoginMethod } from './LoginSelector.js';
 import { RewindUI } from './components/MessageSelector.js';
 import { useRewind } from './hooks/useRewind.js';
-import { ConversationLoop } from '../core/loop.js';
+import { ConversationLoop, type AppState, type ToolPermissionContext, createDefaultToolPermissionContext } from '../core/loop.js';
 import { Session } from '../core/session.js';
 import { initializeCommands, executeCommand } from '../commands/index.js';
 import { isPlanModeActive } from '../tools/planmode.js';
@@ -232,8 +232,20 @@ export const App: React.FC<AppProps> = ({
   // Rewind 状态
   const [showRewindUI, setShowRewindUI] = useState(false);
 
-  // 权限模式状态 - 官方 v2.1.2 Shift+Tab 快捷切换
-  const [quickPermissionMode, setQuickPermissionMode] = useState<'default' | 'acceptEdits' | 'plan'>('default');
+  // 权限模式状态 - 官方 v2.1.2 响应式状态管理
+  const [toolPermissionContext, setToolPermissionContext] = useState<ToolPermissionContext>(
+    createDefaultToolPermissionContext
+  );
+
+  // 使用 ref 存储最新状态，供 getAppState 回调使用
+  const toolPermissionContextRef = useRef(toolPermissionContext);
+  useEffect(() => {
+    toolPermissionContextRef.current = toolPermissionContext;
+  }, [toolPermissionContext]);
+
+  // 快捷访问当前模式（兼容旧代码）
+  // 类型断言：实际运行时只会是 'default' | 'acceptEdits' | 'plan'
+  const quickPermissionMode = toolPermissionContext.mode as 'default' | 'acceptEdits' | 'plan';
 
   // v2.1.7 Turn Duration 状态 - 显示每个 Turn 的耗时
   const [turnDuration, setTurnDuration] = useState<{ durationMs: number; verb: string } | null>(null);
@@ -287,6 +299,10 @@ export const App: React.FC<AppProps> = ({
         model: modelMap[model] || model,
         verbose,
         systemPrompt,
+        // 官方 v2.1.2: 响应式状态获取回调
+        getAppState: () => ({
+          toolPermissionContext: toolPermissionContextRef.current,
+        }),
       })
   );
 
@@ -539,16 +555,20 @@ export const App: React.FC<AppProps> = ({
     }
   }, [directoryTrusted, claudeMdImport.needsApproval, claudeMdImport.loading, claudeMdImport.pendingFiles, claudeMdImport.skipApproval]);
 
-  // 处理 Shift+Tab 权限模式切换 - 官方 v2.1.2
+  // 处理 Shift+Tab 权限模式切换 - 官方 v2.1.2 响应式状态更新
   const handlePermissionModeChange = useCallback((mode: 'default' | 'acceptEdits' | 'plan') => {
-    setQuickPermissionMode(mode);
+    // 官方实现：通过 setAppState 更新 toolPermissionContext.mode
+    setToolPermissionContext(prev => ({
+      ...prev,
+      mode,
+    }));
 
-    // 同步权限模式到 ConversationLoop - 让权限模式真正生效
-    loop.setPermissionMode(mode);
-
-    // 如果是 Plan Mode，同时更新 planMode 状态
+    // 同步更新 planMode 状态（Plan Mode 有独立的 UI 指示器）
     if (mode === 'plan') {
       setPlanMode(true);
+    } else {
+      // 退出 plan 模式时重置 planMode 状态
+      setPlanMode(false);
     }
 
     // 添加消息提示用户模式已切换
@@ -556,13 +576,15 @@ export const App: React.FC<AppProps> = ({
       ? '✓ Auto-accept edits mode enabled\n\nFile edits will be automatically approved for this session.'
       : mode === 'plan'
         ? '✓ Plan mode enabled\n\nClaude will create a plan before making changes.'
-        : '';
+        : mode === 'default'
+          ? '✓ Default mode restored\n\nPermission prompts will be shown for all operations.'
+          : '';
 
     if (modeMessage) {
       addMessage('assistant', modeMessage);
       addActivity(`Permission mode: ${mode}`);
     }
-  }, [loop, addMessage, addActivity]);
+  }, [addMessage, addActivity]);
 
   // 处理登录方法选择
   const handleLoginSelect = useCallback(async (method: LoginMethod) => {

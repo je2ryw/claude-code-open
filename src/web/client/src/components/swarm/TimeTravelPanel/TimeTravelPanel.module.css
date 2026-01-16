@@ -1,0 +1,814 @@
+/* TimeTravelPanel 样式 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+  background-color: #1e1e1e;
+}
+
+.panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+.panel::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+}
+
+.panel::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+/* 头部 */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.titleIcon {
+  font-size: 20px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 操作按钮 */
+.actionButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.createButton {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.createButton:hover:not(:disabled) {
+  background-color: #43a047;
+}
+
+.compareButton {
+  background-color: #2196f3;
+  color: #ffffff;
+}
+
+.compareButton:hover:not(:disabled) {
+  background-color: #1e88e5;
+}
+
+.refreshButton {
+  background-color: #757575;
+  color: #ffffff;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background-color: #616161;
+}
+
+/* 加载状态 */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  color: #9e9e9e;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #3d3d3d;
+  border-top-color: #2196f3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 错误状态 */
+.error {
+  padding: 16px;
+  background-color: rgba(244, 67, 54, 0.1);
+  border: 1px solid #f44336;
+  border-radius: 8px;
+  color: #f44336;
+  text-align: center;
+}
+
+/* 空状态 */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  color: #9e9e9e;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.emptyText {
+  margin-bottom: 16px;
+}
+
+/* 时间线容器 */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 检查点卡片 */
+.checkpointCard {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #3d3d3d;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.checkpointCard:hover {
+  border-color: #4d4d4d;
+  background-color: #353535;
+}
+
+.checkpointCard.selected {
+  border-color: #2196f3;
+  box-shadow: 0 0 0 1px #2196f3;
+}
+
+.checkpointCard.global {
+  border-left: 3px solid #ff9800;
+}
+
+.checkpointCard.task {
+  border-left: 3px solid #4caf50;
+}
+
+/* 检查点头部 */
+.checkpointHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.checkpointInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.checkpointName {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkpointType {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.checkpointType.global {
+  background-color: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+
+.checkpointType.task {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.checkpointDescription {
+  font-size: 13px;
+  color: #9e9e9e;
+  margin-top: 4px;
+}
+
+/* 检查点元数据 */
+.checkpointMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #757575;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metaIcon {
+  font-size: 14px;
+}
+
+/* 任务路径 */
+.taskPath {
+  font-size: 12px;
+  color: #64b5f6;
+  margin-top: 4px;
+  font-family: 'Fira Code', monospace;
+}
+
+/* 检查点操作 */
+.checkpointActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #3d3d3d;
+}
+
+.smallButton {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.smallButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.restoreButton {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.restoreButton:hover:not(:disabled) {
+  background-color: #43a047;
+}
+
+.previewButton {
+  background-color: #2196f3;
+  color: #ffffff;
+}
+
+.previewButton:hover:not(:disabled) {
+  background-color: #1e88e5;
+}
+
+.branchButton {
+  background-color: #9c27b0;
+  color: #ffffff;
+}
+
+.branchButton:hover:not(:disabled) {
+  background-color: #8e24aa;
+}
+
+.selectButton {
+  background-color: #757575;
+  color: #ffffff;
+}
+
+.selectButton:hover:not(:disabled) {
+  background-color: #616161;
+}
+
+/* 不可恢复标记 */
+.cannotRestore {
+  padding: 4px 8px;
+  background-color: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+/* 创建检查点表单 */
+.createForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #3d3d3d;
+}
+
+.formTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formLabel {
+  font-size: 13px;
+  color: #9e9e9e;
+}
+
+.formInput {
+  padding: 10px 12px;
+  background-color: #1e1e1e;
+  border: 1px solid #3d3d3d;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #ffffff;
+  transition: border-color 0.2s ease;
+}
+
+.formInput:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+.formInput::placeholder {
+  color: #757575;
+}
+
+.formTextarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.formCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formCheckbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cancelButton {
+  background-color: #424242;
+  color: #ffffff;
+}
+
+.cancelButton:hover {
+  background-color: #616161;
+}
+
+.submitButton {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.submitButton:hover:not(:disabled) {
+  background-color: #43a047;
+}
+
+/* 比较面板 */
+.comparePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #3d3d3d;
+}
+
+.compareHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compareTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.compareClose {
+  padding: 4px 8px;
+  background-color: transparent;
+  border: none;
+  color: #9e9e9e;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.compareClose:hover {
+  color: #ffffff;
+}
+
+.compareSelection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background-color: #1e1e1e;
+  border-radius: 8px;
+}
+
+.compareFrom,
+.compareTo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compareLabel {
+  font-size: 12px;
+  color: #9e9e9e;
+}
+
+.compareName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.compareArrow {
+  font-size: 20px;
+  color: #757575;
+}
+
+.compareDivider {
+  height: 1px;
+  background-color: #3d3d3d;
+}
+
+/* 比较结果 */
+.compareResult {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.compareSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compareSectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9e9e9e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compareSectionCount {
+  padding: 2px 8px;
+  background-color: #3d3d3d;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+/* 任务变更列表 */
+.taskChangeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.taskChange {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: #1e1e1e;
+  border-radius: 6px;
+}
+
+.taskChangeName {
+  flex: 1;
+  font-size: 13px;
+  color: #ffffff;
+}
+
+.statusChange {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.statusFrom {
+  padding: 2px 8px;
+  background-color: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border-radius: 4px;
+}
+
+.statusArrow {
+  color: #757575;
+}
+
+.statusTo {
+  padding: 2px 8px;
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  border-radius: 4px;
+}
+
+/* 代码变更列表 */
+.codeChangeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.codeChange {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: #1e1e1e;
+  border-radius: 6px;
+}
+
+.codeChange.added {
+  border-left: 3px solid #4caf50;
+}
+
+.codeChange.modified {
+  border-left: 3px solid #ff9800;
+}
+
+.codeChange.deleted {
+  border-left: 3px solid #f44336;
+}
+
+.codeChangePath {
+  flex: 1;
+  font-size: 13px;
+  color: #ffffff;
+  font-family: 'Fira Code', monospace;
+}
+
+.codeChangeStats {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.additions {
+  color: #4caf50;
+}
+
+.deletions {
+  color: #f44336;
+}
+
+.codeChangeType {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.codeChangeType.added {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.codeChangeType.modified {
+  background-color: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+}
+
+.codeChangeType.deleted {
+  background-color: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+/* ASCII 时间线 */
+.asciiTimeline {
+  padding: 16px;
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  color: #9e9e9e;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* 分支信息 */
+.branchSection {
+  margin-top: 16px;
+}
+
+.branchTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9e9e9e;
+  margin-bottom: 12px;
+}
+
+.branchList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branchCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background-color: #2d2d2d;
+  border-radius: 6px;
+  border: 1px solid #3d3d3d;
+}
+
+.branchInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.branchName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.branchMeta {
+  font-size: 12px;
+  color: #757575;
+}
+
+.branchStatus {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.branchStatus.active {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.branchStatus.merged {
+  background-color: rgba(156, 39, 176, 0.2);
+  color: #9c27b0;
+}
+
+.branchStatus.abandoned {
+  background-color: rgba(117, 117, 117, 0.2);
+  color: #757575;
+}
+
+/* 预览面板 */
+.previewPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #ff9800;
+}
+
+.previewTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ff9800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.previewWarning {
+  padding: 12px;
+  background-color: rgba(255, 152, 0, 0.1);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #ffb74d;
+}
+
+.previewActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmRollback {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.confirmRollback:hover:not(:disabled) {
+  background-color: #f57c00;
+}
+
+/* 创建分支弹窗 */
+.branchModal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #9c27b0;
+}
+
+.branchModalTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #9c27b0;
+}
+
+/* 时间格式化 */
+.timeAgo {
+  color: #757575;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeIn {
+  animation: fadeIn 0.3s ease;
+}

@@ -483,7 +483,210 @@ export const fileApi = {
     });
     return handleResponse(response);
   },
+
+  /**
+   * 获取文件详情信息
+   */
+  getDetail: async (path: string): Promise<{
+    path: string;
+    name: string;
+    extension: string;
+    language: string;
+    size: number;
+    lineCount: number;
+    symbolCount: number;
+    imports: string[];
+    exports: string[];
+    modifiedAt: string;
+    annotation: {
+      summary: string;
+      description: string;
+      keyPoints: string[];
+      confidence: number;
+      userModified: boolean;
+    };
+  }> => {
+    const response = await fetch(`/api/blueprint/file-detail?path=${encodeURIComponent(path)}`);
+    return handleResponse(response);
+  },
 };
+
+// ============================================================================
+// 代码库分析和可视化类型定义
+// ============================================================================
+
+/**
+ * 项目地图数据
+ */
+export interface ProjectMapData {
+  moduleStats: {
+    totalFiles: number;
+    totalLines: number;
+    byDirectory: Record<string, number>;
+    languages: Record<string, number>;
+  };
+  layers: {
+    total: number;
+    distribution: Record<string, number>;
+  } | null;
+  entryPoints: Array<{
+    path: string;
+    name: string;
+    type: string;
+  }>;
+  coreSymbols: {
+    classes: Array<{ name: string; moduleId: string; kind: string }>;
+    functions: Array<{ name: string; moduleId: string; kind: string }>;
+  };
+}
+
+/**
+ * 调用图节点
+ */
+export interface CallGraphNode {
+  id: string;
+  name: string;
+  type: 'function' | 'method' | 'class' | 'module';
+  moduleId: string;
+  signature?: string;
+  className?: string;
+  description?: string;
+}
+
+/**
+ * 调用图边
+ */
+export interface CallGraphEdge {
+  source: string;
+  target: string;
+  type: 'call' | 'reference' | 'import';
+  weight?: number;
+}
+
+/**
+ * 调用图数据
+ */
+export interface CallGraphData {
+  nodes: CallGraphNode[];
+  edges: CallGraphEdge[];
+  cycles?: Array<string[]>;
+  stats?: {
+    totalNodes: number;
+    totalEdges: number;
+    maxDepth: number;
+  };
+  cached?: boolean;
+}
+
+/**
+ * 数据流分析结果
+ */
+export interface DataFlowData {
+  symbolId: string;
+  symbolName: string;
+  reads: Array<{
+    file: string;
+    line: number;
+    column?: number;
+    context?: string;
+  }>;
+  writes: Array<{
+    file: string;
+    line: number;
+    column?: number;
+    context?: string;
+  }>;
+  dataFlowGraph?: {
+    nodes: Array<{ id: string; type: string; label: string }>;
+    edges: Array<{ source: string; target: string; type: string }>;
+  };
+}
+
+/**
+ * 依赖图节点
+ */
+export interface DependencyNode {
+  id: string;
+  path: string;
+  name: string;
+  imports: string[];
+  exports: string[];
+  size?: number;
+  layer?: string;
+}
+
+/**
+ * 依赖图边
+ */
+export interface DependencyEdge {
+  source: string;
+  target: string;
+  type: 'import' | 'type-only' | 'dynamic';
+  importedNames?: string[];
+}
+
+/**
+ * 依赖图数据
+ */
+export interface DependencyGraphData {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+  cycles: Array<string[]>;
+  stats: {
+    totalEdges: number;
+    internalDeps: number;
+    typeOnlyDeps: number;
+    dynamicDeps: number;
+    mostDependent: Array<{ id: string; count: number }>;
+    mostDepended: Array<{ id: string; count: number }>;
+  };
+}
+
+/**
+ * Treemap 节点
+ */
+export interface TreemapNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+  children?: TreemapNode[];
+  language?: string;
+  symbols?: Array<{
+    name: string;
+    kind: string;
+    line: number;
+  }>;
+}
+
+/**
+ * 符号详情
+ */
+export interface SymbolDetailData {
+  id: string;
+  name: string;
+  type: 'function' | 'class' | 'interface' | 'type' | 'method' | 'property';
+  filePath: string;
+  line?: number;
+  signature?: string;
+  documentation?: string;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    description?: string;
+  }>;
+  returnType?: string;
+  members?: Array<{
+    name: string;
+    type: string;
+    signature?: string;
+  }>;
+  references?: Array<{
+    file: string;
+    line: number;
+    type: 'read' | 'write' | 'call';
+  }>;
+}
 
 /**
  * 代码库分析 API 封装
@@ -624,6 +827,169 @@ export const codebaseApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
+    return handleResponse(response);
+  },
+
+  // ==========================================================================
+  // 代码库可视化 API
+  // ==========================================================================
+
+  /**
+   * 获取项目地图
+   *
+   * 返回项目概览信息，包括模块统计、架构分层、入口点和核心符号
+   */
+  getProjectMap: async (): Promise<ProjectMapData> => {
+    const response = await fetch('/api/blueprint/project-map');
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取调用图
+   *
+   * 分析函数/方法之间的调用关系
+   *
+   * @param options.path - 文件路径（可选）。如果提供，只分析该文件
+   * @param options.symbol - 符号名称（可选）。如果提供，只分析该符号的调用链
+   * @param options.depth - 调用深度，默认 2
+   * @param options.useAI - 是否使用 AI 增强分析，默认 true
+   * @param options.detectCycles - 是否检测循环调用，默认 false
+   */
+  getCallGraph: async (options?: {
+    path?: string;
+    symbol?: string;
+    depth?: number;
+    useAI?: boolean;
+    detectCycles?: boolean;
+  }): Promise<CallGraphData> => {
+    const params = new URLSearchParams();
+    if (options?.path) params.append('path', options.path);
+    if (options?.symbol) params.append('symbol', options.symbol);
+    if (options?.depth !== undefined) params.append('depth', String(options.depth));
+    if (options?.useAI !== undefined) params.append('useAI', String(options.useAI));
+    if (options?.detectCycles !== undefined) params.append('detectCycles', String(options.detectCycles));
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/blueprint/call-graph?${queryString}` : '/api/blueprint/call-graph';
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取数据流分析
+   *
+   * 追踪属性/变量的所有读写位置
+   *
+   * @param symbolId - 符号ID，格式为 "filePath::symbolName" 或 "filePath::className::propertyName"
+   */
+  getDataFlow: async (symbolId: string): Promise<DataFlowData> => {
+    const params = new URLSearchParams({ symbolId });
+    const response = await fetch(`/api/blueprint/data-flow?${params}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取依赖图
+   *
+   * 分析模块之间的导入/导出关系
+   *
+   * @param options.module - 模块路径（可选）。如果提供，只分析该模块及其依赖
+   * @param options.depth - 依赖深度，默认 3
+   * @param options.includeTypeOnly - 是否包含纯类型导入，默认 false
+   */
+  getDependencyGraph: async (options?: {
+    module?: string;
+    depth?: number;
+    includeTypeOnly?: boolean;
+  }): Promise<DependencyGraphData> => {
+    const params = new URLSearchParams();
+    if (options?.module) params.append('module', options.module);
+    if (options?.depth !== undefined) params.append('depth', String(options.depth));
+    if (options?.includeTypeOnly !== undefined) params.append('includeTypeOnly', String(options.includeTypeOnly));
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/blueprint/dependency-graph?${queryString}` : '/api/blueprint/dependency-graph';
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取项目 Treemap 数据
+   *
+   * 返回矩形树图数据，用于可视化项目结构和文件大小
+   *
+   * @param options.maxDepth - 最大深度，默认 4
+   * @param options.includeSymbols - 是否包含符号级别，默认 false
+   */
+  getTreemap: async (options?: {
+    maxDepth?: number;
+    includeSymbols?: boolean;
+  }): Promise<TreemapNode> => {
+    const params = new URLSearchParams();
+    if (options?.maxDepth !== undefined) params.append('maxDepth', String(options.maxDepth));
+    if (options?.includeSymbols !== undefined) params.append('includeSymbols', String(options.includeSymbols));
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/blueprint/treemap?${queryString}` : '/api/blueprint/treemap';
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取分层 Treemap 数据（地图模式）
+   *
+   * 支持缩放级别的分层加载
+   *
+   * @param options.level - 缩放级别 0-4 (PROJECT/MODULE/FILE/SYMBOL/CODE)
+   * @param options.path - 聚焦路径（可选）
+   * @param options.depth - 加载深度，默认 1
+   */
+  getLayeredTreemap: async (options?: {
+    level?: number;
+    path?: string;
+    depth?: number;
+  }): Promise<{
+    level: number;
+    focusPath: string | null;
+    data: TreemapNode;
+    hasMore: boolean;
+  }> => {
+    const params = new URLSearchParams();
+    if (options?.level !== undefined) params.append('level', String(options.level));
+    if (options?.path) params.append('path', options.path);
+    if (options?.depth !== undefined) params.append('depth', String(options.depth));
+
+    const queryString = params.toString();
+    const url = queryString ? `/api/blueprint/layered-treemap?${queryString}` : '/api/blueprint/layered-treemap';
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 懒加载 Treemap 子节点
+   *
+   * @param nodePath - 节点路径
+   * @param level - 当前缩放级别
+   */
+  getTreemapChildren: async (nodePath: string, level: number): Promise<TreemapNode[]> => {
+    const params = new URLSearchParams({
+      path: nodePath,
+      level: String(level),
+    });
+    const response = await fetch(`/api/blueprint/layered-treemap/children?${params}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取符号详情
+   *
+   * 获取函数、类、接口等符号的详细信息
+   *
+   * @param id - 符号ID，格式为 "filePath::symbolName" 或 "filePath::ClassName::methodName"
+   */
+  getSymbolDetail: async (id: string): Promise<SymbolDetailData> => {
+    const params = new URLSearchParams({ id });
+    const response = await fetch(`/api/blueprint/symbol-detail?${params}`);
     return handleResponse(response);
   },
 };
@@ -768,12 +1134,15 @@ export const timeTravelApi = {
   /**
    * 回滚到检查点
    */
-  rollback: async (treeId: string, checkpointId: string): Promise<void> => {
-    const response = await fetch(`/api/blueprint/time-travel/${treeId}/rollback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checkpointId }),
-    });
+  rollback: async (treeId: string, checkpointId: string, options?: { createBranch?: boolean }): Promise<void> => {
+    const response = await fetch(
+      `/api/blueprint/time-travel/${treeId}/rollback/${checkpointId}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options || {}),
+      }
+    );
     await handleResponse(response);
   },
 
@@ -873,6 +1242,30 @@ export const requirementDialogApi = {
       method: 'DELETE',
     });
     await handleResponse(response);
+  },
+
+  /**
+   * 获取对话摘要
+   */
+  getSummary: async (sessionId: string): Promise<{
+    sessionId: string;
+    phase: string;
+    projectName: string;
+    projectDescription: string;
+    targetUsers: string[];
+    problemsToSolve: string[];
+    businessProcessCount: number;
+    moduleCount: number;
+    nfrCount: number;
+    messageCount: number;
+    createdAt: string;
+    updatedAt: string;
+    businessProcesses: Array<{ name: string; type: string; stepsCount: number }>;
+    modules: Array<{ name: string; type: string; responsibilitiesCount: number }>;
+    nfrs: Array<{ name: string; category: string; priority: string }>;
+  }> => {
+    const response = await fetch(`/api/blueprint/requirement-dialog/${sessionId}/summary`);
+    return handleResponse(response);
   },
 };
 
@@ -1245,5 +1638,162 @@ export const aiHoverApi = {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return await response.json();
+  },
+};
+
+// ============================================================================
+// TDD 循环 API
+// ============================================================================
+
+/**
+ * TDD 阶段类型
+ */
+export type TDDPhase =
+  | 'write_test'      // 编写测试用例
+  | 'run_test_red'    // 运行测试（期望失败）
+  | 'write_code'      // 编写实现代码
+  | 'run_test_green'  // 运行测试（期望通过）
+  | 'refactor'        // 重构优化
+  | 'done';           // 完成
+
+/**
+ * 测试结果
+ */
+export interface TestResult {
+  id: string;
+  timestamp: Date;
+  passed: boolean;
+  duration: number;
+  output?: string;
+  errorMessage?: string;
+}
+
+/**
+ * 阶段转换记录
+ */
+export interface PhaseTransition {
+  from: TDDPhase;
+  to: TDDPhase;
+  timestamp: Date;
+  reason: string;
+  data?: any;
+}
+
+/**
+ * 验收测试
+ */
+export interface AcceptanceTest {
+  id: string;
+  description: string;
+  testCode: string;
+  testCommand: string;
+}
+
+/**
+ * TDD 循环状态
+ */
+export interface TDDLoopState {
+  taskId: string;
+  treeId: string;
+  phase: TDDPhase;
+  iteration: number;
+  testSpec?: {
+    id: string;
+    taskId: string;
+    type: string;
+    description: string;
+    testCode: string;
+    testFilePath: string;
+    testCommand: string;
+    acceptanceCriteria: string[];
+  };
+  testResults: TestResult[];
+  codeWritten: boolean;
+  lastError?: string;
+  startTime: string;
+  phaseHistory: PhaseTransition[];
+  hasAcceptanceTests: boolean;
+  acceptanceTests: AcceptanceTest[];
+  acceptanceTestResults: Map<string, TestResult>;
+}
+
+/**
+ * TDD 循环 API 封装
+ */
+export const tddApi = {
+  /**
+   * 启动 TDD 循环
+   */
+  startLoop: async (treeId: string, taskId: string): Promise<TDDLoopState> => {
+    const response = await fetch('/api/blueprint/tdd/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ treeId, taskId }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取 TDD 循环状态
+   */
+  getLoopState: async (taskId: string): Promise<TDDLoopState> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取阶段指南
+   */
+  getPhaseGuidance: async (taskId: string): Promise<string> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/guidance`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取 TDD 报告
+   */
+  getReport: async (taskId: string): Promise<string> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/report`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取所有活跃的 TDD 循环
+   */
+  getActiveLoops: async (): Promise<TDDLoopState[]> => {
+    const response = await fetch('/api/blueprint/tdd');
+    return handleResponse(response);
+  },
+
+  /**
+   * 转换到指定阶段
+   */
+  transitionPhase: async (taskId: string, phase: 'write_test' | 'run_test_red' | 'write_code' | 'run_test_green' | 'refactor'): Promise<TDDLoopState> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/phase-transition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 标记当前阶段完成，自动转换到下一阶段
+   */
+  completePhase: async (taskId: string): Promise<TDDLoopState> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/mark-complete`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 回退到上一阶段
+   */
+  revertPhase: async (taskId: string): Promise<TDDLoopState> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/revert-phase`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
   },
 };

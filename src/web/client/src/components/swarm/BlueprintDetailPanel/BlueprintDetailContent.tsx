@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import styles from './BlueprintDetailContent.module.css';
-import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject, aiHoverApi, AIHoverResult } from '../../../api/blueprint';
+import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject, aiHoverApi, AIHoverResult, blueprintApi } from '../../../api/blueprint';
 import { getSyntaxExplanation, extractKeywordsFromLine, SyntaxExplanation } from '../../../utils/syntaxDictionary';
 import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, formatJSDocBrief, hasValidJSDoc } from '../../../utils/jsdocParser';
 // VS Code 风格组件
@@ -197,11 +197,17 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     moduleCount: number;
   } | null>(null);
 
+  // 蓝图操作状态
+  const [blueprintOperating, setBlueprintOperating] = useState(false);
+  const [blueprintOperationError, setBlueprintOperationError] = useState<string | null>(null);
+
   // 架构流程图数据
   const [architectureGraph, setArchitectureGraph] = useState<ArchitectureGraphData | null>(null);
   const [architectureGraphLoading, setArchitectureGraphLoading] = useState(false);
   const [architectureGraphError, setArchitectureGraphError] = useState<string | null>(null);
   const [selectedArchitectureType, setSelectedArchitectureType] = useState<ArchitectureGraphType>('full');
+  // 架构图节点点击后需要跳转到的行号
+  const [targetLine, setTargetLine] = useState<number | null>(null);
 
   // ============ 新手模式相关状态 ============
   // 新手模式开关（默认开启）
@@ -1070,13 +1076,16 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         // 该项目还没有蓝图
         setBlueprintInfo(null);
       }
+
+      // 通知父组件刷新蓝图列表，确保状态同步
+      onRefresh?.();
     } catch (err) {
       console.warn('切换项目时更新蓝图信息失败:', err);
     }
 
     // 重新加载文件树，传入项目路径作为根目录
     loadFileTree(project.path);
-  }, [loadFileTree]);
+  }, [loadFileTree, onRefresh]);
 
   /**
    * 打开系统原生的文件夹选择对话框
@@ -1110,6 +1119,9 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           setBlueprintInfo(null);
         }
 
+        // 通知父组件刷新蓝图列表，确保状态同步
+        onRefresh?.();
+
         // 传入项目路径作为根目录加载文件树
         loadFileTree(result.path);
       }
@@ -1118,7 +1130,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       console.error('打开文件夹失败:', error);
       alert('打开文件夹失败: ' + (error.message || '未知错误'));
     }
-  }, [loadFileTree]);
+  }, [loadFileTree, onRefresh]);
 
   // 解析代码符号
   const parseCodeSymbols = useCallback((content: string, filePath: string): CodeSymbol[] => {
@@ -1272,6 +1284,74 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   }, [parseCodeSymbols]);
 
+  // 架构图节点点击处理：跳转到对应文件/文件夹
+  const handleArchitectureNodeClick = useCallback((nodeId: string, mapping: NodePathMapping) => {
+    console.log('[BlueprintDetailContent] 架构图节点点击:', nodeId, mapping);
+
+    // 在文件树中选中该路径
+    if (mapping.type === 'file' || mapping.type === 'folder') {
+      const isFile = mapping.type === 'file';
+
+      // 检查是否有未保存的更改
+      if (hasUnsavedChanges) {
+        const confirmed = window.confirm('有未保存的更改，确定要切换文件吗？');
+        if (!confirmed) return;
+      }
+
+      // 设置选中路径
+      setSelectedPath(mapping.path);
+      setSelectedIsFile(isFile);
+      setHasUnsavedChanges(false);
+      setEditorReady(false);
+
+      // 展开父级目录
+      const pathParts = mapping.path.split('/');
+      const parentPaths: string[] = [];
+      for (let i = 1; i < pathParts.length; i++) {
+        parentPaths.push(pathParts.slice(0, i).join('/'));
+      }
+      setExpandedPaths(prev => {
+        const next = new Set(prev);
+        parentPaths.forEach(p => next.add(p));
+        return next;
+      });
+
+      if (isFile) {
+        // 文件：加载内容
+        loadFileContent(mapping.path);
+        if (!analysisCache.has(mapping.path)) {
+          analyzeNode(mapping.path);
+        }
+
+        // 如果有行号，设置目标行号等待编辑器加载后跳转
+        if (mapping.line) {
+          setTargetLine(mapping.line);
+        }
+      } else {
+        // 目录：触发语义分析
+        if (!analysisCache.has(mapping.path)) {
+          analyzeNode(mapping.path);
+        }
+      }
+    }
+  }, [hasUnsavedChanges, analysisCache, analyzeNode, loadFileContent]);
+
+  // 编辑器加载后跳转到目标行
+  useEffect(() => {
+    if (targetLine && editorRef.current) {
+      // 延迟一点确保编辑器内容已加载
+      const timer = setTimeout(() => {
+        if (editorRef.current) {
+          editorRef.current.revealLineInCenter(targetLine);
+          editorRef.current.setPosition({ lineNumber: targetLine, column: 1 });
+          editorRef.current.focus();
+        }
+        setTargetLine(null);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [targetLine, fileContent]);
+
   // 保存文件
   const saveFile = async () => {
     if (!selectedPath || !hasUnsavedChanges) return;
@@ -1373,32 +1453,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       if (!analysisCache.has(path)) {
         analyzeNode(path);
       }
-    }
-  };
-
-  // 处理架构图节点点击 - 跳转到对应的文件/文件夹
-  const handleArchitectureNodeClick = (nodeId: string, mapping: NodePathMapping) => {
-    console.log(`[Architecture] 节点点击: ${nodeId} -> ${mapping.path}`);
-
-    // 构建完整路径（如果是相对路径，需要加上项目根目录）
-    let fullPath = mapping.path;
-    if (!fullPath.includes(':') && !fullPath.startsWith('/')) {
-      // 相对路径，加上项目根目录
-      fullPath = `${currentProjectPath}/${mapping.path}`.replace(/\\/g, '/');
-    }
-
-    // 使用已有的 handleSelectNode 逻辑来选择并展示文件/文件夹
-    const isFile = mapping.type === 'file';
-    handleSelectNode(fullPath, isFile);
-
-    // 如果有行号，可以滚动到对应行（需要等 editor 加载完成）
-    if (mapping.line && isFile) {
-      // 延迟执行，等待 editor 加载
-      setTimeout(() => {
-        // Monaco editor 滚动到指定行
-        // 这里可以通过 editorRef 来实现，但目前 editorRef 没有暴露
-        console.log(`[Architecture] 跳转到行: ${mapping.line}`);
-      }, 500);
     }
   };
 
@@ -2949,6 +3003,256 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const statusTexts: Record<string, string> = {
     draft: '草稿', review: '审核中', approved: '已批准',
     executing: '执行中', completed: '已完成', paused: '已暂停', modified: '已修改',
+    rejected: '已拒绝', failed: '失败',
+  };
+
+  // ============ 蓝图操作处理函数 ============
+
+  /**
+   * 批准蓝图
+   */
+  const handleApproveBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.approveBlueprint(blueprintId, 'user');
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'approved' } : null);
+      onRefresh?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '批准蓝图失败');
+      console.error('批准蓝图失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 拒绝蓝图
+   */
+  const handleRejectBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    const reason = window.prompt('请输入拒绝原因:');
+    if (!reason) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.rejectBlueprint(blueprintId, reason);
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'rejected' } : null);
+      onRefresh?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '拒绝蓝图失败');
+      console.error('拒绝蓝图失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 执行蓝图
+   */
+  const handleExecuteBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      const result = await blueprintApi.startExecution(blueprintId);
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'executing' } : null);
+      console.log('蓝图执行已启动:', result.message);
+      onRefresh?.();
+      // 如果有跳转到蜂群页面的回调，询问用户是否跳转
+      if (onNavigateToSwarm) {
+        const shouldNavigate = window.confirm('蓝图执行已启动！是否跳转到蜂群控制台查看执行进度？');
+        if (shouldNavigate) {
+          onNavigateToSwarm();
+        }
+      }
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '执行蓝图失败');
+      console.error('执行蓝图失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 暂停蓝图执行
+   */
+  const handlePauseBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.pauseExecution(blueprintId);
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'paused' } : null);
+      onRefresh?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '暂停执行失败');
+      console.error('暂停执行失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 恢复蓝图执行
+   */
+  const handleResumeBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.resumeExecution(blueprintId);
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'executing' } : null);
+      onRefresh?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '恢复执行失败');
+      console.error('恢复执行失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 完成蓝图执行
+   */
+  const handleCompleteBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    const confirmed = window.confirm('确定要标记蓝图为已完成吗？');
+    if (!confirmed) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.completeExecution(blueprintId);
+      setBlueprintInfo(prev => prev ? { ...prev, status: 'completed' } : null);
+      onRefresh?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '完成执行失败');
+      console.error('完成执行失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 删除蓝图
+   */
+  const handleDeleteBlueprint = async () => {
+    if (!blueprintId || blueprintOperating) return;
+    const confirmed = window.confirm('确定要删除此蓝图吗？此操作不可恢复！');
+    if (!confirmed) return;
+    setBlueprintOperating(true);
+    setBlueprintOperationError(null);
+    try {
+      await blueprintApi.deleteBlueprint(blueprintId);
+      onDeleted?.();
+    } catch (err: any) {
+      setBlueprintOperationError(err.message || '删除蓝图失败');
+      console.error('删除蓝图失败:', err);
+    } finally {
+      setBlueprintOperating(false);
+    }
+  };
+
+  /**
+   * 根据蓝图状态获取可用的操作按钮
+   */
+  const getBlueprintActions = () => {
+    if (!blueprintInfo) return [];
+    const status = blueprintInfo.status;
+    const actions: Array<{
+      label: string;
+      icon: string;
+      onClick: () => void;
+      type: 'primary' | 'success' | 'warning' | 'danger' | 'default';
+      disabled?: boolean;
+    }> = [];
+
+    switch (status) {
+      case 'draft':
+      case 'modified':
+        // 草稿和已修改状态可以提交审核（但这里没有提交审核的 API 调用，先跳过）
+        actions.push({
+          label: '删除',
+          icon: '🗑️',
+          onClick: handleDeleteBlueprint,
+          type: 'danger',
+        });
+        break;
+      case 'review':
+        // 审核中可以批准或拒绝
+        actions.push({
+          label: '批准',
+          icon: '✅',
+          onClick: handleApproveBlueprint,
+          type: 'success',
+        });
+        actions.push({
+          label: '拒绝',
+          icon: '❌',
+          onClick: handleRejectBlueprint,
+          type: 'danger',
+        });
+        break;
+      case 'approved':
+        // 已批准可以执行
+        actions.push({
+          label: '开始执行',
+          icon: '▶️',
+          onClick: handleExecuteBlueprint,
+          type: 'primary',
+        });
+        actions.push({
+          label: '删除',
+          icon: '🗑️',
+          onClick: handleDeleteBlueprint,
+          type: 'danger',
+        });
+        break;
+      case 'executing':
+        // 执行中可以暂停或完成
+        actions.push({
+          label: '暂停',
+          icon: '⏸️',
+          onClick: handlePauseBlueprint,
+          type: 'warning',
+        });
+        actions.push({
+          label: '完成',
+          icon: '✅',
+          onClick: handleCompleteBlueprint,
+          type: 'success',
+        });
+        break;
+      case 'paused':
+        // 已暂停可以恢复或完成
+        actions.push({
+          label: '恢复',
+          icon: '▶️',
+          onClick: handleResumeBlueprint,
+          type: 'primary',
+        });
+        actions.push({
+          label: '完成',
+          icon: '✅',
+          onClick: handleCompleteBlueprint,
+          type: 'success',
+        });
+        break;
+      case 'completed':
+      case 'failed':
+      case 'rejected':
+        // 已完成、失败或已拒绝只能删除
+        actions.push({
+          label: '删除',
+          icon: '🗑️',
+          onClick: handleDeleteBlueprint,
+          type: 'danger',
+        });
+        break;
+    }
+
+    return actions;
   };
 
 
@@ -4172,6 +4476,28 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           {blueprintInfo && (
             <span className={`${styles.statusBadge} ${styles[blueprintInfo.status]}`}>
               {statusTexts[blueprintInfo.status] || blueprintInfo.status}
+            </span>
+          )}
+          {/* 蓝图操作按钮 */}
+          {blueprintId && getBlueprintActions().length > 0 && (
+            <div className={styles.blueprintActions}>
+              {getBlueprintActions().map((action, idx) => (
+                <button
+                  key={idx}
+                  className={`${styles.actionBtn} ${styles[action.type]}`}
+                  onClick={action.onClick}
+                  disabled={blueprintOperating || action.disabled}
+                  title={action.label}
+                >
+                  {blueprintOperating ? '...' : `${action.icon} ${action.label}`}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* 操作错误提示 */}
+          {blueprintOperationError && (
+            <span className={styles.operationError} title={blueprintOperationError}>
+              操作失败
             </span>
           )}
           <span className={styles.statusItem}>

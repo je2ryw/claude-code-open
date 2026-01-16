@@ -356,6 +356,7 @@ export interface IUnifiedMemory {
     maxResults?: number;
     includeCode?: boolean;
     timeRange?: { start: Timestamp; end: Timestamp };
+    useSemanticSearch?: boolean;
   }): Promise<MemoryRecallResult>;
 
   /**

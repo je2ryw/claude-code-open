@@ -19,7 +19,16 @@ import { TaskManager } from './task-manager.js';
 import { McpConfigManager } from '../../mcp/config.js';
 import type { ExtendedMcpServerConfig } from '../../mcp/config.js';
 import { UnifiedMemory, getUnifiedMemory } from '../../memory/unified-memory.js';
+import { type MemoryEvent, MemoryEmotion } from '../../memory/types.js';
+import { extractExplicitMemories, mergeExtractedMemories } from '../../memory/intent-extractor.js';
 import { oauthManager } from './oauth-manager.js';
+import {
+  initSessionMemory,
+  readSessionMemory,
+  writeSessionMemory,
+  getSummaryPath,
+  isSessionMemoryEnabled,
+} from '../../context/session-memory.js';
 
 // ============================================================================
 // 工具输出截断常量和函数（与 CLI loop.ts 完全一致）
@@ -381,6 +390,16 @@ export class ConversationManager {
       };
 
       this.sessions.set(sessionId, state);
+
+      // 初始化 session memory（官方 session-memory 功能）
+      if (isSessionMemoryEnabled()) {
+        try {
+          initSessionMemory(this.cwd, sessionId);
+          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}`);
+        } catch (error) {
+          console.warn('[ConversationManager] 初始化 session memory 失败:', error);
+        }
+      }
     }
 
     return state;
@@ -792,6 +811,244 @@ export class ConversationManager {
 
     // 自动保存会话（与 CLI 完全一致）
     this.autoSaveSession(state);
+
+    // 记录对话到记忆系统（WebUI 独有功能）
+    if (!state.cancelled && sessionId) {
+      await this.recordConversationMemory(state, sessionId);
+    }
+  }
+
+  /**
+   * 记录对话到记忆系统
+   * 从对话内容中提取摘要、涉及的文件、话题等信息
+   */
+  private async recordConversationMemory(state: SessionState, sessionId: string): Promise<void> {
+    try {
+      // 获取最近的用户消息和助手回复
+      const recentMessages = state.messages.slice(-10); // 最近10条消息
+
+      // 提取用户问题
+      const userMessages = recentMessages
+        .filter(msg => msg.role === 'user')
+        .map(msg => {
+          if (typeof msg.content === 'string') return msg.content;
+          if (Array.isArray(msg.content)) {
+            return msg.content
+              .filter((c: any) => c.type === 'text')
+              .map((c: any) => c.text)
+              .join(' ');
+          }
+          return '';
+        })
+        .filter(text => text.length > 0);
+
+      // 提取助手回复
+      const assistantMessages = recentMessages
+        .filter(msg => msg.role === 'assistant')
+        .map(msg => {
+          if (Array.isArray(msg.content)) {
+            return msg.content
+              .filter((c: any) => c.type === 'text')
+              .map((c: any) => c.text)
+              .join(' ');
+          }
+          return '';
+        })
+        .filter(text => text.length > 0);
+
+      // 如果没有有效内容，跳过记录
+      if (userMessages.length === 0 && assistantMessages.length === 0) {
+        return;
+      }
+
+      // 从工具调用中提取涉及的文件
+      const filesModified = this.extractFilesFromMessages(recentMessages);
+
+      // 从工具调用中提取涉及的符号（函数名、类名等）
+      const symbolsDiscussed = this.extractSymbolsFromMessages(recentMessages);
+
+      // 提取话题（从用户问题中提取关键词）
+      const topics = this.extractTopicsFromMessages(userMessages);
+
+      // 生成对话摘要
+      const conversationSummary = this.generateConversationSummary(userMessages, assistantMessages);
+
+      // 【方案A】意图识别：从用户消息中提取需要永久记住的信息
+      const memoryExtraction = extractExplicitMemories(userMessages);
+      const explicitMemory = mergeExtractedMemories(memoryExtraction.memories);
+
+      if (explicitMemory) {
+        console.log(`[ConversationManager] 识别到显式记忆: ${explicitMemory}`);
+      }
+
+      // 创建记忆事件
+      const memoryEvent: MemoryEvent = {
+        type: 'conversation',
+        sessionId,
+        conversationSummary,
+        topics,
+        filesModified: filesModified.length > 0 ? filesModified : undefined,
+        symbolsDiscussed: symbolsDiscussed.length > 0 ? symbolsDiscussed : undefined,
+        emotion: MemoryEmotion.NEUTRAL,
+        timestamp: new Date().toISOString(),
+        // 如果识别到显式记忆，设置 explicitMemory 字段
+        explicitMemory,
+      };
+
+      // 记录到记忆系统
+      await this.unifiedMemory.remember(memoryEvent);
+
+      console.log(`[ConversationManager] 已记录对话到记忆系统: ${conversationSummary.slice(0, 50)}...`);
+    } catch (error) {
+      // 记忆系统失败不影响主流程
+      console.warn('[ConversationManager] 记录对话记忆失败:', error);
+    }
+  }
+
+  /**
+   * 从消息中提取涉及的文件路径
+   */
+  private extractFilesFromMessages(messages: Message[]): string[] {
+    const files = new Set<string>();
+
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'tool_use') {
+            const toolBlock = block as ToolUseBlock;
+            const input = toolBlock.input as Record<string, unknown>;
+
+            // 提取文件路径相关工具的参数
+            if (['Read', 'Write', 'Edit', 'MultiEdit'].includes(toolBlock.name)) {
+              if (input.file_path && typeof input.file_path === 'string') {
+                files.add(input.file_path);
+              }
+              if (input.files && Array.isArray(input.files)) {
+                for (const file of input.files) {
+                  if (typeof file === 'string') files.add(file);
+                  if (file && typeof file === 'object' && 'file_path' in file) {
+                    files.add(file.file_path as string);
+                  }
+                }
+              }
+            }
+
+            // Glob 和 Grep 的路径
+            if (['Glob', 'Grep'].includes(toolBlock.name)) {
+              if (input.path && typeof input.path === 'string') {
+                files.add(input.path);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(files).slice(0, 20); // 限制最多20个文件
+  }
+
+  /**
+   * 从消息中提取涉及的符号（函数名、类名等）
+   */
+  private extractSymbolsFromMessages(messages: Message[]): string[] {
+    const symbols = new Set<string>();
+
+    // 从 Grep 搜索的 pattern 中提取可能的符号名
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'tool_use') {
+            const toolBlock = block as ToolUseBlock;
+            const input = toolBlock.input as Record<string, unknown>;
+
+            if (toolBlock.name === 'Grep' && input.pattern) {
+              const pattern = input.pattern as string;
+              // 提取可能的函数名或类名（简单的标识符）
+              const matches = pattern.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g);
+              if (matches) {
+                for (const match of matches) {
+                  if (match.length > 2 && match.length < 50) {
+                    symbols.add(match);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(symbols).slice(0, 10); // 限制最多10个符号
+  }
+
+  /**
+   * 从用户消息中提取话题
+   */
+  private extractTopicsFromMessages(userMessages: string[]): string[] {
+    const topics = new Set<string>();
+
+    // 常见的技术关键词
+    const techKeywords = [
+      'bug', 'fix', 'error', 'feature', 'implement', 'refactor', 'test', 'debug',
+      'api', 'database', 'ui', 'frontend', 'backend', 'server', 'client',
+      'auth', 'login', 'security', 'performance', 'optimization',
+      'typescript', 'javascript', 'react', 'node', 'python', 'java', 'go',
+      'git', 'commit', 'merge', 'branch', 'deploy', 'build',
+      '修复', '实现', '添加', '删除', '更新', '优化', '重构', '测试',
+      '记忆', '对话', '会话', '配置', '设置', '功能', '模块',
+    ];
+
+    const combinedText = userMessages.join(' ').toLowerCase();
+
+    for (const keyword of techKeywords) {
+      if (combinedText.includes(keyword.toLowerCase())) {
+        topics.add(keyword);
+      }
+    }
+
+    // 从用户消息中提取引号内的内容作为话题
+    for (const msg of userMessages) {
+      const quotedMatches = msg.match(/[「「『"']([^「」『』"']+)[」」』"']/g);
+      if (quotedMatches) {
+        for (const match of quotedMatches) {
+          const content = match.slice(1, -1).trim();
+          if (content.length > 1 && content.length < 30) {
+            topics.add(content);
+          }
+        }
+      }
+    }
+
+    return Array.from(topics).slice(0, 10); // 限制最多10个话题
+  }
+
+  /**
+   * 生成对话摘要
+   */
+  private generateConversationSummary(userMessages: string[], assistantMessages: string[]): string {
+    // 取最近的用户问题作为主题
+    const lastUserMessage = userMessages[userMessages.length - 1] || '';
+
+    // 截断过长的消息
+    const truncatedQuestion = lastUserMessage.length > 100
+      ? lastUserMessage.slice(0, 100) + '...'
+      : lastUserMessage;
+
+    // 取最近的助手回复的开头作为简要回答
+    const lastAssistantMessage = assistantMessages[assistantMessages.length - 1] || '';
+    const truncatedAnswer = lastAssistantMessage.length > 100
+      ? lastAssistantMessage.slice(0, 100) + '...'
+      : lastAssistantMessage;
+
+    if (truncatedQuestion && truncatedAnswer) {
+      return `用户询问: ${truncatedQuestion} | 助手回复: ${truncatedAnswer}`;
+    } else if (truncatedQuestion) {
+      return `用户询问: ${truncatedQuestion}`;
+    } else if (truncatedAnswer) {
+      return `助手回复: ${truncatedAnswer}`;
+    }
+
+    return '对话记录';
   }
 
   /**
@@ -1483,17 +1740,30 @@ Guidelines:
       return false;
     }
 
+    // 如果会话没有消息，不需要持久化
+    if (state.messages.length === 0 && state.chatHistory.length === 0) {
+      return true;
+    }
+
     try {
       // 先检查会话是否存在于 sessionManager
-      let sessionData = this.sessionManager.loadSessionById(sessionId);
+      const sessionData = this.sessionManager.loadSessionById(sessionId);
 
       if (!sessionData) {
-        // 如果不存在，创建新会话
-        sessionData = this.sessionManager.createSession({
-          name: `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
-          model: state.model,
-          tags: ['webui'],
-        });
+        // 如果会话不存在于 sessionManager，说明是临时会话或无效 ID
+        // 不要创建新会话，直接返回 false
+        console.warn(`[ConversationManager] 会话不存在于 sessionManager，跳过持久化: ${sessionId}`);
+        return false;
+      }
+
+      // 检查是否有实际变化（避免不必要的磁盘写入）
+      const hasChanges =
+        sessionData.messages.length !== state.messages.length ||
+        sessionData.chatHistory?.length !== state.chatHistory.length ||
+        sessionData.currentModel !== state.model;
+
+      if (!hasChanges) {
+        return true; // 没有变化，直接返回
       }
 
       // 更新会话数据
@@ -1502,6 +1772,10 @@ Guidelines:
       sessionData.currentModel = state.model;
       (sessionData as any).toolFilterConfig = state.toolFilterConfig;
       (sessionData as any).systemPromptConfig = state.systemPromptConfig;
+
+      // 关键：更新 messageCount（官方规范：统计消息数）
+      sessionData.metadata.messageCount = state.messages.length;
+      sessionData.metadata.updatedAt = Date.now();
 
       // 保存到磁盘
       const success = this.sessionManager.saveSession(sessionId);
@@ -1520,6 +1794,11 @@ Guidelines:
    */
   async resumeSession(sessionId: string): Promise<boolean> {
     try {
+      // 如果会话已经在内存中，直接返回成功（避免重复创建）
+      if (this.sessions.has(sessionId)) {
+        return true;
+      }
+
       const sessionData = this.sessionManager.loadSessionById(sessionId);
       if (!sessionData) {
         console.warn(`[ConversationManager] 会话不存在: ${sessionId}`);

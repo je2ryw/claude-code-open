@@ -1119,3 +1119,4 @@ export * from './enhanced.js';
 // ============ 导出新增模块 ============
 export * from './summarizer.js';
 export * from './window.js';
+export * from './session-memory.js';

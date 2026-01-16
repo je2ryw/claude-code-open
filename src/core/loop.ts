@@ -8,6 +8,50 @@ import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
 import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
+
+// ============================================================================
+// 官方 v2.1.2 AppState 类型定义 - 响应式状态管理
+// ============================================================================
+
+/**
+ * 工具权限上下文 - 官方实现
+ * 存储当前的权限模式和相关配置
+ */
+export interface ToolPermissionContext {
+  mode: PermissionMode;
+  /** 额外的工作目录 */
+  additionalWorkingDirectories?: Map<string, boolean>;
+  /** 始终允许的规则 */
+  alwaysAllowRules?: {
+    command?: string[];
+    file?: string[];
+  };
+  /** 是否避免权限提示 */
+  shouldAvoidPermissionPrompts?: boolean;
+}
+
+/**
+ * 应用状态 - 官方实现
+ * 通过 getAppState() 实时获取
+ */
+export interface AppState {
+  toolPermissionContext: ToolPermissionContext;
+}
+
+/**
+ * 创建默认的 ToolPermissionContext
+ */
+export function createDefaultToolPermissionContext(): ToolPermissionContext {
+  return {
+    mode: 'default',
+    additionalWorkingDirectories: new Map(),
+    alwaysAllowRules: {
+      command: [],
+      file: [],
+    },
+    shouldAvoidPermissionPrompts: false,
+  };
+}
 import chalk from 'chalk';
 import {
   SystemPromptBuilder,
@@ -22,6 +66,20 @@ import * as readline from 'readline';
 import { setParentModelContext } from '../tools/agent.js';
 import { configManager } from '../config/index.js';
 import { accountUsageManager } from '../ratelimit/index.js';
+import {
+  isSessionMemoryEnabled as checkSessionMemoryEnabled,
+  SESSION_MEMORY_TEMPLATE,
+  isEmptyTemplate,
+  initSessionMemory,
+  readSessionMemory,
+  writeSessionMemory,
+  getSummaryPath,
+  getUpdatePrompt,
+  formatForSystemPrompt,
+  waitForWrite as waitForSessionMemoryWrite,
+  setLastCompactedUuid as setSessionMemoryLastCompactedUuid,
+  getLastCompactedUuid as getSessionMemoryLastCompactedUuid,
+} from '../context/session-memory.js';
 
 // ============================================================================
 // 持久化输出常量
@@ -751,72 +809,46 @@ function getMessagesSinceLastBoundary(messages: Message[]): Message[] {
 // ============================================================================
 
 /**
- * 检查Session Memory功能是否启用（对齐官方 jJ1 函数）
+ * 检查Session Memory功能是否启用（对齐官方 rF1 函数）
  *
  * 官方实现检查两个Feature Flags：
  * - tengu_session_memory
  * - tengu_sm_compact
  *
- * 由于我们无法访问Anthropic的Feature Flag服务器，这里简化为环境变量+配置文件控制
+ * 官方使用远程 Feature Flag，我们直接写死为 true
  *
- * @returns 是否启用Session Memory压缩
+ * @returns 始终返回 true
  */
 async function isSessionMemoryEnabled(): Promise<boolean> {
-  // 方案1：优先检查环境变量
-  if (process.env.ENABLE_SESSION_MEMORY === '1' || process.env.ENABLE_SESSION_MEMORY === 'true') {
-    return true;
-  }
-
-  // 方案2：检查配置文件
-  try {
-    const config = configManager.getAll();
-    if (config.sessionMemoryEnabled) {
-      return true;
-    }
-  } catch (error) {
-    // 配置文件读取失败，忽略错误
-  }
-
-  // 默认禁用Session Memory（因为需要特定的模型支持）
-  return false;
+  // 官方检查 ROA("tengu_session_memory") && ROA("tengu_sm_compact")
+  // 我们直接写死为 true，与官方功能保持一致
+  return checkSessionMemoryEnabled();
 }
 
 /**
- * 获取Session Memory模板内容（对齐官方 sj2 函数）
+ * 获取Session Memory模板内容（对齐官方 vL0 函数）
  *
- * 官方实现可能从服务器获取模板或使用内置模板
- * 这里使用内置的简化模板
+ * 官方使用内置模板 w97，包含 10 个结构化章节：
+ * - Session Title, Current State, Task specification
+ * - Files and Functions, Workflow, Errors & Corrections
+ * - Codebase and System Documentation, Learnings
+ * - Key results, Worklog
  *
  * @returns Session Memory模板内容
  */
 function getSessionMemoryTemplate(): string | null {
-  // 返回Session Memory的压缩提示模板
-  // 这个模板会指导AI如何生成结构化的会话记忆
-  return `You are tasked with creating a concise session memory from the conversation history.
-
-Session memory should capture:
-1. **Key Decisions**: Important choices and rationale
-2. **Current State**: What's been accomplished and what's in progress
-3. **Context**: Essential background information needed for future work
-4. **Action Items**: Outstanding tasks or next steps
-5. **Important Details**: Specific values, configurations, or requirements that must be preserved
-
-Format your response as a structured summary that can replace the full conversation history while preserving all critical information.
-
-Do NOT include:
-- Verbose explanations already understood
-- Resolved issues that don't affect future work
-- Redundant information
-- System prompts or tool descriptions`;
+  // 使用官方模板 w97
+  return SESSION_MEMORY_TEMPLATE;
 }
 
 /**
- * 检查模板是否为空（对齐官方 KT2 函数）
+ * 检查模板是否为空（对齐官方 Os2 函数）
  * @param template 模板内容
- * @returns 是否为空
+ * @returns 是否为空模板
  */
 async function isTemplateEmpty(template: string): Promise<boolean> {
-  return !template || template.trim().length === 0;
+  // 使用新的 session-memory 模块的函数
+  return isEmptyTemplate(template);
 }
 
 /**
@@ -838,13 +870,12 @@ function getLastCompactedUuid(session?: Session): string | null {
 }
 
 /**
- * 等待异步操作（对齐官方 rj2 函数）
- * 官方实现可能用于等待某些异步初始化
- * 这里简化为空操作
+ * 等待异步操作（对齐官方 Ws2 函数）
+ * 等待 session memory 写入完成
  */
 async function waitForAsyncInit(): Promise<void> {
-  // 空操作 - 官方可能用于等待Feature Flag加载等
-  return Promise.resolve();
+  // 等待 session memory 写入完成
+  await waitForSessionMemoryWrite();
 }
 
 /**
@@ -1371,7 +1402,7 @@ export interface LoopOptions {
   systemPrompt?: string;
   verbose?: boolean;
   maxTurns?: number;
-  // 权限模式
+  // 权限模式 - 静态配置（优先级低于 getAppState）
   permissionMode?: PermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -1387,6 +1418,12 @@ export interface LoopOptions {
   debug?: boolean;
   /** 是否为 sub-agent（用于防止覆盖全局父模型上下文） */
   isSubAgent?: boolean;
+  /**
+   * 官方 v2.1.2 响应式状态获取回调
+   * 用于实时获取应用状态（包括权限模式）
+   * 如果提供此回调，权限模式将从 AppState.toolPermissionContext.mode 获取
+   */
+  getAppState?: () => AppState;
 }
 
 export class ConversationLoop {
@@ -1400,6 +1437,26 @@ export class ConversationLoop {
 
   // ESC 中断支持
   private abortController: AbortController | null = null;
+
+  /**
+   * 获取当前权限模式 - 官方 v2.1.2 响应式实现
+   *
+   * 重要：此方法是权限系统的唯一入口。
+   * 优先从 getAppState() 回调获取实时的响应式状态，
+   * 这样 UI 层通过 Shift+Tab 切换的权限模式能立即生效。
+   *
+   * 只有在未提供 getAppState 回调时（如 sub-agent 或测试场景），
+   * 才会回退到 options.permissionMode 静态配置。
+   */
+  private getCurrentPermissionMode(): PermissionMode {
+    // 优先使用响应式状态（来自 App.tsx 的 toolPermissionContext）
+    if (this.options.getAppState) {
+      const appState = this.options.getAppState();
+      return appState.toolPermissionContext.mode;
+    }
+    // 回退到静态配置（仅用于 sub-agent 或测试场景）
+    return this.options.permissionMode || 'default';
+  }
 
   /**
    * 处理权限请求（询问用户是否允许工具执行）
@@ -1441,15 +1498,17 @@ export class ConversationLoop {
       return false;
     }
 
-    // 3. 检查权限模式
-    if (this.options.permissionMode === 'bypassPermissions' || this.options.dangerouslySkipPermissions) {
+    // 3. 检查权限模式 - 官方 v2.1.2 使用响应式状态
+    const currentMode = this.getCurrentPermissionMode();
+
+    if (currentMode === 'bypassPermissions' || this.options.dangerouslySkipPermissions) {
       if (this.options.verbose) {
         console.log(chalk.yellow('[Permission] Bypassed due to permission mode'));
       }
       return true;
     }
 
-    if (this.options.permissionMode === 'dontAsk') {
+    if (currentMode === 'dontAsk') {
       // dontAsk 模式：自动拒绝需要询问的操作
       if (this.options.verbose) {
         console.log(chalk.red('[Permission] Auto-denied in dontAsk mode'));
@@ -1457,9 +1516,23 @@ export class ConversationLoop {
       return false;
     }
 
-    // 3.5 acceptEdits 模式 - 官方 v2.1.2 Shift+Tab 快捷切换
+    // 3.5 plan 模式 - 官方 v2.1.2 Shift+Tab 双击切换
+    // Plan 模式下拒绝所有执行操作，只允许只读工具
+    if (currentMode === 'plan') {
+      const readOnlyTools = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
+      if (!readOnlyTools.includes(toolName)) {
+        if (this.options.verbose) {
+          console.log(chalk.yellow(`[Permission] Denied in plan mode (non-readonly tool): ${toolName}`));
+        }
+        return false;
+      }
+      // 只读工具在 plan 模式下允许执行
+      return true;
+    }
+
+    // 3.6 acceptEdits 模式 - 官方 v2.1.2 Shift+Tab 单击切换
     // 自动接受文件编辑操作，其他操作仍需询问
-    if (this.options.permissionMode === 'acceptEdits') {
+    if (currentMode === 'acceptEdits') {
       const editTools = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
       if (editTools.includes(toolName)) {
         if (this.options.verbose) {
@@ -2003,20 +2076,24 @@ Guidelines:
     // 解析模型别名（在循环外部，避免重复解析）
     const resolvedModel = modelConfig.resolveAlias(this.options.model || 'sonnet');
 
-    // 构建系统提示词
-    let systemPrompt: string;
-    if (this.options.systemPrompt) {
-      systemPrompt = this.options.systemPrompt;
-    } else {
-      try {
-        const buildResult = await this.promptBuilder.build(this.promptContext);
-        systemPrompt = buildResult.content;
-      } catch {
-        systemPrompt = this.getDefaultSystemPrompt();
-      }
-    }
-
     while (turns < maxTurns) {
+      // 官方 v2.1.2: 每个 turn 开始时更新 promptContext 中的权限模式
+      // 使用响应式状态获取最新的权限模式
+      const currentMode = this.getCurrentPermissionMode();
+      this.promptContext.permissionMode = currentMode;
+
+      // 每个 turn 重新构建系统提示词 - 支持运行时权限模式切换 (官方 v2.1.2 Shift+Tab)
+      let systemPrompt: string;
+      if (this.options.systemPrompt) {
+        systemPrompt = this.options.systemPrompt;
+      } else {
+        try {
+          const buildResult = await this.promptBuilder.build(this.promptContext);
+          systemPrompt = buildResult.content;
+        } catch {
+          systemPrompt = this.getDefaultSystemPrompt();
+        }
+      }
       // 检查是否已被中断
       if (this.abortController?.signal.aborted) {
         yield { type: 'interrupted', content: 'Request interrupted by user' };
@@ -2223,26 +2300,6 @@ Guidelines:
    */
   getModel(): string {
     return this.client.getModel();
-  }
-
-  /**
-   * 设置权限模式 - 官方 v2.1.2 Shift+Tab 快捷切换支持
-   * @param mode 权限模式
-   */
-  setPermissionMode(mode: PermissionMode): void {
-    this.options.permissionMode = mode;
-    // 同步更新 promptContext
-    if (this.promptContext) {
-      this.promptContext.permissionMode = mode;
-    }
-  }
-
-  /**
-   * 获取当前权限模式
-   * @returns 当前权限模式
-   */
-  getPermissionMode(): PermissionMode | undefined {
-    return this.options.permissionMode;
   }
 
   /**

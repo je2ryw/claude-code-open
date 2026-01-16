@@ -78,6 +78,7 @@ export type ClientMessage =
   | { type: 'user_answer'; payload: UserAnswerPayload }
   | { type: 'session_list'; payload?: SessionListRequestPayload }
   | { type: 'session_create'; payload: SessionCreatePayload }
+  | { type: 'session_new'; payload: { model?: string } }  // 官方规范：创建临时会话
   | { type: 'session_switch'; payload: { sessionId: string } }
   | { type: 'session_delete'; payload: { sessionId: string } }
   | { type: 'session_rename'; payload: { sessionId: string; name: string } }
@@ -123,7 +124,13 @@ export type ClientMessage =
   | { type: 'oauth_get_auth_url'; payload: { redirectUri: string; state?: string } }
   // 蜂群相关消息
   | { type: 'swarm:subscribe'; payload: { blueprintId: string } }
-  | { type: 'swarm:unsubscribe'; payload: { blueprintId: string } };
+  | { type: 'swarm:unsubscribe'; payload: { blueprintId: string } }
+  | { type: 'swarm:pause'; payload: { blueprintId: string } }
+  | { type: 'swarm:resume'; payload: { blueprintId: string } }
+  | { type: 'swarm:stop'; payload: { blueprintId: string } }
+  | { type: 'worker:pause'; payload: { workerId: string } }
+  | { type: 'worker:resume'; payload: { workerId: string } }
+  | { type: 'worker:terminate'; payload: { workerId: string } };
 
 /**
  * 服务端发送的消息类型
@@ -148,6 +155,7 @@ export type ServerMessage =
   | { type: 'slash_command_result'; payload: SlashCommandResultPayload }
   | { type: 'session_list_response'; payload: SessionListResponsePayload }
   | { type: 'session_created'; payload: SessionCreatedPayload }
+  | { type: 'session_new_ready'; payload: { sessionId: string; model: string } }  // 官方规范：临时会话已就绪
   | { type: 'session_switched'; payload: { sessionId: string } }
   | { type: 'session_deleted'; payload: { sessionId: string; success: boolean } }
   | { type: 'session_renamed'; payload: { sessionId: string; name: string; success: boolean } }
@@ -196,7 +204,15 @@ export type ServerMessage =
   | { type: 'swarm:queen_update'; payload: any }
   | { type: 'swarm:timeline_event'; payload: any }
   | { type: 'swarm:completed'; payload: any }
-  | { type: 'swarm:error'; payload: { blueprintId: string; error: string; timestamp: string } };
+  | { type: 'swarm:error'; payload: { blueprintId: string; error: string; timestamp: string } }
+  | { type: 'swarm:paused'; payload: { blueprintId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'swarm:resumed'; payload: { blueprintId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'swarm:stopped'; payload: { blueprintId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'worker:paused'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'worker:resumed'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'worker:terminated'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
+  | { type: 'worker:removed'; payload: { workerId: string; blueprintId: string; reason: string; timestamp: string } }
+  | { type: 'swarm:stats_update'; payload: { blueprintId: string; stats: any } };
 
 // ============ 消息负载类型 ============
 

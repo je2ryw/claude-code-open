@@ -1914,6 +1914,57 @@ router.get('/tdd', (req: Request, res: Response) => {
   }
 });
 
+/**
+ * 转换到指定阶段
+ */
+router.post('/tdd/:taskId/phase-transition', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const { phase } = req.body;
+
+    if (!phase) {
+      return res.status(400).json({ success: false, error: '缺少 phase 参数' });
+    }
+
+    // 验证 phase 是否有效
+    const validPhases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor'];
+    if (!validPhases.includes(phase)) {
+      return res.status(400).json({ success: false, error: `无效的阶段: ${phase}` });
+    }
+
+    const state = tddExecutor.manualTransitionPhase(taskId, phase);
+    res.json({ success: true, data: state });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 标记当前阶段完成，自动转换到下一阶段
+ */
+router.post('/tdd/:taskId/mark-complete', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const state = tddExecutor.markPhaseComplete(taskId);
+    res.json({ success: true, data: state });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 回退到上一阶段
+ */
+router.post('/tdd/:taskId/revert-phase', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const state = tddExecutor.revertPhase(taskId);
+    res.json({ success: true, data: state });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============================================================================
 // 时光倒流 API
 // ============================================================================
@@ -2140,6 +2191,63 @@ router.delete('/requirement-dialog/:sessionId', (req: Request, res: Response) =>
   }
 });
 
+/**
+ * 获取对话摘要
+ * GET /api/blueprint/requirement-dialog/:sessionId/summary
+ */
+router.get('/requirement-dialog/:sessionId/summary', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const state = requirementDialogManager.getDialogState(sessionId);
+
+    if (!state) {
+      return res.status(404).json({
+        success: false,
+        error: 'Dialog session not found',
+      });
+    }
+
+    // 生成对话摘要
+    const summary = {
+      sessionId: state.id,
+      phase: state.phase,
+      projectName: state.projectName,
+      projectDescription: state.projectDescription,
+      targetUsers: state.targetUsers,
+      problemsToSolve: state.problemsToSolve,
+      businessProcessCount: state.businessProcesses.length,
+      moduleCount: state.modules.length,
+      nfrCount: state.nfrs.length,
+      messageCount: state.history.length,
+      createdAt: state.createdAt,
+      updatedAt: state.updatedAt,
+      // 详细数据
+      businessProcesses: state.businessProcesses.map(p => ({
+        name: p.name,
+        type: p.type,
+        stepsCount: p.steps.length,
+      })),
+      modules: state.modules.map(m => ({
+        name: m.name,
+        type: m.type,
+        responsibilitiesCount: m.responsibilities.length,
+      })),
+      nfrs: state.nfrs.map(n => ({
+        name: n.name,
+        category: n.category,
+        priority: n.priority,
+      })),
+    };
+
+    res.json({
+      success: true,
+      data: summary,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ============================================================================
 // 时光倒流 API
 // ============================================================================
@@ -2214,22 +2322,6 @@ router.post('/time-travel/:treeId/checkpoints', (req: Request, res: Response) =>
     );
 
     res.json({ success: true, data: checkpoint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 回滚到检查点
- */
-router.post('/time-travel/:treeId/rollback', (req: Request, res: Response) => {
-  try {
-    const { treeId } = req.params;
-    const { checkpointId } = req.body;
-
-    timeTravelManager.rollback(treeId, checkpointId);
-
-    res.json({ success: true, message: 'Rollback successful' });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -5528,6 +5620,63 @@ router.post('/files/move', (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/blueprint/files/exists
+ * 检查路径是否存在
+ */
+router.get('/files/exists', (req: Request, res: Response) => {
+  try {
+    const targetPath = req.query.path as string;
+
+    if (!targetPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    // 获取当前工作目录
+    const cwd = process.cwd();
+    const absolutePath = path.isAbsolute(targetPath)
+      ? targetPath
+      : path.join(cwd, targetPath);
+
+    // 安全检查：确保路径在工作目录内
+    const normalizedPath = path.normalize(absolutePath);
+    const normalizedCwd = path.normalize(cwd);
+    if (!normalizedPath.startsWith(normalizedCwd)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止访问工作目录外的路径',
+      });
+    }
+
+    // 检查路径是否存在
+    const exists = fs.existsSync(absolutePath);
+    let isFile = false;
+    let isDirectory = false;
+
+    if (exists) {
+      const stat = fs.statSync(absolutePath);
+      isFile = stat.isFile();
+      isDirectory = stat.isDirectory();
+    }
+
+    res.json({
+      success: true,
+      data: {
+        exists,
+        isFile,
+        isDirectory,
+        path: absolutePath,
+      },
+    });
+  } catch (error: any) {
+    console.error('[GET /files/exists]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * AI 代码问答 - 回答用户关于代码的问题
  * POST /api/blueprint/ai/ask
  */
@@ -6396,13 +6545,6 @@ ${truncatedContent}
 /** 架构图类型 */
 type ArchitectureGraphType = 'dataflow' | 'sequence' | 'toolflow' | 'modulerelation' | 'full';
 
-/** 节点路径映射项 */
-interface NodePathMapping {
-  path: string;
-  type: 'file' | 'folder';
-  line?: number;
-}
-
 // 架构图缓存已移至持久化模块: src/blueprint/architecture-graph-cache.ts
 
 /** 架构图 Prompt 模板 */
@@ -6509,7 +6651,6 @@ router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Respo
           description: cached.description,
           mermaidCode: cached.mermaidCode,
           generatedAt: cached.generatedAt,
-          nodePathMap: cached.nodePathMap,
         },
         fromCache: true,
       });
@@ -6678,123 +6819,6 @@ ${combinedAnalysis}
     const meta = ARCHITECTURE_GRAPH_META[graphType];
     const generatedAt = new Date().toLocaleString('zh-CN');
 
-    // 从蓝图 modules 中生成节点路径映射
-    const nodePathMap: Record<string, NodePathMapping> = {};
-    const fs = await import('fs');
-    const pathModule = await import('path');
-
-    // 构建模块名称 -> 路径 的映射（用于后续模糊匹配）
-    const moduleNameToPath = new Map<string, string>();
-
-    // 从蓝图 modules 中提取路径映射
-    for (const mod of modules) {
-      if (mod.rootPath) {
-        // 使用模块名称作为 key（移除空格以增加匹配率）
-        const normalizedName = mod.name.replace(/\s+/g, '');
-        nodePathMap[normalizedName] = {
-          path: mod.rootPath,
-          type: 'folder',
-        };
-        // 也添加原始名称
-        nodePathMap[mod.name] = {
-          path: mod.rootPath,
-          type: 'folder',
-        };
-        // 添加模块 ID
-        if (mod.id) {
-          nodePathMap[mod.id] = {
-            path: mod.rootPath,
-            type: 'folder',
-          };
-        }
-        // 记录到映射表，用于模糊匹配
-        moduleNameToPath.set(mod.name.toLowerCase(), mod.rootPath);
-        moduleNameToPath.set(normalizedName.toLowerCase(), mod.rootPath);
-      }
-    }
-
-    console.log(`[Architecture Graph] 从蓝图 modules 获取 ${moduleNameToPath.size} 个路径映射`);
-
-    // 从 Mermaid 代码中提取节点 ID，智能匹配文件路径
-    // 匹配 Mermaid 节点定义: NodeId[Label] 或 NodeId(Label) 或 NodeId{Label}
-    // 支持中文、英文、数字、下划线
-    const nodeIdPattern = /([\w\u4e00-\u9fa5]+)[\[\(\{]/g;
-    let match: RegExpExecArray | null;
-    const extractedNodeIds = new Set<string>();
-
-    while ((match = nodeIdPattern.exec(mermaidCode)) !== null) {
-      extractedNodeIds.add(match[1]);
-    }
-
-    console.log(`[Architecture Graph] 从 Mermaid 代码中提取到 ${extractedNodeIds.size} 个节点 ID`);
-
-    // 为未映射的节点尝试智能推断路径
-    for (const nodeId of extractedNodeIds) {
-      if (nodePathMap[nodeId]) continue; // 已有映射，跳过
-
-      // 首先尝试模糊匹配蓝图模块名称
-      const nodeIdLower = nodeId.toLowerCase();
-      for (const [moduleName, modulePath] of moduleNameToPath) {
-        // 模块名称包含节点 ID 或节点 ID 包含模块名称
-        if (moduleName.includes(nodeIdLower) || nodeIdLower.includes(moduleName)) {
-          nodePathMap[nodeId] = {
-            path: modulePath,
-            type: 'folder',
-          };
-          console.log(`[Architecture Graph] 模糊匹配模块: ${nodeId} -> ${modulePath}`);
-          break;
-        }
-      }
-
-      if (nodePathMap[nodeId]) continue; // 已匹配，跳过文件系统查找
-
-      // 常见的文件/目录名称模式（按优先级排序）
-      const possiblePaths = [
-        // 精确匹配
-        `src/${nodeId}`,
-        `src/${nodeId}.ts`,
-        `src/${nodeId}.tsx`,
-        `src/core/${nodeId}.ts`,
-        `src/tools/${nodeId}.ts`,
-        `src/web/${nodeId}`,
-        // 小写匹配
-        `src/${nodeId.toLowerCase()}`,
-        `src/${nodeId.toLowerCase()}.ts`,
-        `src/core/${nodeId.toLowerCase()}.ts`,
-        `src/tools/${nodeId.toLowerCase()}.ts`,
-        // 驼峰转连字符
-        `src/${nodeId.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '')}`,
-        // 常见目录
-        `src/components/${nodeId}`,
-        `src/services/${nodeId}`,
-        `src/utils/${nodeId}`,
-        `src/hooks/${nodeId}`,
-        `src/api/${nodeId}`,
-        // Web 相关
-        `src/web/client/src/${nodeId}`,
-        `src/web/server/${nodeId}`,
-      ];
-
-      // 检查哪个路径存在
-      for (const relativePath of possiblePaths) {
-        const fullPath = pathModule.join(projectRoot, relativePath);
-        try {
-          const stat = fs.statSync(fullPath);
-          nodePathMap[nodeId] = {
-            path: relativePath,
-            type: stat.isDirectory() ? 'folder' : 'file',
-          };
-          console.log(`[Architecture Graph] 文件系统匹配: ${nodeId} -> ${relativePath}`);
-          break;
-        } catch {
-          // 路径不存在，继续尝试
-        }
-      }
-    }
-
-    console.log(`[Architecture Graph] 最终节点路径映射: ${Object.keys(nodePathMap).length} 个`);
-    console.log(`[Architecture Graph] 映射详情:`, Object.keys(nodePathMap));
-
     // 保存缓存
     architectureGraphCache.set(id, graphType, {
       type: graphType,
@@ -6803,7 +6827,6 @@ ${combinedAnalysis}
       mermaidCode,
       generatedAt,
       timestamp: Date.now(),
-      nodePathMap,
     });
 
     console.log(`[Architecture Graph] 生成完成: ${mermaidCode.length} 字符`);
@@ -6816,7 +6839,6 @@ ${combinedAnalysis}
         description: meta.description,
         mermaidCode,
         generatedAt,
-        nodePathMap,
       },
       fromCache: false,
     });

@@ -40,9 +40,6 @@ interface InputProps {
 // 双击检测间隔（毫秒）
 const DOUBLE_PRESS_INTERVAL = 300;
 
-// Shift+Tab 双击检测间隔（毫秒）- 官方 v2.1.2
-const SHIFT_TAB_DOUBLE_PRESS_INTERVAL = 500;
-
 export const Input: React.FC<InputProps> = ({
   prompt = '> ',
   placeholder = '',
@@ -82,10 +79,6 @@ export const Input: React.FC<InputProps> = ({
   const [searchIndex, setSearchIndex] = useState(0);
   // 双击 ESC 检测
   const lastEscPressTimeRef = React.useRef<number>(0);
-
-  // Shift+Tab 双击检测 - 官方 v2.1.2: 一次 = Auto-Accept, 两次 = Plan Mode
-  const lastShiftTabTimeRef = React.useRef<number>(0);
-  const shiftTabCountRef = React.useRef<number>(0);
 
   const [searchOriginalValue, setSearchOriginalValue] = useState('');
   const historyManager = useMemo(() => getHistoryManager(), []);
@@ -407,31 +400,15 @@ export const Input: React.FC<InputProps> = ({
 
       // ===== Shift+Tab 权限模式快捷切换 (官方 v2.1.2) =====
       // v2.1.6: 支持 Kitty 键盘协议 (CSI 9;2 u) 和传统格式 (\x1b[Z)
+      // 循环切换：default → acceptEdits → plan → default
       if ((key.tab && key.shift) || isShiftTab(input)) {
-        const now = Date.now();
-        const timeSinceLastPress = now - lastShiftTabTimeRef.current;
-
-        if (timeSinceLastPress < SHIFT_TAB_DOUBLE_PRESS_INTERVAL) {
-          // 连续按下 - 增加计数
-          shiftTabCountRef.current += 1;
-        } else {
-          // 超时 - 重置计数
-          shiftTabCountRef.current = 1;
-        }
-
-        lastShiftTabTimeRef.current = now;
-
-        // 根据按下次数决定模式，并触发回调
         if (onPermissionModeChange) {
-          if (shiftTabCountRef.current === 1) {
-            // 一次 Shift+Tab -> Auto-Accept Edits
-            onPermissionModeChange('acceptEdits');
-          } else if (shiftTabCountRef.current >= 2) {
-            // 两次 Shift+Tab -> Plan Mode
-            onPermissionModeChange('plan');
-            // 重置计数
-            shiftTabCountRef.current = 0;
-          }
+          // 根据当前模式切换到下一个模式（循环）
+          const nextMode: QuickPermissionMode =
+            permissionMode === 'default' ? 'acceptEdits' :
+            permissionMode === 'acceptEdits' ? 'plan' :
+            'default';
+          onPermissionModeChange(nextMode);
         }
         return;
       }

@@ -55,6 +55,7 @@ export class UnifiedMemory implements IUnifiedMemory {
 
   /**
    * 根据查询回忆相关记忆
+   * 使用混合搜索（语义搜索 + 关键词搜索）提高召回准确度
    */
   async recall(
     query: string,
@@ -62,15 +63,39 @@ export class UnifiedMemory implements IUnifiedMemory {
       maxResults?: number;
       includeCode?: boolean;
       timeRange?: { start: Timestamp; end: Timestamp };
+      useSemanticSearch?: boolean;
     }
   ): Promise<MemoryRecallResult> {
-    const { maxResults = 10, includeCode = true, timeRange } = options || {};
+    const { maxResults = 10, includeCode = true, timeRange, useSemanticSearch = true } = options || {};
 
     // 并行搜索各记忆模块
-    const [conversations, links] = await Promise.all([
-      this.chatMemory.search(query, { limit: maxResults, timeRange }),
-      this.searchLinks(query, maxResults),
-    ]);
+    let conversations: ConversationSummary[];
+
+    if (useSemanticSearch) {
+      // 使用混合搜索（语义 + 关键词）
+      const hybridResults = await this.chatMemory.hybridSearch(query, {
+        limit: maxResults,
+        keywordWeight: 0.3,
+        semanticWeight: 0.7,
+      });
+      conversations = hybridResults.map(r => r.summary);
+
+      // 如果有时间范围过滤，在结果上再过滤
+      if (timeRange) {
+        conversations = conversations.filter(conv => {
+          const convTime = new Date(conv.startTime).getTime();
+          const startTime = new Date(timeRange.start).getTime();
+          const endTime = new Date(timeRange.end).getTime();
+          return convTime >= startTime && convTime <= endTime;
+        });
+      }
+    } else {
+      // 降级到普通关键词搜索
+      conversations = await this.chatMemory.search(query, { limit: maxResults, timeRange });
+    }
+
+    // 搜索关联记忆
+    const links = await this.searchLinks(query, maxResults);
 
     // 从关联记忆中提取代码信息
     const codeInfo = this.extractCodeInfo(links);
@@ -175,6 +200,9 @@ export class UnifiedMemory implements IUnifiedMemory {
     // 3. 如果有明确要求记住的内容
     if (event.explicitMemory) {
       this.chatMemory.addCoreMemory(event.explicitMemory);
+
+      // 同时更新用户画像（如果是身份相关信息）
+      await this.updateIdentityFromExplicitMemory(event.explicitMemory);
     }
 
     // 4. 更新用户画像（如果有新话题）
@@ -188,6 +216,61 @@ export class UnifiedMemory implements IUnifiedMemory {
           significantTopics: [...profile.significantTopics, ...newTopics].slice(-20),
         });
       }
+    }
+  }
+
+  /**
+   * 从显式记忆中提取并更新用户画像
+   */
+  private async updateIdentityFromExplicitMemory(memory: string): Promise<void> {
+    const profile = this.identityMemory.getUserProfile();
+    const updates: Partial<typeof profile> = {};
+
+    // 提取用户名字
+    const nameMatch = memory.match(/用户名字是\s*([^\s|]+)/);
+    if (nameMatch && nameMatch[1]) {
+      updates.name = nameMatch[1];
+    }
+
+    // 提取用户职业/身份 → 存入 relationshipNotes
+    const roleMatch = memory.match(/用户是\s*([^\s|]+)/);
+    if (roleMatch && roleMatch[1]) {
+      const existingNotes = profile.relationshipNotes || [];
+      const roleNote = `用户身份: ${roleMatch[1]}`;
+      if (!existingNotes.some(n => n.startsWith('用户身份:'))) {
+        // 如果没有身份记录，添加新的
+        updates.relationshipNotes = [...existingNotes, roleNote].slice(-10);
+      } else {
+        // 如果有身份记录，更新它
+        updates.relationshipNotes = existingNotes.map(n =>
+          n.startsWith('用户身份:') ? roleNote : n
+        );
+      }
+    }
+
+    // 提取用户偏好 → 存入 techPreferences
+    const prefMatch = memory.match(/用户偏好:\s*([^\s|]+)/);
+    if (prefMatch && prefMatch[1]) {
+      const existingPrefs = profile.techPreferences || [];
+      if (!existingPrefs.includes(prefMatch[1])) {
+        updates.techPreferences = [...existingPrefs, prefMatch[1]].slice(-10);
+      }
+    }
+
+    // 提取禁止事项 → 存入 relationshipNotes
+    const forbidMatch = memory.match(/禁止:\s*([^|]+)/);
+    if (forbidMatch && forbidMatch[1]) {
+      const existingNotes = updates.relationshipNotes || profile.relationshipNotes || [];
+      const note = `禁止: ${forbidMatch[1].trim()}`;
+      if (!existingNotes.includes(note)) {
+        updates.relationshipNotes = [...existingNotes, note].slice(-10);
+      }
+    }
+
+    // 如果有任何更新，保存
+    if (Object.keys(updates).length > 0) {
+      await this.identityMemory.updateUserProfile(updates);
+      console.log('[UnifiedMemory] 已更新用户画像:', updates);
     }
   }
 
@@ -438,6 +521,95 @@ export class UnifiedMemory implements IUnifiedMemory {
     }
 
     return parts.join('\n');
+  }
+
+  /**
+   * 【方案C】格式化召回结果，带时间和来源标注
+   *
+   * 输出格式示例：
+   * ```
+   * <historical-memory source="对话记录" date="2026-01-15" relevance="0.85">
+   * 用户曾说过他叫王冰洁，是一名前端开发工程师
+   * </historical-memory>
+   * ```
+   *
+   * 这种格式让 AI 清楚知道这是历史信息，可能已过时
+   */
+  formatRecallResultWithAnnotation(result: MemoryRecallResult): string {
+    const parts: string[] = [];
+
+    if (result.conversations.length === 0 && result.links.length === 0) {
+      return '';
+    }
+
+    parts.push('<recalled-memories>');
+    parts.push('⚠️ 以下是历史记忆，可能已过时。请谨慎参考，优先以用户当前输入为准。\n');
+
+    // 格式化对话记忆
+    for (const conv of result.conversations) {
+      const date = this.formatDate(conv.endTime);
+      const daysAgo = this.calculateDaysAgo(conv.endTime);
+      const freshnessLabel = this.getFreshnessLabel(daysAgo);
+
+      parts.push(`<historical-memory source="对话记录" date="${date}" freshness="${freshnessLabel}">`);
+      parts.push(`[${date}] ${conv.summary}`);
+      if (conv.topics.length > 0) {
+        parts.push(`话题: ${conv.topics.join(', ')}`);
+      }
+      parts.push('</historical-memory>');
+      parts.push('');
+    }
+
+    // 格式化关联记忆
+    for (const link of result.links) {
+      const date = this.formatDate(link.timestamp);
+      const daysAgo = this.calculateDaysAgo(link.timestamp);
+      const freshnessLabel = this.getFreshnessLabel(daysAgo);
+
+      parts.push(`<historical-memory source="代码关联" date="${date}" freshness="${freshnessLabel}">`);
+      parts.push(`[${date}] ${link.description}`);
+      if (link.files.length > 0) {
+        parts.push(`相关文件: ${link.files.slice(0, 5).join(', ')}`);
+      }
+      parts.push('</historical-memory>');
+      parts.push('');
+    }
+
+    parts.push('</recalled-memories>');
+
+    return parts.join('\n');
+  }
+
+  /**
+   * 格式化日期为简短格式
+   */
+  private formatDate(timestamp: Timestamp): string {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * 计算距今天数
+   */
+  private calculateDaysAgo(timestamp: Timestamp): number {
+    const memoryDate = new Date(timestamp);
+    const nowDate = new Date();
+    return Math.floor((nowDate.getTime() - memoryDate.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * 获取新鲜度标签
+   */
+  private getFreshnessLabel(daysAgo: number): string {
+    if (daysAgo <= 1) return '今天';
+    if (daysAgo <= 7) return '本周';
+    if (daysAgo <= 30) return '本月';
+    if (daysAgo <= 90) return '近三月';
+    if (daysAgo <= 365) return '今年';
+    return '较早';
   }
 
   // ==========================================================================

@@ -18,6 +18,7 @@ import type {
   WorkerAgent,
   Checkpoint,
   AcceptanceTest,
+  TaskStatus,
 } from './types.js';
 import { taskTreeManager } from './task-tree-manager.js';
 
@@ -428,6 +429,128 @@ export class TDDExecutor extends EventEmitter {
     this.completeLoop(state, '跳过重构，任务完成');
 
     return state;
+  }
+
+  // --------------------------------------------------------------------------
+  // 手动阶段转换方法（供 UI 调用）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 手动转换到指定阶段
+   * 用于 UI 上的阶段切换操作
+   */
+  manualTransitionPhase(taskId: string, targetPhase: TDDPhase): TDDLoopState {
+    const state = this.getLoopState(taskId);
+    const currentPhase = state.phase;
+
+    // 验证目标阶段
+    if (targetPhase === 'done') {
+      throw new Error('无法手动转换到 done 阶段，请使用正常流程完成任务');
+    }
+
+    // 如果目标阶段与当前阶段相同，直接返回
+    if (currentPhase === targetPhase) {
+      return state;
+    }
+
+    // 如果当前已完成，不允许转换
+    if (currentPhase === 'done') {
+      throw new Error('任务已完成，无法转换阶段');
+    }
+
+    // 执行转换
+    this.transitionPhase(state, targetPhase, `手动转换: ${currentPhase} -> ${targetPhase}`);
+
+    // 更新任务树状态
+    const taskStatus = this.getTaskStatusForPhase(targetPhase);
+    taskTreeManager.updateTaskStatus(state.treeId, taskId, taskStatus);
+
+    return state;
+  }
+
+  /**
+   * 标记当前阶段完成，自动转换到下一阶段
+   * 阶段顺序: write_test -> run_test_red -> write_code -> run_test_green -> refactor -> done
+   */
+  markPhaseComplete(taskId: string): TDDLoopState {
+    const state = this.getLoopState(taskId);
+    const currentPhase = state.phase;
+
+    if (currentPhase === 'done') {
+      throw new Error('任务已完成');
+    }
+
+    // 定义阶段顺序
+    const phaseOrder: TDDPhase[] = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor', 'done'];
+    const currentIndex = phaseOrder.indexOf(currentPhase);
+    const nextPhase = phaseOrder[currentIndex + 1];
+
+    if (nextPhase === 'done') {
+      // 完成整个循环
+      this.completeLoop(state, '手动标记完成');
+    } else {
+      // 转换到下一阶段
+      this.transitionPhase(state, nextPhase, `阶段完成: ${currentPhase} -> ${nextPhase}`);
+
+      // 更新任务树状态
+      const taskStatus = this.getTaskStatusForPhase(nextPhase);
+      taskTreeManager.updateTaskStatus(state.treeId, taskId, taskStatus);
+    }
+
+    return state;
+  }
+
+  /**
+   * 回退到上一阶段
+   */
+  revertPhase(taskId: string): TDDLoopState {
+    const state = this.getLoopState(taskId);
+    const currentPhase = state.phase;
+
+    if (currentPhase === 'done') {
+      throw new Error('任务已完成，无法回退');
+    }
+
+    // 定义阶段顺序
+    const phaseOrder: TDDPhase[] = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor', 'done'];
+    const currentIndex = phaseOrder.indexOf(currentPhase);
+
+    if (currentIndex === 0) {
+      throw new Error('已经是第一个阶段，无法回退');
+    }
+
+    const prevPhase = phaseOrder[currentIndex - 1];
+
+    // 转换到上一阶段
+    this.transitionPhase(state, prevPhase, `回退: ${currentPhase} -> ${prevPhase}`);
+
+    // 更新任务树状态
+    const taskStatus = this.getTaskStatusForPhase(prevPhase);
+    taskTreeManager.updateTaskStatus(state.treeId, taskId, taskStatus);
+
+    return state;
+  }
+
+  /**
+   * 根据 TDD 阶段获取对应的任务状态
+   */
+  private getTaskStatusForPhase(phase: TDDPhase): TaskStatus {
+    switch (phase) {
+      case 'write_test':
+        return 'test_writing';
+      case 'run_test_red':
+        return 'testing';
+      case 'write_code':
+        return 'coding';
+      case 'run_test_green':
+        return 'testing';
+      case 'refactor':
+        return 'coding'; // refactor 阶段使用 coding 状态
+      case 'done':
+        return 'passed';
+      default:
+        return 'pending';
+    }
   }
 
   // --------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import {
   HooksConfigPanel,
   SystemConfigPanel,
   ConfigImportExport,
+  CacheManagementPanel,
 } from './config';
 
 interface SettingsPanelProps {
@@ -29,6 +30,7 @@ type SettingsTab =
   | 'permissions'
   | 'hooks'
   | 'system'
+  | 'cache'
   | 'import-export'
   | 'mcp'
   | 'plugins'
@@ -42,6 +44,7 @@ const TAB_CONFIG: { id: SettingsTab; label: string; icon: string }[] = [
   { id: 'permissions', label: 'Permissions', icon: '🔐' },
   { id: 'hooks', label: 'Hooks', icon: '🪝' },
   { id: 'system', label: 'System', icon: '💾' },
+  { id: 'cache', label: 'Cache', icon: '📊' },
   { id: 'import-export', label: 'Import/Export', icon: '📦' },
   { id: 'mcp', label: 'MCP', icon: '🔌' },
   { id: 'plugins', label: 'Plugins', icon: '🧩' },
@@ -179,6 +182,16 @@ export function SettingsPanel({
           <SystemConfigPanel
             onSave={() => {
               console.log('System config saved');
+            }}
+            onClose={onClose}
+          />
+        );
+
+      case 'cache':
+        return (
+          <CacheManagementPanel
+            onSave={() => {
+              console.log('Cache management action completed');
             }}
             onClose={onClose}
           />

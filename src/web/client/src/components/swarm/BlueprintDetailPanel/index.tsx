@@ -72,6 +72,10 @@ interface BlueprintDetailPanelProps {
   blueprintId: string;
   onClose: () => void;
   onNavigateToSwarm?: () => void;
+  /** 蓝图状态变更后的刷新回调，用于同步列表 */
+  onRefresh?: () => void;
+  /** 蓝图删除后的回调 */
+  onDeleted?: () => void;
 }
 
 /**
@@ -87,6 +91,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
   blueprintId,
   onClose,
   onNavigateToSwarm,
+  onRefresh,
+  onDeleted,
 }) => {
   const [blueprint, setBlueprint] = useState<BlueprintDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +129,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
           console.log('[BlueprintDetailPanel] 蓝图已批准');
           // 重新加载蓝图详情
           await fetchBlueprint();
+          // 通知父组件刷新列表，确保状态同步
+          onRefresh?.();
           break;
 
         case 'reject':
@@ -131,6 +139,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             await blueprintApi.rejectBlueprint(blueprintId, reason);
             console.log('[BlueprintDetailPanel] 蓝图已拒绝');
             await fetchBlueprint();
+            // 通知父组件刷新列表，确保状态同步
+            onRefresh?.();
           }
           break;
 
@@ -139,6 +149,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             await blueprintApi.submitForReview(blueprintId);
             console.log('[BlueprintDetailPanel] 蓝图已提交审核');
             await fetchBlueprint();
+            // 通知父组件刷新列表，确保状态同步
+            onRefresh?.();
           }
           break;
 
@@ -147,6 +159,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             try {
               await blueprintApi.startExecution(blueprintId);
               console.log('[BlueprintDetailPanel] 执行已启动');
+              // 通知父组件刷新列表，确保状态同步
+              onRefresh?.();
               onNavigateToSwarm?.();
             } catch (error) {
               // startExecution API 暂未实现，先直接跳转
@@ -161,6 +175,8 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             try {
               await blueprintApi.deleteBlueprint(blueprintId);
               console.log('[BlueprintDetailPanel] 蓝图已删除');
+              // 通知父组件处理删除后的状态（清除选中、刷新列表）
+              onDeleted?.();
               onClose();
             } catch (error) {
               console.error('[BlueprintDetailPanel] 删除失败:', error);

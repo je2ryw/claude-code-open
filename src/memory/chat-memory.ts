@@ -325,10 +325,16 @@ export class ChatMemory {
   }
 
   /**
-   * 混合搜索（结合关键词和语义）
+   * 混合搜索（结合关键词、语义和时间）
    *
-   * 同时使用关键词匹配和语义相似度，
-   * 融合两种结果以获得最佳效果。
+   * 同时使用关键词匹配、语义相似度和时间衰减，
+   * 融合三种因素以获得最佳效果。
+   *
+   * 时间衰减策略：
+   * - 7天内：无衰减（timeScore = 1.0）
+   * - 7-30天：轻微衰减（timeScore = 0.8-1.0）
+   * - 30-90天：中等衰减（timeScore = 0.5-0.8）
+   * - 90天以上：显著衰减（timeScore = 0.2-0.5）
    *
    * @param query 查询文本
    * @param options 搜索选项
@@ -338,10 +344,13 @@ export class ChatMemory {
     limit?: number;
     keywordWeight?: number;
     semanticWeight?: number;
+    timeWeight?: number;
   }): Promise<Array<{ summary: ConversationSummary; score: number }>> {
     const limit = options?.limit ?? 10;
-    const keywordWeight = options?.keywordWeight ?? 0.4;
-    const semanticWeight = options?.semanticWeight ?? 0.6;
+    // 默认权重分配：语义 50%，关键词 30%，时间 20%
+    const keywordWeight = options?.keywordWeight ?? 0.3;
+    const semanticWeight = options?.semanticWeight ?? 0.5;
+    const timeWeight = options?.timeWeight ?? 0.2;
 
     // 并行执行两种搜索
     const [keywordResults, semanticResults] = await Promise.all([
@@ -350,7 +359,12 @@ export class ChatMemory {
     ]);
 
     // 合并结果
-    const scoreMap = new Map<string, { summary: ConversationSummary; keywordScore: number; semanticScore: number }>();
+    const scoreMap = new Map<string, {
+      summary: ConversationSummary;
+      keywordScore: number;
+      semanticScore: number;
+      timeScore: number;
+    }>();
 
     // 添加关键词结果
     keywordResults.forEach((summary, index) => {
@@ -359,6 +373,7 @@ export class ChatMemory {
         summary,
         keywordScore: normalizedScore,
         semanticScore: 0,
+        timeScore: this.calculateTimeDecay(summary.endTime),
       });
     });
 
@@ -372,19 +387,52 @@ export class ChatMemory {
           summary,
           keywordScore: 0,
           semanticScore: score,
+          timeScore: this.calculateTimeDecay(summary.endTime),
         });
       }
     }
 
     // 计算综合分数并排序
     const results = Array.from(scoreMap.values())
-      .map(({ summary, keywordScore, semanticScore }) => ({
+      .map(({ summary, keywordScore, semanticScore, timeScore }) => ({
         summary,
-        score: keywordWeight * keywordScore + semanticWeight * semanticScore,
+        score: keywordWeight * keywordScore + semanticWeight * semanticScore + timeWeight * timeScore,
       }))
       .sort((a, b) => b.score - a.score);
 
     return results.slice(0, limit);
+  }
+
+  /**
+   * 计算时间衰减分数
+   *
+   * 使用分段线性衰减：
+   * - 7天内：1.0
+   * - 7-30天：0.8-1.0（线性衰减）
+   * - 30-90天：0.5-0.8（线性衰减）
+   * - 90天以上：0.2-0.5（线性衰减，最低0.2）
+   */
+  private calculateTimeDecay(timestamp: Timestamp): number {
+    const memoryDate = parseTimestamp(timestamp);
+    const nowDate = new Date();
+    const daysAgo = Math.floor((nowDate.getTime() - memoryDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysAgo <= 7) {
+      // 一周内：无衰减
+      return 1.0;
+    } else if (daysAgo <= 30) {
+      // 7-30天：从 1.0 衰减到 0.8
+      return 1.0 - ((daysAgo - 7) / 23) * 0.2;
+    } else if (daysAgo <= 90) {
+      // 30-90天：从 0.8 衰减到 0.5
+      return 0.8 - ((daysAgo - 30) / 60) * 0.3;
+    } else if (daysAgo <= 365) {
+      // 90-365天：从 0.5 衰减到 0.2
+      return 0.5 - ((daysAgo - 90) / 275) * 0.3;
+    } else {
+      // 超过一年：固定 0.2
+      return 0.2;
+    }
   }
 
   /**

@@ -143,6 +143,7 @@ export type WSMessageType =
   | 'user_question'
   | 'session_list_response'
   | 'session_switched'
+  | 'session_created'
   | 'session_deleted'
   | 'session_renamed'
   | 'history'

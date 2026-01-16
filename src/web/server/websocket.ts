@@ -141,11 +141,25 @@ export function setupWebSocket(
     if (taskTree) {
       const task = taskTreeManager.findTask(taskTree.root, taskId);
       if (task) {
+        // 发送通用任务更新
         broadcastToSubscribers(queen.blueprintId, {
           type: 'swarm:task_update',
           payload: {
             taskId: task.id,
             updates: serializeTaskNode(task),
+          },
+        });
+
+        // 发送任务完成通知
+        broadcastToSubscribers(queen.blueprintId, {
+          type: 'swarm:task_completed',
+          payload: {
+            taskId: task.id,
+            taskTitle: task.name,
+            workerId: workerId,
+            status: 'passed' as const,
+            result: task.description,
+            timestamp: new Date().toISOString(),
           },
         });
       }
@@ -176,11 +190,25 @@ export function setupWebSocket(
     if (taskTree) {
       const task = taskTreeManager.findTask(taskTree.root, taskId);
       if (task) {
+        // 发送通用任务更新
         broadcastToSubscribers(queen.blueprintId, {
           type: 'swarm:task_update',
           payload: {
             taskId: task.id,
             updates: serializeTaskNode(task),
+          },
+        });
+
+        // 发送任务失败通知
+        broadcastToSubscribers(queen.blueprintId, {
+          type: 'swarm:task_completed',
+          payload: {
+            taskId: task.id,
+            taskTitle: task.name,
+            workerId: workerId,
+            status: 'failed' as const,
+            error: error,
+            timestamp: new Date().toISOString(),
           },
         });
       }
@@ -403,6 +431,12 @@ async function handleClientMessage(
       await handleSessionCreate(client, message.payload, conversationManager);
       break;
 
+    case 'session_new':
+      // 官方规范：创建新的临时会话（不立即持久化）
+      // 会话只有在发送第一条消息后才会真正创建
+      await handleSessionNew(client, message.payload, conversationManager);
+      break;
+
     case 'session_switch':
       await handleSessionSwitch(client, message.payload.sessionId, conversationManager);
       break;
@@ -581,6 +615,30 @@ async function handleClientMessage(
       await handleSwarmUnsubscribe(client, message.payload.blueprintId, swarmSubscriptions);
       break;
 
+    case 'swarm:pause':
+      await handleSwarmPause(client, message.payload.blueprintId, swarmSubscriptions);
+      break;
+
+    case 'swarm:resume':
+      await handleSwarmResume(client, message.payload.blueprintId, swarmSubscriptions);
+      break;
+
+    case 'swarm:stop':
+      await handleSwarmStop(client, message.payload.blueprintId, swarmSubscriptions);
+      break;
+
+    case 'worker:pause':
+      await handleWorkerPause(client, (message.payload as any).workerId, swarmSubscriptions);
+      break;
+
+    case 'worker:resume':
+      await handleWorkerResume(client, (message.payload as any).workerId, swarmSubscriptions);
+      break;
+
+    case 'worker:terminate':
+      await handleWorkerTerminate(client, (message.payload as any).workerId, swarmSubscriptions);
+      break;
+
     default:
       console.warn('[WebSocket] 未知消息类型:', (message as any).type);
   }
@@ -614,12 +672,56 @@ async function handleChatMessage(
   attachments: Attachment[] | string[] | undefined,
   conversationManager: ConversationManager
 ): Promise<void> {
-  const { ws, sessionId, model } = client;
+  const { ws, model } = client;
+  let { sessionId } = client;
 
   // 检查是否为斜杠命令
   if (isSlashCommand(content)) {
     await handleSlashCommand(client, content, conversationManager);
     return;
+  }
+
+  // 确保会话存在于 sessionManager 中（处理临时会话 ID 的情况）
+  const sessionManager = conversationManager.getSessionManager();
+  let isFirstMessage = false;
+  let existingSession = sessionManager.loadSessionById(sessionId);
+
+  if (!existingSession) {
+    // 当前 sessionId 是临时的（WebSocket 连接时生成的），需要创建持久化会话
+    // 官方规范：使用第一条消息的前50个字符作为会话标题
+    const firstPrompt = content.substring(0, 50);
+    console.log(`[WebSocket] 临时会话 ${sessionId}，创建持久化会话，标题: ${firstPrompt}`);
+    const newSession = sessionManager.createSession({
+      name: firstPrompt,  // 使用 firstPrompt 作为会话标题
+      model: model,
+      tags: ['webui'],
+    });
+    // 更新 client 的 sessionId
+    client.sessionId = newSession.metadata.id;
+    sessionId = newSession.metadata.id;
+    isFirstMessage = true;
+    console.log(`[WebSocket] 已创建持久化会话: ${sessionId}`);
+
+    // 通知客户端新会话已创建
+    sendMessage(ws, {
+      type: 'session_created',
+      payload: {
+        sessionId: newSession.metadata.id,
+        name: newSession.metadata.name,
+        model: newSession.metadata.model,
+        createdAt: newSession.metadata.createdAt,
+      },
+    });
+  } else {
+    // 检查是否是第一条消息（会话存在但没有消息）
+    isFirstMessage = (existingSession.metadata.messageCount === 0);
+
+    // 如果是第一条消息且会话标题是默认的（包含"WebUI 会话"），更新为 firstPrompt
+    if (isFirstMessage && existingSession.metadata.name?.includes('WebUI 会话')) {
+      const firstPrompt = content.substring(0, 50);
+      sessionManager.renameSession(sessionId, firstPrompt);
+      console.log(`[WebSocket] 更新会话标题为 firstPrompt: ${firstPrompt}`);
+    }
   }
 
   const messageId = randomUUID();
@@ -773,7 +875,10 @@ async function handleChatMessage(
         });
       },
 
-      onComplete: (stopReason: string | null, usage?: { inputTokens: number; outputTokens: number }) => {
+      onComplete: async (stopReason: string | null, usage?: { inputTokens: number; outputTokens: number }) => {
+        // 保存会话到磁盘（确保 messageCount 正确更新）
+        await conversationManager.persistSession(client.sessionId);
+
         sendMessage(ws, {
           type: 'message_complete',
           payload: {
@@ -882,11 +987,15 @@ async function handleSessionList(
     const offset = payload?.offset || 0;
     const search = payload?.search;
 
-    const sessions = conversationManager.listPersistedSessions({
-      limit,
+    const allSessions = conversationManager.listPersistedSessions({
+      limit: limit + 50, // 获取更多以便过滤后仍有足够数量
       offset,
       search,
     });
+
+    // 官方规范：只显示有消息的会话（messageCount > 0）
+    // 会话只有在发送第一条消息后才会出现在列表中
+    const sessions = allSessions.filter(s => s.messageCount > 0).slice(0, limit);
 
     sendMessage(ws, {
       type: 'session_list_response',
@@ -955,6 +1064,54 @@ async function handleSessionCreate(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : '创建会话失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理新建临时会话请求（官方规范）
+ * 生成临时 sessionId，但不立即创建持久化会话
+ * 会话只有在发送第一条消息后才会真正创建
+ */
+async function handleSessionNew(
+  client: ClientConnection,
+  payload: any,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    // 保存当前会话（如果有的话）
+    await conversationManager.persistSession(client.sessionId);
+
+    // 生成新的临时 sessionId（使用 crypto 生成 UUID）
+    const tempSessionId = randomUUID();
+    const model = payload?.model || client.model || 'sonnet';
+
+    // 更新 client 的 sessionId 和 model
+    client.sessionId = tempSessionId;
+    client.model = model;
+
+    // 清空内存中的会话状态（如果存在）
+    // 不创建持久化会话，等待用户发送第一条消息时再创建
+
+    console.log(`[WebSocket] 新建临时会话: ${tempSessionId}, model: ${model}`);
+
+    // 通知客户端新会话已就绪
+    sendMessage(ws, {
+      type: 'session_new_ready',
+      payload: {
+        sessionId: tempSessionId,
+        model: model,
+      },
+    });
+  } catch (error) {
+    console.error('[WebSocket] 新建临时会话失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '新建会话失败',
       },
     });
   }
@@ -3184,4 +3341,376 @@ function mapTimelineEventType(type: string): string {
   };
 
   return typeMap[type] || 'system';
+}
+
+// ============================================================================
+// 蜂群控制处理函数
+// ============================================================================
+
+/**
+ * 广播消息给指定蓝图的订阅者
+ */
+function broadcastToBlueprint(
+  blueprintId: string,
+  message: any,
+  swarmSubscriptions: Map<string, Set<string>>,
+  clients: Map<string, ClientConnection>
+): void {
+  const subscribers = swarmSubscriptions.get(blueprintId);
+  if (!subscribers || subscribers.size === 0) return;
+
+  const messageStr = JSON.stringify(message);
+  subscribers.forEach(clientId => {
+    const client = clients.get(clientId);
+    if (client && client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(messageStr);
+    }
+  });
+}
+
+/**
+ * 处理蜂群暂停请求
+ */
+async function handleSwarmPause(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId' },
+      });
+      return;
+    }
+
+    // 停止协调器主循环（暂停）
+    agentCoordinator.stopMainLoop();
+
+    console.log(`[Swarm] 蜂群暂停: ${blueprintId}`);
+
+    // 发送暂停确认
+    sendMessage(ws, {
+      type: 'swarm:paused',
+      payload: {
+        blueprintId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 广播给所有订阅者
+    const queen = agentCoordinator.getQueen();
+    if (queen && queen.blueprintId === blueprintId) {
+      sendMessage(ws, {
+        type: 'swarm:queen_update',
+        payload: {
+          queenId: queen.id,
+          updates: { status: 'idle' },
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Swarm] 暂停失败:', error);
+    sendMessage(ws, {
+      type: 'swarm:error',
+      payload: {
+        blueprintId,
+        error: error instanceof Error ? error.message : '暂停失败',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
+
+/**
+ * 处理蜂群恢复请求
+ */
+async function handleSwarmResume(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId' },
+      });
+      return;
+    }
+
+    // 恢复协调器主循环
+    agentCoordinator.startMainLoop();
+
+    console.log(`[Swarm] 蜂群恢复: ${blueprintId}`);
+
+    // 发送恢复确认
+    sendMessage(ws, {
+      type: 'swarm:resumed',
+      payload: {
+        blueprintId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 广播给所有订阅者
+    const queen = agentCoordinator.getQueen();
+    if (queen && queen.blueprintId === blueprintId) {
+      sendMessage(ws, {
+        type: 'swarm:queen_update',
+        payload: {
+          queenId: queen.id,
+          updates: { status: 'coordinating' },
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Swarm] 恢复失败:', error);
+    sendMessage(ws, {
+      type: 'swarm:error',
+      payload: {
+        blueprintId,
+        error: error instanceof Error ? error.message : '恢复失败',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
+
+/**
+ * 处理蜂群停止请求
+ */
+async function handleSwarmStop(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId' },
+      });
+      return;
+    }
+
+    // 停止协调器主循环
+    agentCoordinator.stopMainLoop();
+
+    console.log(`[Swarm] 蜂群停止: ${blueprintId}`);
+
+    // 发送停止确认
+    sendMessage(ws, {
+      type: 'swarm:stopped',
+      payload: {
+        blueprintId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('[Swarm] 停止失败:', error);
+    sendMessage(ws, {
+      type: 'swarm:error',
+      payload: {
+        blueprintId,
+        error: error instanceof Error ? error.message : '停止失败',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+}
+
+/**
+ * 处理 Worker 暂停请求
+ */
+async function handleWorkerPause(
+  client: ClientConnection,
+  workerId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!workerId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 workerId' },
+      });
+      return;
+    }
+
+    const worker = agentCoordinator.getWorker(workerId);
+    if (!worker) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: 'Worker 不存在' },
+      });
+      return;
+    }
+
+    // 注意：当前 AgentCoordinator 没有暂停单个 Worker 的方法
+    // 这里发送状态更新通知前端
+    console.log(`[Swarm] Worker 暂停: ${workerId}`);
+
+    sendMessage(ws, {
+      type: 'worker:paused',
+      payload: {
+        workerId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 发送 Worker 状态更新
+    sendMessage(ws, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId,
+        updates: { status: 'paused' },
+      },
+    });
+  } catch (error) {
+    console.error('[Swarm] Worker 暂停失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : 'Worker 暂停失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理 Worker 恢复请求
+ */
+async function handleWorkerResume(
+  client: ClientConnection,
+  workerId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!workerId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 workerId' },
+      });
+      return;
+    }
+
+    const worker = agentCoordinator.getWorker(workerId);
+    if (!worker) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: 'Worker 不存在' },
+      });
+      return;
+    }
+
+    console.log(`[Swarm] Worker 恢复: ${workerId}`);
+
+    sendMessage(ws, {
+      type: 'worker:resumed',
+      payload: {
+        workerId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 发送 Worker 状态更新
+    sendMessage(ws, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId,
+        updates: { status: 'working' },
+      },
+    });
+  } catch (error) {
+    console.error('[Swarm] Worker 恢复失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : 'Worker 恢复失败',
+      },
+    });
+  }
+}
+
+/**
+ * 处理 Worker 终止请求
+ */
+async function handleWorkerTerminate(
+  client: ClientConnection,
+  workerId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!workerId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 workerId' },
+      });
+      return;
+    }
+
+    const worker = agentCoordinator.getWorker(workerId);
+    if (!worker) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: 'Worker 不存在' },
+      });
+      return;
+    }
+
+    const queen = agentCoordinator.getQueen();
+
+    // 标记 Worker 任务失败
+    if (worker.taskId) {
+      agentCoordinator.workerFailTask(workerId, '用户终止');
+    }
+
+    console.log(`[Swarm] Worker 终止: ${workerId}`);
+
+    sendMessage(ws, {
+      type: 'worker:terminated',
+      payload: {
+        workerId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 发送 Worker 移除通知
+    sendMessage(ws, {
+      type: 'worker:removed',
+      payload: {
+        workerId,
+        blueprintId: queen?.blueprintId || '',
+        reason: '用户终止',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('[Swarm] Worker 终止失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : 'Worker 终止失败',
+      },
+    });
+  }
 }

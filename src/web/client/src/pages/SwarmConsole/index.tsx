@@ -1,9 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import styles from './SwarmConsole.module.css';
 import { TaskTree, TaskNode as ComponentTaskNode } from '../../components/swarm/TaskTree';
 import { WorkerPanel, QueenAgent as ComponentQueenAgent, WorkerAgent as ComponentWorkerAgent } from '../../components/swarm/WorkerPanel';
+import { TDDPanel } from '../../components/swarm/TDDPanel';
+import { TimeTravelPanel } from '../../components/swarm/TimeTravelPanel';
 import { FadeIn } from '../../components/swarm/common';
 import { useSwarmState } from './hooks/useSwarmState';
+import { coordinatorApi, taskTreeApi, projectApi, type RecentProject } from '../../api/blueprint';
 import type { Blueprint, TaskNode as APITaskNode, TimelineEvent as APITimelineEvent } from './types';
 
 // 获取 WebSocket URL (复用 App.tsx 中的逻辑)
@@ -109,22 +112,32 @@ function convertWorker(apiWorker: any): ComponentWorkerAgent {
 }
 
 /**
- * 时间线事件类型(简化版，用于前端显示)
+ * 时间线事件类型(增强版，用于前端显示)
  */
 interface TimelineEvent {
   id: string;
-  type: 'task_started' | 'task_completed' | 'task_failed' | 'worker_created' | 'test_passed' | 'test_failed';
+  type: 'task_started' | 'task_completed' | 'task_failed' | 'worker_created' | 'test_passed' | 'test_failed' | 'system' | 'error';
   timestamp: Date;
   description: string;
+  category: 'task' | 'worker' | 'system' | 'error';
+  details?: Record<string, any>;
+  actor?: string;
 }
 
+/**
+ * 时间线筛选类型
+ */
+type TimelineFilterType = 'all' | 'task' | 'worker' | 'system' | 'error';
+
 const EVENT_ICONS: Record<TimelineEvent['type'], string> = {
-  task_started: '▶️',
-  task_completed: '✅',
-  task_failed: '❌',
-  worker_created: '🐝',
+  task_started: '▶',
+  task_completed: '✓',
+  task_failed: '✗',
+  worker_created: '👷',
   test_passed: '✓',
   test_failed: '✗',
+  system: '⚙',
+  error: '⚠',
 };
 
 const EVENT_COLORS: Record<TimelineEvent['type'], string> = {
@@ -134,6 +147,22 @@ const EVENT_COLORS: Record<TimelineEvent['type'], string> = {
   worker_created: '#f59e0b',
   test_passed: '#22c55e',
   test_failed: '#ef4444',
+  system: '#6b7280',
+  error: '#ef4444',
+};
+
+/**
+ * 事件分类映射
+ */
+const EVENT_CATEGORY_MAP: Record<TimelineEvent['type'], TimelineEvent['category']> = {
+  task_started: 'task',
+  task_completed: 'task',
+  task_failed: 'task',
+  worker_created: 'worker',
+  test_passed: 'task',
+  test_failed: 'task',
+  system: 'system',
+  error: 'error',
 };
 
 /**
@@ -146,15 +175,26 @@ function convertTimelineEvent(apiEvent: APITimelineEvent): TimelineEvent {
     'task_complete': 'task_completed',
     'task_fail': 'task_failed',
     'worker_start': 'worker_created',
-    'swarm_start': 'task_started',
-    'swarm_stop': 'task_completed',
+    'swarm_start': 'system',
+    'swarm_stop': 'system',
+    'swarm_pause': 'system',
+    'swarm_resume': 'system',
+    'queen_action': 'system',
+    'system': 'system',
+    'worker_pause': 'worker_created',
+    'worker_complete': 'task_completed',
   };
+
+  const eventType = typeMap[apiEvent.type] || 'system';
 
   return {
     id: apiEvent.id,
-    type: typeMap[apiEvent.type] || 'task_started',
+    type: eventType,
     timestamp: new Date(apiEvent.timestamp),
     description: apiEvent.message,
+    category: EVENT_CATEGORY_MAP[eventType] || 'system',
+    details: apiEvent.data as Record<string, any>,
+    actor: apiEvent.actor,
   };
 }
 
@@ -166,18 +206,117 @@ function convertTimelineEvent(apiEvent: APITimelineEvent): TimelineEvent {
  * 蜂群控制台页面 - 主组件
  * 包含三栏布局 + 可折叠底部时间线
  */
+// 仪表板数据类型
+interface DashboardData {
+  queen: {
+    status: string;
+    blueprintId: string | null;
+    currentAction: string | null;
+  } | null;
+  workers: {
+    total: number;
+    active: number;
+    idle: number;
+  };
+  tasks: {
+    total: number;
+    pending: number;
+    running: number;
+    completed: number;
+    failed: number;
+  };
+  timeline: Array<{
+    timestamp: number;
+    event: string;
+    details: string;
+  }>;
+}
+
+// 任务树统计类型
+interface TaskTreeStats {
+  totalTasks: number;
+  completedTasks: number;
+  pendingTasks: number;
+  runningTasks: number;
+  failedTasks: number;
+  maxDepth: number;
+  leafTasks: number;
+}
+
+// 右侧面板视图类型
+type RightPanelView = 'workers' | 'tdd' | 'timetravel';
+
 export default function SwarmConsole() {
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [rightPanelView, setRightPanelView] = useState<RightPanelView>('workers');
   const [loadingBlueprints, setLoadingBlueprints] = useState(true);
+
+  // 协调器数据状态
+  const [coordinatorWorkers, setCoordinatorWorkers] = useState<any[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [taskTreeStats, setTaskTreeStats] = useState<TaskTreeStats | null>(null);
+  const [loadingCoordinator, setLoadingCoordinator] = useState(false);
+
+  // 项目信息状态
+  const [currentProject, setCurrentProject] = useState<RecentProject | null>(null);
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  // 时间线增强功能状态
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilterType>('all');
+  const [timelineSearchTerm, setTimelineSearchTerm] = useState('');
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   // 使用 WebSocket 状态管理
   const { state, isLoading, error, refresh } = useSwarmState({
     url: getWebSocketUrl(),
     blueprintId: selectedBlueprintId || undefined,
   });
+
+  // 获取协调器数据
+  const fetchCoordinatorData = useCallback(async () => {
+    setLoadingCoordinator(true);
+    try {
+      // 并行获取 workers 和 dashboard 数据
+      const [workersResult, dashboardResult] = await Promise.all([
+        coordinatorApi.getWorkers(),
+        coordinatorApi.getDashboard(),
+      ]);
+      setCoordinatorWorkers(workersResult);
+      setDashboardData(dashboardResult);
+    } catch (err) {
+      console.error('获取协调器数据失败:', err);
+    } finally {
+      setLoadingCoordinator(false);
+    }
+  }, []);
+
+  // 获取任务树统计
+  const fetchTaskTreeStats = useCallback(async (treeId: string) => {
+    try {
+      const stats = await taskTreeApi.getTaskTreeStats(treeId);
+      setTaskTreeStats(stats);
+    } catch (err) {
+      console.error('获取任务树统计失败:', err);
+    }
+  }, []);
+
+  // 蓝图选中时获取任务树统计
+  useEffect(() => {
+    if (state.taskTree?.id) {
+      fetchTaskTreeStats(state.taskTree.id);
+    }
+  }, [state.taskTree?.id, fetchTaskTreeStats]);
+
+  // 定时刷新协调器数据
+  useEffect(() => {
+    fetchCoordinatorData();
+    const interval = setInterval(fetchCoordinatorData, 5000); // 每5秒刷新
+    return () => clearInterval(interval);
+  }, [fetchCoordinatorData]);
 
   // 获取蓝图列表
   useEffect(() => {
@@ -206,6 +345,41 @@ export default function SwarmConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只在挂载时运行一次
 
+  // 获取项目列表
+  const fetchProjects = useCallback(async () => {
+    setLoadingProjects(true);
+    try {
+      const projects = await projectApi.getRecentProjects();
+      setRecentProjects(projects);
+      // 如果有项目，设置第一个为当前项目
+      if (projects.length > 0 && !currentProject) {
+        setCurrentProject(projects[0]);
+      }
+    } catch (err) {
+      console.error('获取项目列表失败:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, [currentProject]);
+
+  // 初始加载项目列表
+  useEffect(() => {
+    fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 选择项目
+  const handleSelectProject = async (project: RecentProject) => {
+    try {
+      await projectApi.openProject(project.path);
+      setCurrentProject(project);
+      // 刷新项目列表以更新最后打开时间
+      fetchProjects();
+    } catch (err) {
+      console.error('切换项目失败:', err);
+    }
+  };
+
   // 转换数据为组件所需格式
   const taskTreeRoot: ComponentTaskNode | null = useMemo(() => {
     if (!state.taskTree) return null;
@@ -224,6 +398,24 @@ export default function SwarmConsole() {
   const timeline: TimelineEvent[] = useMemo(() => {
     return state.timeline.map(convertTimelineEvent);
   }, [state.timeline]);
+
+  // 过滤后的时间线事件
+  const filteredTimeline: TimelineEvent[] = useMemo(() => {
+    return timeline.filter(event => {
+      // 按类型过滤
+      if (timelineFilter !== 'all' && event.category !== timelineFilter) {
+        return false;
+      }
+      // 按搜索词过滤
+      if (timelineSearchTerm) {
+        const searchLower = timelineSearchTerm.toLowerCase();
+        const matchDescription = event.description.toLowerCase().includes(searchLower);
+        const matchActor = event.actor?.toLowerCase().includes(searchLower) || false;
+        return matchDescription || matchActor;
+      }
+      return true;
+    });
+  }, [timeline, timelineFilter, timelineSearchTerm]);
 
   // 计算统计信息
   const stats = useMemo(() => {
@@ -283,16 +475,10 @@ export default function SwarmConsole() {
     }
 
     try {
-      const response = await fetch('/api/coordinator/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        alert('执行已启动');
-        refresh();
-      }
+      await coordinatorApi.start();
+      alert('执行已启动');
+      refresh();
+      fetchCoordinatorData();
     } catch (err) {
       console.error('启动执行失败:', err);
       alert('启动执行失败');
@@ -301,19 +487,39 @@ export default function SwarmConsole() {
 
   const handleStopExecution = async () => {
     try {
-      const response = await fetch('/api/coordinator/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        alert('执行已停止');
-        refresh();
-      }
+      await coordinatorApi.stop();
+      alert('执行已停止');
+      refresh();
+      fetchCoordinatorData();
     } catch (err) {
       console.error('停止执行失败:', err);
       alert('停止执行失败');
+    }
+  };
+
+  // 暂停执行
+  const handlePauseExecution = async () => {
+    try {
+      await coordinatorApi.pause();
+      alert('执行已暂停');
+      refresh();
+      fetchCoordinatorData();
+    } catch (err) {
+      console.error('暂停执行失败:', err);
+      alert('暂停执行失败');
+    }
+  };
+
+  // 恢复执行
+  const handleResumeExecution = async () => {
+    try {
+      await coordinatorApi.resume();
+      alert('执行已恢复');
+      refresh();
+      fetchCoordinatorData();
+    } catch (err) {
+      console.error('恢复执行失败:', err);
+      alert('恢复执行失败');
     }
   };
 
@@ -333,6 +539,49 @@ export default function SwarmConsole() {
       <div className={styles.mainArea}>
         {/* 左侧：蓝图列表 */}
         <aside className={styles.leftPanel}>
+          {/* 项目信息区域 */}
+          <div className={styles.projectInfoSection}>
+            <div className={styles.projectInfoHeader}>
+              <span className={styles.projectInfoIcon}>📁</span>
+              <span className={styles.projectInfoTitle}>当前项目</span>
+            </div>
+            {loadingProjects ? (
+              <div className={styles.projectInfoLoading}>加载中...</div>
+            ) : currentProject ? (
+              <div className={styles.currentProjectInfo}>
+                <div className={styles.currentProjectName}>{currentProject.name}</div>
+                <div className={styles.currentProjectPath} title={currentProject.path}>{currentProject.path}</div>
+              </div>
+            ) : (
+              <div className={styles.noProjectInfo}>未选择项目</div>
+            )}
+            {/* 最近项目列表 */}
+            {recentProjects.length > 0 && (
+              <div className={styles.recentProjectsSection}>
+                <div className={styles.recentProjectsTitle}>最近项目</div>
+                <div className={styles.recentProjectsList}>
+                  {recentProjects.slice(0, 5).map((project) => (
+                    <button
+                      key={project.id}
+                      className={`${styles.recentProjectItem} ${currentProject?.id === project.id ? styles.activeProject : ''}`}
+                      onClick={() => handleSelectProject(project)}
+                      title={project.path}
+                    >
+                      <span className={styles.recentProjectName}>{project.name}</span>
+                      {project.lastOpenedAt && (
+                        <span className={styles.recentProjectTime}>
+                          {new Date(project.lastOpenedAt).toLocaleDateString('zh-CN')}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.panelDivider} />
+
           <div className={styles.panelHeader}>
             <h2>📋 蓝图列表</h2>
           </div>
@@ -382,15 +631,43 @@ export default function SwarmConsole() {
         <main className={styles.centerPanel}>
           <div className={styles.panelHeader}>
             <h2>🌳 任务树</h2>
-            {taskTreeRoot && (
+            {/* 任务树统计 */}
+            {taskTreeStats && (
               <div className={styles.taskStats}>
-                <span>{stats.completed}/{stats.total} 完成</span>
+                <span title="已完成/总任务数">
+                  {taskTreeStats.completedTasks}/{taskTreeStats.totalTasks} 完成
+                </span>
+                {taskTreeStats.runningTasks > 0 && (
+                  <span className={styles.runningBadge} title="执行中">
+                    {taskTreeStats.runningTasks} 执行中
+                  </span>
+                )}
+                {taskTreeStats.failedTasks > 0 && (
+                  <span className={styles.failedBadge} title="失败">
+                    {taskTreeStats.failedTasks} 失败
+                  </span>
+                )}
+              </div>
+            )}
+            {/* 仪表板快速预览 */}
+            {dashboardData && (
+              <div className={styles.dashboardPreview}>
+                <span className={styles.dashboardItem} title="工作中/总Workers">
+                  👷 {dashboardData.workers.active}/{dashboardData.workers.total}
+                </span>
+                {dashboardData.queen && (
+                  <span className={styles.dashboardItem} title={`Queen 状态: ${dashboardData.queen.status}`}>
+                    👑 {dashboardData.queen.status}
+                  </span>
+                )}
               </div>
             )}
             <div className={styles.headerActions}>
-              <button className={styles.iconButton} title="刷新" onClick={refresh}>🔄</button>
+              <button className={styles.iconButton} title="刷新" onClick={() => { refresh(); fetchCoordinatorData(); }}>🔄</button>
               <button className={styles.iconButton} title="开始执行" onClick={handleStartExecution}>▶️</button>
-              <button className={styles.iconButton} title="停止执行" onClick={handleStopExecution}>⏸️</button>
+              <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
+              <button className={styles.iconButton} title="恢复执行" onClick={handleResumeExecution}>▶️</button>
+              <button className={styles.iconButton} title="停止执行" onClick={handleStopExecution}>⏹️</button>
             </div>
           </div>
           <div className={styles.panelContent}>
@@ -424,51 +701,175 @@ export default function SwarmConsole() {
           </div>
         </main>
 
-        {/* 右侧：Worker 面板 */}
+        {/* 右侧：Worker 面板 / TDD 面板（可切换） */}
         <aside className={styles.rightPanel}>
           <div className={styles.panelHeader}>
-            <h2>👷 Workers</h2>
-            <span className={styles.workerCount}>
-              {workers.filter(w => w.status !== 'idle' && w.status !== 'waiting').length}/{workers.length}
-            </span>
+            {/* 视图切换标签 */}
+            <div className={styles.viewTabs}>
+              <button
+                className={`${styles.viewTab} ${rightPanelView === 'workers' ? styles.activeTab : ''}`}
+                onClick={() => setRightPanelView('workers')}
+              >
+                Workers
+              </button>
+              <button
+                className={`${styles.viewTab} ${rightPanelView === 'tdd' ? styles.activeTab : ''}`}
+                onClick={() => setRightPanelView('tdd')}
+              >
+                TDD
+              </button>
+              <button
+                className={`${styles.viewTab} ${rightPanelView === 'timetravel' ? styles.activeTab : ''}`}
+                onClick={() => setRightPanelView('timetravel')}
+              >
+                时光倒流
+              </button>
+            </div>
+            {rightPanelView === 'workers' && (
+              <span className={styles.workerCount}>
+                {dashboardData ? `${dashboardData.workers.active}/${dashboardData.workers.total}` :
+                  `${workers.filter(w => w.status !== 'idle' && w.status !== 'waiting').length}/${workers.length}`}
+              </span>
+            )}
+            {loadingCoordinator && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {!queen ? (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}>👑</div>
-                <div className={styles.emptyStateText}>
-                  {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Queen 数据'}
-                </div>
-              </div>
-            ) : (
+            {/* Workers 视图 */}
+            {rightPanelView === 'workers' && (
+              <>
+                {/* 从协调器 API 获取的 Workers */}
+                {coordinatorWorkers.length > 0 && (
+                  <div className={styles.coordinatorWorkers}>
+                    <div className={styles.workerListHeader}>协调器 Workers</div>
+                    {coordinatorWorkers.map((worker, idx) => (
+                      <div key={worker.id || idx} className={styles.workerItem}>
+                        <span className={styles.workerName}>{worker.name || worker.id}</span>
+                        <span className={`${styles.workerStatus} ${styles[worker.status]}`}>
+                          {worker.status}
+                        </span>
+                        {worker.currentTaskTitle && (
+                          <span className={styles.workerTask}>{worker.currentTaskTitle}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!queen && coordinatorWorkers.length === 0 ? (
+                  <div className={styles.emptyState}>
+                    <div className={styles.emptyStateIcon}>👑</div>
+                    <div className={styles.emptyStateText}>
+                      {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
+                    </div>
+                  </div>
+                ) : queen && (
+                  <FadeIn>
+                    <WorkerPanel queen={queen} workers={workers} />
+                  </FadeIn>
+                )}
+              </>
+            )}
+
+            {/* TDD 视图 */}
+            {rightPanelView === 'tdd' && (
               <FadeIn>
-                <WorkerPanel queen={queen} workers={workers} />
+                <TDDPanel
+                  treeId={state.taskTree?.id}
+                  taskId={selectedTaskId}
+                  autoRefresh={true}
+                  refreshInterval={3000}
+                />
+              </FadeIn>
+            )}
+
+            {/* 时光倒流视图 */}
+            {rightPanelView === 'timetravel' && (
+              <FadeIn>
+                {state.taskTree?.id ? (
+                  <TimeTravelPanel
+                    treeId={state.taskTree.id}
+                    onRefresh={() => {
+                      refresh();
+                      fetchCoordinatorData();
+                    }}
+                  />
+                ) : (
+                  <div className={styles.emptyState}>
+                    <div className={styles.emptyStateIcon}>&#9200;</div>
+                    <div className={styles.emptyStateText}>
+                      {!selectedBlueprintId ? '请选择一个蓝图' : '暂无任务树数据'}
+                    </div>
+                  </div>
+                )}
               </FadeIn>
             )}
           </div>
         </aside>
       </div>
 
-      {/* 底部：时间线区域（可折叠） */}
+      {/* 底部：时间线区域（可折叠） - 增强版 */}
       <div className={`${styles.timelineArea} ${timelineCollapsed ? styles.collapsed : ''}`}>
         <div className={styles.timelineHeader} onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
-          <h3>⏱️ 时间线</h3>
-          <span className={styles.eventCount}>{timeline.length} 事件</span>
+          <h3>⏱ 时间线</h3>
+          <span className={styles.eventCount}>
+            {filteredTimeline.length}/{timeline.length} 事件
+          </span>
           <button className={styles.collapseButton}>
             {timelineCollapsed ? '▲' : '▼'}
           </button>
         </div>
         {!timelineCollapsed && (
           <div className={styles.timelineContent}>
-            {timeline.length === 0 ? (
+            {/* 时间线过滤器和搜索 */}
+            <div className={styles.timelineFilters}>
+              <select
+                className={styles.timelineFilterSelect}
+                value={timelineFilter}
+                onChange={(e) => setTimelineFilter(e.target.value as TimelineFilterType)}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="all">全部</option>
+                <option value="task">任务</option>
+                <option value="worker">Worker</option>
+                <option value="system">系统</option>
+                <option value="error">错误</option>
+              </select>
+              <input
+                type="text"
+                className={styles.timelineSearchInput}
+                placeholder="搜索事件..."
+                value={timelineSearchTerm}
+                onChange={(e) => setTimelineSearchTerm(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
+              {(timelineFilter !== 'all' || timelineSearchTerm) && (
+                <button
+                  className={styles.timelineClearFilter}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTimelineFilter('all');
+                    setTimelineSearchTerm('');
+                  }}
+                  title="清除过滤"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {filteredTimeline.length === 0 ? (
               <div className={styles.emptyState}>
-                <div className={styles.emptyStateText}>暂无事件</div>
+                <div className={styles.emptyStateText}>
+                  {timeline.length === 0 ? '暂无事件' : '没有匹配的事件'}
+                </div>
               </div>
             ) : (
               <div className={styles.timelineList}>
-                {timeline.slice().reverse().map((event) => (
+                {filteredTimeline.slice().reverse().map((event) => (
                   <FadeIn key={event.id}>
-                    <div className={styles.timelineEvent}>
+                    <div
+                      className={`${styles.timelineEvent} ${styles[event.category]} ${expandedEventId === event.id ? styles.expanded : ''}`}
+                      onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
+                    >
                       <span
                         className={styles.eventIcon}
                         style={{ color: EVENT_COLORS[event.type] }}
@@ -476,7 +877,28 @@ export default function SwarmConsole() {
                         {EVENT_ICONS[event.type]}
                       </span>
                       <span className={styles.eventTime}>{formatTime(event.timestamp)}</span>
+                      <span className={`${styles.eventCategory} ${styles[event.category]}`}>
+                        {event.category === 'task' ? '任务' :
+                         event.category === 'worker' ? 'Worker' :
+                         event.category === 'system' ? '系统' : '错误'}
+                      </span>
                       <span className={styles.eventDesc}>{event.description}</span>
+                      {event.actor && (
+                        <span className={styles.eventActor}>{event.actor}</span>
+                      )}
+                      {event.details && (
+                        <span className={styles.eventExpandIcon}>
+                          {expandedEventId === event.id ? '▼' : '▶'}
+                        </span>
+                      )}
+                      {/* 事件详情展开 */}
+                      {expandedEventId === event.id && event.details && (
+                        <div className={styles.eventDetails} onClick={(e) => e.stopPropagation()}>
+                          <pre className={styles.eventDetailsContent}>
+                            {JSON.stringify(event.details, null, 2)}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   </FadeIn>
                 ))}

@@ -205,7 +205,7 @@ import type {
 | `blueprintApi.rejectBlueprint(id, reason)` | `/api/blueprint/blueprints/:id/reject` | POST |
 | `taskTreeApi.getTaskTree(id)` | `/api/blueprint/task-trees/:id` | GET |
 | `coordinatorApi.start()` | `/api/blueprint/coordinator/start` | POST |
-| `timeTravelApi.rollback(treeId, checkpointId)` | `/api/blueprint/time-travel/:treeId/rollback` | POST |
+| `timeTravelApi.rollback(treeId, checkpointId)` | `/api/blueprint/time-travel/:treeId/rollback/:checkpointId` | POST |
 
 ## 注意事项
 

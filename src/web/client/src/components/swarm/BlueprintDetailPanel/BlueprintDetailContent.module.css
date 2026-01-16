@@ -599,6 +599,89 @@
 .statusBadge.completed { background: #22c55e; }
 .statusBadge.paused { background: #eab308; color: #000; }
 .statusBadge.modified { background: #a855f7; }
+.statusBadge.rejected { background: #ef4444; }
+.statusBadge.failed { background: #dc2626; }
+
+/* 蓝图操作按钮组 */
+.blueprintActions {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.actionBtn {
+  padding: 2px 10px;
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionBtn.primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.actionBtn.primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.actionBtn.success {
+  background: #10b981;
+  color: white;
+}
+
+.actionBtn.success:hover:not(:disabled) {
+  background: #059669;
+}
+
+.actionBtn.warning {
+  background: #f59e0b;
+  color: #000;
+}
+
+.actionBtn.warning:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.actionBtn.danger {
+  background: #ef4444;
+  color: white;
+}
+
+.actionBtn.danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.actionBtn.default {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.actionBtn.default:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 操作错误提示 */
+.operationError {
+  padding: 2px 8px;
+  background: #ef4444;
+  color: white;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: help;
+}
 
 .statusTech {
   padding: 1px 6px;

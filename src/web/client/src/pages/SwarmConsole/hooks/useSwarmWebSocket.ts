@@ -32,11 +32,13 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
 
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<SwarmConnectionStatus>('disconnected');
+  const [lastPongTime, setLastPongTime] = useState<number | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlersRef = useRef<Array<(msg: SwarmServerMessage) => void>>([]);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 追踪组件是否已卸载，防止 React 18 Strict Mode 导致的重复连接问题
   const isMountedRef = useRef(true);
@@ -97,10 +99,22 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
       setConnected(true);
       setStatus('connected');
 
-      // 定期发送 ping 保持连接
+      // 定期发送 ping 保持连接，并检测连接超时
       pingIntervalRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
+
+          // 设置 ping 超时检测（如果 pingInterval 时间内没有收到 pong，认为连接断开）
+          if (pingTimeoutRef.current) {
+            clearTimeout(pingTimeoutRef.current);
+          }
+          pingTimeoutRef.current = setTimeout(() => {
+            console.warn('[SwarmWebSocket] Ping timeout, connection may be lost');
+            // 如果超时没收到 pong，尝试重连
+            if (isMountedRef.current && ws.readyState === WebSocket.OPEN) {
+              ws.close();
+            }
+          }, pingInterval * 0.8); // 80% 的 pingInterval 作为超时时间
         }
       }, pingInterval);
     };
@@ -109,8 +123,15 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
       try {
         const message = JSON.parse(event.data) as SwarmServerMessage;
 
-        // 忽略 pong 消息
-        if (message.type === 'pong') return;
+        // 处理 pong 消息：更新最后 pong 时间，清除超时计时器
+        if (message.type === 'pong') {
+          setLastPongTime(Date.now());
+          if (pingTimeoutRef.current) {
+            clearTimeout(pingTimeoutRef.current);
+            pingTimeoutRef.current = null;
+          }
+          return;
+        }
 
         // 触发所有消息处理器
         messageHandlersRef.current.forEach(handler => {
@@ -144,6 +165,12 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
+      }
+
+      // 清除 ping 超时定时器
+      if (pingTimeoutRef.current) {
+        clearTimeout(pingTimeoutRef.current);
+        pingTimeoutRef.current = null;
       }
 
       // 只有在组件仍然挂载且需要自动重连时才尝试重连
@@ -182,6 +209,11 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = null;
+      }
+
+      if (pingTimeoutRef.current) {
+        clearTimeout(pingTimeoutRef.current);
+        pingTimeoutRef.current = null;
       }
 
       if (wsRef.current) {
@@ -228,6 +260,7 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
   return {
     connected,
     status,
+    lastPongTime,
     subscribe,
     unsubscribe,
     pauseSwarm,

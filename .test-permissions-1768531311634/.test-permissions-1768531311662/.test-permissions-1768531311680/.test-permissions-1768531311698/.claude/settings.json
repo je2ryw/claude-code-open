@@ -1,0 +1,10 @@
+{
+  "version": "2.1.3",
+  "permissions": {
+    "allow": [
+      "Bash(git*)",
+      "Bash(npm test*)"
+    ],
+    "deny": []
+  }
+}

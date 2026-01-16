@@ -199,8 +199,6 @@ Note: LSP servers must be configured for the file type. If no server is availabl
         };
 
       case 'prepareCallHierarchy':
-      case 'incomingCalls':
-      case 'outgoingCalls':
         return {
           method: 'textDocument/prepareCallHierarchy',
           params: {
@@ -209,8 +207,23 @@ Note: LSP servers must be configured for the file type. If no server is availabl
           },
         };
 
-      default:
-        throw new Error(`Unsupported operation: ${input.operation}`);
+      case 'incomingCalls':
+        return {
+          method: 'textDocument/prepareCallHierarchy',
+          params: {
+            textDocument: { uri },
+            position,
+          },
+        };
+
+      case 'outgoingCalls':
+        return {
+          method: 'textDocument/prepareCallHierarchy',
+          params: {
+            textDocument: { uri },
+            position,
+          },
+        };
     }
   }
 
@@ -257,59 +270,77 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
   /**
    * 格式化位置结果（definition/implementation）
+   * 与官方实现一致
    */
   private formatLocationResult(result: any, workingDir: string) {
-    const locations = Array.isArray(result) ? result : result ? [result] : [];
-
-    // 过滤并验证位置
-    const validLocations = locations.filter((loc) => this.isValidLocation(loc));
-
-    if (validLocations.length === 0) {
+    // 处理 null/undefined 结果
+    if (!result) {
       return {
-        formatted: 'No definition found. This may occur if the symbol is not defined in the workspace, or if the LSP server has not fully indexed the file.',
+        formatted: 'No definition found. This may occur if the cursor is not on a symbol, or if the definition is in an external library not indexed by the LSP server.',
         resultCount: 0,
         fileCount: 0,
       };
     }
 
-    if (validLocations.length === 1) {
-      const normalized = this.normalizeLocation(validLocations[0]);
-      const locationStr = this.formatLocationString(normalized, workingDir);
+    const locations = Array.isArray(result) ? result : [result];
+
+    // 规范化位置（处理 LocationLink 类型）
+    const normalizedLocations = locations.map((loc) => this.normalizeLocation(loc));
+
+    // 过滤无效位置并记录警告
+    const invalidLocations = normalizedLocations.filter((loc) => !loc || !loc.uri);
+    if (invalidLocations.length > 0) {
+      console.warn(
+        `formatGoToDefinitionResult: Filtering out ${invalidLocations.length} invalid location(s) - this should have been caught earlier`
+      );
+    }
+
+    const validLocations = normalizedLocations.filter((loc) => loc && loc.uri);
+
+    if (validLocations.length === 0) {
       return {
-        formatted: `Definition found at ${locationStr}`,
+        formatted: 'No definition found. This may occur if the cursor is not on a symbol, or if the definition is in an external library not indexed by the LSP server.',
+        resultCount: 0,
+        fileCount: 0,
+      };
+    }
+
+    // 单个结果
+    if (validLocations.length === 1) {
+      const locationStr = this.formatLocationString(validLocations[0], workingDir);
+      return {
+        formatted: `Defined in ${locationStr}`,
         resultCount: 1,
         fileCount: 1,
       };
     }
 
-    // 规范化所有位置
-    const normalizedLocations = validLocations.map((loc) => this.normalizeLocation(loc));
-    const grouped = this.groupNormalizedByFile(normalizedLocations, workingDir);
-    const lines = [`Found ${normalizedLocations.length} definitions across ${grouped.size} files:`];
-
-    for (const [file, locs] of grouped) {
-      lines.push(`\n${file}:`);
-      for (const loc of locs) {
-        const line = loc.range.start.line + 1;
-        const char = loc.range.start.character + 1;
-        lines.push(`  Line ${line}:${char}`);
-      }
-    }
+    // 多个结果
+    const locationStrings = validLocations.map((loc) => `  ${this.formatLocationString(loc, workingDir)}`);
+    const fileCount = this.countUniqueFiles(validLocations);
 
     return {
-      formatted: lines.join('\n'),
-      resultCount: normalizedLocations.length,
-      fileCount: grouped.size,
+      formatted: `Found ${validLocations.length} definitions:\n${locationStrings.join('\n')}`,
+      resultCount: validLocations.length,
+      fileCount,
     };
   }
 
   /**
+   * 计算唯一文件数量
+   */
+  private countUniqueFiles(locations: NormalizedLocation[]): number {
+    return new Set(locations.map((loc) => loc.uri)).size;
+  }
+
+  /**
    * 格式化引用结果
+   * 与官方实现一致
    */
   private formatReferencesResult(result: any, workingDir: string) {
     if (!result || result.length === 0) {
       return {
-        formatted: 'No references found. This may occur if the symbol is not used elsewhere, or if the LSP server has not fully indexed the project.',
+        formatted: 'No references found. This may occur if the symbol has no usages, or if the LSP server has not fully indexed the workspace.',
         resultCount: 0,
         fileCount: 0,
       };
@@ -317,21 +348,38 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
     const references = result;
 
-    // 过滤并验证位置
-    const validReferences = references.filter((loc: unknown) => this.isValidLocation(loc));
+    // 过滤无效引用并记录警告
+    const invalidRefs = references.filter((loc: any) => !loc || !loc.uri);
+    if (invalidRefs.length > 0) {
+      console.warn(
+        `formatFindReferencesResult: Filtering out ${invalidRefs.length} invalid location(s) - this should have been caught earlier`
+      );
+    }
+
+    const validReferences = references.filter((loc: any) => loc && loc.uri);
 
     if (validReferences.length === 0) {
       return {
-        formatted: 'No references found. This may occur if the symbol is not used elsewhere, or if the LSP server has not fully indexed the project.',
+        formatted: 'No references found. This may occur if the symbol has no usages, or if the LSP server has not fully indexed the workspace.',
         resultCount: 0,
         fileCount: 0,
       };
     }
 
-    // 规范化所有引用
-    const normalizedReferences = validReferences.map((ref: any) => this.normalizeLocation(ref));
-    const grouped = this.groupNormalizedByFile(normalizedReferences, workingDir);
-    const lines = [`Found ${normalizedReferences.length} reference${normalizedReferences.length === 1 ? '' : 's'} across ${grouped.size} file${grouped.size === 1 ? '' : 's'}:`];
+    // 单个引用
+    if (validReferences.length === 1) {
+      const ref = validReferences[0];
+      const locationStr = this.formatLocationString(ref, workingDir);
+      return {
+        formatted: `Found 1 reference:\n  ${locationStr}`,
+        resultCount: 1,
+        fileCount: 1,
+      };
+    }
+
+    // 多个引用 - 按文件分组
+    const grouped = this.groupByFile(validReferences, workingDir);
+    const lines: string[] = [`Found ${validReferences.length} references across ${grouped.size} file${grouped.size === 1 ? '' : 's'}:`];
 
     for (const [file, refs] of grouped) {
       lines.push(`\n${file}:`);
@@ -344,7 +392,7 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
     return {
       formatted: lines.join('\n'),
-      resultCount: normalizedReferences.length,
+      resultCount: validReferences.length,
       fileCount: grouped.size,
     };
   }
@@ -388,38 +436,67 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
   /**
    * 格式化文档符号结果
+   * 与官方实现一致 - 支持嵌套的 DocumentSymbol 和扁平的 SymbolInformation
    */
   private formatDocumentSymbolResult(result: any) {
     const symbols = result || [];
 
     if (symbols.length === 0) {
       return {
-        formatted: 'No symbols found in document. This may occur if the file is empty or has no recognizable code structures.',
+        formatted: 'No symbols found in document. This may occur if the file is empty, not supported by the LSP server, or if the server has not fully indexed the file.',
         resultCount: 0,
         fileCount: 0,
       };
     }
 
-    const count = this.countSymbols(symbols);
-    const lines = [`Found ${count} symbol${count === 1 ? '' : 's'} in document:`];
-
-    for (const symbol of symbols) {
-      const kind = this.symbolKindToString(symbol.kind);
-      const line = symbol.range.start.line + 1;
-      let text = `  ${symbol.name} (${kind}) - Line ${line}`;
-
-      if (symbol.containerName) {
-        text += ` in ${symbol.containerName}`;
-      }
-
-      lines.push(text);
+    // 检查是否是 SymbolInformation 格式（有 location 属性）
+    const firstSymbol = symbols[0];
+    if (firstSymbol && 'location' in firstSymbol) {
+      // 使用 workspaceSymbol 的格式化方法
+      return this.formatWorkspaceSymbolResult(symbols, process.cwd());
     }
+
+    // DocumentSymbol 格式（有 range 和可能有 children）
+    const lines: string[] = ['Document symbols:'];
+    for (const symbol of symbols) {
+      lines.push(...this.formatDocumentSymbol(symbol, 0));
+    }
+
+    const count = this.countSymbols(symbols);
 
     return {
       formatted: lines.join('\n'),
       resultCount: count,
-      fileCount: 1,
+      fileCount: symbols.length > 0 ? 1 : 0,
     };
+  }
+
+  /**
+   * 递归格式化单个 DocumentSymbol（带缩进）
+   */
+  private formatDocumentSymbol(symbol: any, depth: number): string[] {
+    const lines: string[] = [];
+    const indent = '  '.repeat(depth);
+    const kind = this.symbolKindToString(symbol.kind);
+    let text = `${indent}${symbol.name} (${kind})`;
+
+    if (symbol.detail) {
+      text += ` ${symbol.detail}`;
+    }
+
+    const line = symbol.range.start.line + 1;
+    text += ` - Line ${line}`;
+
+    lines.push(text);
+
+    // 递归处理子符号
+    if (symbol.children && symbol.children.length > 0) {
+      for (const child of symbol.children) {
+        lines.push(...this.formatDocumentSymbol(child, depth + 1));
+      }
+    }
+
+    return lines;
   }
 
   /**
@@ -536,20 +613,23 @@ Note: LSP servers must be configured for the file type. If no server is availabl
 
   /**
    * 格式化调用结果
+   * 与官方实现一致
    */
   private formatCallsResult(operation: string, result: any, workingDir: string) {
+    const isIncoming = operation === 'incomingCalls';
+    const callItem = isIncoming ? 'from' : 'to';
+
     if (!result || result.length === 0) {
-      const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
       return {
-        formatted: `No ${type} calls found (${operation === 'incomingCalls' ? 'nothing calls this function' : 'this function calls nothing'})`,
+        formatted: isIncoming
+          ? 'No incoming calls found (nothing calls this function)'
+          : 'No outgoing calls found (this function calls nothing)',
         resultCount: 0,
         fileCount: 0,
       };
     }
 
     const calls = result;
-    const isIncoming = operation === 'incomingCalls';
-    const callItem = isIncoming ? 'from' : 'to';
 
     // 验证调用数据 - 记录警告并跳过无效项
     const validCalls = [];
@@ -561,21 +641,20 @@ Note: LSP servers must be configured for the file type. If no server is availabl
         );
         continue;
       }
-      if (item.uri && item.range) {
-        validCalls.push(call);
-      }
+      validCalls.push(call);
     }
 
     if (validCalls.length === 0) {
-      const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
       return {
-        formatted: `No ${type} calls found (${operation === 'incomingCalls' ? 'nothing calls this function' : 'this function calls nothing'})`,
+        formatted: isIncoming
+          ? 'No incoming calls found (nothing calls this function)'
+          : 'No outgoing calls found (this function calls nothing)',
         resultCount: 0,
         fileCount: 0,
       };
     }
 
-    const label = isIncoming ? 'caller' : 'callee';
+    const label = isIncoming ? 'incoming call' : 'outgoing call';
     const lines = [`Found ${validCalls.length} ${label}${validCalls.length === 1 ? '' : 's'}:`];
 
     const grouped = new Map<string, any[]>();
@@ -601,6 +680,7 @@ Note: LSP servers must be configured for the file type. If no server is availabl
         const line = item.range.start.line + 1;
         let text = `  ${item.name} (${kind}) - Line ${line}`;
 
+        // 添加调用位置信息
         if (call.fromRanges && call.fromRanges.length > 0) {
           const ranges = call.fromRanges
             .map((r: any) => `${r.start.line + 1}:${r.start.character + 1}`)
@@ -612,11 +692,24 @@ Note: LSP servers must be configured for the file type. If no server is availabl
       }
     }
 
+    // 计算文件数量
+    const fileCount = this.countCallFileCount(validCalls, callItem);
+
     return {
       formatted: lines.join('\n'),
       resultCount: validCalls.length,
-      fileCount: grouped.size,
+      fileCount,
     };
+  }
+
+  /**
+   * 计算调用结果中的唯一文件数量
+   */
+  private countCallFileCount(calls: any[], callItem: string): number {
+    const uris = calls
+      .map((call) => call[callItem]?.uri)
+      .filter((uri): uri is string => Boolean(uri));
+    return new Set(uris).size;
   }
 
   /**

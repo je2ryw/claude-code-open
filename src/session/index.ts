@@ -10,6 +10,54 @@ import * as crypto from 'crypto';
 import type { Message, ContentBlock } from '../types/index.js';
 import { configManager } from '../config/index.js';
 
+// ============================================================================
+// 会话元数据缓存系统（解决 listSessions 性能问题）
+// ============================================================================
+
+/**
+ * 缓存的会话元数据条目
+ */
+interface CachedSessionEntry {
+  metadata: SessionMetadata;
+  mtime: number; // 文件修改时间
+}
+
+/**
+ * 元数据缓存
+ */
+const sessionMetadataCache = new Map<string, CachedSessionEntry>();
+
+/**
+ * 上次扫描目录的时间
+ */
+let lastDirScanTime = 0;
+
+/**
+ * 上次扫描时的文件列表
+ */
+let lastFileList: string[] = [];
+
+/**
+ * 缓存有效期（毫秒）- 5秒内不重新扫描目录
+ */
+const CACHE_SCAN_INTERVAL = 5000;
+
+/**
+ * 使缓存失效（外部调用，如保存/删除会话后）
+ */
+export function invalidateSessionCache(sessionId?: string): void {
+  if (sessionId) {
+    sessionMetadataCache.delete(sessionId);
+    // 同时重置目录扫描缓存，确保新创建的会话能立即显示
+    lastDirScanTime = 0;
+    lastFileList = [];
+  } else {
+    sessionMetadataCache.clear();
+    lastDirScanTime = 0;
+    lastFileList = [];
+  }
+}
+
 /**
  * 获取会话存储目录（从配置）
  */
@@ -214,6 +262,9 @@ export function saveSession(session: SessionData): void {
     mode: 0o600,
   });
 
+  // 使该会话的缓存失效（因为文件已更新）
+  invalidateSessionCache(sessionId);
+
   // 清理过期会话
   cleanupOldSessions();
 }
@@ -268,6 +319,9 @@ export function deleteSession(sessionId: string): boolean {
 
   const sessionPath = getSessionPath(sessionId);
 
+  // 使缓存失效
+  invalidateSessionCache(sessionId);
+
   // 如果文件不存在，仍然返回 true（会话已经不存在了，删除目标达成）
   if (!fs.existsSync(sessionPath)) {
     console.log(`[Session] 会话文件不存在，视为删除成功: ${sessionId}`);
@@ -285,7 +339,7 @@ export function deleteSession(sessionId: string): boolean {
 }
 
 /**
- * 列出所有会话
+ * 列出所有会话（带缓存优化）
  */
 export function listSessions(options: SessionListOptions = {}): SessionMetadata[] {
   ensureSessionDir();
@@ -299,22 +353,77 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     tags,
   } = options;
 
-  const files = fs.readdirSync(getSessionDir()).filter((f) => f.endsWith('.json'));
+  const sessionDir = getSessionDir();
+  const now = Date.now();
+
+  // 检查是否需要重新扫描目录
+  let files: string[];
+  if (now - lastDirScanTime < CACHE_SCAN_INTERVAL && lastFileList.length > 0) {
+    // 使用缓存的文件列表
+    files = lastFileList;
+  } else {
+    // 重新扫描目录
+    files = fs.readdirSync(sessionDir).filter((f) => f.endsWith('.json'));
+    lastFileList = files;
+    lastDirScanTime = now;
+  }
+
   const sessions: SessionMetadata[] = [];
 
   for (const file of files) {
+    const sessionId = file.replace('.json', '');
+    const filePath = path.join(sessionDir, file);
+
     try {
-      const content = fs.readFileSync(path.join(getSessionDir(), file), 'utf-8');
+      // 检查缓存
+      const cached = sessionMetadataCache.get(sessionId);
+      let stat: fs.Stats | null = null;
+
+      // 只有当缓存存在时才检查文件修改时间
+      if (cached) {
+        stat = fs.statSync(filePath);
+        if (stat.mtimeMs === cached.mtime) {
+          // 缓存有效，直接使用
+          sessions.push(cached.metadata);
+          continue;
+        }
+      }
+
+      // 缓存无效或不存在，需要读取文件
+      const content = fs.readFileSync(filePath, 'utf-8');
       const data = JSON.parse(content);
+
+      let metadata: SessionMetadata | null = null;
 
       // 兼容官方 Claude Code 格式和内部格式
       if (isOfficialFormat(data)) {
-        sessions.push(convertOfficialToMetadata(data));
+        metadata = convertOfficialToMetadata(data);
       } else if (data?.metadata?.id) {
-        sessions.push((data as SessionData).metadata);
+        metadata = (data as SessionData).metadata;
+      }
+
+      if (metadata) {
+        // 更新缓存
+        if (!stat) {
+          stat = fs.statSync(filePath);
+        }
+        sessionMetadataCache.set(sessionId, {
+          metadata,
+          mtime: stat.mtimeMs,
+        });
+        sessions.push(metadata);
       }
     } catch {
-      // 忽略无法解析的文件
+      // 忽略无法解析的文件，同时从缓存中移除
+      sessionMetadataCache.delete(sessionId);
+    }
+  }
+
+  // 清理已删除文件的缓存
+  const fileSet = new Set(files.map(f => f.replace('.json', '')));
+  for (const cachedId of sessionMetadataCache.keys()) {
+    if (!fileSet.has(cachedId)) {
+      sessionMetadataCache.delete(cachedId);
     }
   }
 
@@ -345,20 +454,28 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     filtered = filtered.filter((s) => s.tags?.some((t) => tags.includes(t)));
   }
 
-  // 排序
+  // 排序（添加二级排序以确保稳定性）
   filtered.sort((a, b) => {
     const aVal = a[sortBy] ?? 0;
     const bVal = b[sortBy] ?? 0;
 
+    let result: number;
     if (typeof aVal === 'string' && typeof bVal === 'string') {
-      return sortOrder === 'asc'
+      result = sortOrder === 'asc'
         ? aVal.localeCompare(bVal)
         : bVal.localeCompare(aVal);
+    } else {
+      result = sortOrder === 'asc'
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
     }
 
-    return sortOrder === 'asc'
-      ? (aVal as number) - (bVal as number)
-      : (bVal as number) - (aVal as number);
+    // 二级排序：当主排序字段相同时，按 id 降序排列（确保稳定性）
+    if (result === 0) {
+      return b.id.localeCompare(a.id);
+    }
+
+    return result;
   });
 
   // 分页
