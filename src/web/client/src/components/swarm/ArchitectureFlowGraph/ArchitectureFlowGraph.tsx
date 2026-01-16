@@ -42,7 +42,7 @@ export interface ArchitectureFlowGraphProps {
   blueprintId: string;
   /** 图表数据 */
   data: ArchitectureGraphData | null;
-  /** 加载状态 */
+  /** 加载状态（当前选中类型） */
   loading: boolean;
   /** 错误信息 */
   error: string | null;
@@ -54,6 +54,8 @@ export interface ArchitectureFlowGraphProps {
   onTypeChange: (type: ArchitectureGraphType) => void;
   /** 节点点击回调（用于跳转到代码） */
   onNodeClick?: (nodeId: string, mapping: NodePathMapping) => void;
+  /** 正在加载的类型集合（用于按钮上显示各自的加载状态） */
+  loadingTypes?: Set<ArchitectureGraphType>;
 }
 
 /** 图表类型配置 */
@@ -167,6 +169,7 @@ export const ArchitectureFlowGraph: React.FC<ArchitectureFlowGraphProps> = ({
   selectedType,
   onTypeChange,
   onNodeClick,
+  loadingTypes = new Set(),
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mermaidContainerRef = useRef<HTMLDivElement>(null);
@@ -362,17 +365,19 @@ export const ArchitectureFlowGraph: React.FC<ArchitectureFlowGraphProps> = ({
     >
       {/* 类型选择器 */}
       <div className={styles.typeSelector}>
-        {GRAPH_TYPES.map(({ type, label, icon }) => (
-          <button
-            key={type}
-            className={`${styles.typeButton} ${selectedType === type ? styles.typeButtonActive : ''}`}
-            onClick={() => onTypeChange(type)}
-            disabled={loading}
-          >
-            <span className={styles.typeIcon}>{icon}</span>
-            <span className={styles.typeLabel}>{label}</span>
-          </button>
-        ))}
+        {GRAPH_TYPES.map(({ type, label, icon }) => {
+          const isLoading = loadingTypes.has(type);
+          return (
+            <button
+              key={type}
+              className={`${styles.typeButton} ${selectedType === type ? styles.typeButtonActive : ''} ${isLoading ? styles.typeButtonLoading : ''}`}
+              onClick={() => onTypeChange(type)}
+            >
+              <span className={styles.typeIcon}>{isLoading ? '⏳' : icon}</span>
+              <span className={styles.typeLabel}>{label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 工具栏 */}

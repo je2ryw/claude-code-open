@@ -5,7 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { Message, ContentBlock, ToolDefinition } from '../types/index.js';
+import type { Message, ContentBlock, ToolDefinition, WebSearchTool20250305 } from '../types/index.js';
 import type { ProxyConfig, ProxyAgentOptions, TimeoutConfig } from '../network/index.js';
 import { createProxyAgent } from '../network/index.js';
 import {
@@ -236,6 +236,45 @@ function buildBetas(_model: string, isOAuth: boolean): string[] {
   betas.push(THINKING_BETA);
 
   return betas;
+}
+
+/**
+ * 构建 API 工具列表
+ * 将客户端工具定义转换为 API 格式，并始终添加 WebSearch Server Tool
+ *
+ * 官方 Claude Code 使用 Anthropic API 的 Server Tool 进行网络搜索：
+ * - type: 'web_search_20250305'
+ * - name: 'web_search'
+ *
+ * Server Tool 由 Anthropic 服务器执行，比客户端实现更可靠
+ */
+function buildApiTools(tools?: ToolDefinition[]): any[] | undefined {
+  const apiTools: any[] = [];
+
+  // 添加客户端工具
+  if (tools && tools.length > 0) {
+    for (const tool of tools) {
+      apiTools.push({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.inputSchema,
+      });
+    }
+  }
+
+  // 始终添加 WebSearch Server Tool（对齐官方实现）
+  const webSearchServerTool: WebSearchTool20250305 = {
+    name: 'web_search',
+    type: 'web_search_20250305',
+    // 可以根据需要添加配置：
+    // allowed_domains: ['example.com'],
+    // blocked_domains: ['spam.com'],
+    // max_uses: 10,
+    // user_location: { type: 'approximate', country: 'US' },
+  };
+  apiTools.push(webSearchServerTool);
+
+  return apiTools.length > 0 ? apiTools : undefined;
 }
 
 export class ClaudeClient {
@@ -550,6 +589,9 @@ export class ClaudeClient {
         // 格式化 system prompt（OAuth 模式需要特殊格式）
         const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
 
+        // 构建 API 工具列表（将 WebSearch 客户端工具替换为 Server Tool）
+        const apiTools = buildApiTools(tools);
+
         const requestParams: any = {
           model: currentModel,
           max_tokens: this.maxTokens,
@@ -558,11 +600,7 @@ export class ClaudeClient {
             role: m.role,
             content: m.content,
           })),
-          tools: tools?.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.inputSchema,
-          })),
+          tools: apiTools,
           // 添加 betas 参数（官方 Claude Code 的关键）
           ...(betas.length > 0 ? { betas } : {}),
           // 添加 metadata（官方 Claude Code 的 Ja 函数）
@@ -657,12 +695,14 @@ export class ClaudeClient {
       signal?: AbortSignal;
     }
   ): AsyncGenerator<{
-    type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_delta' | 'stop' | 'usage' | 'error' | 'response_headers';
+    type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_delta' | 'server_tool_use_start' | 'web_search_result' | 'stop' | 'usage' | 'error' | 'response_headers';
     text?: string;
     thinking?: string;
     id?: string;
     name?: string;
     input?: string;
+    /** Web search results (for server_tool_use) */
+    searchResults?: any[];
     stopReason?: string;
     usage?: {
       inputTokens: number;
@@ -704,9 +744,15 @@ export class ClaudeClient {
       // 格式化 system prompt（OAuth 模式需要特殊格式）
       const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
 
+      // 构建 API 工具列表（将 WebSearch 客户端工具替换为 Server Tool）
+      const apiTools = buildApiTools(tools);
+
       if (this.debug) {
         console.log('[ClaudeClient] Using beta.messages.stream with betas:', betas);
         console.log('[ClaudeClient] System prompt format:', Array.isArray(formattedSystem) ? 'array' : 'string');
+        if (apiTools?.some(t => t.type === 'web_search_20250305')) {
+          console.log('[ClaudeClient] WebSearch Server Tool enabled');
+        }
       }
 
       // 使用 beta.messages.stream 而不是 messages.stream（官方方式）
@@ -718,11 +764,7 @@ export class ClaudeClient {
           role: m.role,
           content: m.content,
         })) as any,
-        tools: tools?.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema,
-        })) as any,
+        tools: apiTools as any,
         // 添加 betas 参数（官方 Claude Code 的关键）
         ...(betas.length > 0 ? { betas } : {}),
         // 添加 metadata（官方 Claude Code 的 Ja 函数）
@@ -798,12 +840,18 @@ export class ClaudeClient {
           const block = event.content_block as any;
           if (block.type === 'tool_use') {
             yield { type: 'tool_use_start', id: block.id, name: block.name };
+          } else if (block.type === 'server_tool_use') {
+            // Server Tool (如 web_search) - 由 Anthropic 服务器执行
+            yield { type: 'server_tool_use_start', id: block.id, name: block.name };
           } else if (block.type === 'thinking') {
             // Extended Thinking block started
             if (this.debug) {
               console.log('[ClaudeClient] Extended Thinking block started');
             }
           }
+        } else if (event.type === 'content_block_stop') {
+          // 检查是否是 web_search_tool_result
+          // 注意：web_search_tool_result 作为完整块返回，需要从 finalMessage 中获取
         } else if (event.type === 'message_delta') {
           const delta = event as any;
           if (delta.usage) {

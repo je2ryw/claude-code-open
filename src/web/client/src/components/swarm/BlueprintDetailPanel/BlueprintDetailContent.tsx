@@ -201,10 +201,10 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const [blueprintOperating, setBlueprintOperating] = useState(false);
   const [blueprintOperationError, setBlueprintOperationError] = useState<string | null>(null);
 
-  // 架构流程图数据
-  const [architectureGraph, setArchitectureGraph] = useState<ArchitectureGraphData | null>(null);
-  const [architectureGraphLoading, setArchitectureGraphLoading] = useState(false);
-  const [architectureGraphError, setArchitectureGraphError] = useState<string | null>(null);
+  // 架构流程图数据（按类型缓存，支持并行加载）
+  const [architectureGraphCache, setArchitectureGraphCache] = useState<Map<ArchitectureGraphType, ArchitectureGraphData>>(new Map());
+  const [architectureGraphLoadingSet, setArchitectureGraphLoadingSet] = useState<Set<ArchitectureGraphType>>(new Set());
+  const [architectureGraphErrorMap, setArchitectureGraphErrorMap] = useState<Map<ArchitectureGraphType, string>>(new Map());
   const [selectedArchitectureType, setSelectedArchitectureType] = useState<ArchitectureGraphType>('full');
   // 架构图节点点击后需要跳转到的行号
   const [targetLine, setTargetLine] = useState<number | null>(null);
@@ -341,6 +341,48 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // Editor 准备状态（用于触发装饰器更新）
   const [editorReady, setEditorReady] = useState(false);
+
+  // ============ 布局控制状态 ============
+  // 左侧边栏折叠状态（默认展开）
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('codeEditor_sidebarCollapsed');
+    return saved === 'true';
+  });
+
+  // 大纲视图（符号列表）开关（默认关闭）
+  const [outlineEnabled, setOutlineEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('codeEditor_outlineEnabled');
+    return saved === 'true';
+  });
+
+  // 右侧语法详情面板开关（默认开启）
+  const [syntaxPanelEnabled, setSyntaxPanelEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('codeEditor_syntaxPanelEnabled');
+    return saved !== 'false'; // 默认开启
+  });
+
+  // Monaco 小地图开关（默认关闭）
+  const [minimapEnabled, setMinimapEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('codeEditor_minimapEnabled');
+    return saved === 'true'; // 默认关闭
+  });
+
+  // 持久化布局设置
+  useEffect(() => {
+    localStorage.setItem('codeEditor_sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('codeEditor_outlineEnabled', String(outlineEnabled));
+  }, [outlineEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('codeEditor_syntaxPanelEnabled', String(syntaxPanelEnabled));
+  }, [syntaxPanelEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('codeEditor_minimapEnabled', String(minimapEnabled));
+  }, [minimapEnabled]);
 
   // 应用 Monaco 装饰器（热力图、重构建议、气泡）
   useEffect(() => {
@@ -562,26 +604,58 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
   };
 
-  // 加载架构流程图（AI 生成）
+  // 加载架构流程图（AI 生成，支持并行加载多种类型）
   const loadArchitectureGraph = useCallback(async (type: ArchitectureGraphType, forceRefresh: boolean = false) => {
-    setArchitectureGraphLoading(true);
-    setArchitectureGraphError(null);
+    // 如果已有缓存且非强制刷新，直接使用缓存
+    if (!forceRefresh && architectureGraphCache.has(type)) {
+      setSelectedArchitectureType(type);
+      return;
+    }
+
+    // 将当前类型添加到加载中集合
+    setArchitectureGraphLoadingSet(prev => {
+      const newSet = new Set(prev);
+      newSet.add(type);
+      return newSet;
+    });
+    // 清除该类型的错误状态
+    setArchitectureGraphErrorMap(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(type);
+      return newMap;
+    });
     setSelectedArchitectureType(type);
+
     try {
       const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}${forceRefresh ? '&forceRefresh=true' : ''}`;
       const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
-        setArchitectureGraph(result.data);
+        // 更新缓存
+        setArchitectureGraphCache(prev => {
+          const newMap = new Map(prev);
+          newMap.set(type, result.data);
+          return newMap;
+        });
       } else {
         throw new Error(result.error || 'AI 生成架构图失败');
       }
     } catch (err) {
-      setArchitectureGraphError(err instanceof Error ? err.message : 'AI 生成架构图失败');
+      // 设置该类型的错误状态
+      setArchitectureGraphErrorMap(prev => {
+        const newMap = new Map(prev);
+        newMap.set(type, err instanceof Error ? err.message : 'AI 生成架构图失败');
+        return newMap;
+      });
     } finally {
-      setArchitectureGraphLoading(false);
+      // 从加载中集合移除当前类型
+      setArchitectureGraphLoadingSet(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(type);
+        return newSet;
+      });
     }
-  }, [blueprintId]);
+  }, [blueprintId, architectureGraphCache]);
 
   // 组件挂载时初始化项目和蓝图信息
   useEffect(() => {
@@ -1885,7 +1959,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         >
           <span className={styles.treeIcon}>
             {node.type === 'directory' ? (isExpanded ? '▼' : '▶') :
-             hasSymbols ? (isExpanded ? '▼' : '▶') : '　'}
+             (hasSymbols && outlineEnabled) ? (isExpanded ? '▼' : '▶') : '　'}
           </span>
           <span className={styles.fileIcon}>
             {node.type === 'directory' ? (isExpanded ? '📂' : '📁') : getFileIcon(node.name)}
@@ -1899,8 +1973,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             {node.children!.map(child => renderTreeNode(child, depth + 1))}
           </div>
         )}
-        {/* 文件的代码符号 */}
-        {node.type === 'file' && hasSymbols && isExpanded && (
+        {/* 文件的代码符号（大纲视图）- 受 outlineEnabled 控制 */}
+        {node.type === 'file' && hasSymbols && isExpanded && outlineEnabled && (
           <div>
             {symbols!.map(symbol => renderCodeSymbol(symbol, node.path, depth + 1))}
           </div>
@@ -3365,6 +3439,22 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
               >
                 {bubblesLoading ? '⏳' : bubblesEnabled ? '💬 关闭气泡' : '💡 AI 气泡'}
               </button>
+              {/* 语法详情面板开关 */}
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${syntaxPanelEnabled ? styles.active : ''}`}
+                onClick={() => setSyntaxPanelEnabled(!syntaxPanelEnabled)}
+                title={syntaxPanelEnabled ? '关闭语法详情面板' : '开启语法详情面板'}
+              >
+                {syntaxPanelEnabled ? '📖 关闭详情' : '📖 语法详情'}
+              </button>
+              {/* 小地图开关 */}
+              <button
+                className={`${styles.codeBtn} ${styles.aiBtn} ${minimapEnabled ? styles.active : ''}`}
+                onClick={() => setMinimapEnabled(!minimapEnabled)}
+                title={minimapEnabled ? '关闭小地图' : '开启小地图'}
+              >
+                {minimapEnabled ? '🗺️ 关闭地图' : '🗺️ 小地图'}
+              </button>
             </div>
 
             <span className={styles.toolDivider}>|</span>
@@ -3406,7 +3496,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
               theme="vs-dark"
               options={{
                 readOnly: !isEditing,
-                minimap: { enabled: true },
+                minimap: { enabled: minimapEnabled },
                 glyphMargin: true,
                 fontSize: 14,
                 fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
@@ -3485,8 +3575,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             />
           </div>
 
-          {/* 右侧行详情面板 */}
-          {beginnerMode && lineAnalysis && (
+          {/* 右侧行详情面板（语法详情）- 受 syntaxPanelEnabled 控制 */}
+          {beginnerMode && lineAnalysis && syntaxPanelEnabled && (
             <div className={styles.lineDetailPanel}>
               <div className={styles.lineDetailHeader}>
                 <span className={styles.lineDetailTitle}>📖 第 {lineAnalysis.lineNumber} 行</span>
@@ -3834,16 +3924,20 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             <div className={styles.moduleGraphBody}>
               <ArchitectureFlowGraph
                 blueprintId={blueprintId}
-                data={architectureGraph}
-                loading={architectureGraphLoading}
-                error={architectureGraphError}
+                data={architectureGraphCache.get(selectedArchitectureType) || null}
+                loading={architectureGraphLoadingSet.has(selectedArchitectureType)}
+                error={architectureGraphErrorMap.get(selectedArchitectureType) || null}
                 onRefresh={loadArchitectureGraph}
                 selectedType={selectedArchitectureType}
                 onTypeChange={(type) => {
                   setSelectedArchitectureType(type);
-                  loadArchitectureGraph(type);
+                  // 如果没有缓存，则加载
+                  if (!architectureGraphCache.has(type)) {
+                    loadArchitectureGraph(type);
+                  }
                 }}
                 onNodeClick={handleArchitectureNodeClick}
+                loadingTypes={architectureGraphLoadingSet}
               />
             </div>
           </section>
@@ -4125,57 +4219,80 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       {/* VS Code 风格主体 */}
       <div className={styles.vscodeLayout}>
         {/* 左侧边栏 - 资源管理器 */}
-        <div className={styles.sidebar} ref={sidebarRef}>
+        <div className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ''}`} ref={sidebarRef}>
           <div className={styles.sidebarHeader}>
-            <span className={styles.sidebarTitle}>资源管理器</span>
-            <div className={styles.sidebarToolbar}>
-              <button
-                className={styles.toolbarBtn}
-                onClick={() => setFileDialog({ visible: true, type: 'newFile', parentPath: selectedPath || 'src' })}
-                title="新建文件"
-              >
-                📄+
-              </button>
-              <button
-                className={styles.toolbarBtn}
-                onClick={() => setFileDialog({ visible: true, type: 'newFolder', parentPath: selectedPath || 'src' })}
-                title="新建文件夹"
-              >
-                📁+
-              </button>
-              <button
-                className={styles.toolbarBtn}
-                onClick={() => loadFileTree()}
-                title="刷新目录"
-              >
-                ↻
-              </button>
-            </div>
-          </div>
-          {/* 项目选择器 */}
-          <div className={styles.projectSelector}>
-            <ProjectSelector
-              currentProject={currentProject}
-              onProjectChange={handleProjectChange}
-              onOpenFolder={handleOpenFolder}
-            />
-          </div>
-          <div
-            className={styles.sidebarContent}
-            onContextMenu={(e) => {
-              // 空白区域右键菜单
-              if (e.target === e.currentTarget) {
-                handleContextMenu(e, '', 'empty');
-              }
-            }}
-          >
-            {treeError && (
-              <div className={styles.treeError}>
-                {treeError}
-              </div>
+            <button
+              className={styles.collapseBtn}
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? '展开边栏' : '折叠边栏'}
+            >
+              {sidebarCollapsed ? '▶' : '◀'}
+            </button>
+            {!sidebarCollapsed && (
+              <>
+                <span className={styles.sidebarTitle}>资源管理器</span>
+                <div className={styles.sidebarToolbar}>
+                  <button
+                    className={`${styles.toolbarBtn} ${outlineEnabled ? styles.active : ''}`}
+                    onClick={() => setOutlineEnabled(!outlineEnabled)}
+                    title={outlineEnabled ? '关闭大纲视图' : '开启大纲视图'}
+                  >
+                    {outlineEnabled ? '📑' : '📄'}
+                  </button>
+                  <button
+                    className={styles.toolbarBtn}
+                    onClick={() => setFileDialog({ visible: true, type: 'newFile', parentPath: selectedPath || 'src' })}
+                    title="新建文件"
+                  >
+                    📄+
+                  </button>
+                  <button
+                    className={styles.toolbarBtn}
+                    onClick={() => setFileDialog({ visible: true, type: 'newFolder', parentPath: selectedPath || 'src' })}
+                    title="新建文件夹"
+                  >
+                    📁+
+                  </button>
+                  <button
+                    className={styles.toolbarBtn}
+                    onClick={() => loadFileTree()}
+                    title="刷新目录"
+                  >
+                    ↻
+                  </button>
+                </div>
+              </>
             )}
-            {fileTree && renderTreeNode(fileTree)}
           </div>
+          {/* 项目选择器 - 折叠时隐藏 */}
+          {!sidebarCollapsed && (
+            <div className={styles.projectSelector}>
+              <ProjectSelector
+                currentProject={currentProject}
+                onProjectChange={handleProjectChange}
+                onOpenFolder={handleOpenFolder}
+              />
+            </div>
+          )}
+          {/* 文件树内容 - 折叠时隐藏 */}
+          {!sidebarCollapsed && (
+            <div
+              className={styles.sidebarContent}
+              onContextMenu={(e) => {
+                // 空白区域右键菜单
+                if (e.target === e.currentTarget) {
+                  handleContextMenu(e, '', 'empty');
+                }
+              }}
+            >
+              {treeError && (
+                <div className={styles.treeError}>
+                  {treeError}
+                </div>
+              )}
+              {fileTree && renderTreeNode(fileTree)}
+            </div>
+          )}
         </div>
 
         {/* 主编辑区 */}

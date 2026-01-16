@@ -105,6 +105,8 @@ export interface NFR {
 export interface CreateBlueprintRequest {
   name: string;
   description: string;
+  /** 项目路径（可选，默认使用当前项目路径或工作目录） */
+  projectPath?: string;
 }
 
 /**

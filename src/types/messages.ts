@@ -147,6 +147,114 @@ export interface ToolUseBlock {
   input: unknown;
 }
 
+// ============ Server Tool Types (Anthropic API built-in tools) ============
+
+/**
+ * A server tool use block indicating the model is using a server-side tool.
+ * Server tools are executed by Anthropic's servers, not the client.
+ * Currently only 'web_search' is supported.
+ */
+export interface ServerToolUseBlock {
+  /** The type identifier for server tool use */
+  type: 'server_tool_use';
+  /** Unique identifier for this tool use */
+  id: string;
+  /** Name of the server tool (currently only 'web_search') */
+  name: 'web_search';
+  /** Input parameters for the tool */
+  input: unknown;
+}
+
+/**
+ * A web search result block containing search results.
+ */
+export interface WebSearchResultBlock {
+  /** Encrypted content of the search result */
+  encrypted_content: string;
+  /** Age of the page (e.g., "2 days ago") */
+  page_age: string | null;
+  /** Title of the search result */
+  title: string;
+  /** Type identifier */
+  type: 'web_search_result';
+  /** URL of the search result */
+  url: string;
+}
+
+/**
+ * Error that can occur during web search.
+ */
+export interface WebSearchToolResultError {
+  /** Error code */
+  error_code: 'invalid_tool_input' | 'unavailable' | 'max_uses_exceeded' | 'too_many_requests' | 'query_too_long';
+  /** Type identifier */
+  type: 'web_search_tool_result_error';
+}
+
+/**
+ * A web search tool result block containing search results or error.
+ */
+export interface WebSearchToolResultBlock {
+  /** Content: either search results array or error */
+  content: WebSearchResultBlock[] | WebSearchToolResultError;
+  /** ID of the tool use this result corresponds to */
+  tool_use_id: string;
+  /** Type identifier */
+  type: 'web_search_tool_result';
+}
+
+/**
+ * User location for web search (used to provide more relevant results).
+ */
+export interface WebSearchUserLocation {
+  type: 'approximate';
+  /** City name */
+  city?: string | null;
+  /** Two-letter ISO country code */
+  country?: string | null;
+  /** Region/state name */
+  region?: string | null;
+  /** IANA timezone (e.g., "America/Los_Angeles") */
+  timezone?: string | null;
+}
+
+/**
+ * Web search server tool definition.
+ * This is added to the tools array in API requests to enable web search.
+ */
+export interface WebSearchTool20250305 {
+  /** Tool name - always 'web_search' */
+  name: 'web_search';
+  /** Tool type identifier */
+  type: 'web_search_20250305';
+  /** Only include results from these domains */
+  allowed_domains?: string[] | null;
+  /** Exclude results from these domains */
+  blocked_domains?: string[] | null;
+  /** Cache control for prompt caching */
+  cache_control?: { type: 'ephemeral' } | null;
+  /** Maximum number of times this tool can be used in a request */
+  max_uses?: number | null;
+  /** User's approximate location for more relevant results */
+  user_location?: WebSearchUserLocation | null;
+}
+
+/**
+ * Citation from web search results.
+ */
+export interface CitationsWebSearchResultLocation {
+  /** The cited text */
+  cited_text: string;
+  /** Encrypted index for reference */
+  encrypted_index: string;
+  /** Title of the cited source */
+  title: string | null;
+  /** Type identifier */
+  type: 'web_search_result_location';
+  /** URL of the cited source */
+  url: string;
+}
+
 /**
  * A tool use block parameter for input messages.
  * Identical to ToolUseBlock but used in request parameters.
@@ -199,8 +307,9 @@ export interface ToolResultBlockParam {
 
 /**
  * Union type of all possible content blocks in assistant responses.
+ * Includes both client tools (tool_use) and server tools (server_tool_use, web_search_tool_result).
  */
-export type ContentBlock = TextBlock | ToolUseBlock;
+export type ContentBlock = TextBlock | ToolUseBlock | ServerToolUseBlock | WebSearchToolResultBlock;
 
 /**
  * Union type of all possible content blocks in user/input messages.
@@ -222,7 +331,7 @@ export interface ToolReferenceBlock {
  * This includes both response blocks and request blocks.
  * Use this for internal message processing and storage.
  */
-export type AnyContentBlock = TextBlock | ToolUseBlock | ImageBlockParam | DocumentBlockParam | ToolResultBlockParam | ToolReferenceBlock;
+export type AnyContentBlock = TextBlock | ToolUseBlock | ServerToolUseBlock | WebSearchToolResultBlock | ImageBlockParam | DocumentBlockParam | ToolResultBlockParam | ToolReferenceBlock;
 
 // ============ Message Types ============
 

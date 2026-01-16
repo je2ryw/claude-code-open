@@ -376,30 +376,8 @@ export interface WebFetchInput {
   prompt: string;
 }
 
-/**
- * Input parameters for the WebSearch tool
- *
- * Performs web searches with domain filtering.
- */
-export interface WebSearchInput {
-  /**
-   * The search query to use
-   * @example "TypeScript best practices 2024"
-   */
-  query: string;
-
-  /**
-   * Only include search results from these domains
-   * @example ["stackoverflow.com", "github.com"]
-   */
-  allowed_domains?: string[];
-
-  /**
-   * Never include search results from these domains
-   * @example ["pinterest.com", "spam.com"]
-   */
-  blocked_domains?: string[];
-}
+// WebSearchInput 已移除 - WebSearch 现在使用 Anthropic API Server Tool (web_search_20250305)
+// Server Tool 由 Anthropic 服务器执行，客户端不需要处理输入参数
 
 // ============================================================================
 // Todo Tool
@@ -780,7 +758,7 @@ export type ToolInputSchemas =
   | GlobInput
   | GrepInput
   | WebFetchInput
-  | WebSearchInput
+  // WebSearchInput 已移除 - 使用 Server Tool
   | TodoWriteInput
   | NotebookEditInput
   | McpInput

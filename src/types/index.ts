@@ -42,6 +42,14 @@ export type {
 export type {
   Message,
   ContentBlock,
+  // Server Tool 类型 (Anthropic API built-in tools)
+  ServerToolUseBlock,
+  WebSearchResultBlock,
+  WebSearchToolResultBlock,
+  WebSearchToolResultError,
+  WebSearchTool20250305,
+  WebSearchUserLocation,
+  CitationsWebSearchResultLocation,
 } from './messages.js';
 
 // --- 配置相关 Configuration-related ---
@@ -137,7 +145,7 @@ export type {
 // --- Web 工具 ---
 export type {
   WebFetchInput as WebFetchToolInput,
-  WebSearchInput as WebSearchToolInput,
+  // WebSearchInput 已移除 - 使用 Server Tool (web_search_20250305)
 } from './tools.js';
 
 // --- Todo 工具 ---

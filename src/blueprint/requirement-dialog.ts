@@ -825,8 +825,9 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
    * 从状态创建蓝图
    */
   private async createBlueprintFromState(state: DialogState): Promise<Blueprint> {
-    // 创建蓝图
-    const blueprint = blueprintManager.createBlueprint(state.projectName, state.projectDescription);
+    // 创建蓝图，使用当前项目路径或当前工作目录
+    const projectPath = blueprintManager.getCurrentProjectPath() || process.cwd();
+    const blueprint = blueprintManager.createBlueprint(state.projectName, state.projectDescription, projectPath);
 
     // 添加业务流程
     for (const process of state.businessProcesses) {

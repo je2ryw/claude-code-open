@@ -22,7 +22,8 @@ import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
 import { ReadTool, WriteTool, EditTool } from './file.js';
 import { GlobTool, GrepTool } from './search.js';
-import { WebFetchTool, WebSearchTool } from './web.js';
+import { WebFetchTool } from './web.js';
+// WebSearchTool 已移除 - 使用 Anthropic API Server Tool (web_search_20250305) 替代
 import { TodoWriteTool } from './todo.js';
 import { TaskTool, TaskOutputTool } from './agent.js';
 import { NotebookEditTool } from './notebook.js';
@@ -47,9 +48,11 @@ export function registerAllTools(): void {
   toolRegistry.register(new GlobTool());
   toolRegistry.register(new GrepTool());
 
-  // 4. Web 工具 (2个)
+  // 4. Web 工具 (1个客户端 + Server Tool)
+  // WebFetch: 客户端工具，用于获取网页内容
   toolRegistry.register(new WebFetchTool());
-  toolRegistry.register(new WebSearchTool());
+  // WebSearch: 使用 Anthropic API Server Tool (web_search_20250305)
+  // 在 client.ts 的 buildApiTools 中自动添加，无需注册客户端工具
 
   // 5. 任务管理 (3个)
   toolRegistry.register(new TodoWriteTool());

@@ -70,6 +70,25 @@
   border-color: #a78bfa;
 }
 
+.typeButtonLoading {
+  position: relative;
+  border-color: #f59e0b;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.typeButtonLoading .typeIcon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 .typeIcon {
   font-size: 14px;
 }

@@ -1930,6 +1930,36 @@ export class ConversationLoop {
           if (this.options.verbose) {
             process.stdout.write(block.text || '');
           }
+        } else if (block.type === 'server_tool_use') {
+          // Server Tool (如 web_search) - 由 Anthropic 服务器执行
+          // 不需要客户端执行，只记录日志
+          assistantContent.push(block);
+          const serverToolBlock = block as any;
+          if (this.options.verbose) {
+            console.log(chalk.cyan(`\n[Server Tool: ${serverToolBlock.name}]`));
+            console.log(chalk.gray('(executed by Anthropic servers)'));
+          }
+          // Server Tool 不需要返回 tool_result，结果由服务器自动提供
+        } else if (block.type === 'web_search_tool_result') {
+          // Web Search 结果 - 由 Anthropic 服务器返回
+          assistantContent.push(block);
+          const searchResultBlock = block as any;
+          if (this.options.verbose) {
+            console.log(chalk.cyan(`\n[Web Search Results]`));
+            // 显示搜索结果摘要
+            if (Array.isArray(searchResultBlock.content)) {
+              const results = searchResultBlock.content;
+              console.log(chalk.gray(`Found ${results.length} results`));
+              for (const result of results.slice(0, 3)) {
+                if (result.type === 'web_search_result') {
+                  console.log(chalk.gray(`  - ${result.title}: ${result.url}`));
+                }
+              }
+            } else if (searchResultBlock.content?.type === 'web_search_tool_result_error') {
+              console.log(chalk.red(`Search error: ${searchResultBlock.content.error_code}`));
+            }
+          }
+          // Web Search 结果已经是完整的，不需要额外的 tool_result
         } else if (block.type === 'tool_use') {
           assistantContent.push(block);
 
@@ -2125,7 +2155,7 @@ Guidelines:
       }
 
       const assistantContent: ContentBlock[] = [];
-      const toolCalls: Map<string, { name: string; input: string }> = new Map();
+      const toolCalls: Map<string, { name: string; input: string; isServerTool: boolean }> = new Map();
       let currentToolId = '';
 
       try {
@@ -2155,11 +2185,17 @@ Guidelines:
             }
           } else if (event.type === 'tool_use_start') {
             currentToolId = event.id || '';
-            toolCalls.set(currentToolId, { name: event.name || '', input: '' });
+            toolCalls.set(currentToolId, { name: event.name || '', input: '', isServerTool: false });
             yield { type: 'tool_start', toolName: event.name, toolInput: undefined };
+          } else if (event.type === 'server_tool_use_start') {
+            // Server Tool (如 web_search) - 由 Anthropic 服务器执行
+            // 不需要客户端执行，只记录
+            currentToolId = event.id || '';
+            toolCalls.set(currentToolId, { name: event.name || '', input: '', isServerTool: true });
+            yield { type: 'tool_start', toolName: `[Server] ${event.name}`, toolInput: undefined };
           } else if (event.type === 'tool_use_delta') {
             const tool = toolCalls.get(currentToolId);
-            if (tool) {
+            if (tool && !tool.isServerTool) {
               tool.input += event.input || '';
             }
           } else if (event.type === 'response_headers') {
@@ -2198,6 +2234,26 @@ Guidelines:
       const allNewMessages: Array<{ role: 'user'; content: any[] }> = [];
 
       for (const [id, tool] of toolCalls) {
+        // 跳过 Server Tool（由 Anthropic 服务器执行，不需要客户端处理）
+        if (tool.isServerTool) {
+          // Server Tool 的结果会自动包含在 API 响应中
+          // 只需要记录到 assistantContent 中
+          assistantContent.push({
+            type: 'server_tool_use' as any,
+            id,
+            name: tool.name,
+            input: {},
+          });
+          yield {
+            type: 'tool_end',
+            toolName: `[Server] ${tool.name}`,
+            toolInput: undefined,
+            toolResult: '(executed by Anthropic servers)',
+            toolError: undefined,
+          };
+          continue;
+        }
+
         try {
           const input = JSON.parse(tool.input || '{}');
 

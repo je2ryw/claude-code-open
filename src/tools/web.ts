@@ -1,6 +1,9 @@
 /**
  * Web 工具
- * WebFetch 和 WebSearch
+ * WebFetch: 获取网页内容
+ *
+ * 注意：WebSearch 已迁移到 Anthropic API Server Tool (web_search_20250305)
+ * 在 client.ts 的 buildApiTools 中自动添加，由 Anthropic 服务器执行搜索
  */
 
 import axios, { AxiosProxyConfig } from 'axios';
@@ -8,7 +11,7 @@ import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import { LRUCache } from 'lru-cache';
 import { BaseTool, type ToolOptions } from './base.js';
-import type { WebFetchInput, WebSearchInput, ToolResult, ToolDefinition } from '../types/index.js';
+import type { WebFetchInput, ToolResult, ToolDefinition } from '../types/index.js';
 import { ErrorCode } from '../types/errors.js';
 import { persistLargeOutputSync } from './output-persistence.js';
 
@@ -18,15 +21,6 @@ import { persistLargeOutputSync } from './output-persistence.js';
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024;
 
 /**
- * 搜索进度更新接口
- */
-interface SearchProgressUpdate {
-  type: 'query_update' | 'search_results_received';
-  query?: string;
-  resultCount?: number;
-}
-
-/**
  * 缓存接口
  */
 interface CachedContent {
@@ -34,30 +28,6 @@ interface CachedContent {
   contentType: string;
   statusCode: number;
   fetchedAt: number;
-}
-
-/**
- * 搜索结果接口
- */
-interface SearchResult {
-  title: string;
-  url: string;
-  snippet?: string;
-  publishDate?: string;
-}
-
-/**
- * 缓存的搜索结果接口
- * T-012: WebSearch 缓存实现
- */
-interface CachedSearchResults {
-  query: string;
-  results: SearchResult[];
-  fetchedAt: number;
-  filters?: {
-    allowedDomains?: string[];
-    blockedDomains?: string[];
-  };
 }
 
 /**
@@ -73,40 +43,6 @@ const webFetchCache = new LRUCache<string, CachedContent>({
     return Buffer.byteLength(value.content, 'utf8');
   },
 });
-
-/**
- * WebSearch 缓存
- * T-012: WebSearch 缓存实现
- * - TTL: 1小时 (3,600,000ms) - 搜索结果时效性较长
- * - 最大条目: 500 个查询
- * - 缓存键: query + allowedDomains + blockedDomains
- */
-const webSearchCache = new LRUCache<string, CachedSearchResults>({
-  max: 500,                  // 最多缓存 500 个不同查询
-  ttl: 60 * 60 * 1000,      // 1小时过期
-  updateAgeOnGet: true,      // 访问时更新年龄
-  updateAgeOnHas: false,
-});
-
-/**
- * 生成搜索缓存键
- * T-012: 缓存键生成逻辑
- * @param query 搜索查询
- * @param allowedDomains 允许的域名列表
- * @param blockedDomains 阻止的域名列表
- * @returns 缓存键字符串
- */
-function generateSearchCacheKey(
-  query: string,
-  allowedDomains?: string[],
-  blockedDomains?: string[]
-): string {
-  const normalizedQuery = query.trim().toLowerCase();
-  const allowed = allowedDomains?.sort().join(',') || '';
-  const blocked = blockedDomains?.sort().join(',') || '';
-
-  return `${normalizedQuery}|${allowed}|${blocked}`;
-}
 
 /**
  * 创建增强的 Turndown 服务
@@ -633,493 +569,11 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
   }
 }
 
-export class WebSearchTool extends BaseTool<WebSearchInput, ToolResult> {
-  name = 'WebSearch';
-  description = `
-- Allows Claude to search the web and use the results to inform responses
-- Provides up-to-date information for current events and recent data
-- Returns search result information formatted as search result blocks, including links as markdown hyperlinks
-- Use this tool for accessing information beyond Claude's knowledge cutoff
-- Searches are performed automatically within a single API call
-
-CRITICAL REQUIREMENT - You MUST follow this:
-  - After answering the user's question, you MUST include a "Sources:" section at the end of your response
-  - In the Sources section, list all relevant URLs from the search results as markdown hyperlinks: [Title](URL)
-  - This is MANDATORY - never skip including sources in your response
-  - Example format:
-
-    [Your answer here]
-
-    Sources:
-    - [Source Title 1](https://example.com/1)
-    - [Source Title 2](https://example.com/2)
-
-Usage notes:
-  - Domain filtering is supported to include or block specific websites
-  - Web search is only available in the US
-
-IMPORTANT - Use the correct year in search queries:
-  - Today's date is ${new Date().toISOString().split('T')[0]}. You MUST use this year when searching for recent information, documentation, or current events.
-  - Example: If today is 2025-07-15 and the user asks for "latest React docs", search for "React documentation 2025", NOT "React documentation 2024"
-`;
-
-  private searchProgress?: (update: SearchProgressUpdate) => void;
-
-  constructor(options?: ToolOptions) {
-    super({
-      maxRetries: 3, // 搜索API失败时重试最多3次
-      baseTimeout: 15000, // 15秒超时（搜索通常更快）
-      retryableErrors: [
-        ErrorCode.NETWORK_CONNECTION_FAILED,
-        ErrorCode.NETWORK_TIMEOUT,
-        ErrorCode.NETWORK_RATE_LIMITED,
-        ErrorCode.NETWORK_DNS_FAILED,
-        ErrorCode.NETWORK_HOST_UNREACHABLE,
-      ],
-      ...options,
-    });
-  }
-
-  getInputSchema(): ToolDefinition['inputSchema'] {
-    return {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          minLength: 2,
-          description: 'The search query to use',
-        },
-        allowed_domains: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Only include results from these domains',
-        },
-        blocked_domains: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Never include results from these domains',
-        },
-      },
-      required: ['query'],
-    };
-  }
-
-  /**
-   * 设置进度回调函数
-   */
-  setProgressCallback(callback: (update: SearchProgressUpdate) => void) {
-    this.searchProgress = callback;
-  }
-
-  /**
-   * 从 URL 提取域名
-   */
-  private extractDomain(url: string): string {
-    try {
-      const parsed = new URL(url);
-      // 移除 www. 前缀
-      return parsed.hostname.replace(/^www\./, '');
-    } catch {
-      return '';
-    }
-  }
-
-  /**
-   * 应用域名过滤
-   */
-  private applyDomainFilters(
-    results: SearchResult[],
-    allowedDomains?: string[],
-    blockedDomains?: string[]
-  ): SearchResult[] {
-    let filtered = results;
-
-    // 应用白名单
-    if (allowedDomains && allowedDomains.length > 0) {
-      const normalizedAllowed = allowedDomains.map((d) => d.toLowerCase());
-      filtered = filtered.filter((result) => {
-        const domain = this.extractDomain(result.url).toLowerCase();
-        return normalizedAllowed.includes(domain);
-      });
-    }
-
-    // 应用黑名单
-    if (blockedDomains && blockedDomains.length > 0) {
-      const normalizedBlocked = blockedDomains.map((d) => d.toLowerCase());
-      filtered = filtered.filter((result) => {
-        const domain = this.extractDomain(result.url).toLowerCase();
-        return !normalizedBlocked.includes(domain);
-      });
-    }
-
-    return filtered;
-  }
-
-  /**
-   * 格式化搜索结果为 Markdown
-   */
-  private formatSearchResults(results: SearchResult[], query: string): string {
-    let output = `Search results for: "${query}"\n\n`;
-
-    if (results.length === 0) {
-      output += 'No results found.\n';
-      return output;
-    }
-
-    // 结果列表
-    results.forEach((result, index) => {
-      output += `${index + 1}. [${result.title}](${result.url})\n`;
-      if (result.snippet) {
-        output += `   ${result.snippet}\n`;
-      }
-      if (result.publishDate) {
-        output += `   Published: ${result.publishDate}\n`;
-      }
-      output += '\n';
-    });
-
-    // 来源部分
-    output += '\nSources:\n';
-    results.forEach((result) => {
-      output += `- [${result.title}](${result.url})\n`;
-    });
-
-    return output;
-  }
-
-  /**
-   * 执行搜索
-   * T-012: 集成 DuckDuckGo Instant Answer API（免费）
-   *
-   * 支持的搜索 API：
-   * - DuckDuckGo Instant Answer API (当前实现 - 免费)
-   * - Bing Search API (需要 BING_SEARCH_API_KEY 环境变量)
-   * - Google Custom Search API (需要 GOOGLE_SEARCH_API_KEY 和 GOOGLE_SEARCH_ENGINE_ID)
-   */
-  private async performSearch(query: string): Promise<SearchResult[]> {
-    // 优先使用 Bing Search API（如果配置）
-    const bingApiKey = process.env.BING_SEARCH_API_KEY;
-    if (bingApiKey) {
-      return this.searchWithBing(query, bingApiKey);
-    }
-
-    // 优先使用 Google Custom Search API（如果配置）
-    const googleApiKey = process.env.GOOGLE_SEARCH_API_KEY;
-    const googleCx = process.env.GOOGLE_SEARCH_ENGINE_ID;
-    if (googleApiKey && googleCx) {
-      return this.searchWithGoogle(query, googleApiKey, googleCx);
-    }
-
-    // 回退到 DuckDuckGo（免费，无需 API 密钥）
-    return this.searchWithDuckDuckGo(query);
-  }
-
-  /**
-   * DuckDuckGo Instant Answer API 搜索
-   * 免费，无需 API 密钥
-   */
-  private async searchWithDuckDuckGo(query: string): Promise<SearchResult[]> {
-    try {
-      const response = await axios.get('https://api.duckduckgo.com/', {
-        params: {
-          q: query,
-          format: 'json',
-          no_html: 1,
-          skip_disambig: 1,
-        },
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; ClaudeCode/2.0)',
-        },
-      });
-
-      const data = response.data;
-      const results: SearchResult[] = [];
-
-      // 提取相关主题
-      if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
-        for (const topic of data.RelatedTopics.slice(0, 10)) {
-          // 处理嵌套主题
-          if (topic.Topics && Array.isArray(topic.Topics)) {
-            for (const subTopic of topic.Topics.slice(0, 3)) {
-              if (subTopic.Text && subTopic.FirstURL) {
-                results.push({
-                  title: subTopic.Text.split(' - ')[0] || subTopic.Text,
-                  url: subTopic.FirstURL,
-                  snippet: subTopic.Text,
-                });
-              }
-            }
-          } else if (topic.Text && topic.FirstURL) {
-            results.push({
-              title: topic.Text.split(' - ')[0] || topic.Text,
-              url: topic.FirstURL,
-              snippet: topic.Text,
-            });
-          }
-        }
-      }
-
-      // 添加抽象答案（如果有）
-      if (data.Abstract && data.AbstractURL) {
-        results.unshift({
-          title: data.Heading || 'DuckDuckGo Instant Answer',
-          url: data.AbstractURL,
-          snippet: data.Abstract,
-        });
-      }
-
-      return results;
-    } catch (err: any) {
-      console.error('DuckDuckGo search error:', err.message);
-      return [];
-    }
-  }
-
-  /**
-   * Bing Search API 搜索
-   * 需要 Azure 订阅和 API 密钥
-   */
-  private async searchWithBing(query: string, apiKey: string): Promise<SearchResult[]> {
-    try {
-      const response = await axios.get(
-        'https://api.bing.microsoft.com/v7.0/search',
-        {
-          params: { q: query, count: 10 },
-          headers: {
-            'Ocp-Apim-Subscription-Key': apiKey,
-          },
-          timeout: 10000,
-        }
-      );
-
-      const webPages = response.data.webPages?.value || [];
-
-      return webPages.map((page: any) => ({
-        title: page.name || '',
-        url: page.url || '',
-        snippet: page.snippet || '',
-        publishDate: page.dateLastCrawled,
-      }));
-    } catch (err: any) {
-      console.error('Bing Search API error:', err.message);
-      // 回退到 DuckDuckGo
-      return this.searchWithDuckDuckGo(query);
-    }
-  }
-
-  /**
-   * Google Custom Search API 搜索
-   * 需要 API 密钥和搜索引擎 ID
-   */
-  private async searchWithGoogle(
-    query: string,
-    apiKey: string,
-    cx: string
-  ): Promise<SearchResult[]> {
-    try {
-      const response = await axios.get(
-        'https://www.googleapis.com/customsearch/v1',
-        {
-          params: { key: apiKey, cx, q: query, num: 10 },
-          timeout: 10000,
-        }
-      );
-
-      const items = response.data.items || [];
-
-      return items.map((item: any) => ({
-        title: item.title || '',
-        url: item.link || '',
-        snippet: item.snippet || '',
-      }));
-    } catch (err: any) {
-      console.error('Google Search API error:', err.message);
-      // 回退到 DuckDuckGo
-      return this.searchWithDuckDuckGo(query);
-    }
-  }
-
-  async execute(input: WebSearchInput): Promise<ToolResult> {
-    const { query, allowed_domains, blocked_domains } = input;
-
-    // 参数冲突验证
-    if (allowed_domains && blocked_domains) {
-      return {
-        success: false,
-        error: 'Cannot specify both allowed_domains and blocked_domains',
-        errorCode: 2,
-      };
-    }
-
-    // 记录开始时间
-    const startTime = performance.now();
-
-    // 发送进度更新：查询开始
-    if (this.searchProgress) {
-      this.searchProgress({
-        type: 'query_update',
-        query,
-      });
-    }
-
-    // 生成缓存键
-    // T-012: 使用缓存优化搜索性能
-    const cacheKey = generateSearchCacheKey(query, allowed_domains, blocked_domains);
-
-    // 检查缓存
-    const cached = webSearchCache.get(cacheKey);
-    if (cached) {
-      const cacheAge = Math.floor((Date.now() - cached.fetchedAt) / 1000 / 60); // 分钟
-      const durationSeconds = (performance.now() - startTime) / 1000;
-
-      // 发送进度更新：搜索结果接收（从缓存）
-      if (this.searchProgress) {
-        this.searchProgress({
-          type: 'search_results_received',
-          query,
-          resultCount: cached.results.length,
-        });
-      }
-
-      return {
-        success: true,
-        output:
-          this.formatSearchResults(cached.results, query) +
-          `\n\n_[Cached results from ${cacheAge} minute(s) ago]_`,
-        data: {
-          query,
-          results: cached.results,
-          durationSeconds,
-        },
-      };
-    }
-
-    // 使用重试和超时包装器
-    return this.executeWithRetryAndTimeout(async () => {
-      try {
-        // 执行搜索
-        const rawResults = await this.performSearch(query);
-
-        // 应用域名过滤
-        const filteredResults = this.applyDomainFilters(
-          rawResults,
-          allowed_domains,
-          blocked_domains
-        );
-
-        // 计算持续时间
-        const durationSeconds = (performance.now() - startTime) / 1000;
-
-        // 发送进度更新：搜索结果接收
-        if (this.searchProgress) {
-          this.searchProgress({
-            type: 'search_results_received',
-            query,
-            resultCount: filteredResults.length,
-          });
-        }
-
-        // 缓存结果（即使为空也缓存，避免重复请求）
-        webSearchCache.set(cacheKey, {
-          query,
-          results: filteredResults,
-          fetchedAt: Date.now(),
-          filters: {
-            allowedDomains: allowed_domains,
-            blockedDomains: blocked_domains,
-          },
-        });
-
-        // 如果有真实结果，格式化并返回
-        if (filteredResults.length > 0) {
-          return {
-            success: true,
-            output: this.formatSearchResults(filteredResults, query),
-            data: {
-              query,
-              results: filteredResults,
-              durationSeconds,
-            },
-          };
-        }
-
-        // 如果搜索返回了结果但被过滤器全部过滤掉了
-        if (rawResults.length > 0 && filteredResults.length === 0) {
-          return {
-            success: true,
-            output: `Web search for: "${query}"
-
-No results found after applying domain filters.
-
-Filters applied:
-- Allowed domains: ${allowed_domains?.join(', ') || 'all'}
-- Blocked domains: ${blocked_domains?.join(', ') || 'none'}
-
-Try adjusting your domain filters or search query.`,
-            data: {
-              query,
-              results: [],
-              durationSeconds,
-            },
-          };
-        }
-
-        // 如果搜索 API 没有返回结果
-        return {
-          success: true,
-          output: `Web search for: "${query}"
-
-No results found. This could be due to:
-1. The search query is too specific or uncommon
-2. DuckDuckGo Instant Answer API has limited coverage
-3. Network or API issues
-
-Suggestions:
-- Try a different search query
-- Configure Bing or Google Search API for better results:
-  * Bing: Set BING_SEARCH_API_KEY environment variable
-  * Google: Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID
-
-Current search provider: DuckDuckGo Instant Answer API (free)`,
-          data: {
-            query,
-            results: [],
-            durationSeconds,
-          },
-        };
-      } catch (err: any) {
-        const durationSeconds = (performance.now() - startTime) / 1000;
-        // 检查是否为可重试的网络错误
-        if (
-          err.code === 'ETIMEDOUT' ||
-          err.code === 'ECONNRESET' ||
-          err.code === 'ECONNREFUSED' ||
-          err.code === 'ENETUNREACH' ||
-          err.message?.includes('timeout') ||
-          err.message?.includes('network')
-        ) {
-          // 抛出错误让重试机制捕获
-          throw new Error(`Search error: ${err.message || String(err)}`);
-        }
-        // 其他错误直接返回
-        return {
-          success: false,
-          error: `Search error: ${err.message || String(err)}`,
-          data: {
-            query,
-            results: [],
-            durationSeconds,
-          },
-        };
-      }
-    });
-  }
-}
-
 /**
  * 缓存统计信息
  * 用于监控和调试缓存使用情况
+ *
+ * 注意：WebSearch 已迁移到 Anthropic API Server Tool，不再有客户端缓存
  */
 export function getWebCacheStats() {
   return {
@@ -1130,20 +584,13 @@ export function getWebCacheStats() {
       ttl: webFetchCache.ttl,
       itemCount: webFetchCache.size,
     },
-    search: {
-      size: webSearchCache.size,
-      max: webSearchCache.max,
-      ttl: webSearchCache.ttl,
-      itemCount: webSearchCache.size,
-    },
   };
 }
 
 /**
- * 清除所有 Web 缓存
+ * 清除 Web 缓存
  * 用于调试或重置缓存状态
  */
 export function clearWebCaches() {
   webFetchCache.clear();
-  webSearchCache.clear();
 }

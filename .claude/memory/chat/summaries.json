@@ -92,13 +92,26 @@
       "startTime": "2026-01-16T02:26:05.714Z",
       "endTime": "2026-01-16T02:26:05.714Z",
       "messageCount": 1
+    },
+    {
+      "id": "mem_1768542613058_zxgs74",
+      "sessionId": "mkgglnbn-e43063a9",
+      "summary": "用户询问: 合肥今天的天气 | 助手回复: 让我帮你查询合肥今天的天气情况。根据搜索结果，我为你整理了合肥今天（1月16日）的天气信息：\n\n## 合肥今日天气（2026年1月16日）\n\n**当前天气状况：**\n- **天气：** 晴\n- **温...",
+      "topics": [],
+      "filesDiscussed": [],
+      "symbolsDiscussed": [],
+      "emotion": "neutral",
+      "importance": 2,
+      "startTime": "2026-01-16T05:50:13.058Z",
+      "endTime": "2026-01-16T05:50:13.058Z",
+      "messageCount": 1
     }
   ],
-  "lastUpdated": "2026-01-16T02:26:05.730Z",
+  "lastUpdated": "2026-01-16T05:50:13.091Z",
   "stats": {
-    "totalConversations": 7,
-    "totalMessages": 7,
+    "totalConversations": 8,
+    "totalMessages": 8,
     "oldestConversation": "2026-01-15T14:26:13.567Z",
-    "newestConversation": "2026-01-16T02:26:05.714Z"
+    "newestConversation": "2026-01-16T05:50:13.058Z"
   }
 }

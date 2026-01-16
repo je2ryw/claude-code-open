@@ -1518,8 +1518,8 @@ ${context}
    * 从代码库信息生成蓝图
    */
   generateBlueprint(codebase: CodebaseInfo): Blueprint {
-    // 创建蓝图
-    const blueprint = blueprintManager.createBlueprint(codebase.name, codebase.description);
+    // 创建蓝图，传入项目路径
+    const blueprint = blueprintManager.createBlueprint(codebase.name, codebase.description, codebase.rootDir);
 
     const normalizeModulePath = (value: string): string =>
       value.replace(/\\/g, '/').replace(/\/+$/, '');

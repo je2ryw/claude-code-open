@@ -104,8 +104,10 @@ router.get('/blueprints/:id/summary', (req: Request, res: Response) => {
  */
 router.post('/blueprints', (req: Request, res: Response) => {
   try {
-    const { name, description } = req.body;
-    const blueprint = blueprintManager.createBlueprint(name, description);
+    const { name, description, projectPath } = req.body;
+    // 使用请求中的 projectPath，或者当前项目路径，或者当前工作目录
+    const targetPath = projectPath || blueprintManager.getCurrentProjectPath() || process.cwd();
+    const blueprint = blueprintManager.createBlueprint(name, description, targetPath);
     res.json({ success: true, data: blueprint });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
