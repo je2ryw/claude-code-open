@@ -211,6 +211,11 @@ export interface HookResult {
   decision?: 'allow' | 'deny' | 'block';
   /** 决策原因 */
   reason?: string;
+  /**
+   * v2.1.9: PreToolUse hooks 返回的额外上下文信息
+   * 会被添加到发送给模型的消息中
+   */
+  additionalContext?: string;
 }
 
 /**
@@ -1077,12 +1082,13 @@ export function isBlocked(results: HookResult[]): { blocked: boolean; message?: 
 
 /**
  * PreToolUse hook 辅助函数
+ * v2.1.9: 支持返回 additionalContext
  */
 export async function runPreToolUseHooks(
   toolName: string,
   toolInput: unknown,
   sessionId?: string
-): Promise<{ allowed: boolean; message?: string }> {
+): Promise<{ allowed: boolean; message?: string; additionalContext?: string }> {
   const results = await runHooks({
     event: 'PreToolUse',
     toolName,
@@ -1091,9 +1097,19 @@ export async function runPreToolUseHooks(
   });
 
   const blockCheck = isBlocked(results);
+
+  // v2.1.9: 收集所有 hook 返回的 additionalContext
+  const additionalContexts = results
+    .filter((r) => r.additionalContext)
+    .map((r) => r.additionalContext);
+
   return {
     allowed: !blockCheck.blocked,
     message: blockCheck.message,
+    // 如果有多个 hook 返回 additionalContext，用分隔符连接
+    additionalContext: additionalContexts.length > 0
+      ? additionalContexts.join('\n---\n')
+      : undefined,
   };
 }
 

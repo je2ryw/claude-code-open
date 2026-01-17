@@ -422,7 +422,12 @@ export const App: React.FC<AppProps> = ({
       }
     },
     getCurrentInput: () => currentInputRef.current,
-    disabled: false, // 不禁用，即使在处理中也允�?Ctrl+B
+    // v2.1.9: 支持 Ctrl+G 外部编辑器后更新输入框内容
+    setCurrentInput: (value: string) => {
+      currentInputRef.current = value;
+      // 触发 Input 组件的强制更新（如果需要）
+    },
+    disabled: false, // 不禁用，即使在处理中也允许 Ctrl+B
   });
 
   // 处理键盘输入

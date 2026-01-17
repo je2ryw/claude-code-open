@@ -851,6 +851,11 @@ ${skillsXml}
       skillContent += `\n\n**ARGUMENTS:** ${args}`;
     }
 
+    // v2.1.9: 替换 ${CLAUDE_SESSION_ID} 占位符
+    // 官网实现：M = M.replace(/\$\{CLAUDE_SESSION_ID\}/g, H0())
+    const sessionId = process.env.CLAUDE_CODE_SESSION_ID || '';
+    skillContent = skillContent.replace(/\$\{CLAUDE_SESSION_ID\}/g, sessionId);
+
     // 记录已调用的 skill（对齐官网 KP0）
     recordInvokedSkill(skill.skillName, skill.filePath, skillContent);
 

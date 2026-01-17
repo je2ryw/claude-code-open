@@ -1,6 +1,7 @@
 /**
  * Plan 持久化管理器
  * 负责保存、加载、管理计划到 ~/.claude/plans/
+ * v2.1.9: 支持 plansDirectory 配置自定义存储目录
  */
 
 import * as fs from 'fs';
@@ -18,12 +19,52 @@ import type {
   PlanExportOptions,
 } from './types.js';
 
-// 计划存储目录
-const PLANS_DIR = path.join(os.homedir(), '.claude', 'plans');
-const TEMPLATES_DIR = path.join(os.homedir(), '.claude', 'plan-templates');
-const VERSIONS_DIR = path.join(os.homedir(), '.claude', 'plan-versions');
+// 默认计划存储目录
+const DEFAULT_PLANS_DIR = path.join(os.homedir(), '.claude', 'plans');
+const DEFAULT_TEMPLATES_DIR = path.join(os.homedir(), '.claude', 'plan-templates');
+const DEFAULT_VERSIONS_DIR = path.join(os.homedir(), '.claude', 'plan-versions');
 const MAX_PLANS = 500; // 最多保存的计划数
 const PLAN_EXPIRY_DAYS = 90; // 计划过期天数
+
+// v2.1.9: 当前配置的 plans 目录（可被 setPlansDirectory 修改）
+let currentPlansDir = DEFAULT_PLANS_DIR;
+let currentTemplatesDir = DEFAULT_TEMPLATES_DIR;
+let currentVersionsDir = DEFAULT_VERSIONS_DIR;
+
+/**
+ * v2.1.9: 设置自定义 plans 目录
+ * @param plansDirectory 自定义目录路径（相对于项目根目录或绝对路径）
+ * @param projectRoot 项目根目录（用于解析相对路径）
+ */
+export function setPlansDirectory(plansDirectory?: string, projectRoot?: string): void {
+  if (!plansDirectory) {
+    // 恢复默认目录
+    currentPlansDir = DEFAULT_PLANS_DIR;
+    currentTemplatesDir = DEFAULT_TEMPLATES_DIR;
+    currentVersionsDir = DEFAULT_VERSIONS_DIR;
+    return;
+  }
+
+  // 解析路径：如果是相对路径且提供了项目根目录，则相对于项目根目录
+  let resolvedPath = plansDirectory;
+  if (!path.isAbsolute(plansDirectory) && projectRoot) {
+    resolvedPath = path.join(projectRoot, plansDirectory);
+  } else if (!path.isAbsolute(plansDirectory)) {
+    // 没有项目根目录时，相对于当前工作目录
+    resolvedPath = path.resolve(plansDirectory);
+  }
+
+  currentPlansDir = resolvedPath;
+  currentTemplatesDir = path.join(resolvedPath, 'templates');
+  currentVersionsDir = path.join(resolvedPath, 'versions');
+}
+
+/**
+ * v2.1.9: 获取当前 plans 目录
+ */
+export function getPlansDirectory(): string {
+  return currentPlansDir;
+}
 
 /**
  * Plan 持久化管理器
@@ -33,7 +74,7 @@ export class PlanPersistenceManager {
    * 确保计划目录存在
    */
   private static ensurePlanDirs(): void {
-    [PLANS_DIR, TEMPLATES_DIR, VERSIONS_DIR].forEach((dir) => {
+    [currentPlansDir, currentTemplatesDir, currentVersionsDir].forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -51,16 +92,18 @@ export class PlanPersistenceManager {
 
   /**
    * 获取计划文件路径
+   * v2.1.9: 使用动态配置的目录
    */
   private static getPlanFilePath(id: string): string {
-    return path.join(PLANS_DIR, `${id}.json`);
+    return path.join(currentPlansDir, `${id}.json`);
   }
 
   /**
    * 获取版本文件路径
+   * v2.1.9: 使用动态配置的目录
    */
   private static getVersionFilePath(planId: string, version: number): string {
-    return path.join(VERSIONS_DIR, `${planId}-v${version}.json`);
+    return path.join(currentVersionsDir, `${planId}-v${version}.json`);
   }
 
   /**
@@ -163,7 +206,7 @@ export class PlanPersistenceManager {
     try {
       this.ensurePlanDirs();
 
-      const files = fs.readdirSync(PLANS_DIR);
+      const files = fs.readdirSync(currentPlansDir);
       let plans: SavedPlan[] = [];
 
       for (const file of files) {
@@ -356,7 +399,7 @@ export class PlanPersistenceManager {
   static async listVersions(planId: string): Promise<PlanVersion[]> {
     try {
       const versions: PlanVersion[] = [];
-      const files = fs.readdirSync(VERSIONS_DIR);
+      const files = fs.readdirSync(currentVersionsDir);
 
       const currentPlan = await this.loadPlan(planId);
       const currentVersion = currentPlan?.metadata.version || 1;
@@ -368,7 +411,7 @@ export class PlanPersistenceManager {
         if (!versionMatch) continue;
 
         const version = parseInt(versionMatch[1], 10);
-        const versionPath = path.join(VERSIONS_DIR, file);
+        const versionPath = path.join(currentVersionsDir, file);
         const stats = fs.statSync(versionPath);
 
         versions.push({
@@ -746,7 +789,7 @@ export class PlanPersistenceManager {
     try {
       this.ensurePlanDirs();
 
-      const filePath = path.join(TEMPLATES_DIR, `${template.id}.json`);
+      const filePath = path.join(currentTemplatesDir, `${template.id}.json`);
       const data = JSON.stringify(template, null, 2);
 
       fs.writeFileSync(filePath, data, 'utf8');
@@ -763,7 +806,7 @@ export class PlanPersistenceManager {
    */
   static async loadTemplate(id: string): Promise<PlanTemplate | null> {
     try {
-      const filePath = path.join(TEMPLATES_DIR, `${id}.json`);
+      const filePath = path.join(currentTemplatesDir, `${id}.json`);
 
       if (!fs.existsSync(filePath)) {
         return null;
@@ -784,7 +827,7 @@ export class PlanPersistenceManager {
     try {
       this.ensurePlanDirs();
 
-      const files = fs.readdirSync(TEMPLATES_DIR);
+      const files = fs.readdirSync(currentTemplatesDir);
       const templates: PlanTemplate[] = [];
 
       for (const file of files) {

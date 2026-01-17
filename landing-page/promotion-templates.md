@@ -42,7 +42,7 @@ npm run dev
 
 ### 相关链接
 
-- 🌐 官网：https://claude-code-open.vercel.app
+- 🌐 官网：https://www.chatbi.site
 - 📦 GitHub：https://github.com/kill136/claude-code
 - 💬 Discord：https://discord.gg/bNyJKk6PVZ
 
@@ -73,7 +73,7 @@ npm run dev
 
 **技术栈：** TypeScript, Anthropic SDK, React/Ink, Zod
 
-🌐 官网：https://claude-code-open.vercel.app
+🌐 官网：https://www.chatbi.site
 📦 GitHub：https://github.com/kill136/claude-code
 
 纯学习项目，欢迎交流！
@@ -93,7 +93,7 @@ npm run dev
 ✅ MCP 协议支持
 ✅ React + Ink 终端 UI
 
-🔗 https://claude-code-open.vercel.app
+🔗 https://www.chatbi.site
 📦 https://github.com/kill136/claude-code
 
 #OpenSource #AI #ClaudeCode #TypeScript
@@ -112,7 +112,7 @@ npm run dev
 
 4/ 适合想学习 AI 工具架构的开发者
 
-🔗 https://claude-code-open.vercel.app
+🔗 https://www.chatbi.site
 
 ---
 
@@ -136,7 +136,7 @@ I reverse-engineered Anthropic's Claude Code CLI to understand how AI coding ass
 
 This is purely for educational purposes - great for anyone wanting to learn how AI coding tools work under the hood.
 
-Website: https://claude-code-open.vercel.app
+Website: https://www.chatbi.site
 GitHub: https://github.com/kill136/claude-code
 
 ---
@@ -160,7 +160,7 @@ I've been working on an open-source project that reverse-engineers Anthropic's C
 - Tree-sitter for code parsing
 
 **Links:**
-- Website: https://claude-code-open.vercel.app
+- Website: https://www.chatbi.site
 - GitHub: https://github.com/kill136/claude-code
 
 It's a great resource if you want to understand how modern AI coding assistants are architected. Feedback welcome!

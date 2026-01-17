@@ -243,6 +243,15 @@ const UserConfigSchema = z.object({
     /** 会话过期天数 */
     sessionExpiryDays: z.number().int().positive().default(30),
   }).optional(),
+
+  // v2.1.9: Plan 模式配置
+  plan: z.object({
+    /** 自定义 plan 文件存储目录，相对于项目根目录 */
+    plansDirectory: z.string().optional(),
+  }).optional(),
+
+  // v2.1.9: plansDirectory 快捷配置（等同于 plan.plansDirectory）
+  plansDirectory: z.string().optional(),
 }).passthrough(); // 允许额外字段，便于扩展
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

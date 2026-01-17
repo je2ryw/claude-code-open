@@ -14,6 +14,52 @@ import type { AttributionSettings } from '../types/config.js';
 const CLAUDE_CODE_URL = 'https://claude.com/claude-code';
 
 /**
+ * v2.1.9: 生成 Session URL
+ *
+ * 官方实现（RKA 函数）：
+ * function RKA(A, Q) { return `${B65(A, Q)}/code/${A}` }
+ * function B65(A, Q) { return Q65(A, Q) ? "https://staging.claude.ai" : "https://claude.ai" }
+ *
+ * @param sessionId 会话 ID
+ * @param ingressUrl 入口 URL（用于判断是否为 staging 环境）
+ * @returns Session URL 或 null
+ */
+export function getSessionUrl(sessionId: string, ingressUrl?: string): string {
+  const baseUrl = ingressUrl?.includes('staging') ? 'https://staging.claude.ai' : 'https://claude.ai';
+  return `${baseUrl}/code/${sessionId}`;
+}
+
+/**
+ * v2.1.9: 生成 Claude-Session trailer
+ *
+ * 官方实现（b_7 函数）：
+ * function b_7() {
+ *   let A = process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+ *   if (!A) return null;
+ *   let Q = process.env.SESSION_INGRESS_URL;
+ *   if (Q?.includes("localhost")) return null;
+ *   return `Claude-Session: ${RKA(A, Q)}`
+ * }
+ *
+ * @returns Claude-Session trailer 或 null（如果不是远程会话）
+ */
+export function getClaudeSessionTrailer(): string | null {
+  const sessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+  if (!sessionId) {
+    return null;
+  }
+
+  const ingressUrl = process.env.SESSION_INGRESS_URL;
+  // 排除 localhost 会话
+  if (ingressUrl?.includes('localhost')) {
+    return null;
+  }
+
+  const sessionUrl = getSessionUrl(sessionId, ingressUrl);
+  return `Claude-Session: ${sessionUrl}`;
+}
+
+/**
  * Get model display name for attribution
  */
 function getModelDisplayName(modelId?: string): string {
@@ -126,4 +172,73 @@ export function getPRAttribution(modelId?: string): string {
 export function isAttributionEnabled(type: 'commit' | 'pr'): boolean {
   const attribution = getAttribution(type);
   return attribution.length > 0;
+}
+
+/**
+ * v2.1.9: 检查是否为远程会话
+ *
+ * 基于 CLAUDE_CODE_REMOTE 环境变量判断
+ */
+export function isRemoteSession(): boolean {
+  return process.env.CLAUDE_CODE_REMOTE === 'true' ||
+         process.env.CLAUDE_CODE_REMOTE === '1' ||
+         !!process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+}
+
+/**
+ * v2.1.9: 获取远程会话的 attribution
+ *
+ * 官方实现（uZ1 函数部分）：
+ * if(VpA()==="remote"){
+ *   let Z=process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+ *   if(Z){
+ *     let Y=process.env.SESSION_INGRESS_URL;
+ *     if(!Y?.includes("localhost")){
+ *       let J=RKA(Z,Y);
+ *       return{commit:J,pr:J}
+ *     }
+ *   }
+ *   return{commit:"",pr:""}
+ * }
+ *
+ * @returns 远程会话的 attribution 设置，或 null（如果不是有效的远程会话）
+ */
+export function getRemoteSessionAttribution(): AttributionSettings | null {
+  if (!isRemoteSession()) {
+    return null;
+  }
+
+  const sessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+  if (!sessionId) {
+    return { commit: '', pr: '' };
+  }
+
+  const ingressUrl = process.env.SESSION_INGRESS_URL;
+  if (ingressUrl?.includes('localhost')) {
+    return { commit: '', pr: '' };
+  }
+
+  const sessionUrl = getSessionUrl(sessionId, ingressUrl);
+  return { commit: sessionUrl, pr: sessionUrl };
+}
+
+/**
+ * v2.1.9: 获取默认 attribution（带远程会话支持）
+ *
+ * 基于官方 uZ1() 函数实现，支持：
+ * 1. 远程会话 - 返回 session URL
+ * 2. 本地会话 - 返回配置的 attribution 或默认值
+ *
+ * @param modelId 模型 ID
+ * @returns attribution 设置
+ */
+export function getDefaultAttributionWithSession(modelId?: string): AttributionSettings {
+  // 首先检查是否为远程会话
+  const remoteAttribution = getRemoteSessionAttribution();
+  if (remoteAttribution !== null) {
+    return remoteAttribution;
+  }
+
+  // 本地会话：返回默认 attribution
+  return getDefaultAttribution(modelId);
 }

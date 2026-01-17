@@ -975,6 +975,23 @@ export interface AttributionSettings {
 }
 
 // ============================================================================
+// Plan Settings (v2.1.9)
+// ============================================================================
+
+/**
+ * Plan mode settings
+ * @since 2.1.9
+ */
+export interface PlanSettings {
+  /**
+   * Custom directory for plan files, relative to project root.
+   * If not set, defaults to ~/.claude/plans/
+   * @since 2.1.9
+   */
+  plansDirectory?: string;
+}
+
+// ============================================================================
 // Advanced Settings
 // ============================================================================
 
@@ -1173,6 +1190,20 @@ export interface ClaudeConfig {
    * @deprecated Use attribution.commit and attribution.pr instead
    */
   includeCoAuthoredBy?: boolean;
+
+  /**
+   * Plan mode settings
+   * @since 2.1.9
+   */
+  plan?: PlanSettings;
+
+  /**
+   * Custom directory for plan files, relative to project root.
+   * If not set, defaults to ~/.claude/plans/
+   * Shorthand for plan.plansDirectory
+   * @since 2.1.9
+   */
+  plansDirectory?: string;
 }
 
 /**
@@ -1414,7 +1445,7 @@ export interface ConfigMigration {
  * Default configuration values
  */
 export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
-  version: '2.1.4',
+  version: '2.1.9',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,

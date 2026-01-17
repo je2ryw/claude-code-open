@@ -541,23 +541,110 @@ export class McpToolManager {
 export type McpToolSearchMode = 'tst-auto' | 'tst' | 'mcp-cli' | 'standard';
 
 // 官方常量（来自 cli.js）
-const TOOL_SEARCH_CONTEXT_RATIO = 0.1;  // heB = 0.1 (10% 的上下文窗口)
-const TOOL_SEARCH_CHAR_MULTIPLIER = 2.5; // At8 = 2.5 (字符数乘数)
+const DEFAULT_TOOL_SEARCH_PERCENTAGE = 10;  // WX0 = 10 (默认 10%)
+const TOOL_SEARCH_CHAR_MULTIPLIER = 2.5; // W25 = 2.5 (字符数乘数)
 
 /**
- * 获取 MCP 工具搜索模式 (v2.1.7+)
+ * v2.1.9: 解析 auto:N 语法
  *
- * 基于官方 Qt8() 函数实现
+ * 官方实现（DX0 函数）：
+ * function DX0(A){
+ *   if(!A.startsWith("auto:"))return null;
+ *   let Q=A.slice(5), B=parseInt(Q,10);
+ *   if(isNaN(B)) return k(`Invalid ENABLE_TOOL_SEARCH value "${A}": expected auto:N where N is a number.`),null;
+ *   return Math.max(0,Math.min(100,B))
+ * }
+ *
+ * @param value 环境变量值
+ * @returns 解析出的百分比值 (0-100)，如果不是 auto:N 格式返回 null
+ */
+function parseAutoNSyntax(value: string): number | null {
+  if (!value.startsWith('auto:')) {
+    return null;
+  }
+
+  const numStr = value.slice(5);
+  const num = parseInt(numStr, 10);
+
+  if (isNaN(num)) {
+    console.warn(`Invalid ENABLE_TOOL_SEARCH value "${value}": expected auto:N where N is a number.`);
+    return null;
+  }
+
+  // 限制在 0-100 范围内
+  return Math.max(0, Math.min(100, num));
+}
+
+/**
+ * v2.1.9: 检查是否为 auto 模式（包括 auto 和 auto:N）
+ *
+ * 官方实现（F22 函数）：
+ * function F22(A){ if(!A)return!1; return A==="auto" || A.startsWith("auto:") }
+ */
+function isAutoMode(value: string | undefined): boolean {
+  if (!value) return false;
+  return value === 'auto' || value.startsWith('auto:');
+}
+
+/**
+ * v2.1.9: 获取工具搜索的百分比阈值
+ *
+ * 官方实现（H22 函数）：
+ * function H22(){
+ *   let A=process.env.ENABLE_TOOL_SEARCH;
+ *   if(!A)return WX0;
+ *   if(A==="auto")return WX0;
+ *   let Q=DX0(A);
+ *   if(Q!==null)return Q;
+ *   return WX0;
+ * }
+ *
+ * @returns 百分比值 (0-100)
+ */
+export function getToolSearchPercentage(): number {
+  const value = process.env.ENABLE_TOOL_SEARCH;
+
+  if (!value) {
+    return DEFAULT_TOOL_SEARCH_PERCENTAGE;
+  }
+
+  if (value === 'auto') {
+    return DEFAULT_TOOL_SEARCH_PERCENTAGE;
+  }
+
+  const parsed = parseAutoNSyntax(value);
+  if (parsed !== null) {
+    return parsed;
+  }
+
+  return DEFAULT_TOOL_SEARCH_PERCENTAGE;
+}
+
+// 向后兼容：保留旧常量（计算得出）
+const TOOL_SEARCH_CONTEXT_RATIO = DEFAULT_TOOL_SEARCH_PERCENTAGE / 100;
+
+/**
+ * 获取 MCP 工具搜索模式 (v2.1.7+, v2.1.9 新增 auto:N 支持)
+ *
+ * 基于官方 Qt8() / V4A() 函数实现
  * 默认返回 'tst-auto'（自动模式）
+ *
+ * v2.1.9 支持的值：
+ * - "auto:N" - 自动模式，使用 N% 的上下文窗口作为阈值（0-100）
+ * - "auto" - 自动模式，使用默认 10% 阈值
+ * - "true" / "1" - 强制启用工具搜索（tst 模式）
+ * - "false" / "0" - 禁用工具搜索（standard 模式）
  */
 export function getMcpToolSearchMode(): McpToolSearchMode {
-  // 环境变量 ENABLE_TOOL_SEARCH="auto" 显式启用自动模式
-  if (process.env.ENABLE_TOOL_SEARCH === 'auto') {
+  const value = process.env.ENABLE_TOOL_SEARCH;
+
+  // v2.1.9: 支持 auto:N 语法
+  if (isAutoMode(value)) {
     return 'tst-auto';
   }
 
   // 环境变量显式启用工具搜索
-  if (process.env.ENABLE_TOOL_SEARCH === 'true' || process.env.ENABLE_TOOL_SEARCH === '1') {
+  if (value === 'true' || value === '1') {
     return 'tst';
   }
 
@@ -572,7 +659,7 @@ export function getMcpToolSearchMode(): McpToolSearchMode {
   }
 
   // 环境变量显式禁用工具搜索
-  if (process.env.ENABLE_TOOL_SEARCH === 'false' || process.env.ENABLE_TOOL_SEARCH === '0') {
+  if (value === 'false' || value === '0') {
     return 'standard';
   }
 
@@ -581,16 +668,19 @@ export function getMcpToolSearchMode(): McpToolSearchMode {
 }
 
 /**
- * 获取外部 MCP 工具搜索模式
+ * 获取外部 MCP 工具搜索模式 (v2.1.9 新增 auto:N 支持)
  *
  * 基于官方 k9A() 函数实现
  */
 export function getExternalMcpToolSearchMode(): McpToolSearchMode {
-  if (process.env.ENABLE_TOOL_SEARCH === 'auto') {
+  const value = process.env.ENABLE_TOOL_SEARCH;
+
+  // v2.1.9: 支持 auto:N 语法
+  if (isAutoMode(value)) {
     return 'tst-auto';
   }
 
-  if (process.env.ENABLE_TOOL_SEARCH === 'true' || process.env.ENABLE_TOOL_SEARCH === '1') {
+  if (value === 'true' || value === '1') {
     return 'tst';
   }
 
@@ -598,7 +688,7 @@ export function getExternalMcpToolSearchMode(): McpToolSearchMode {
     return 'mcp-cli';
   }
 
-  if (process.env.ENABLE_TOOL_SEARCH === 'false' || process.env.ENABLE_TOOL_SEARCH === '0') {
+  if (value === 'false' || value === '0') {
     return 'standard';
   }
 
@@ -611,18 +701,19 @@ export function getExternalMcpToolSearchMode(): McpToolSearchMode {
 }
 
 /**
- * 计算自动工具搜索的字符阈值 (v2.1.7+)
+ * 计算自动工具搜索的字符阈值 (v2.1.7+, v2.1.9 支持 auto:N)
  *
- * 基于官方 geB() 函数实现
+ * 基于官方 E22() 函数实现
  * 当 MCP 工具描述超过这个阈值时，自动启用工具搜索
  *
- * 计算公式：contextWindow * 0.1 * 2.5
+ * 计算公式（v2.1.9）：contextWindow * (percentage/100) * 2.5
  *
  * @param contextWindowSize 上下文窗口大小
  * @returns 字符阈值
  */
 export function getAutoToolSearchCharThreshold(contextWindowSize: number): number {
-  return Math.floor(contextWindowSize * TOOL_SEARCH_CONTEXT_RATIO * TOOL_SEARCH_CHAR_MULTIPLIER);
+  const percentage = getToolSearchPercentage();
+  return Math.floor(contextWindowSize * (percentage / 100) * TOOL_SEARCH_CHAR_MULTIPLIER);
 }
 
 /**

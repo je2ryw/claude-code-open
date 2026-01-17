@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://claude-code-open.vercel.app/sitemap.xml
+Sitemap: https://www.chatbi.site/sitemap.xml

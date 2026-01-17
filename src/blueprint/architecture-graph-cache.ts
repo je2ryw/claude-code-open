@@ -40,8 +40,8 @@ export interface ArchitectureGraphCacheEntry {
 export class ArchitectureGraphCache {
   private cacheDir: string;
 
-  /** 缓存过期时间（毫秒）：1小时 */
-  private readonly CACHE_EXPIRY_MS = 60 * 60 * 1000;
+  /** 缓存过期时间（毫秒）：永久有效（100年） */
+  private readonly CACHE_EXPIRY_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
   constructor() {
     this.cacheDir = path.join(os.homedir(), '.claude', 'architecture-graph-cache');

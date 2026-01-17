@@ -38,6 +38,12 @@ interface McpServerState {
     timestamp: number;
   };
   lastHealthCheck?: number;
+  /**
+   * v2.1.9: 缓存的连接 Promise
+   * 用于防止并发连接时重复创建连接，确保多个调用者共享同一个连接结果
+   * 解决了缓存的连接 promise 永不 resolve 导致的重连挂起问题
+   */
+  connectionPromise?: Promise<boolean>;
 }
 
 interface McpToolDefinition {
@@ -312,6 +318,9 @@ async function checkServerHealth(name: string): Promise<boolean> {
 
 /**
  * 连接到 MCP 服务器（带重试机制）
+ *
+ * v2.1.9: 使用 connectionPromise 缓存机制防止重连挂起
+ * 修复了缓存的连接 promise 永不 resolve 导致的问题
  */
 export async function connectMcpServer(name: string, retry = true): Promise<boolean> {
   const server = mcpServers.get(name);
@@ -322,21 +331,37 @@ export async function connectMcpServer(name: string, retry = true): Promise<bool
     const healthy = await checkServerHealth(name);
     if (healthy) return true;
 
-    // 不健康，需要重连
+    // 不健康，需要重连 - 先清除缓存的 promise
+    server.connectionPromise = undefined;
     await disconnectMcpServer(name);
   }
 
-  // 防止并发连接
-  if (server.connecting) {
-    // 等待连接完成
-    const maxWait = 10000; // 最多等待 10 秒
-    const startTime = Date.now();
-    while (server.connecting && Date.now() - startTime < maxWait) {
-      await sleep(100);
+  // v2.1.9: 如果已有连接 Promise 在进行，复用它
+  // 这样多个调用者可以共享同一个连接结果
+  if (server.connectionPromise) {
+    try {
+      return await server.connectionPromise;
+    } catch {
+      // 如果缓存的 promise 失败了，清除它并继续创建新连接
+      server.connectionPromise = undefined;
     }
-    return server.connected;
   }
 
+  // 创建新的连接 Promise 并缓存
+  server.connectionPromise = doConnect(name, server, retry);
+
+  try {
+    return await server.connectionPromise;
+  } finally {
+    // 连接完成后清除缓存，允许后续重连
+    server.connectionPromise = undefined;
+  }
+}
+
+/**
+ * v2.1.9: 实际执行连接的内部函数
+ */
+async function doConnect(name: string, server: McpServerState, retry: boolean): Promise<boolean> {
   server.connecting = true;
   server.lastConnectAttempt = Date.now();
 
