@@ -4,7 +4,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/kill136/claude-code?style=flat-square)](https://github.com/kill136/claude-code)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-🌐 **[访问官网 →](https://claude-code-open.vercel.app)** | 📖 **[中文文档](README.zh-CN.md)**
+🌐 **[visit website](https://claude-code-open.vercel.app)** | 📖 **[中文文档](README.zh-CN.md)**
 
 A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.1.9.
 

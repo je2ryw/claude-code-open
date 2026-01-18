@@ -2778,6 +2778,202 @@ registry.register(prCommentsCommand);
 registry.register(securityReviewCommand);
 registry.register(mapCommand);
 
+// ============================================================================
+// /dev - 持续开发命令
+// ============================================================================
+
+/**
+ * /dev 命令 - 启动持续开发流程
+ * 
+ * 使用示例：
+ *   /dev 增加用户邀请功能，支持邮件和链接邀请
+ *   /dev status    查看当前开发状态
+ *   /dev pause     暂停执行
+ *   /dev resume    恢复执行
+ *   /dev rollback  回滚到上一个检查点
+ */
+const devCommand: SlashCommand = {
+  name: 'dev',
+  aliases: ['continuous', 'cdev'],
+  description: '启动持续开发流程（影响分析 → 蓝图生成 → 安全执行）',
+  usage: '/dev <需求描述> 或 /dev [status|pause|resume|rollback]',
+  category: 'development',
+  execute: async (ctx: ExtendedCommandContext): Promise<CommandResult> => {
+    const { args, ws, sessionId } = ctx;
+
+    // 没有参数时显示帮助
+    if (!args || args.length === 0) {
+      return {
+        success: true,
+        message: `持续开发命令 (/dev)
+
+启动一个安全的持续开发流程，在现有代码库上添加新功能，同时确保不破坏现有功能。
+
+用法:
+  /dev <需求描述>     启动新的开发流程
+  /dev status         查看当前开发状态
+  /dev pause          暂停执行
+  /dev resume         恢复执行
+  /dev rollback       回滚到上一个检查点
+
+示例:
+  /dev 增加用户邀请功能，支持邮件和链接邀请
+  /dev 优化登录页面性能，减少首屏加载时间
+  /dev 添加数据导出功能，支持 CSV 和 Excel 格式
+
+开发流程:
+  ┌─────────────────────────────────────────────────┐
+  │ 1. 代码库分析   → 理解现有结构                   │
+  │ 2. 影响分析     → 评估风险，设置安全边界          │
+  │ 3. 蓝图生成     → 创建增量开发计划               │
+  │ 4. 人工审批     → 确认后开始执行                 │
+  │ 5. TDD 执行     → 测试先行，安全开发             │
+  │ 6. 回归测试     → 确保不破坏现有功能             │
+  └─────────────────────────────────────────────────┘
+
+安全保障:
+  • 现有测试必须全部通过（回归测试门禁）
+  • Worker 只能在授权范围内操作（边界检查）
+  • 关键节点自动创建检查点（可回滚）
+  • 高风险操作需要人工确认
+
+提示: 首次使用会先分析代码库，可能需要几分钟。`,
+      };
+    }
+
+    const subcommand = args[0].toLowerCase();
+
+    // /dev status - 查看状态
+    if (subcommand === 'status') {
+      // 发送 WebSocket 消息请求状态
+      const message = {
+        type: 'continuous_dev:status',
+        sessionId,
+      };
+      
+      // 通过 WebSocket 发送
+      if (ws.readyState === 1) { // WebSocket.OPEN
+        ws.send(JSON.stringify(message));
+      }
+
+      return {
+        success: true,
+        message: `正在获取开发状态...
+
+如果没有活跃的开发流程，请使用 /dev <需求描述> 启动新流程。`,
+      };
+    }
+
+    // /dev pause - 暂停执行
+    if (subcommand === 'pause') {
+      const message = {
+        type: 'continuous_dev:pause',
+        sessionId,
+      };
+      
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify(message));
+      }
+
+      return {
+        success: true,
+        message: `⏸️ 正在暂停开发流程...
+
+已暂停的任务可以使用 /dev resume 恢复。`,
+      };
+    }
+
+    // /dev resume - 恢复执行
+    if (subcommand === 'resume') {
+      const message = {
+        type: 'continuous_dev:resume',
+        sessionId,
+      };
+      
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify(message));
+      }
+
+      return {
+        success: true,
+        message: `▶️ 正在恢复开发流程...`,
+      };
+    }
+
+    // /dev rollback - 回滚
+    if (subcommand === 'rollback') {
+      const checkpointId = args[1]; // 可选的检查点 ID
+
+      const message = {
+        type: 'continuous_dev:rollback',
+        sessionId,
+        checkpointId,
+      };
+      
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify(message));
+      }
+
+      return {
+        success: true,
+        message: checkpointId
+          ? `⏪ 正在回滚到检查点 ${checkpointId}...`
+          : `⏪ 正在回滚到上一个检查点...`,
+      };
+    }
+
+    // /dev <需求> - 启动新的开发流程
+    const requirement = args.join(' ');
+    
+    // 输入验证
+    if (requirement.length < 5) {
+      return {
+        success: false,
+        message: `需求描述太短了，请提供更详细的说明。
+
+示例:
+  /dev 增加用户邀请功能，支持邮件和链接邀请
+  /dev 优化数据库查询性能，添加索引和缓存`,
+      };
+    }
+
+    // 发送启动消息
+    const message = {
+      type: 'continuous_dev:start',
+      sessionId,
+      requirement,
+    };
+    
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify(message));
+    }
+
+    return {
+      success: true,
+      message: `🚀 启动持续开发流程
+
+需求: ${requirement}
+
+正在执行:
+  ⏳ 第一步: 分析代码库...
+
+后续步骤:
+  ○ 第二步: 影响分析
+  ○ 第三步: 生成增量蓝图
+  ○ 第四步: 等待审批
+  ○ 第五步: 执行开发
+
+提示:
+  • 使用 /dev status 查看进度
+  • 使用 /dev pause 暂停执行
+  • 高风险操作会请求您的确认`,
+    };
+  },
+};
+
+// 注册持续开发命令
+registry.register(devCommand);
+
 /**
  * 检查输入是否为斜杠命令
  */

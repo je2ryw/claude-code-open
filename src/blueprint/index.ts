@@ -156,3 +156,52 @@ export {
   type AcceptanceTestRunResult,
   type AcceptanceTestRunnerConfig,
 } from './acceptance-test-runner.js';
+
+// ============================================================================
+// 持续开发组件（融入 Cursor 经验）
+// ============================================================================
+
+// 影响分析器
+export {
+  ImpactAnalyzer,
+  createImpactAnalyzer,
+  type ImpactAnalyzerConfig,
+  type ImpactAnalysisReport,
+  type SafetyBoundary,
+  type FileImpact,
+  type ModuleImpact,
+  type InterfaceChange,
+  type RegressionScope,
+  type RiskLevel,
+  type ChangeType,
+} from './impact-analyzer.js';
+
+// 回归测试门禁
+export {
+  RegressionGate,
+  createRegressionGate,
+  type RegressionGateConfig,
+  type GateResult,
+  type WorkerSubmission,
+  type TestSummary,
+  type TestFailure,
+} from './regression-gate.js';
+
+// 周期重置管理器（Cursor 核心经验：对抗漂移、周期性评审）
+export {
+  CycleResetManager,
+  createCycleResetManager,
+  type CycleResetConfig,
+  type CycleStats,
+  type CycleIssue,
+  type ReviewResult,
+} from './cycle-reset-manager.js';
+
+// 持续开发编排器（主入口）
+export {
+  ContinuousDevOrchestrator,
+  createContinuousDevOrchestrator,
+  type ContinuousDevConfig,
+  type DevFlowPhase,
+  type DevFlowState,
+} from './continuous-dev-orchestrator.js';

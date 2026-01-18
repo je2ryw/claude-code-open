@@ -1,6 +1,8 @@
 import { MarkdownContent } from './MarkdownContent';
 import { ToolCall } from './ToolCall';
 import { BlueprintSummaryCard } from './BlueprintSummaryCard';
+import { ImpactAnalysisCard } from './continuous/ImpactAnalysisCard';
+import { DevProgressBar } from './continuous/DevProgressBar';
 import { coordinatorApi } from '../api/blueprint';
 import type { ChatMessage, ChatContent, ToolUse } from '../types';
 
@@ -8,9 +10,10 @@ interface MessageProps {
   message: ChatMessage;
   onNavigateToBlueprint?: (blueprintId: string) => void;
   onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
+  onDevAction?: (action: string, data?: any) => void; // 通用开发动作回调
 }
 
-export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm }: MessageProps) {
+export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onDevAction }: MessageProps) {
   const { role, content } = message;
 
   const renderContent = (item: ChatContent, index: number) => {
@@ -47,6 +50,7 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm }: M
         </div>
       );
     }
+
     if (item.type === 'blueprint') {
       return (
         <BlueprintSummaryCard
@@ -82,6 +86,27 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm }: M
               throw error;
             }
           }}
+        />
+      );
+    }
+    if (item.type === 'impact_analysis') {
+      return (
+        <ImpactAnalysisCard
+          key={index}
+          data={item.data}
+          onApprove={() => onDevAction?.('approve')}
+          onReject={() => onDevAction?.('reject')} // reject 可以对应 pause 或 rollback
+        />
+      );
+    }
+    if (item.type === 'dev_progress') {
+      return (
+        <DevProgressBar
+          key={index}
+          data={item.data}
+          onPause={() => onDevAction?.('pause')}
+          onResume={() => onDevAction?.('resume')}
+          onCancel={() => onDevAction?.('cancel')} // TODO: 实现 cancel
         />
       );
     }

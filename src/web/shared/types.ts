@@ -130,7 +130,14 @@ export type ClientMessage =
   | { type: 'swarm:stop'; payload: { blueprintId: string } }
   | { type: 'worker:pause'; payload: { workerId: string } }
   | { type: 'worker:resume'; payload: { workerId: string } }
-  | { type: 'worker:terminate'; payload: { workerId: string } };
+  | { type: 'worker:terminate'; payload: { workerId: string } }
+  // 持续开发消息
+  | { type: 'continuous_dev:start'; payload: { requirement: string } }
+  | { type: 'continuous_dev:status' }
+  | { type: 'continuous_dev:pause' }
+  | { type: 'continuous_dev:resume' }
+  | { type: 'continuous_dev:rollback'; payload: { checkpointId?: string } }
+  | { type: 'continuous_dev:approve' };
 
 /**
  * 服务端发送的消息类型
@@ -212,7 +219,29 @@ export type ServerMessage =
   | { type: 'worker:resumed'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
   | { type: 'worker:terminated'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
   | { type: 'worker:removed'; payload: { workerId: string; blueprintId: string; reason: string; timestamp: string } }
-  | { type: 'swarm:stats_update'; payload: { blueprintId: string; stats: any } };
+  | { type: 'swarm:stats_update'; payload: { blueprintId: string; stats: any } }
+  // 持续开发消息
+  | { type: 'continuous_dev:ack'; payload: { message: string } }
+  | { type: 'continuous_dev:status_update'; payload: any }
+  | { type: 'continuous_dev:progress_update'; payload: any }
+  | { type: 'continuous_dev:paused'; payload: { success: boolean } }
+  | { type: 'continuous_dev:resumed'; payload: { success: boolean } }
+  | { type: 'continuous_dev:approved'; payload: { success: boolean } }
+  | { type: 'continuous_dev:flow_started'; payload: any }
+  | { type: 'continuous_dev:phase_changed'; payload: any }
+  | { type: 'continuous_dev:phase_started'; payload: any }
+  | { type: 'continuous_dev:phase_completed'; payload: any }
+  | { type: 'continuous_dev:approval_required'; payload: any }
+  | { type: 'continuous_dev:task_completed'; payload: any }
+  | { type: 'continuous_dev:task_failed'; payload: any }
+  | { type: 'continuous_dev:regression_passed'; payload: any }
+  | { type: 'continuous_dev:regression_failed'; payload: any }
+  | { type: 'continuous_dev:cycle_reset'; payload: any }
+  | { type: 'continuous_dev:cycle_review_started'; payload: any }
+  | { type: 'continuous_dev:flow_failed'; payload: any }
+  | { type: 'continuous_dev:flow_stopped'; payload?: any }
+  | { type: 'continuous_dev:flow_paused'; payload?: any }
+  | { type: 'continuous_dev:flow_resumed'; payload?: any };
 
 // ============ 消息负载类型 ============
 

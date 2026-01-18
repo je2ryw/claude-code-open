@@ -808,6 +808,83 @@ export class BlueprintManager extends EventEmitter {
 
     return true;
   }
+
+  // --------------------------------------------------------------------------
+  // 增量蓝图（持续开发支持）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 创建增量蓝图
+   * 
+   * 用于持续开发场景：在现有蓝图基础上合并新需求
+   * 
+   * @param baseBlueprint 基础蓝图（通常是从代码库逆向生成的）
+   * @param requirement 新需求描述
+   * @param impactAnalysis 可选的影响分析结果
+   */
+  async createIncrementalBlueprint(
+    baseBlueprint: Blueprint,
+    requirement: string,
+    impactAnalysis?: any
+  ): Promise<Blueprint> {
+    const { v4: uuidv4 } = await import('uuid');
+    
+    // 创建增量蓝图副本
+    const incrementalBlueprint: Blueprint = {
+      ...baseBlueprint,
+      id: uuidv4(),
+      name: `${baseBlueprint.name} - 增量开发`,
+      description: `${baseBlueprint.description}\n\n--- 新增需求 ---\n${requirement}`,
+      version: this.incrementVersion(baseBlueprint.version),
+      status: 'draft',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      source: 'requirement',
+      changeHistory: [
+        ...baseBlueprint.changeHistory,
+        {
+          id: uuidv4(),
+          timestamp: new Date(),
+          type: 'create' as const,
+          description: `基于 ${baseBlueprint.name} 创建增量蓝图`,
+          author: 'agent' as const,
+        },
+      ],
+    };
+
+    // 如果有影响分析，根据分析结果添加新模块
+    if (impactAnalysis?.impact?.byModule) {
+      for (const moduleImpact of impactAnalysis.impact.byModule) {
+        // 检查是否是新模块
+        const existingModule = incrementalBlueprint.modules.find(
+          m => m.id === moduleImpact.moduleId
+        );
+        
+        if (!existingModule) {
+          // 添加新模块
+          incrementalBlueprint.modules.push({
+            id: moduleImpact.moduleId,
+            name: moduleImpact.moduleName,
+            description: `新增模块：${requirement}`,
+            type: 'other',
+            responsibilities: [`实现：${requirement}`],
+            dependencies: [],
+            interfaces: [],
+            rootPath: moduleImpact.modulePath,
+          });
+        }
+      }
+    }
+
+    // 保存增量蓝图
+    this.blueprints.set(incrementalBlueprint.id, incrementalBlueprint);
+    this.saveBlueprint(incrementalBlueprint);
+    this.currentBlueprintId = incrementalBlueprint.id;
+
+    this.emit('blueprint:incremental-created', incrementalBlueprint, baseBlueprint);
+
+    return incrementalBlueprint;
+  }
 }
 
 // ============================================================================

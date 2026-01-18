@@ -16,6 +16,10 @@ import { agentCoordinator } from '../../blueprint/agent-coordinator.js';
 import { blueprintManager } from '../../blueprint/blueprint-manager.js';
 import { taskTreeManager } from '../../blueprint/task-tree-manager.js';
 import type { WorkerAgent, QueenAgent, TimelineEvent, TaskNode } from '../../blueprint/types.js';
+import { createContinuousDevOrchestrator, ContinuousDevOrchestrator } from '../../blueprint/continuous-dev-orchestrator.js';
+
+// 持续开发编排器实例管理：sessionId -> Orchestrator
+const orchestrators = new Map<string, ContinuousDevOrchestrator>();
 
 interface ClientConnection {
   id: string;
@@ -637,6 +641,31 @@ async function handleClientMessage(
 
     case 'worker:terminate':
       await handleWorkerTerminate(client, (message.payload as any).workerId, swarmSubscriptions);
+      break;
+
+    // ========== 持续开发相关消息 ==========
+    case 'continuous_dev:start':
+      await handleContinuousDevStart(client, message.payload as any, conversationManager);
+      break;
+
+    case 'continuous_dev:status':
+      await handleContinuousDevStatus(client);
+      break;
+
+    case 'continuous_dev:pause':
+      await handleContinuousDevPause(client);
+      break;
+
+    case 'continuous_dev:resume':
+      await handleContinuousDevResume(client);
+      break;
+
+    case 'continuous_dev:rollback':
+      await handleContinuousDevRollback(client, message.payload as any);
+      break;
+
+    case 'continuous_dev:approve':
+      await handleContinuousDevApprove(client);
       break;
 
     default:
@@ -3713,4 +3742,233 @@ async function handleWorkerTerminate(
       },
     });
   }
+}
+
+// ============================================================================
+// 持续开发流程处理
+// ============================================================================
+
+/**
+ * 获取或创建编排器
+ */
+function getOrchestrator(sessionId: string, cwd: string): ContinuousDevOrchestrator {
+  let orchestrator = orchestrators.get(sessionId);
+  if (!orchestrator) {
+    console.log(`[ContinuousDev] 为会话 ${sessionId} 创建新编排器`);
+    
+    // 创建新编排器
+    orchestrator = createContinuousDevOrchestrator({
+      projectRoot: cwd,
+      phases: {
+        codebaseAnalysis: true,
+        impactAnalysis: true,
+        regressionTesting: true,
+        cycleReset: true,
+      },
+      // 使用默认配置，但可以从环境或用户配置读取
+    });
+    
+    orchestrators.set(sessionId, orchestrator);
+    
+    // 设置事件监听器，转发给客户端
+    // 注意：这里需要拿到 client 实例，但 client 是在调用 handleContinuousDevStart 时传入的
+    // 为了简化，我们在 setupOrchestratorListeners 中处理
+  }
+  return orchestrator;
+}
+
+/**
+ * 设置编排器事件监听
+ */
+function setupOrchestratorListeners(orchestrator: ContinuousDevOrchestrator, client: ClientConnection) {
+  // 避免重复绑定：检查是否已经绑定过该客户端
+  // 这里简化处理：总是重新绑定（EventEmitter 会累积，实际应用应管理监听器引用）
+  // 更好的做法是每个 session 一个 orchestrator，事件绑定一次
+  
+  if ((orchestrator as any)._hasBoundListeners) return;
+  (orchestrator as any)._hasBoundListeners = true;
+  
+  const sendEvent = (type: string, data?: any) => {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      sendMessage(client.ws, {
+        type: `continuous_dev:${type}` as any, // 动态类型，前端需对应处理
+        payload: data
+      });
+    }
+  };
+
+  // 阶段变更
+  orchestrator.on('phase_changed', (data) => {
+    sendEvent('phase_changed', data);
+    sendEvent('status_update', orchestrator.getState());
+  });
+
+  // 流程开始
+  orchestrator.on('flow_started', (data) => sendEvent('flow_started', data));
+  
+  // 阶段开始/完成
+  orchestrator.on('phase_started', (data) => sendEvent('phase_started', data));
+  orchestrator.on('phase_completed', (data) => sendEvent('phase_completed', data));
+  
+  // 需要审批
+  orchestrator.on('approval_required', (data) => sendEvent('approval_required', data));
+  
+  // 任务更新
+  orchestrator.on('task_completed', (data) => sendEvent('task_completed', data));
+  orchestrator.on('task_failed', (data) => sendEvent('task_failed', data));
+  
+  // 回归测试
+  orchestrator.on('regression_passed', (data) => sendEvent('regression_passed', data));
+  orchestrator.on('regression_failed', (data) => sendEvent('regression_failed', data));
+  
+  // 周期重置
+  orchestrator.on('cycle_reset', (data) => sendEvent('cycle_reset', data));
+  orchestrator.on('cycle_review_started', (data) => sendEvent('cycle_review_started', data));
+  
+  // 错误和完成
+  orchestrator.on('flow_failed', (data) => sendEvent('flow_failed', data));
+  orchestrator.on('flow_stopped', () => sendEvent('flow_stopped'));
+  orchestrator.on('flow_paused', () => sendEvent('flow_paused'));
+  orchestrator.on('flow_resumed', () => sendEvent('flow_resumed'));
+}
+
+/**
+ * 处理启动开发流程
+ */
+async function handleContinuousDevStart(
+  client: ClientConnection,
+  payload: { requirement: string },
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { sessionId } = client;
+  const session = conversationManager.getSessionManager().loadSessionById(sessionId);
+  
+  // 获取工作目录
+  // 注意：这里假设 ConversationManager 有方法获取 cwd，或者从 session Metadata 获取
+  // 实际项目中可能可以通过 conversationManager.getContext(sessionId).cwd 获取
+  // 这里暂时使用 process.cwd()，实际应从会话上下文获取
+  const cwd = process.cwd(); 
+
+  const orchestrator = getOrchestrator(sessionId, cwd);
+  setupOrchestratorListeners(orchestrator, client);
+  
+  // 检查是否空闲
+  const state = orchestrator.getState();
+  if (state.phase !== 'idle' && state.phase !== 'completed' && state.phase !== 'failed') {
+    sendMessage(client.ws, {
+      type: 'error',
+      payload: { message: `当前已有开发任务正在进行中 (状态: ${state.phase})，请先等待完成或取消。` }
+    });
+    return;
+  }
+
+  // 启动流程
+  // processRequirement 是异步的，但我们不 await 它，让它在后台运行
+  // 错误通过事件发送
+  orchestrator.processRequirement(payload.requirement)
+    .then(result => {
+      if (!result.success && !result.error?.includes('需要人工审批')) {
+        // 如果不是等待审批的"失败"（其实是暂停），则发送错误
+        // (processRequirement 内部已经 emit flow_failed)
+      }
+    })
+    .catch(error => {
+      console.error('[ContinuousDev] 流程异常:', error);
+      // 内部应该已经捕捉并 emit 事件
+    });
+    
+  // 立即发送响应
+  sendMessage(client.ws, {
+    type: 'continuous_dev:ack',
+    payload: { message: '开发流程已启动' }
+  });
+}
+
+/**
+ * 处理获取状态
+ */
+async function handleContinuousDevStatus(client: ClientConnection): Promise<void> {
+  const orchestrator = orchestrators.get(client.sessionId);
+  if (!orchestrator) {
+    sendMessage(client.ws, {
+      type: 'continuous_dev:status_update',
+      payload: { phase: 'idle', message: '无活跃流程' }
+    });
+    return;
+  }
+  
+  sendMessage(client.ws, {
+    type: 'continuous_dev:status_update',
+    payload: orchestrator.getState()
+  });
+  
+  // 同时发送进度
+  sendMessage(client.ws, {
+    type: 'continuous_dev:progress_update',
+    payload: orchestrator.getProgress()
+  });
+}
+
+/**
+ * 处理暂停
+ */
+async function handleContinuousDevPause(client: ClientConnection): Promise<void> {
+  const orchestrator = orchestrators.get(client.sessionId);
+  if (orchestrator) {
+    orchestrator.pause();
+    sendMessage(client.ws, {
+      type: 'continuous_dev:paused',
+      payload: { success: true }
+    });
+  }
+}
+
+/**
+ * 处理恢复
+ */
+async function handleContinuousDevResume(client: ClientConnection): Promise<void> {
+  const orchestrator = orchestrators.get(client.sessionId);
+  if (orchestrator) {
+    orchestrator.resume();
+    sendMessage(client.ws, {
+      type: 'continuous_dev:resumed',
+      payload: { success: true }
+    });
+  }
+}
+
+/**
+ * 处理批准执行
+ */
+async function handleContinuousDevApprove(client: ClientConnection): Promise<void> {
+  const orchestrator = orchestrators.get(client.sessionId);
+  if (orchestrator) {
+    try {
+      await orchestrator.approveAndExecute();
+      sendMessage(client.ws, {
+        type: 'continuous_dev:approved',
+        payload: { success: true }
+      });
+    } catch (error) {
+      sendMessage(client.ws, {
+        type: 'error',
+        payload: { message: error instanceof Error ? error.message : '批准失败' }
+      });
+    }
+  }
+}
+
+/**
+ * 处理回滚
+ */
+async function handleContinuousDevRollback(
+  client: ClientConnection, 
+  payload: { checkpointId?: string }
+): Promise<void> {
+  // 目前编排器还未完全公开回滚 API，这里作为预留接口
+  // 实际实现需要调用 checkpointManager 和 orchestrator 的重置逻辑
+  sendMessage(client.ws, {
+    type: 'error',
+    payload: { message: '回滚功能正在开发中' }
+  });
 }
