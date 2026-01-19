@@ -26,6 +26,7 @@ import {
 } from '../media/index.js';
 import { blueprintContext } from '../blueprint/index.js';
 import { persistLargeOutputSync } from './output-persistence.js';
+import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 
 /**
  * 差异预览接口
@@ -623,6 +624,11 @@ Usage:
     const { file_path, content } = input;
 
     try {
+      const hookResult = await runPreToolUseHooks('Write', input);
+      if (!hookResult.allowed) {
+        return { success: false, error: hookResult.message || 'Blocked by hook' };
+      }
+
       // 蓝图边界检查（如果在蓝图执行上下文中）
       const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
       if (!boundaryCheck.allowed) {
@@ -641,11 +647,13 @@ Usage:
       fs.writeFileSync(file_path, content, 'utf-8');
 
       const lines = content.split('\n').length;
-      return {
+      const result = {
         success: true,
         output: `Successfully wrote ${lines} lines to ${file_path}`,
         lineCount: lines,
       };
+      await runPostToolUseHooks('Write', input, result.output || '');
+      return result;
     } catch (err) {
       return { success: false, error: `Error writing file: ${err}` };
     }
@@ -927,6 +935,11 @@ Usage:
         };
       }
 
+      const hookResult = await runPreToolUseHooks('Edit', input);
+      if (!hookResult.allowed) {
+        return { success: false, error: hookResult.message || 'Blocked by hook' };
+      }
+
       // 2. 验证文件是否已被读取（如果启用了此检查）
       if (this.requireFileRead && !fileReadTracker.hasBeenRead(file_path)) {
         return {
@@ -940,7 +953,11 @@ Usage:
       if (!fs.existsSync(file_path)) {
         // 特殊情况：如果 old_string 为空，视为创建新文件
         if (old_string === '' && new_string !== undefined) {
-          return this.createNewFile(file_path, new_string);
+          const result = this.createNewFile(file_path, new_string);
+          if (result.success) {
+            await runPostToolUseHooks('Edit', input, result.output || '');
+          }
+          return result;
         }
         return { success: false, error: `File not found: ${file_path}` };
       }
@@ -987,7 +1004,11 @@ Usage:
 
       // 6. 特殊情况：old_string 为空表示写入/覆盖整个文件
       if (old_string === '') {
-        return this.writeEntireFile(file_path, new_string ?? '', originalContent, show_diff);
+        const result = this.writeEntireFile(file_path, new_string ?? '', originalContent, show_diff);
+        if (result.success) {
+          await runPostToolUseHooks('Edit', input, result.output || '');
+        }
+        return result;
       }
 
       // 7. 备份原始内容
@@ -1092,11 +1113,13 @@ Usage:
         // 清除备份
         this.fileBackup.clear();
 
-        return {
+        const result = {
           success: true,
           output,
           content: modifiedContent,
         };
+        await runPostToolUseHooks('Edit', input, result.output || '');
+        return result;
       } catch (writeErr) {
         // 写入失败，尝试回滚
         this.fileBackup.restore(file_path);

@@ -32,22 +32,65 @@ export type ChatContent =
     | {
       type: 'impact_analysis';
       data: {
-        riskLevel: 'low' | 'medium' | 'high';
-        impactedFiles: string[];
-        safetyBoundary: { allowedFiles: string[]; blockedFiles: string[] };
-        estimatedEffort: string;
-        summary: string;
+        risk: {
+          overallLevel: 'low' | 'medium' | 'high' | 'critical';
+          breakingChanges: number;
+          highRiskFiles: number;
+          summary: string;
+        };
+        impact: {
+          additions: Array<{ path: string; changeType: string; riskLevel: string; reason: string }>;
+          modifications: Array<{ path: string; changeType: string; riskLevel: string; reason: string }>;
+          deletions: Array<{ path: string; changeType: string; riskLevel: string; reason: string }>;
+          byModule: Array<{ moduleName: string; modulePath: string; overallRisk: string; requiresReview: boolean }>;
+          interfaceChanges: Array<{ interfaceName: string; changeType: string; breakingChange: boolean }>;
+        };
+        safetyBoundary: {
+          allowedPaths: Array<{ path: string; operations: Array<'read' | 'write' | 'delete'> }>;
+          readOnlyPaths: string[];
+          forbiddenPaths: Array<{ path: string; reason: string }>;
+          requireReviewPaths: Array<{ path: string; reason: string }>;
+        };
+        regressionScope: {
+          mustRun: Array<{ testPath: string; reason: string }>;
+          shouldRun: Array<{ testPath: string; reason: string }>;
+          allExisting: string[];
+          estimatedDuration: number;
+        };
+        recommendations: string[];
       };
     }
     | {
       type: 'dev_progress';
       data: {
-        phase: 'idle' | 'analysis' | 'planning' | 'execution' | 'review' | 'completed' | 'failed';
+        phase: 'idle' | 'analyzing_codebase' | 'analyzing_requirement' | 'generating_blueprint' | 'awaiting_approval' | 'executing' | 'validating' | 'cycle_review' | 'completed' | 'failed' | 'paused';
         percentage: number;
         currentTask?: string;
         tasksCompleted: number;
         tasksTotal: number;
-        status: 'running' | 'paused' | 'error';
+        status?: 'running' | 'paused' | 'error';
+      };
+    }
+    | {
+      type: 'regression_result';
+      data: {
+        passed: boolean;
+        failureReason?: string;
+        failedTests?: string[];
+        recommendations?: string[];
+        duration?: number;
+        newTests?: { total: number; passed: number; failed: number };
+        regressionTests?: { total: number; passed: number; failed: number };
+      };
+    }
+    | {
+      type: 'cycle_review';
+      data: {
+        score: number;
+        summary: string;
+        issues?: Array<{ category: string; severity: string; description: string; suggestion?: string }>;
+        recommendations?: string[];
+        rollbackSuggestion?: { recommended: boolean; targetCheckpoint?: string; reason?: string };
       };
     };
 
@@ -179,6 +222,15 @@ export type WSMessageType =
   | 'continuous_dev:status_update'
   | 'continuous_dev:progress_update'
   | 'continuous_dev:approval_required'
+  | 'continuous_dev:regression_failed'
+  | 'continuous_dev:regression_passed'
+  | 'continuous_dev:cycle_review_started'
+  | 'continuous_dev:cycle_review_completed'
+  | 'continuous_dev:cycle_reset'
+  | 'continuous_dev:flow_failed'
+  | 'continuous_dev:flow_stopped'
+  | 'continuous_dev:flow_paused'
+  | 'continuous_dev:flow_resumed'
   | 'continuous_dev:flow_started'
   | 'continuous_dev:phase_changed'
   | 'continuous_dev:task_completed'

@@ -291,6 +291,7 @@ export interface CodeArtifact {
   filePath?: string;
   content?: string;
   command?: string;
+  changeType?: 'create' | 'modify' | 'delete';
   createdAt: Date;
   checkpointId?: string;       // 关联的检查点
 }

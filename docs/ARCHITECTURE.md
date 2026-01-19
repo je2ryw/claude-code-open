@@ -10,15 +10,18 @@
 
 **目录**
 1. [整体系统架构](#1-整体系统架构)
-2. [双模式架构](#2-双模式架构-cli--webui)
-3. [核心引擎层详解](#3-核心引擎层详解)
-4. [工具系统架构](#4-工具系统架构)
-5. [蓝图(Blueprint)系统](#5-蓝图blueprint系统架构)
-6. [记忆系统架构](#6-统一记忆系统架构)
-7. [流式处理详解](#7-流式输出处理)
-8. [权限与安全](#8-权限系统架构)
-9. [性能优化机制](#9-三层自动压缩机制)
-10. [配置与扩展](#10-配置和环境变量)
+2. [流式输出处理](#2-流式输出处理-信号序列图)
+3. [流式事件类型详解](#3-流式事件类型详解)
+4. [工具调用流程](#4-工具调用流程)
+5. [蓝图(Blueprint)系统架构](#5-蓝图blueprint系统架构)
+6. [三层自动压缩机制](#6-三层自动压缩机制)
+7. [工具系统架构](#7-工具系统架构)
+8. [Agent 系统架构](#8-agent-系统架构)
+9. [权限系统架构](#9-权限系统架构)
+10. [模块间调用关系](#10-模块间调用关系)
+11. [消息结构](#11-消息结构)
+12. [完整数据流路径](#12-完整数据流路径)
+13. [配置和环境变量](#13-配置和环境变量)
 
 ---
 
@@ -323,7 +326,73 @@ flowchart TB
 
 ---
 
-## 5. 三层自动压缩机制
+## 5. 蓝图(Blueprint)系统架构
+
+蓝图系统用于将需求转化为可执行的任务树，并通过 TDD/回归门禁/时光倒流保障安全交付。
+
+```mermaid
+flowchart TB
+    subgraph BlueprintGen["📋 蓝图生成"]
+        RequirementDialog["RequirementDialogManager<br/>需求对话"]
+        CodebaseAnalyzer["CodebaseAnalyzer<br/>代码库分析"]
+        ImpactAnalyzer["ImpactAnalyzer<br/>影响分析"]
+        BlueprintManager["BlueprintManager<br/>蓝图管理"]
+    end
+
+    subgraph Tasking["🌳 任务与测试"]
+        TaskTreeManager["TaskTreeManager<br/>任务树生成"]
+        AcceptanceGen["AcceptanceTestGenerator<br/>验收测试生成"]
+        AcceptanceRunner["AcceptanceTestRunner<br/>验收测试运行"]
+    end
+
+    subgraph Execution["🐝 执行与协调"]
+        AgentCoordinator["AgentCoordinator<br/>蜂王-蜜蜂协调"]
+        TDDExecutor["TDDExecutor<br/>TDD 循环"]
+        WorkerExecutor["WorkerExecutor<br/>执行器"]
+    end
+
+    subgraph Safety["🔐 安全护栏"]
+        SafetyBoundary["SafetyBoundary<br/>安全边界"]
+        BlueprintContext["BlueprintContext<br/>边界上下文"]
+        BoundaryChecker["BoundaryChecker<br/>文件边界检查"]
+        RegressionGate["RegressionGate<br/>回归门禁"]
+        CycleReset["CycleResetManager<br/>周期重置"]
+    end
+
+    subgraph Recovery["⏱️ 回滚与审计"]
+        TimeTravel["TimeTravelManager<br/>时光倒流"]
+        Checkpoints["Checkpoints<br/>检查点"]
+    end
+
+    RequirementDialog --> BlueprintManager
+    CodebaseAnalyzer --> BlueprintManager
+    ImpactAnalyzer --> SafetyBoundary
+    BlueprintManager --> TaskTreeManager
+    TaskTreeManager --> AcceptanceGen
+    AcceptanceGen --> AcceptanceRunner
+    TaskTreeManager --> AgentCoordinator
+    AgentCoordinator --> TDDExecutor
+    AgentCoordinator --> WorkerExecutor
+    SafetyBoundary --> BlueprintContext
+    BlueprintContext --> BoundaryChecker
+    AgentCoordinator --> RegressionGate
+    AgentCoordinator --> CycleReset
+    TaskTreeManager --> TimeTravel
+    TimeTravel --> Checkpoints
+```
+
+**关键数据持久化**
+- 蓝图：`~/.claude/blueprints/*.json`
+- 任务树：`~/.claude/task-trees/*.json`
+
+**对外集成点**
+- 工具入口：`BlueprintTool`（对话式蓝图管理）
+- Web API：`src/web/server/routes/blueprint-api.ts`
+- Web UI：`BlueprintSummaryCard` / Swarm 控制台
+
+---
+
+## 6. 三层自动压缩机制
 
 ```mermaid
 flowchart TB
@@ -375,7 +444,7 @@ flowchart TB
 
 ---
 
-## 6. 工具系统架构
+## 7. 工具系统架构
 
 ```mermaid
 flowchart TB
@@ -465,7 +534,7 @@ flowchart TB
 
 ---
 
-## 7. Agent 系统架构
+## 8. Agent 系统架构
 
 ```mermaid
 flowchart TB
@@ -513,7 +582,7 @@ flowchart TB
 
 ---
 
-## 8. 权限系统架构
+## 9. 权限系统架构
 
 ```mermaid
 flowchart LR
@@ -563,7 +632,7 @@ flowchart LR
 
 ---
 
-## 9. 模块间调用关系
+## 10. 模块间调用关系
 
 ```mermaid
 flowchart TB
@@ -643,7 +712,7 @@ flowchart TB
 
 ---
 
-## 10. 消息结构
+## 11. 消息结构
 
 ```mermaid
 classDiagram
@@ -684,7 +753,7 @@ classDiagram
 
 ---
 
-## 11. 完整数据流路径
+## 12. 完整数据流路径
 
 ```mermaid
 flowchart TB
@@ -766,7 +835,7 @@ flowchart TB
 
 ---
 
-## 12. 配置和环境变量
+## 13. 配置和环境变量
 
 ```mermaid
 flowchart LR

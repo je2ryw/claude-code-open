@@ -17,6 +17,7 @@ export * from './ask.js';
 export * from './sandbox.js';
 export * from './skill.js';
 export * from './lsp.js';
+export * from './blueprint.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -32,6 +33,8 @@ import { MCPSearchTool, ListMcpResourcesTool, ReadMcpResourceTool } from './mcp.
 import { AskUserQuestionTool } from './ask.js';
 import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
 import { LSPTool } from './lsp.js';
+import { BlueprintTool } from './blueprint.js';
+import { registerBlueprintHooks } from '../hooks/blueprint-hooks.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
 export function registerAllTools(): void {
@@ -81,16 +84,20 @@ export function registerAllTools(): void {
   // 10. 代码智能 (1个)
   toolRegistry.register(new LSPTool());
 
+  // 11. 蓝图系统工具 (1个)
+  toolRegistry.register(new BlueprintTool());
+
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留
   toolRegistry.register(new MCPSearchTool());
 
-  // 11. MCP 资源工具 (2个) - v2.1.6 新增
+  // 12. MCP 资源工具 (2个) - v2.1.6 新增
   toolRegistry.register(new ListMcpResourcesTool());
   toolRegistry.register(new ReadMcpResourceTool());
 }
 
 // 自动注册
 registerAllTools();
+registerBlueprintHooks();
 
 export { toolRegistry };

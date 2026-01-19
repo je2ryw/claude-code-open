@@ -3824,6 +3824,7 @@ function setupOrchestratorListeners(orchestrator: ContinuousDevOrchestrator, cli
   // 周期重置
   orchestrator.on('cycle_reset', (data) => sendEvent('cycle_reset', data));
   orchestrator.on('cycle_review_started', (data) => sendEvent('cycle_review_started', data));
+  orchestrator.on('cycle_review_completed', (data) => sendEvent('cycle_review_completed', data));
   
   // 错误和完成
   orchestrator.on('flow_failed', (data) => sendEvent('flow_failed', data));

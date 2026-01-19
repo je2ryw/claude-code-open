@@ -24,6 +24,7 @@ import { ImpactAnalyzer, ImpactAnalysisReport, SafetyBoundary } from './impact-a
 import { RegressionGate, GateResult, WorkerSubmission } from './regression-gate.js';
 import { CycleResetManager, CycleStats, ReviewResult } from './cycle-reset-manager.js';
 import { BoundaryChecker } from './boundary-checker.js';
+import { setSafetyBoundary, clearSafetyBoundary } from './blueprint-context.js';
 
 // ============================================================================
 // 配置
@@ -201,13 +202,15 @@ export class ContinuousDevOrchestrator extends EventEmitter {
    */
   private wireEvents(): void {
     // 转发关键事件
-    this.agentCoordinator.on('worker_completed', (data) => {
+    this.agentCoordinator.on('worker:task-completed', (data: { taskId?: string }) => {
       this.state.stats.tasksCompleted++;
+      this.recordCycleTaskResult(data.taskId, true);
       this.emit('task_completed', data);
     });
     
-    this.agentCoordinator.on('worker_failed', (data) => {
+    this.agentCoordinator.on('worker:task-failed', (data: { taskId?: string }) => {
       this.state.stats.tasksFailed++;
+      this.recordCycleTaskResult(data.taskId, false);
       this.emit('task_failed', data);
     });
     
@@ -225,6 +228,22 @@ export class ContinuousDevOrchestrator extends EventEmitter {
       this.state.stats.cyclesCompleted++;
       this.emit('cycle_reset', data);
     });
+  }
+
+  /**
+   * 记录周期统计（任务完成/失败）
+   */
+  private recordCycleTaskResult(taskId?: string, success: boolean = true): void {
+    if (!taskId || !this.state.taskTree) return;
+
+    const task = this.taskTreeManager.findTask(this.state.taskTree.root, taskId);
+    if (!task) return;
+
+    const startedAt = task.startedAt ? task.startedAt.getTime() : undefined;
+    const completedAt = task.completedAt ? task.completedAt.getTime() : undefined;
+    const duration = startedAt && completedAt ? completedAt - startedAt : 0;
+
+    this.cycleResetManager.recordTaskCompletion(taskId, success, duration, 0);
   }
   
   /**
@@ -469,9 +488,11 @@ export class ContinuousDevOrchestrator extends EventEmitter {
    */
   private configureSafetyBoundary(): void {
     if (!this.state.safetyBoundary) return;
-    
+
     const validator = this.impactAnalyzer.createBoundaryValidator(this.state.safetyBoundary);
-    
+
+    setSafetyBoundary(this.state.safetyBoundary);
+
     // 注入到协调器中
     // 实际实现需要修改 AgentCoordinator 支持边界检查
     this.emit('boundary_configured', {
@@ -484,25 +505,29 @@ export class ContinuousDevOrchestrator extends EventEmitter {
    * 设置回归测试门禁
    */
   private setupRegressionGate(): void {
-    // 监听 Worker 提交，在提交前运行回归测试
-    this.agentCoordinator.on('worker_submitting', async (submission: WorkerSubmission) => {
+    this.agentCoordinator.setSubmissionValidator(async (submission: WorkerSubmission) => {
       const result = await this.regressionGate.validate(submission);
-      
+
       if (!result.passed) {
-        // 阻止提交
         this.emit('submission_blocked', {
           workerId: submission.workerId,
           reason: result.failureReason,
           recommendations: result.recommendations,
         });
-        
+
         if (this.config.humanCheckpoints.onRegressionFailure) {
           this.emit('human_intervention_required', {
             type: 'regression_failure',
             result,
           });
         }
+
+        if (!this.config.safety.enforceRegressionGate) {
+          return { ...result, passed: true };
+        }
       }
+
+      return result;
     });
   }
   
@@ -603,6 +628,8 @@ export class ContinuousDevOrchestrator extends EventEmitter {
   stop(): void {
     this.agentCoordinator.stopMainLoop();
     this.regressionGate.cancel();
+    this.agentCoordinator.setSubmissionValidator(undefined);
+    clearSafetyBoundary();
     this.setPhase('idle');
     this.emit('flow_stopped');
   }

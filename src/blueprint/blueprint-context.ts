@@ -11,6 +11,7 @@
  */
 
 import type { Blueprint } from './types.js';
+import type { SafetyBoundary } from './impact-analyzer.js';
 import { BoundaryChecker, createBoundaryChecker, type BoundaryCheckResult } from './boundary-checker.js';
 
 // ============================================================================
@@ -42,6 +43,9 @@ class BlueprintContextManager {
 
   /** 边界检查器（基于当前蓝图） */
   private boundaryChecker: BoundaryChecker | null = null;
+
+  /** 安全边界（来自影响分析） */
+  private safetyBoundary: SafetyBoundary | null = null;
 
   /** 活跃任务上下文（Worker ID -> 上下文） */
   private activeTasks: Map<string, ActiveTaskContext> = new Map();
@@ -76,6 +80,7 @@ class BlueprintContextManager {
   clearBlueprint(): void {
     this.currentBlueprint = null;
     this.boundaryChecker = null;
+    this.safetyBoundary = null;
     this.activeTasks.clear();
   }
 
@@ -84,6 +89,24 @@ class BlueprintContextManager {
    */
   getBlueprint(): Blueprint | null {
     return this.currentBlueprint;
+  }
+
+  // --------------------------------------------------------------------------
+  // 安全边界管理（影响分析）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 设置安全边界（来自影响分析）
+   */
+  setSafetyBoundary(boundary: SafetyBoundary): void {
+    this.safetyBoundary = boundary;
+  }
+
+  /**
+   * 清除安全边界
+   */
+  clearSafetyBoundary(): void {
+    this.safetyBoundary = null;
   }
 
   // --------------------------------------------------------------------------
@@ -161,6 +184,16 @@ class BlueprintContextManager {
       return { allowed: true };
     }
 
+    const normalizedPath = filePath.replace(/\\/g, '/');
+
+    // 先应用影响分析的安全边界（更严格）
+    if (this.safetyBoundary) {
+      const safetyResult = this.checkSafetyBoundary(normalizedPath, operation);
+      if (!safetyResult.allowed) {
+        return safetyResult;
+      }
+    }
+
     // 如果没有蓝图或边界检查器，直接通过
     if (!this.currentBlueprint || !this.boundaryChecker) {
       return { allowed: true };
@@ -182,11 +215,56 @@ class BlueprintContextManager {
 
     // 如果有任务上下文，使用任务边界检查
     if (context && context.moduleId) {
-      return this.boundaryChecker.checkTaskBoundary(context.moduleId, filePath);
+      return this.boundaryChecker.checkTaskBoundary(context.moduleId, normalizedPath);
     }
 
     // 否则使用通用边界检查
-    return this.boundaryChecker.checkFilePath(filePath, operation);
+    return this.boundaryChecker.checkFilePath(normalizedPath, operation);
+  }
+
+  /**
+   * 安全边界检查
+   */
+  private checkSafetyBoundary(
+    filePath: string,
+    operation: 'read' | 'write' | 'delete'
+  ): BoundaryCheckResult {
+    if (!this.safetyBoundary) {
+      return { allowed: true };
+    }
+
+    const boundary = this.safetyBoundary;
+
+    const forbidden = boundary.forbiddenPaths.find(p => filePath.includes(p.path));
+    if (forbidden) {
+      return { allowed: false, reason: forbidden.reason };
+    }
+
+    if (operation !== 'read') {
+      const readOnly = boundary.readOnlyPaths.find(p => filePath.includes(p));
+      if (readOnly) {
+        return { allowed: false, reason: '此路径为只读（影响分析安全边界）' };
+      }
+
+      if (boundary.allowedPaths.length > 0) {
+        const allowed = boundary.allowedPaths.find(p =>
+          filePath.includes(p.path) && p.operations.includes(operation)
+        );
+        if (!allowed) {
+          return { allowed: false, reason: '此路径不在影响分析允许修改范围内' };
+        }
+      }
+
+      const needsReview = boundary.requireReviewPaths.find(p => filePath.includes(p.path));
+      if (needsReview) {
+        return {
+          allowed: true,
+          warnings: [`需要人工审核: ${needsReview.reason}`],
+        };
+      }
+    }
+
+    return { allowed: true };
   }
 
   /**
@@ -241,6 +319,14 @@ export function setBlueprint(blueprint: Blueprint): void {
 
 export function clearBlueprint(): void {
   blueprintContext.clearBlueprint();
+}
+
+export function setSafetyBoundary(boundary: SafetyBoundary): void {
+  blueprintContext.setSafetyBoundary(boundary);
+}
+
+export function clearSafetyBoundary(): void {
+  blueprintContext.clearSafetyBoundary();
 }
 
 export function setActiveTask(context: ActiveTaskContext): void {

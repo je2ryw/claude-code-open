@@ -367,7 +367,7 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
             content: [{
               type: 'dev_progress',
               data: {
-                phase: 'analysis',
+                phase: 'analyzing_codebase',
                 percentage: 0,
                 tasksCompleted: 0,
                 tasksTotal: 0,
@@ -383,9 +383,15 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         case 'continuous_dev:status_update':
         case 'continuous_dev:progress_update':
         case 'continuous_dev:phase_changed':
-        case 'continuous_dev:task_completed': 
+        case 'continuous_dev:task_completed':
+        case 'continuous_dev:task_failed':
         case 'continuous_dev:paused':
-        case 'continuous_dev:resumed': {
+        case 'continuous_dev:resumed':
+        case 'continuous_dev:flow_failed':
+        case 'continuous_dev:flow_paused':
+        case 'continuous_dev:flow_resumed':
+        case 'continuous_dev:flow_stopped':
+        case 'continuous_dev:completed': {
            setMessages(prev => {
               const newMessages = [...prev];
               // 从后往前找最近的一条包含进度条的消息
@@ -401,16 +407,34 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
                     
                     // 根据消息类型和 payload 更新特定字段
                     // 使用 msg.type (外层 WSMessage)
-                    if (msg.type === 'continuous_dev:paused') newData.status = 'paused';
-                    else if (msg.type === 'continuous_dev:resumed') newData.status = 'running';
-                    else if (msg.type === 'continuous_dev:status_update') Object.assign(newData, payload);
-                    else if (payload.phase) newData.phase = payload.phase;
+                    if (msg.type === 'continuous_dev:paused' || msg.type === 'continuous_dev:flow_paused') newData.status = 'paused';
+                    else if (msg.type === 'continuous_dev:resumed' || msg.type === 'continuous_dev:flow_resumed') newData.status = 'running';
+                    else if (msg.type === 'continuous_dev:flow_failed') {
+                      newData.status = 'error';
+                      newData.phase = 'failed';
+                    } else if (msg.type === 'continuous_dev:completed') {
+                      newData.phase = 'completed';
+                    } else if (payload?.phase) {
+                      newData.phase = payload.phase;
+                    }
+                    
+                    if (msg.type === 'continuous_dev:status_update' && payload?.stats) {
+                      if (payload.stats.tasksCompleted !== undefined) {
+                        newData.tasksCompleted = payload.stats.tasksCompleted;
+                      }
+                      if (payload.stats.tasksTotal !== undefined) {
+                        newData.tasksTotal = payload.stats.tasksTotal;
+                      }
+                      if (newData.tasksTotal > 0) {
+                        newData.percentage = Math.round((newData.tasksCompleted / newData.tasksTotal) * 100);
+                      }
+                    }
                     
                     // 确保更新
-                    if (payload.percentage !== undefined) newData.percentage = payload.percentage;
-                    if (payload.currentTask) newData.currentTask = payload.currentTask;
-                    if (payload.tasksCompleted !== undefined) newData.tasksCompleted = payload.tasksCompleted;
-                    if (payload.tasksTotal !== undefined) newData.tasksTotal = payload.tasksTotal;
+                    if (payload?.percentage !== undefined) newData.percentage = Math.round(payload.percentage);
+                    if (payload?.currentTask) newData.currentTask = payload.currentTask;
+                    if (payload?.tasksCompleted !== undefined) newData.tasksCompleted = payload.tasksCompleted;
+                    if (payload?.tasksTotal !== undefined) newData.tasksTotal = payload.tasksTotal;
 
                     // 创建新的 content 数组以触发更新
                     const newContent = [...chatMsg.content];
@@ -444,6 +468,65 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
             };
             setMessages(prev => [...prev, newMessage]);
           }
+          const blueprint = (payload as any).blueprint;
+          if (blueprint) {
+            const newMessage: ChatMessage = {
+              id: `dev-blueprint-${Date.now()}`,
+              role: 'assistant',
+              timestamp: Date.now(),
+              content: [{
+                type: 'blueprint',
+                blueprintId: blueprint.id,
+                name: blueprint.name,
+                moduleCount: blueprint.modules?.length || 0,
+                processCount: blueprint.businessProcesses?.length || 0,
+                nfrCount: blueprint.nfrs?.length || 0
+              }]
+            };
+            setMessages(prev => [...prev, newMessage]);
+          }
+          break;
+        }
+
+        case 'continuous_dev:regression_failed': {
+          const newMessage: ChatMessage = {
+            id: `dev-regression-${Date.now()}`,
+            role: 'assistant',
+            timestamp: Date.now(),
+            content: [{
+              type: 'regression_result',
+              data: payload as any
+            }]
+          };
+          setMessages(prev => [...prev, newMessage]);
+          break;
+        }
+
+        case 'continuous_dev:regression_passed': {
+          const newMessage: ChatMessage = {
+            id: `dev-regression-${Date.now()}`,
+            role: 'assistant',
+            timestamp: Date.now(),
+            content: [{
+              type: 'regression_result',
+              data: payload as any
+            }]
+          };
+          setMessages(prev => [...prev, newMessage]);
+          break;
+        }
+
+        case 'continuous_dev:cycle_review_completed': {
+          const newMessage: ChatMessage = {
+            id: `dev-cycle-${Date.now()}`,
+            role: 'assistant',
+            timestamp: Date.now(),
+            content: [{
+              type: 'cycle_review',
+              data: payload as any
+            }]
+          };
+          setMessages(prev => [...prev, newMessage]);
           break;
         }
 

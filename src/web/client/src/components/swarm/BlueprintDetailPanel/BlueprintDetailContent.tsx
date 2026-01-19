@@ -209,6 +209,10 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   // 架构图节点点击后需要跳转到的行号
   const [targetLine, setTargetLine] = useState<number | null>(null);
 
+  // 可视化模式：'ai' (AI 生成) | 'direct' (直接渲染)
+  const [visualizationMode, setVisualizationMode] = useState<'ai' | 'direct'>('ai');
+
+
   // ============ 新手模式相关状态 ============
   // 新手模式开关（默认开启）
   const [beginnerMode, setBeginnerMode] = useState<boolean>(() => {
@@ -627,7 +631,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     setSelectedArchitectureType(type);
 
     try {
-      const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}${forceRefresh ? '&forceRefresh=true' : ''}`;
+      const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}&mode=${visualizationMode}${forceRefresh ? '&forceRefresh=true' : ''}`;
       const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
@@ -655,7 +659,22 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         return newSet;
       });
     }
-  }, [blueprintId, architectureGraphCache]);
+  }, [blueprintId, architectureGraphCache, visualizationMode]);
+
+  // 监听模式切换，自动重新加载
+  useEffect(() => {
+    // 切换模式时，如果缓存中没有对应模式的数据（或者我们希望总是刷新），可以重新加载
+    // 这里简单起见，清除当前类型的缓存并重新加载
+    if (selectedArchitectureType) {
+        setArchitectureGraphCache(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(selectedArchitectureType);
+            return newMap;
+        });
+        loadArchitectureGraph(selectedArchitectureType);
+    }
+  }, [visualizationMode]);
+
 
   // 组件挂载时初始化项目和蓝图信息
   useEffect(() => {
@@ -3920,7 +3939,45 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           </div>
 
           <section className={styles.moduleGraphSection}>
+            <div className={styles.moduleGraphHeader} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3>系统架构概览</h3>
+              <div className={styles.visualizationModeToggle} style={{ display: 'flex', gap: '8px', background: '#f0f0f0', padding: '4px', borderRadius: '4px' }}>
+                <button
+                  onClick={() => setVisualizationMode('ai')}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: visualizationMode === 'ai' ? '#fff' : 'transparent',
+                    boxShadow: visualizationMode === 'ai' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer',
+                    fontWeight: visualizationMode === 'ai' ? 'bold' : 'normal',
+                    color: visualizationMode === 'ai' ? '#1a73e8' : '#666'
+                  }}
+                  title="使用 AI 分析代码生成架构图（更贴近实际实现）"
+                >
+                  🤖 AI生成
+                </button>
+                <button
+                  onClick={() => setVisualizationMode('direct')}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: visualizationMode === 'direct' ? '#fff' : 'transparent',
+                    boxShadow: visualizationMode === 'direct' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer',
+                    fontWeight: visualizationMode === 'direct' ? 'bold' : 'normal',
+                    color: visualizationMode === 'direct' ? '#1a73e8' : '#666'
+                  }}
+                  title="直接渲染蓝图 JSON 定义（更准确反映设计）"
+                >
+                  ⚡ 直接渲染
+                </button>
+              </div>
+            </div>
             {/* 架构流程图 */}
+
             <div className={styles.moduleGraphBody}>
               <ArchitectureFlowGraph
                 blueprintId={blueprintId}

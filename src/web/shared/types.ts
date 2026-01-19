@@ -238,6 +238,7 @@ export type ServerMessage =
   | { type: 'continuous_dev:regression_failed'; payload: any }
   | { type: 'continuous_dev:cycle_reset'; payload: any }
   | { type: 'continuous_dev:cycle_review_started'; payload: any }
+  | { type: 'continuous_dev:cycle_review_completed'; payload: any }
   | { type: 'continuous_dev:flow_failed'; payload: any }
   | { type: 'continuous_dev:flow_stopped'; payload?: any }
   | { type: 'continuous_dev:flow_paused'; payload?: any }

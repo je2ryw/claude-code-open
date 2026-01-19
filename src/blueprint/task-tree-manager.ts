@@ -797,6 +797,49 @@ export class TaskTreeManager extends EventEmitter {
   }
 
   // --------------------------------------------------------------------------
+  // 代码产出物管理
+  // --------------------------------------------------------------------------
+
+  appendCodeArtifacts(
+    treeId: string,
+    taskId: string,
+    artifacts: Array<Omit<CodeArtifact, 'id' | 'createdAt'>>
+  ): CodeArtifact[] {
+    if (!artifacts || artifacts.length === 0) return [];
+
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      throw new Error(`Task tree ${treeId} not found`);
+    }
+
+    const task = this.findTask(tree.root, taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const created: CodeArtifact[] = [];
+    for (const artifact of artifacts) {
+      const createdArtifact: CodeArtifact = {
+        id: uuidv4(),
+        createdAt: new Date(),
+        ...artifact,
+      };
+      task.codeArtifacts.push(createdArtifact);
+      created.push(createdArtifact);
+    }
+
+    this.saveTaskTree(tree);
+
+    this.emit('task:code-artifacts-appended', {
+      treeId,
+      taskId,
+      count: created.length,
+    });
+
+    return created;
+  }
+
+  // --------------------------------------------------------------------------
   // 检查点管理（时光倒流）
   // --------------------------------------------------------------------------
 
@@ -1463,10 +1506,11 @@ export class TaskTreeManager extends EventEmitter {
   private collectFileChanges(node: TaskNode, changes: FileChange[]): void {
     for (const artifact of node.codeArtifacts) {
       if (artifact.filePath && artifact.type === 'file') {
+        const changeType = artifact.changeType ?? 'create';
         changes.push({
           filePath: artifact.filePath,
-          type: 'create', // 简化处理
-          newContent: artifact.content,
+          type: changeType,
+          newContent: changeType === 'delete' ? undefined : artifact.content,
         });
       }
     }

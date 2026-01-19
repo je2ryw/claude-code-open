@@ -109,6 +109,10 @@ export class BoundaryChecker {
    * 获取模块的路径
    */
   private getModulePath(module: SystemModule): string {
+    if (module.rootPath && module.rootPath.trim()) {
+      return module.rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
+    }
+
     // 根据模块类型推导路径
     const typePathMap: Record<string, string> = {
       'frontend': 'src/web/client',

@@ -9,8 +9,10 @@
 
 import { ClaudeClient } from '../core/client.js';
 import type { TaskNode, TestResult, AcceptanceTest, Blueprint } from './types.js';
-import { BoundaryChecker, createBoundaryChecker, type BoundaryCheckResult } from './boundary-checker.js';
+import { BoundaryChecker, createBoundaryChecker } from './boundary-checker.js';
 import type { TDDPhase } from './tdd-executor.js';
+import { checkFileOperation } from './blueprint-context.js';
+import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -35,6 +37,8 @@ export interface WorkerExecutorConfig {
   testTimeout: number;
   /** 是否启用调试日志 */
   debug?: boolean;
+  /** Worker 标识（用于边界检查） */
+  workerId?: string;
 }
 
 const DEFAULT_CONFIG: WorkerExecutorConfig = {
@@ -92,9 +96,11 @@ export class WorkerExecutor {
   private client: ClaudeClient;
   private boundaryChecker: BoundaryChecker | null = null;
   private currentTaskModuleId: string | undefined;
+  private workerId: string | undefined;
 
   constructor(config?: Partial<WorkerExecutorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.workerId = this.config.workerId;
 
     // 创建 Claude 客户端
     this.client = new ClaudeClient({
@@ -117,6 +123,13 @@ export class WorkerExecutor {
    */
   setCurrentTaskModule(moduleId: string | undefined): void {
     this.currentTaskModuleId = moduleId;
+  }
+
+  /**
+   * 设置 Worker ID（用于边界检查）
+   */
+  setWorkerId(workerId: string | undefined): void {
+    this.workerId = workerId;
   }
 
   // --------------------------------------------------------------------------
@@ -798,7 +811,22 @@ ${file.content}
       ? filePath
       : path.join(this.config.projectRoot, filePath);
 
-    // 边界检查
+    const toolInput = { file_path: fullPath, content };
+    const hookResult = await runPreToolUseHooks('Write', toolInput);
+    if (!hookResult.allowed) {
+      throw new Error(hookResult.message || 'PreToolUse hook blocked file write');
+    }
+
+    const contextResult = checkFileOperation(fullPath, 'write', this.workerId);
+    if (!contextResult.allowed) {
+      throw new Error(`[蓝图边界检查] ${contextResult.reason}`);
+    }
+
+    if (contextResult.warnings && contextResult.warnings.length > 0) {
+      console.warn(`[边界警告] ${contextResult.warnings.join(', ')}`);
+    }
+
+    // 边界检查（Worker 本地校验）
     if (this.boundaryChecker) {
       const checkResult = this.boundaryChecker.checkTaskBoundary(
         this.currentTaskModuleId,
@@ -817,6 +845,7 @@ ${file.content}
 
     // 写入文件
     fs.writeFileSync(fullPath, content, 'utf-8');
+    await runPostToolUseHooks('Write', toolInput, `Wrote ${fullPath}`);
 
     this.log(`[Worker] 保存文件: ${filePath}`);
   }

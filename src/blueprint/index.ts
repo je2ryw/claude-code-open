@@ -141,6 +141,8 @@ export {
   blueprintContext,
   setBlueprint,
   clearBlueprint,
+  setSafetyBoundary,
+  clearSafetyBoundary,
   setActiveTask,
   clearActiveTask,
   checkFileOperation,

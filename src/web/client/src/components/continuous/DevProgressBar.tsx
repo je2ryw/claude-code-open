@@ -1,12 +1,12 @@
 import React from 'react';
 
 interface DevProgressData {
-  phase: 'idle' | 'analysis' | 'planning' | 'execution' | 'review' | 'completed' | 'failed';
+  phase: 'idle' | 'analyzing_codebase' | 'analyzing_requirement' | 'generating_blueprint' | 'awaiting_approval' | 'executing' | 'validating' | 'cycle_review' | 'completed' | 'failed' | 'paused';
   percentage: number;
   currentTask?: string;
   tasksCompleted: number;
   tasksTotal: number;
-  status: 'running' | 'paused' | 'error';
+  status?: 'running' | 'paused' | 'error';
 }
 
 interface DevProgressBarProps {
@@ -22,19 +22,24 @@ export const DevProgressBar: React.FC<DevProgressBarProps> = ({
   onResume,
   onCancel
 }) => {
-  const phaseLabels = {
+  const phaseLabels: Record<string, string> = {
     idle: '空闲',
-    analysis: '正在分析...',
-    planning: '生成蓝图...',
-    execution: '正在开发...',
-    review: '回归测试...',
+    analyzing_codebase: '分析代码库...',
+    analyzing_requirement: '分析需求...',
+    generating_blueprint: '生成蓝图...',
+    awaiting_approval: '等待审批...',
+    executing: '执行中...',
+    validating: '回归测试...',
+    cycle_review: '周期评审...',
+    paused: '已暂停',
     completed: '已完成',
-    failed: '已失败'
+    failed: '已失败',
   };
 
   const getStatusColor = () => {
-    if (data.status === 'error' || data.phase === 'failed') return 'bg-red-500';
-    if (data.status === 'paused') return 'bg-yellow-500';
+    const status = data.status || (data.phase === 'paused' ? 'paused' : 'running');
+    if (status === 'error' || data.phase === 'failed') return 'bg-red-500';
+    if (status === 'paused') return 'bg-yellow-500';
     if (data.phase === 'completed') return 'bg-green-500';
     return 'bg-blue-500';
   };
@@ -43,11 +48,11 @@ export const DevProgressBar: React.FC<DevProgressBarProps> = ({
     <div className="bg-gray-800/50 rounded-lg p-4 border border-white/10 my-2">
       <div className="flex justify-between items-center mb-2">
         <div className="flex items-center gap-2">
-          {data.status === 'running' && <span className="animate-spin text-blue-400">⚡</span>}
-          <span className="font-medium text-gray-200">
-            {phaseLabels[data.phase]}
-          </span>
-        </div>
+            {(data.status || 'running') === 'running' && <span className="animate-spin text-blue-400">⚡</span>}
+            <span className="font-medium text-gray-200">
+            {phaseLabels[data.phase] || data.phase}
+            </span>
+          </div>
         <span className="text-right text-xs font-mono text-gray-400">
           {data.percentage}%
         </span>
@@ -77,12 +82,12 @@ export const DevProgressBar: React.FC<DevProgressBarProps> = ({
 
       {(onPause || onResume || onCancel) && (
         <div className="flex gap-2 mt-3 pt-2 border-t border-white/5 justify-end">
-          {data.status === 'running' && onPause && (
+          {(data.status || 'running') === 'running' && onPause && (
             <button onClick={onPause} className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-white">
               暂停
             </button>
           )}
-          {data.status === 'paused' && onResume && (
+          {(data.status || 'running') === 'paused' && onResume && (
             <button onClick={onResume} className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white">
               恢复
             </button>

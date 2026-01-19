@@ -281,6 +281,13 @@ export class RegressionGate extends EventEmitter {
         testScope = []; // 空数组表示运行全部
         break;
     }
+
+    if (this.config.gateLevel !== 'full') {
+      const derivedScope = this.deriveTestScopeFromChanges(submission);
+      if (derivedScope.length > 0) {
+        testScope = Array.from(new Set([...testScope, ...derivedScope]));
+      }
+    }
     
     const command = testScope.length > 0
       ? `${this.config.testCommand} -- ${testScope.join(' ')}`
@@ -365,6 +372,84 @@ export class RegressionGate extends EventEmitter {
         });
       });
     });
+  }
+
+  private deriveTestScopeFromChanges(submission: WorkerSubmission): string[] {
+    const tests = new Set<string>();
+    const projectRoot = this.config.projectRoot;
+    const normalizePath = (filePath: string) => filePath.replace(/\\/g, '/');
+    const normalizeTestPath = (filePath: string) => normalizePath(
+      path.relative(projectRoot, path.resolve(projectRoot, filePath))
+    );
+
+    for (const file of submission.newTestFiles) {
+      const absolute = path.resolve(projectRoot, file);
+      if (fs.existsSync(absolute)) {
+        tests.add(normalizeTestPath(file));
+      }
+    }
+
+    const changedFiles = [
+      ...submission.changes.added,
+      ...submission.changes.modified,
+      ...submission.changes.deleted,
+    ];
+
+    for (const file of changedFiles) {
+      const normalized = normalizePath(file);
+      if (this.isTestFile(normalized)) {
+        const absolute = path.resolve(projectRoot, normalized);
+        if (fs.existsSync(absolute)) {
+          tests.add(normalizeTestPath(normalized));
+        }
+        continue;
+      }
+
+      for (const candidate of this.buildTestCandidates(normalized)) {
+        const absolute = path.resolve(projectRoot, candidate);
+        if (fs.existsSync(absolute)) {
+          tests.add(normalizeTestPath(candidate));
+        }
+      }
+    }
+
+    return Array.from(tests);
+  }
+
+  private isTestFile(filePath: string): boolean {
+    return (
+      /__tests__\//.test(filePath) ||
+      /\/tests\//.test(filePath) ||
+      /\.(test|spec)\.[jt]sx?$/.test(filePath)
+    );
+  }
+
+  private buildTestCandidates(filePath: string): string[] {
+    const normalized = filePath.replace(/\\/g, '/');
+    const ext = path.extname(normalized);
+    const base = path.basename(normalized, ext);
+    const dir = path.dirname(normalized);
+    const candidates = new Set<string>();
+
+    const addCandidate = (candidate: string) => {
+      if (candidate && candidate !== '.' && candidate !== '/') {
+        candidates.add(candidate);
+      }
+    };
+
+    addCandidate(path.posix.join(dir, `${base}.test${ext}`));
+    addCandidate(path.posix.join(dir, `${base}.spec${ext}`));
+    addCandidate(path.posix.join(dir, '__tests__', `${base}.test${ext}`));
+    addCandidate(path.posix.join(dir, '__tests__', `${base}.spec${ext}`));
+
+    if (normalized.startsWith('src/')) {
+      const relative = normalized.slice(4);
+      const relDir = path.posix.dirname(relative);
+      addCandidate(path.posix.join('tests', relDir, `${base}.test${ext}`));
+      addCandidate(path.posix.join('tests', relDir, `${base}.spec${ext}`));
+    }
+
+    return Array.from(candidates);
   }
   
   /**
