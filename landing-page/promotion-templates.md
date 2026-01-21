@@ -98,6 +98,103 @@ npm run dev
 
 #OpenSource #AI #ClaudeCode #TypeScript
 
+##英文版本
+
+**推文 1（主推）：**
+
+🚀 Open-sourced Claude Code reverse-engineering project!
+
+Learn AI coding assistant architecture by recreating Anthropic's Claude Code CLI:
+
+✅ 25+ built-in tools
+✅ Three-layer architecture
+✅ MCP protocol support
+✅ React + Ink terminal UI
+
+🔗 https://www.chatbi.site
+📦 https://github.com/kill136/claude-code
+
+#OpenSource #AI #ClaudeCode #TypeScript
+
+---
+
+**推文 2（Thread）：**
+
+🧵 Why I reverse-engineered Claude Code?
+
+1/ Claude Code is one of the best AI coding assistants, but official code is obfuscated
+
+2/ I recreated core features from public APIs and type definitions
+
+3/ Includes 25+ tools, session management, MCP support, React terminal UI
+
+4/ Great for developers wanting to learn AI tool architecture
+
+🔗 https://www.chatbi.site
+
+---
+
+## 4. Hacker News
+
+**Title:** Show HN: Claude Code Open – Reverse-engineered Claude Code CLI for learning
+
+**Text:**
+
+I reverse-engineered Anthropic's Claude Code CLI to understand how AI coding assistants are built.
+
+**What it includes:**
+- 25+ tools (Bash, file ops, search, web access, etc.)
+- Three-layer architecture (Entry → Core Engine → Tool System)
+- Session management with 30-day persistence
+- MCP protocol support
+- React + Ink terminal UI
+- Tree-sitter WASM for multi-language parsing
+
+**Tech stack:** TypeScript, Anthropic SDK, React/Ink, Zod
+
+This is purely for educational purposes - great for anyone wanting to learn how AI coding tools work under the hood.
+
+Website: https://www.chatbi.site
+GitHub: https://github.com/kill136/claude-code
+
+---
+
+## 5. Reddit (r/programming, r/MachineLearning)
+
+**Title:** [Project] Reverse-engineered Claude Code CLI - 25+ tools, full architecture study
+
+**Body:**
+
+Hey everyone,
+
+I've been working on an open-source project that reverse-engineers Anthropic's Claude Code CLI. Since the official code is obfuscated, I decided to recreate it from public APIs and type definitions for educational purposes.
+
+**Features:**
+- 25+ built-in tools (Bash, Read, Write, Edit, Glob, Grep, WebFetch, etc.)
+- Clean three-layer architecture
+- Session management with auto-save
+- MCP protocol support
+- React + Ink terminal UI
+- Tree-sitter for code parsing
+
+**Links:**
+- Website: https://www.chatbi.site
+- GitHub: https://github.com/kill136/claude-code
+
+It's a great resource if you want to understand how modern AI coding assistants are architected. Feedback welcome!
+
+---
+
+## 发布清单
+
+- [ ] 掘金发布（标签：开源、AI、TypeScript）
+- [ ] CSDN 发布
+- [ ] V2EX /create 节点发布
+- [ ] Twitter/X 发推文
+- [ ] Hacker News Show HN
+- [ ] Reddit r/programming
+- [ ] Reddit r/MachineLearning
+
 ---
 
 **推文 2（Thread）：**

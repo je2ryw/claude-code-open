@@ -361,7 +361,7 @@ function showSessionDetail(ctx: CommandContext, session: SessionFileData): Comma
   return { success: true };
 }
 
-// /context - 显示上下文使用情况 (增强版: 进度条 + 详细统计)
+// /context - 显示上下文使用情况 (v2.1.14: 修复 token 计数一致性)
 export const contextCommand: SlashCommand = {
   name: 'context',
   aliases: ['ctx'],
@@ -370,10 +370,10 @@ export const contextCommand: SlashCommand = {
   execute: (ctx: CommandContext): CommandResult => {
     const stats = ctx.session.getStats();
 
-    // 估算 token 使用量 (基于实际消息数)
-    const systemPromptTokens = 3000;  // 系统提示大约 3k tokens
-    const messagesTokens = stats.messageCount * 500;  // 每条消息平均 500 tokens
-    const totalUsedTokens = systemPromptTokens + messagesTokens;
+    // v2.1.14 修复：使用真实的 token 计数，而不是估算
+    // 从 ContextManager 获取实际使用的 tokens
+    const contextStats = contextManager.getStats();
+    const totalUsedTokens = contextStats.estimatedTokens;
 
     // 根据模型确定上下文窗口大小
     let maxTokens = 200000;  // 默认: Claude Sonnet 4.5
@@ -389,6 +389,7 @@ export const contextCommand: SlashCommand = {
       maxTokens = 200000;  // Claude 3.5 Sonnet
     }
 
+    // v2.1.14: 使用真实的 token 计数计算百分比
     const availableTokens = Math.max(0, maxTokens - totalUsedTokens);
     const usagePercent = Math.min(100, (totalUsedTokens / maxTokens) * 100);
 
@@ -398,18 +399,15 @@ export const contextCommand: SlashCommand = {
     const emptyWidth = barWidth - filledWidth;
     const progressBar = '█'.repeat(filledWidth) + '░'.repeat(emptyWidth);
 
-    // 估算压缩信息 (模拟)
-    // 实际应用中这些数据应该从 ContextManager 获取
-    const summarizedMessages = Math.floor(stats.messageCount * 0.3);  // 假设30%的消息被摘要
-    const originalTokens = stats.messageCount * 600;  // 假设原始平均每条消息600 tokens
-    const compressionRatio = originalTokens > 0
-      ? Math.round((totalUsedTokens / originalTokens) * 100)
-      : 100;
+    // v2.1.14: 使用真实的压缩信息
+    const summarizedMessages = contextStats.summarizedMessages;
+    const compressionRatio = Math.round(contextStats.compressionRatio * 100);
 
     // 构建输出
     let contextInfo = `Context Usage:\n`;
     contextInfo += `  [${progressBar}] ${Math.round(usagePercent)}%\n`;
     contextInfo += `  \n`;
+    // v2.1.14: 显示与状态栏一致的 token 计数
     contextInfo += `  Used:      ${totalUsedTokens.toLocaleString()} tokens\n`;
     contextInfo += `  Available: ${availableTokens.toLocaleString()} tokens\n`;
     contextInfo += `  Total:     ${maxTokens.toLocaleString()} tokens\n`;
@@ -427,10 +425,14 @@ export const contextCommand: SlashCommand = {
 
     contextInfo += `\n`;
 
-    // 详细分类
+    // v2.1.14: 显示实际的 token 分解（基于真实数据）
+    // 估算系统提示和消息的比例
+    const systemPromptEstimate = Math.min(3000, Math.round(totalUsedTokens * 0.15)); // 约15%
+    const messagesTokens = totalUsedTokens - systemPromptEstimate;
+
     contextInfo += `Token Breakdown:\n`;
-    contextInfo += `  System prompt:  ${systemPromptTokens.toLocaleString()} tokens (${((systemPromptTokens / maxTokens) * 100).toFixed(1)}%)\n`;
-    contextInfo += `  Messages:       ${messagesTokens.toLocaleString()} tokens (${((messagesTokens / maxTokens) * 100).toFixed(1)}%)\n`;
+    contextInfo += `  System prompt:  ${systemPromptEstimate.toLocaleString()} tokens (~${((systemPromptEstimate / maxTokens) * 100).toFixed(1)}%)\n`;
+    contextInfo += `  Messages:       ${messagesTokens.toLocaleString()} tokens (~${((messagesTokens / maxTokens) * 100).toFixed(1)}%)\n`;
     contextInfo += `  Free space:     ${availableTokens.toLocaleString()} tokens (${((availableTokens / maxTokens) * 100).toFixed(1)}%)\n`;
 
     contextInfo += `\n`;
@@ -469,6 +471,14 @@ export const contextCommand: SlashCommand = {
       for (const [model, tokens] of Object.entries(stats.modelUsage)) {
         contextInfo += `  ${model}: ${tokens.toLocaleString()} tokens\n`;
       }
+    }
+
+    // v2.1.14: 添加压缩统计信息（如果有）
+    if (contextStats.savedTokens > 0) {
+      contextInfo += `\n`;
+      contextInfo += `Compression Stats:\n`;
+      contextInfo += `  Saved tokens: ${contextStats.savedTokens.toLocaleString()}\n`;
+      contextInfo += `  Compressions: ${contextStats.compressionCount}\n`;
     }
 
     ctx.ui.addMessage('assistant', contextInfo);

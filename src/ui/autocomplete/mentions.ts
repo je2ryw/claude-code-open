@@ -150,11 +150,22 @@ async function findMatchingFiles(
 
 /**
  * 检查文本是否正在输入 @mention
+ * v2.1.14: 修复 bash 模式下 @ 符号错误触发文件自动完成
  * @param text 输入文本
  * @param cursorPosition 光标位置
  */
 export function isTypingMention(text: string, cursorPosition: number): boolean {
   const beforeCursor = text.slice(0, cursorPosition);
+
+  // v2.1.14 修复：检查是否在 bash 上下文中
+  // 在 Bash() 调用或 bash 代码块中，不触发 @mention 自动完成
+  const inBashCall = /Bash\s*\(\s*["'`][^"'`]*$/.test(beforeCursor);
+  const inBashBlock = /```bash[\s\S]*?\n[^\n]*$/.test(beforeCursor);
+  
+  if (inBashCall || inBashBlock) {
+    // 在 bash 上下文中，@符号不触发 mention（可能是数组引用等）
+    return false;
+  }
 
   // 查找最后一个 @ 符号
   const lastAtIndex = beforeCursor.lastIndexOf('@');

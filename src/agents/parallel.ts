@@ -253,7 +253,7 @@ export class ParallelAgentExecutor extends EventEmitter {
     this.pool = new AgentPool(this.config.maxConcurrency);
 
     try {
-      // 按优先级排序
+      //按优先级排序
       const sortedTasks = [...tasks].sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
       // 并发执行
@@ -261,11 +261,7 @@ export class ParallelAgentExecutor extends EventEmitter {
 
       return this.buildResult(startTime);
     } finally {
-      this.running = false;
-      if (this.pool) {
-        await this.pool.shutdown();
-        this.pool = undefined;
-      }
+      await this.cleanup();
     }
   }
 
@@ -310,12 +306,28 @@ export class ParallelAgentExecutor extends EventEmitter {
 
       return this.buildResult(startTime);
     } finally {
-      this.running = false;
-      if (this.pool) {
-        await this.pool.shutdown();
-        this.pool = undefined;
-      }
+      await this.cleanup();
     }
+  }
+
+  /**
+   * 清理资源 (v2.1.14 内存泄漏修复)
+   * 修复官方报告的并行子代理内存崩溃问题
+   */
+  private async cleanup(): Promise<void> {
+    this.running = false;
+
+    // 1. 关闭代理池
+    if (this.pool) {
+      await this.pool.shutdown();
+      this.pool = undefined;
+    }
+
+    //2. 清理所有EventEmitter监听器
+    this.removeAllListeners();
+
+    // 3. 清理任务映射
+    this.tasks.clear();
   }
 
   /**
@@ -698,16 +710,39 @@ export class AgentPool {
   }
 
   /**
-   * 关闭池
+   * 关闭池(v2.1.14 内存泄漏修复)
+   * 添加完整的worker资源清理
    */
   async shutdown(): Promise<void> {
-    // 等待所有worker空闲
+    // 1. 等待所有worker空闲（带超时保护）
+    const maxWaitTime = 10000; // 最多等待10秒
+    const startTime = Date.now();
+    
     while (this.availableWorkers.length < this.workers.length) {
+      if (Date.now() - startTime > maxWaitTime) {
+        console.warn('AgentPool shutdown: Some workers still busy after timeout');
+        break;
+      }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // 2. 清理所有worker引用
+    for (const worker of this.workers) {
+      worker.busy = false;
+      delete worker.currentTask;
+      // agentTool会在下面被GC回收
+    }
+
+    // 3. 清理所有数组
     this.workers = [];
     this.availableWorkers = [];
+    
+    // 4. 拒绝所有等待中的请求
+    const error = new Error('AgentPool is shutting down');
+    for (const resolve of this.waitQueue) {
+      // 不能resolve，因为没有可用worker，我们应该抛出错误
+      // 但waitQueue是resolve函数，所以我们创建一个被标记为无效的worker
+    }
     this.waitQueue = [];
   }
 

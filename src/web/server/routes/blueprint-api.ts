@@ -6545,7 +6545,7 @@ ${truncatedContent}
 // ============================================================================
 
 /** 架构图类型 */
-type ArchitectureGraphType = 'dataflow' | 'sequence' | 'toolflow' | 'modulerelation' | 'full';
+type ArchitectureGraphType = 'dataflow' | 'modulerelation' | 'full';
 
 // 架构图缓存已移至持久化模块: src/blueprint/architecture-graph-cache.ts
 
@@ -6556,38 +6556,12 @@ const ARCHITECTURE_GRAPH_PROMPTS: Record<ArchitectureGraphType, string> = {
 要求：
 1. 使用 flowchart TB（从上到下）
 2. 展示从用户输入到最终输出的完整数据流
-3. 包含主要模块：入口层、核心引擎、工具系统、API层、持久化层
+3. 包含主要模块例如：入口层、核心引擎、工具系统、API层、持久化层
 4. 使用 subgraph 分组相关模块
 5. 用不同颜色区分不同类型的模块（使用 classDef）
 6. 箭头标注数据流向
 
 只返回 Mermaid 代码，不要其他解释。`,
-
-  sequence: `分析代码库，生成**流式处理序列图**的 Mermaid 代码。
-
-要求：
-1. 使用 sequenceDiagram
-2. 展示 API 调用的完整序列：用户(User) -> 主循环(MainLoop) -> API客户端(Client) -> Claude API(API) -> 流式解析(Parser)
-3. 包含流式事件：message_start, content_block_start, content_block_delta, content_block_stop, message_stop
-4. 展示工具调用的分支流程
-5. 使用 rect 标注关键阶段
-6. 使用 Note 添加重要说明
-7. **重要**：participant 标识符禁止使用 loop、alt、opt、par、rect、note 等 Mermaid 保留关键字！请使用 MainLoop 代替 Loop
-
-只返回 Mermaid 代码，不要其他解释。`,
-
-  toolflow: `分析代码库，生成**工具调用流程图**的 Mermaid 代码。
-
-要求：
-1. 使用 flowchart TB
-2. 展示工具调用的完整流程：接收 -> 权限检查 -> 执行 -> 结果处理
-3. 包含权限检查的三步流程
-4. 展示不同权限模式的分支
-5. 包含错误处理和重试逻辑
-6. 使用菱形节点表示判断
-
-只返回 Mermaid 代码，不要其他解释。`,
-
   modulerelation: `分析代码库，生成**模块关系图**的 Mermaid 代码。
 
 要求：
@@ -6618,8 +6592,6 @@ const ARCHITECTURE_GRAPH_PROMPTS: Record<ArchitectureGraphType, string> = {
 /** 架构图标题和描述 */
 const ARCHITECTURE_GRAPH_META: Record<ArchitectureGraphType, { title: string; description: string }> = {
   dataflow: { title: '系统数据流图', description: '展示从用户输入到最终输出的完整数据流' },
-  sequence: { title: '流式处理序列图', description: 'API 调用和流式事件的时序关系' },
-  toolflow: { title: '工具调用流程图', description: '工具执行的权限检查和处理流程' },
   modulerelation: { title: '模块关系图', description: '核心模块之间的依赖和调用关系' },
   full: { title: '完整系统架构图', description: '分层展示整体系统架构' },
 };
@@ -6664,27 +6636,6 @@ router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Respo
       return res.status(404).json({ success: false, error: 'Blueprint not found' });
     }
 
-    // mode=direct 时，使用直接转换逻辑，不消耗 Token 也不等待
-    if (req.query.mode === 'direct') {
-       const directGraph = convertBlueprintToMermaid(blueprint, graphType);
-       
-       // 更新缓存
-       const graphData: ArchitectureGraphCacheEntry = {
-         type: graphType as ArchitectureGraphType,
-         title: directGraph.title,
-         description: directGraph.description,
-         mermaidCode: directGraph.mermaidCode,
-         generatedAt: new Date().toISOString(),
-         timestamp: Date.now(),
-         nodePathMap: {} // 直接模式暂不支持复杂跳转，或者后续实现
-       };
-       architectureGraphCache.set(id, graphType as ArchitectureGraphType, graphData);
-
-       return res.json({
-         success: true,
-         data: graphData
-       });
-    }
 
     // 获取项目根目录
     const projectRoot = blueprint.projectPath || process.cwd();
@@ -6878,118 +6829,3 @@ ${combinedAnalysis}
 
 export default router;
 
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-/**
- * 将蓝图直接转换为 Mermaid 格式（确定性生成，无需 AI）
- */
-function convertBlueprintToMermaid(blueprint: any, type: string): { title: string; description: string; mermaidCode: string } {
-  const result = {
-    title: '',
-    description: '',
-    mermaidCode: ''
-  };
-
-  if (type === 'sequence' || type === 'dataflow') {
-    // 1. 业务流程 -> 时序图
-    const process = blueprint.businessProcesses?.[0]; // 默认取第一个，或者可以根据 query 参数指定
-    if (!process) {
-      result.title = '无业务流程';
-      result.description = '蓝图中没有定义业务流程';
-      result.mermaidCode = 'sequenceDiagram\nNote over User: 无业务流程数据';
-      return result;
-    }
-
-    result.title = process.name;
-    result.description = process.description || '业务流程时序图';
-    
-    let mermaid = 'sequenceDiagram\n';
-    mermaid += '    autonumber\n';
-    
-    // 参与者定义（可选，美化用）
-    const actors = process.actors || [];
-    actors.forEach((actor: string) => {
-       // 简单的名字清理，避免特殊字符
-       const safeActor = actor.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
-       mermaid += `    participant ${safeActor} as ${actor}\n`;
-    });
-    
-    // 步骤
-    (process.steps || []).sort((a: any, b: any) => a.order - b.order).forEach((step: any) => {
-      const actorName = step.actor || 'System';
-      const safeActor = actorName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
-      
-      // 如果是第一步，通常是 User 发起
-      if (step.order === 1) {
-          mermaid += `    User->>${safeActor}: ${step.name}\n`;
-      } else {
-          mermaid += `    ${safeActor}->>${safeActor}: ${step.name}\n`;
-      }
-      
-      if (step.description && step.description !== step.name) {
-          mermaid += `    Note right of ${safeActor}: ${step.description}\n`;
-      }
-    });
-    
-    result.mermaidCode = mermaid;
-  } else if (type === 'modulerelation' || type === 'full') {
-    // 2. 模块 -> 依赖关系图/类图
-    // 使用 graph TD 或 classDiagram
-    
-    result.title = '系统模块依赖图';
-    result.description = '基于蓝图定义的模块依赖关系';
-    
-    let chart = 'graph TD\n';
-    
-    // 样式定义
-    chart += '    %% 样式定义\n';
-    chart += '    classDef service fill:#f9f,stroke:#333,stroke-width:2px,color:black;\n';
-    chart += '    classDef backend fill:#bbf,stroke:#333,stroke-width:2px,color:black;\n';
-    chart += '    classDef frontend fill:#bfb,stroke:#333,stroke-width:2px,color:black;\n';
-    chart += '    classDef infrastructure fill:#ddd,stroke:#333,stroke-width:2px,color:black;\n';
-    
-    const modules = blueprint.modules || [];
-    
-    if (modules.length === 0) {
-        chart += '    Start[暂无模块] --> End[结束]\n';
-    }
-    
-    // 节点定义
-    modules.forEach((mod: any) => {
-        const safeId = mod.name.replace(/[^a-zA-Z0-9]/g, '_');
-        const label = `${mod.name}\\n(${mod.type})`;
-        chart += `    ${safeId}["${label}"]\n`;
-        
-        // 应用样式
-        if (mod.type) {
-            chart += `    class ${safeId} ${mod.type}\n`;
-        }
-    });
-    
-    // 边定义 (依赖关系)
-    modules.forEach((mod: any) => {
-        const sourceId = mod.name.replace(/[^a-zA-Z0-9]/g, '_');
-        
-        if (mod.dependencies && mod.dependencies.length > 0) {
-            mod.dependencies.forEach((depId: string) => {
-                const depMod = modules.find((m: any) => m.id === depId || m.name === depId);
-                if (depMod) {
-                    const targetId = depMod.name.replace(/[^a-zA-Z0-9]/g, '_');
-                    chart += `    ${sourceId} --> ${targetId}\n`;
-                }
-            });
-        }
-    });
-
-    result.mermaidCode = chart;
-  } else {
-     // 默认回退
-     result.title = '未支持的直接渲染类型';
-     result.description = '请使用 AI 生成模式';
-     result.mermaidCode = 'graph TD\nA[不支持的图表类型] --> B[请切换模式]';
-  }
-
-  return result;
-}

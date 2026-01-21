@@ -1,6 +1,6 @@
 /**
  * 自动完成主模块
- * 整合命令、文件路径、@mention 等补全功能
+ * 整合命令、文件路径、@mention、bash历史 等补全功能
  */
 
 import type { CompletionContext, CompletionResult, CompletionItem } from './types.js';
@@ -19,6 +19,11 @@ import {
   isTypingMention,
   extractMentionQuery,
 } from './mentions.js';
+import {
+  getBashHistoryCompletions,
+  isTypingBashHistory,
+  extractBashHistoryQuery,
+} from './bash-history.js';
 
 /**
  * 获取自动补全建议
@@ -42,7 +47,20 @@ export async function getCompletions(
     };
   }
 
-  // 2. 检查是否正在输入 @mention
+  // 2. 检查是否正在输入 bash 历史命令 (v2.1.14 新增)
+  if (isTypingBashHistory(fullText, cursorPosition)) {
+    const { query, startPosition } = extractBashHistoryQuery(fullText, cursorPosition);
+    const items = getBashHistoryCompletions(query);
+
+    return {
+      items,
+      startPosition,
+      query,
+      type: 'bash-history',
+    };
+  }
+
+  // 3. 检查是否正在输入 @mention
   if (enableMentionCompletion !== false && isTypingMention(fullText, cursorPosition)) {
     const { query, startPosition } = extractMentionQuery(fullText, cursorPosition);
     const items = await getMentionCompletions(query, cwd);
@@ -55,7 +73,7 @@ export async function getCompletions(
     };
   }
 
-  // 3. 检查是否正在输入文件路径
+  // 4. 检查是否正在输入文件路径
   if (enableFileCompletion !== false && isTypingFilePath(fullText, cursorPosition)) {
     const { query, startPosition } = extractFileQuery(fullText, cursorPosition);
     const items = await getFileCompletions(query, cwd);
@@ -108,3 +126,10 @@ export { truncateDescription, getCompletionIcon } from './types.js';
 
 // 重新导出命令列表
 export { ALL_COMMANDS } from './commands.js';
+
+// v2.1.14: 导出 bash 历史功能
+export {
+  addToHistory as addBashCommandToHistory,
+  clearBashHistory,
+  getBashHistoryStats,
+} from './bash-history.js';

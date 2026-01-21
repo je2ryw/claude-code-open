@@ -174,6 +174,10 @@ program
   .option('--chrome', 'Enable Claude in Chrome integration')
   .option('--no-chrome', 'Disable Claude in Chrome integration')
   .option('--text', 'Use text-based interface instead of TUI')
+  // v2.1.10: Setup hook 触发器
+  .option('--init', 'Run Setup hook and start interactive session')
+  .option('--init-only', 'Run Setup hook and exit (repository setup/maintenance)')
+  .option('--maintenance', 'Alias for --init-only')
   .action(async (prompt, options) => {
     // T504: action_handler_start - Action 处理器开始
     await emitLifecycleEvent('action_handler_start');
@@ -357,6 +361,45 @@ program
     // T502: action_before_setup - 设置前
     await emitLifecycleEvent('action_before_setup');
     await runHooks({ event: 'BeforeSetup' });
+
+    // v2.1.10: Setup hook 系统
+    // 当使用 --init, --init-only 或 --maintenance 标志时触发
+    const shouldRunSetupHook = options.init || options.initOnly || options.maintenance;
+    const isSetupOnlyMode = options.initOnly || options.maintenance;
+
+    if (shouldRunSetupHook) {
+      console.log(chalk.cyan('\n🔧 Running Setup hook...\n'));
+
+      // 添加新的 Setup hook 事件类型
+      const setupHookResult = await runHooks({ 
+        event: 'Setup',
+        sessionId: undefined // Setup hook 可能在会话之前运行
+      });
+
+      if (setupHookResult.some(r => !r.success)) {
+        console.error(chalk.red('\n❌ Setup hook failed\n'));
+        const failed = setupHookResult.filter(r => !r.success);
+        failed.forEach(r => {
+          if (r.error) {
+            console.error(chalk.red(`  Error: ${r.error}`));
+          }
+        });
+        
+        if (isSetupOnlyMode) {
+          process.exit(1);
+        } else {
+          console.log(chalk.yellow('Continuing with session despite setup errors...\n'));
+        }
+      } else {
+        console.log(chalk.green('✓ Setup hook completed successfully\n'));
+      }
+
+      // 如果是 --init-only 或 --maintenance 模式，在 Setup hook 后退出
+      if (isSetupOnlyMode) {
+        console.log(chalk.gray('Exiting after setup (--init-only mode)\n'));
+        process.exit(0);
+      }
+    }
 
     // 这里进行必要的设置（setup logic）
     // 在本项目中，设置逻辑较为简单，主要是配置和会话管理
@@ -680,15 +723,70 @@ async function runTextInterface(
     console.log('\n');
   }
 
+  // v2.1.10: 键盘缓冲 - 在 REPL 完全就绪前捕捉按键
+  // 这确保用户在启动过程中输入的内容不会丢失
+  const keyboardBuffer: string[] = [];
+  let isReplReady = false;
+
+  // 启用原始模式以捕捉按键（如果 stdin 是 TTY）
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    
+    // 捕捉启动期间的按键
+    const earlyKeypressHandler = (chunk: Buffer) => {
+      if (!isReplReady) {
+        const str = chunk.toString('utf8');
+        // 捕捉可打印字符和空格，忽略控制字符
+        if (str.length > 0 && str.charCodeAt(0) >= 32) {
+          keyboardBuffer.push(str);
+        }
+      }
+    };
+    
+    process.stdin.on('data', earlyKeypressHandler);
+    
+    // 设置超时，确保即使有问题也会停止捕捉
+    setTimeout(() => {
+      if (!isReplReady) {
+        isReplReady = true;
+        process.stdin.removeListener('data', earlyKeypressHandler);
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+      }
+    }, 5000); // 5秒后强制停止捕捉
+  }
+
   // 交互式循环
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
+  // REPL 现在已准备好
+  isReplReady = true;
+
+  // 如果有缓冲的按键，显示提示
+  if (keyboardBuffer.length > 0) {
+    console.log(chalk.dim(`[Captured ${keyboardBuffer.length} keystrokes during startup]`));
+  }
+
   console.log(chalk.gray('> Try "how do I log an error?"'));
   console.log(chalk.gray('? for shortcuts'));
   console.log();
+
+  // 如果有缓冲的按键，重放它们
+  if (keyboardBuffer.length > 0) {
+    const bufferedInput = keyboardBuffer.join('');
+    if (bufferedInput.trim()) {
+      console.log(chalk.blue('> ') + bufferedInput);
+      // 自动处理缓冲的输入
+      setTimeout(() => {
+        rl.write(bufferedInput);
+      }, 100);
+    }
+  }
 
   const askQuestion = (): void => {
     rl.question(chalk.white('> '), async (input) => {

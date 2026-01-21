@@ -156,6 +156,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // 视图模式
   const [viewMode, setViewMode] = useState<ViewMode>('analysis');
+  // Main panel tab
+  const [activeTab, setActiveTab] = useState<'welcome' | 'content'>('welcome');
 
   // 文件内容相关
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
@@ -208,9 +210,6 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   const [selectedArchitectureType, setSelectedArchitectureType] = useState<ArchitectureGraphType>('full');
   // 架构图节点点击后需要跳转到的行号
   const [targetLine, setTargetLine] = useState<number | null>(null);
-
-  // 可视化模式：'ai' (AI 生成) | 'direct' (直接渲染)
-  const [visualizationMode, setVisualizationMode] = useState<'ai' | 'direct'>('ai');
 
 
   // ============ 新手模式相关状态 ============
@@ -462,6 +461,13 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     beginnerModeRef.current = beginnerMode;
   }, [beginnerMode]);
 
+  // Return to welcome when nothing is selected
+  useEffect(() => {
+    if (!selectedPath && activeTab !== 'welcome') {
+      setActiveTab('welcome');
+    }
+  }, [activeTab, selectedPath]);
+
   // 组件卸载时清理 hover provider
   useEffect(() => {
     return () => {
@@ -589,6 +595,15 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     loadFileTree();
   }, [loadFileTree]);
 
+  const closeContentTab = useCallback(() => {
+    setSelectedPath(null);
+    setSelectedIsFile(false);
+    setSelectedSymbol(null);
+    setFileContent(null);
+    setHasUnsavedChanges(false);
+    setActiveTab('welcome');
+  }, []);
+
   const loadBlueprintInfo = async () => {
     try {
       const response = await fetch(`/api/blueprint/blueprints/${blueprintId}`);
@@ -631,7 +646,8 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     setSelectedArchitectureType(type);
 
     try {
-      const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}&mode=${visualizationMode}${forceRefresh ? '&forceRefresh=true' : ''}`;
+      const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}${forceRefresh ? '&forceRefresh=true' : ''}`;
+
       const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
@@ -659,21 +675,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         return newSet;
       });
     }
-  }, [blueprintId, architectureGraphCache, visualizationMode]);
-
-  // 监听模式切换，自动重新加载
-  useEffect(() => {
-    // 切换模式时，如果缓存中没有对应模式的数据（或者我们希望总是刷新），可以重新加载
-    // 这里简单起见，清除当前类型的缓存并重新加载
-    if (selectedArchitectureType) {
-        setArchitectureGraphCache(prev => {
-            const newMap = new Map(prev);
-            newMap.delete(selectedArchitectureType);
-            return newMap;
-        });
-        loadArchitectureGraph(selectedArchitectureType);
-    }
-  }, [visualizationMode]);
+  }, [blueprintId, architectureGraphCache]);
 
 
   // 组件挂载时初始化项目和蓝图信息
@@ -822,14 +824,13 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       loadFileTree();
       // 如果删除的是当前选中的，清除选择
       if (selectedPath === targetPath || selectedPath?.startsWith(targetPath + '/')) {
-        setSelectedPath(null);
-        setFileContent(null);
+        closeContentTab();
       }
     } catch (err: any) {
       console.error('删除失败:', err);
       alert(`删除失败: ${err.message}`);
     }
-  }, [contextMenu.targetPath, selectedPath]);
+  }, [closeContentTab, contextMenu.targetPath, selectedPath]);
 
   /**
    * 复制路径到剪贴板
@@ -1394,6 +1395,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       // 设置选中路径
       setSelectedPath(mapping.path);
       setSelectedIsFile(isFile);
+      setActiveTab('content');
       setHasUnsavedChanges(false);
       setEditorReady(false);
 
@@ -1532,6 +1534,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
     setSelectedPath(path);
     setSelectedIsFile(isFile);
+    setActiveTab('content');
     setHasUnsavedChanges(false);
     setEditorReady(false); // 重置 editor 状态，等待新 editor 挂载
 
@@ -1906,6 +1909,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             e.stopPropagation();
             setSelectedSymbol(symbol);
             setSelectedPath(filePath);
+            setActiveTab('content');
             // 跳转到代码行
             if (editorRef.current) {
               editorRef.current.revealLineInCenter(symbol.line);
@@ -3891,115 +3895,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     }
 
     if (!selectedPath) {
-      return (
-        <div className={styles.welcomePage}>
-          <div className={styles.welcomeHero}>
-            <h2 className={styles.welcomeTitle}>
-              {blueprintInfo?.name || '代码仓库浏览器'}
-            </h2>
-            <p className={styles.welcomeDesc}>
-              {blueprintInfo?.description || '点击左侧目录树浏览代码结构，选中节点后 AI 将自动分析其语义信息。'}
-            </p>
-
-            <div className={styles.welcomeStats}>
-              <div className={styles.welcomeStat}>
-                <span className={styles.welcomeStatValue}>{analysisCache.size}</span>
-                <span className={styles.welcomeStatLabel}>已分析</span>
-              </div>
-              {blueprintInfo && (
-                <div className={styles.welcomeStat}>
-                  <span className={styles.welcomeStatValue}>{blueprintInfo.moduleCount}</span>
-                  <span className={styles.welcomeStatLabel}>模块</span>
-                </div>
-              )}
-            </div>
-
-            <div className={styles.welcomeHint}>
-              ← 点击左侧目录开始浏览
-            </div>
-
-            <div className={styles.welcomeTips}>
-              <div className={styles.tipItem}>
-                <span className={styles.tipIcon}>📁</span>
-                <span>点击目录展开/折叠</span>
-              </div>
-              <div className={styles.tipItem}>
-                <span className={styles.tipIcon}>🔍</span>
-                <span>选中节点自动分析语义</span>
-              </div>
-              <div className={styles.tipItem}>
-                <span className={styles.tipIcon}>●</span>
-                <span>绿点表示已分析</span>
-              </div>
-              <div className={styles.tipItem}>
-                <span className={styles.tipIcon}>🏛️</span>
-                <span>点击文件查看类/方法结构</span>
-              </div>
-            </div>
-          </div>
-
-          <section className={styles.moduleGraphSection}>
-            <div className={styles.moduleGraphHeader} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3>系统架构概览</h3>
-              <div className={styles.visualizationModeToggle} style={{ display: 'flex', gap: '8px', background: '#f0f0f0', padding: '4px', borderRadius: '4px' }}>
-                <button
-                  onClick={() => setVisualizationMode('ai')}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: visualizationMode === 'ai' ? '#fff' : 'transparent',
-                    boxShadow: visualizationMode === 'ai' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-                    cursor: 'pointer',
-                    fontWeight: visualizationMode === 'ai' ? 'bold' : 'normal',
-                    color: visualizationMode === 'ai' ? '#1a73e8' : '#666'
-                  }}
-                  title="使用 AI 分析代码生成架构图（更贴近实际实现）"
-                >
-                  🤖 AI生成
-                </button>
-                <button
-                  onClick={() => setVisualizationMode('direct')}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: visualizationMode === 'direct' ? '#fff' : 'transparent',
-                    boxShadow: visualizationMode === 'direct' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-                    cursor: 'pointer',
-                    fontWeight: visualizationMode === 'direct' ? 'bold' : 'normal',
-                    color: visualizationMode === 'direct' ? '#1a73e8' : '#666'
-                  }}
-                  title="直接渲染蓝图 JSON 定义（更准确反映设计）"
-                >
-                  ⚡ 直接渲染
-                </button>
-              </div>
-            </div>
-            {/* 架构流程图 */}
-
-            <div className={styles.moduleGraphBody}>
-              <ArchitectureFlowGraph
-                blueprintId={blueprintId}
-                data={architectureGraphCache.get(selectedArchitectureType) || null}
-                loading={architectureGraphLoadingSet.has(selectedArchitectureType)}
-                error={architectureGraphErrorMap.get(selectedArchitectureType) || null}
-                onRefresh={loadArchitectureGraph}
-                selectedType={selectedArchitectureType}
-                onTypeChange={(type) => {
-                  setSelectedArchitectureType(type);
-                  // 如果没有缓存，则加载
-                  if (!architectureGraphCache.has(type)) {
-                    loadArchitectureGraph(type);
-                  }
-                }}
-                onNodeClick={handleArchitectureNodeClick}
-                loadingTypes={architectureGraphLoadingSet}
-              />
-            </div>
-          </section>
-        </div>
-      );
+      return renderWelcomeView();
     }
 
     if (analyzing) {
@@ -4260,6 +4156,32 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     return null;
   };
 
+  const renderWelcomeView = () => (
+    <div className={`${styles.welcomePage} ${styles.welcomeGraphPage}`}>
+      <section className={styles.moduleGraphSection}>
+        <div className={styles.moduleGraphBody}>
+          <ArchitectureFlowGraph
+            blueprintId={blueprintId}
+            data={architectureGraphCache.get(selectedArchitectureType) || null}
+            loading={architectureGraphLoadingSet.has(selectedArchitectureType)}
+            error={architectureGraphErrorMap.get(selectedArchitectureType) || null}
+            onRefresh={loadArchitectureGraph}
+            selectedType={selectedArchitectureType}
+            onTypeChange={(type) => {
+              setSelectedArchitectureType(type);
+              // 如果没有缓存，则加载
+              if (!architectureGraphCache.has(type)) {
+                loadArchitectureGraph(type);
+              }
+            }}
+            onNodeClick={handleArchitectureNodeClick}
+            loadingTypes={architectureGraphLoadingSet}
+          />
+        </div>
+      </section>
+    </div>
+  );
+
   if (loadingTree) {
     return (
       <div className={styles.container}>
@@ -4356,47 +4278,32 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         <div className={styles.mainPanel}>
           {/* 标签栏 */}
           <div className={styles.tabBar}>
-            {selectedPath ? (
-              <>
-                {/* 文件直接显示代码tab */}
-                {selectedIsFile ? (
-                  <div className={`${styles.tab} ${styles.activeTab}`}>
-                    <span className={styles.tabIcon}>📝</span>
-                    <span className={styles.tabName}>代码编辑</span>
-                    {hasUnsavedChanges && <span className={styles.unsavedDot}>●</span>}
-                    <span
-                      className={styles.tabClose}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPath(null);
-                      }}
-                      title="关闭"
-                    >
-                      ×
-                    </span>
-                  </div>
-                ) : (
-                  /* 目录显示分析tab */
-                  <div className={`${styles.tab} ${styles.activeTab}`}>
-                    <span className={styles.tabIcon}>🔍</span>
-                    <span className={styles.tabName}>分析</span>
-                    <span
-                      className={styles.tabClose}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPath(null);
-                      }}
-                      title="关闭"
-                    >
-                      ×
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className={`${styles.tab} ${styles.activeTab}`}>
-                <span className={styles.tabIcon}>🏠</span>
-                <span className={styles.tabName}>欢迎</span>
+            <div
+              className={`${styles.tab} ${activeTab === 'welcome' ? styles.activeTab : ''}`}
+              onClick={() => setActiveTab('welcome')}
+            >
+              <span className={styles.tabIcon}>🏠</span>
+              <span className={styles.tabName}>欢迎</span>
+            </div>
+
+            {selectedPath && (
+              <div
+                className={`${styles.tab} ${activeTab === 'content' ? styles.activeTab : ''}`}
+                onClick={() => setActiveTab('content')}
+              >
+                <span className={styles.tabIcon}>{selectedIsFile ? '📝' : '🔍'}</span>
+                <span className={styles.tabName}>{selectedIsFile ? '代码编辑' : '分析'}</span>
+                {selectedIsFile && hasUnsavedChanges && <span className={styles.unsavedDot}>●</span>}
+                <span
+                  className={styles.tabClose}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeContentTab();
+                  }}
+                  title="关闭"
+                >
+                  ×
+                </span>
               </div>
             )}
 
@@ -4410,7 +4317,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
           {/* 编辑区内容 - 文件显示代码，目录显示分析 */}
           <div className={styles.editorContent}>
-            {selectedIsFile ? renderCodeView() : renderAnalysisView()}
+            {activeTab === 'welcome' ? renderWelcomeView() : (selectedIsFile ? renderCodeView() : renderAnalysisView())}
           </div>
         </div>
       </div>

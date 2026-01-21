@@ -14,8 +14,6 @@ import styles from './ArchitectureFlowGraph.module.css';
 /** 架构图类型 */
 export type ArchitectureGraphType =
   | 'dataflow'      // 数据流图
-  | 'sequence'      // 序列图（流式处理）
-  | 'toolflow'      // 工具调用流程
   | 'modulerelation' // 模块关系
   | 'full';         // 完整架构
 
@@ -61,8 +59,6 @@ export interface ArchitectureFlowGraphProps {
 /** 图表类型配置 */
 const GRAPH_TYPES: { type: ArchitectureGraphType; label: string; icon: string }[] = [
   { type: 'dataflow', label: '数据流', icon: '🔀' },
-  { type: 'sequence', label: '流式处理', icon: '📊' },
-  { type: 'toolflow', label: '工具调用', icon: '🔧' },
   { type: 'modulerelation', label: '模块关系', icon: '📦' },
   { type: 'full', label: '完整架构', icon: '🏗️' },
 ];

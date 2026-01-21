@@ -9,8 +9,8 @@ export interface CompletionItem {
   label: string;
   /** 描述 */
   description?: string;
-  /** 补全类型 */
-  type: 'command' | 'file' | 'mention' | 'directory';
+  /** 补全类型 (v2.1.14: 添加 bash-history) */
+  type: 'command' | 'file' | 'mention' | 'directory' | 'bash-history';
   /** 排序优先级 (数字越小越靠前) */
   priority?: number;
   /** 别名列表 */
@@ -26,6 +26,8 @@ export interface CompletionItem {
  */
 export function getCompletionIcon(type: CompletionItem['type'], label?: string): string {
   switch (type) {
+    case 'bash-history': // v2.1.14
+      return '📜';
     case 'directory':
       return '📁';
     case 'file':
@@ -152,6 +154,6 @@ export interface CompletionResult {
   startPosition: number;
   /** 补全的查询文本 */
   query: string;
-  /** 补全类型 */
-  type: 'command' | 'file' | 'mention' | 'none';
+  /** 补全类型 (v2.1.14: 添加 bash-history) */
+  type: 'command' | 'file' | 'mention' | 'bash-history' | 'none';
 }

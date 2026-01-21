@@ -46,7 +46,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   const [selectedId, setSelectedId] = useState<string | null>(initialBlueprintId || null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
 
   // 生成蓝图的状态
   const [isGenerating, setIsGenerating] = useState(false);
@@ -121,13 +121,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   // 事件处理
   // ============================================================================
 
-  /**
-   * 处理蓝图版本切换
-   */
-  const handleBlueprintChange = (blueprintId: string) => {
-    setSelectedId(blueprintId);
-    setIsDropdownOpen(false);
-  };
+
 
   /**
    * 处理生成蓝图
@@ -226,12 +220,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
     return blueprints.find(bp => isActiveBlueprint(bp.status)) || null;
   }, [blueprints]);
 
-  /**
-   * 历史蓝图列表（已完成或失败的蓝图）
-   */
-  const historyBlueprints = useMemo(() => {
-    return blueprints.filter(bp => !isActiveBlueprint(bp.status));
-  }, [blueprints]);
+
 
   /**
    * 是否允许创建新蓝图
@@ -240,53 +229,9 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
     return currentBlueprint === null;
   }, [currentBlueprint]);
 
-  /**
-   * 选中的蓝图
-   */
-  const selectedBlueprint = useMemo(() => {
-    return blueprints.find(bp => bp.id === selectedId) || null;
-  }, [blueprints, selectedId]);
 
-  /**
-   * 下拉选项列表
-   */
-  const dropdownOptions = useMemo(() => {
-    const options: { id: string; label: string; isCurrent: boolean; status: BlueprintStatus }[] = [];
 
-    // 当前蓝图放在最前面
-    if (currentBlueprint) {
-      options.push({
-        id: currentBlueprint.id,
-        label: `${currentBlueprint.name} v${currentBlueprint.version}`,
-        isCurrent: true,
-        status: currentBlueprint.status,
-      });
-    }
 
-    // 历史蓝图
-    historyBlueprints.forEach(bp => {
-      options.push({
-        id: bp.id,
-        label: `${bp.name} v${bp.version}`,
-        isCurrent: false,
-        status: bp.status,
-      });
-    });
-
-    return options;
-  }, [currentBlueprint, historyBlueprints]);
-
-  // 状态文本映射
-  const statusTexts: Record<string, string> = {
-    draft: '草稿',
-    review: '审核中',
-    approved: '已批准',
-    executing: '执行中',
-    completed: '已完成',
-    paused: '已暂停',
-    modified: '已修改',
-    failed: '失败',
-  };
 
   // ============================================================================
   // 渲染
@@ -294,105 +239,6 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
 
   return (
     <div className={styles.blueprintPage}>
-      {/* 头部区域 */}
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.headerTitle}>
-            项目蓝图
-          </h1>
-
-          {/* 蓝图版本下拉选择器 */}
-          {blueprints.length > 0 && (
-            <div className={styles.versionSelector}>
-              <button
-                className={styles.versionButton}
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              >
-                <span className={styles.versionText}>
-                  {selectedBlueprint
-                    ? `${selectedBlueprint.name} v${selectedBlueprint.version}`
-                    : '选择蓝图'}
-                </span>
-                <span className={`${styles.versionArrow} ${isDropdownOpen ? styles.open : ''}`}>
-                  ▼
-                </span>
-              </button>
-
-              {isDropdownOpen && (
-                <div className={styles.versionDropdown}>
-                  {currentBlueprint && (
-                    <div className={styles.dropdownSection}>
-                      <div className={styles.dropdownSectionTitle}>当前蓝图</div>
-                      <button
-                        className={`${styles.dropdownItem} ${selectedId === currentBlueprint.id ? styles.selected : ''}`}
-                        onClick={() => handleBlueprintChange(currentBlueprint.id)}
-                      >
-                        <span className={styles.dropdownItemName}>
-                          {currentBlueprint.name} v{currentBlueprint.version}
-                        </span>
-                        <span className={`${styles.dropdownItemStatus} ${styles[currentBlueprint.status]}`}>
-                          {statusTexts[currentBlueprint.status]}
-                        </span>
-                      </button>
-                    </div>
-                  )}
-
-                  {historyBlueprints.length > 0 && (
-                    <div className={styles.dropdownSection}>
-                      <div className={styles.dropdownSectionTitle}>历史版本</div>
-                      {historyBlueprints.map(bp => (
-                        <button
-                          key={bp.id}
-                          className={`${styles.dropdownItem} ${selectedId === bp.id ? styles.selected : ''}`}
-                          onClick={() => handleBlueprintChange(bp.id)}
-                        >
-                          <span className={styles.dropdownItemName}>
-                            {bp.name} v{bp.version}
-                          </span>
-                          <span className={`${styles.dropdownItemStatus} ${styles[bp.status]}`}>
-                            {statusTexts[bp.status]}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className={styles.headerActions}>
-          <button
-            className={styles.actionButton}
-            onClick={handleRefresh}
-            title="刷新"
-          >
-            刷新
-          </button>
-          <button
-            className={`${styles.actionButton} ${styles.generateButton} ${(!canCreateBlueprint || isGenerating) ? styles.disabled : ''}`}
-            onClick={handleCreateBlueprint}
-            disabled={!canCreateBlueprint || isGenerating}
-            title={
-              isGenerating
-                ? '正在生成中...'
-                : canCreateBlueprint
-                  ? '分析代码库并生成蓝图'
-                  : '已有活跃蓝图，请先完成当前蓝图'
-            }
-          >
-            {isGenerating ? (
-              <>
-                <span className={styles.spinnerIcon}>...</span>
-                生成中
-              </>
-            ) : (
-              <>生成蓝图</>
-            )}
-          </button>
-        </div>
-      </header>
 
       {/* 生成进度提示 */}
       {isGenerating && generateProgress && (
@@ -479,14 +325,6 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
           />
         )}
       </div>
-
-      {/* 点击外部关闭下拉框 */}
-      {isDropdownOpen && (
-        <div
-          className={styles.dropdownOverlay}
-          onClick={() => setIsDropdownOpen(false)}
-        />
-      )}
     </div>
   );
 }

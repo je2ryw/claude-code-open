@@ -56,7 +56,7 @@ export const Input: React.FC<InputProps> = ({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [selectedCompletionIndex, setSelectedCompletionIndex] = useState(0);
   const [completions, setCompletions] = useState<CompletionItem[]>([]);
-  const [completionType, setCompletionType] = useState<'command' | 'file' | 'mention' | 'none'>('none');
+  const [completionType, setCompletionType] = useState<'command' | 'file' | 'mention' | 'directory' | 'bash-history' | 'none'>('none');
 
   // Vim 模式支持
   const [vimModeEnabled, setVimModeEnabled] = useState(process.env.CLAUDE_CODE_VIM_MODE === 'true');

@@ -6,7 +6,7 @@
 
 🌐 **[visit website](https://claude-code-open.vercel.app)** | 📖 **[中文文档](README.zh-CN.md)**
 
-A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.1.9.
+A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.1.14.
 
 **For educational and research purposes only.**
 
@@ -511,7 +511,33 @@ npm run test:watch
 
 ## Recent Improvements
 
-### v2.1.9 Enhancements (Latest)
+### v2.1.14 Enhancements (Latest) 🎉
+
+**Core Features:**
+- ✅ **Bash History Autocomplete** ⭐ - Type partial command + Tab to complete from bash/zsh history
+  - Reads system history files (~/.bash_history, ~/.zsh_history)
+  - Dual-source integration (UI session + system history)
+  - Smart priority ranking (recent UI commands prioritized)
+  - Maximum 15 suggestions (aligned with official vx0=15)
+  - Performance optimized with 60s caching and deduplication
+
+**UI Improvements:**
+- ✅ **Plugin Search** - Real-time search in installed plugins list (type to filter by name/description)
+- ✅ **Git SHA Pinning** - Pin plugins to specific git commit SHAs for exact version control
+
+**Critical Fixes:**
+- ✅ **Context Window Blocking** - Fixed regression: blocking threshold increased from 65% to 98%
+- ✅ **Memory Leaks** - Fixed parallel sub-agent crashes and shell stream resource cleanup
+- ✅ **@ Symbol in Bash** - Fixed incorrect file autocomplete trigger in bash mode
+- ✅ **Slash Command Selection** - Fixed autocomplete selecting wrong command (e.g., /context vs /compact)
+- ✅ **/feedback URL Fix** - Long descriptions no longer generate invalid GitHub URLs (6000 char limit)
+
+**Implementation:**
+- 📁 New: `src/tools/bash-history.ts` (320 lines) - System history file reader
+- 📁 Enhanced: `src/ui/autocomplete/bash-history.ts` - UI integration with dual-source logic
+- 🧪 Testing: `tests/bash-history.test.ts` (180 lines) - Complete test coverage
+
+### v2.1.9 Enhancements
 - ✅ **auto:N syntax** - Configure MCP tool search auto-enable threshold (context window percentage 0-100)
 - ✅ **plansDirectory setting** - Customize where plan files are stored
 - ✅ **External editor (Ctrl+G)** - Support in AskUserQuestion "Other" input field

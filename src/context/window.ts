@@ -111,17 +111,20 @@ export function calculateEffectiveContextWindow(
  *
  * 使用有效上下文窗口而不是完整上下文窗口进行计算
  *
+ * v2.1.14 修复：将阻塞阈值从 0.9 (90%) 提升到 0.98 (98%)
+ * 修复了之前在 ~65% 使用率时就阻塞用户的问题
+ *
  * @param modelId 模型 ID
  * @param currentTokens 当前使用的 tokens
  * @param maxOutputTokens 最大输出 tokens
- * @param threshold 阈值（默认 0.9，即 90%）
+ * @param threshold 阈值（默认 0.98，即 98%）
  * @returns 是否接近限制
  */
 export function isNearContextBlockingLimit(
   modelId: string,
   currentTokens: number,
   maxOutputTokens: number = DEFAULT_MAX_OUTPUT_TOKENS,
-  threshold: number = 0.9
+  threshold: number = 0.98
 ): boolean {
   const effectiveWindow = calculateEffectiveContextWindow(modelId, maxOutputTokens);
   return currentTokens >= effectiveWindow * threshold;

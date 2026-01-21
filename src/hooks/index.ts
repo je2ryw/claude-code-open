@@ -26,6 +26,7 @@ export type HookEvent =
   | 'PreCompact'           // 压缩前
   | 'PermissionRequest'    // 权限请求
   // CLI 级别事件（新增）
+  | 'Setup'                // v2.1.10: 仓库设置/维护（通过 --init/--init-only/--maintenance 触发）
   | 'BeforeSetup'          // 设置前（对应 action_before_setup）
   | 'AfterSetup'           // 设置后（对应 action_after_setup）
   | 'CommandsLoaded'       // 命令加载完成（对应 action_commands_loaded）
@@ -313,6 +314,7 @@ function isValidHookEvent(event: string): boolean {
     'PreCompact',
     'PermissionRequest',
     // CLI 级别事件
+    'Setup',             // v2.1.10
     'BeforeSetup',
     'AfterSetup',
     'CommandsLoaded',

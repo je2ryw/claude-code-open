@@ -237,7 +237,8 @@ export type HookEvent =
   | 'SubagentStart'        // Subagent starts
   | 'SubagentStop'         // Subagent stops
   | 'PreCompact'           // Before context compression
-  | 'PermissionRequest';   // Permission requested
+  | 'PermissionRequest'    // Permission requested
+  | 'Setup';               // v2.1.10: Repository setup/maintenance (triggered by --init flags)
 
 /**
  * Hook type

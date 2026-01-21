@@ -155,10 +155,15 @@ export class ShellManager extends EventEmitter {
   }
 
   /**
-   * 附加输出监听器
+   * 附加输出监听器 (v2.1.14 修复：添加引用追踪)
    */
   private attachOutputListeners(shell: BackgroundShell): void {
-    shell.process.stdout?.on('data', (data) => {
+    if (!shell.process.stdout || !shell.process.stderr) {
+      return;
+    }
+
+    // Stdout 监听器
+    const stdoutHandler = (data: Buffer) => {
       const dataStr = data.toString();
       shell.outputSize += dataStr.length;
 
@@ -172,9 +177,10 @@ export class ShellManager extends EventEmitter {
       }
 
       this.emit('shell:output', { id: shell.id, data: dataStr, type: 'stdout' });
-    });
+    };
 
-    shell.process.stderr?.on('data', (data) => {
+    // Stderr 监听器
+    const stderrHandler = (data: Buffer) => {
       const dataStr = `STDERR: ${data.toString()}`;
       shell.outputSize += dataStr.length;
 
@@ -187,7 +193,14 @@ export class ShellManager extends EventEmitter {
       }
 
       this.emit('shell:output', { id: shell.id, data: dataStr, type: 'stderr' });
-    });
+    };
+
+    shell.process.stdout.on('data', stdoutHandler);
+    shell.process.stderr.on('data', stderrHandler);
+
+    // v2.1.14: 保存监听器引用以便后续清理
+    (shell as any).__stdoutHandler = stdoutHandler;
+    (shell as any).__stderrHandler = stderrHandler;
   }
 
   /**
@@ -245,6 +258,41 @@ export class ShellManager extends EventEmitter {
   }
 
   /**
+   * 清理shell的所有流资源 (v2.1.14 内存泄漏修复)
+   * 修复官方报告的shell命令流资源未清理导致的内存泄漏
+   */
+  private cleanupShellStreams(shell: BackgroundShell): void {
+    try {
+      // 1. 移除stdout监听器
+      if (shell.process.stdout) {
+        shell.process.stdout.removeAllListeners();
+        // 如果流还打开，销毁它
+        if (!shell.process.stdout.destroyed) {
+          shell.process.stdout.destroy();
+        }
+      }
+
+      // 2. 移除stderr监听器  
+      if (shell.process.stderr) {
+        shell.process.stderr.removeAllListeners();
+        if (!shell.process.stderr.destroyed) {
+          shell.process.stderr.destroy();
+        }
+      }
+
+      // 3. 移除进程监听器
+      shell.process.removeAllListeners();
+
+      // 4. 清理引用
+      delete (shell as any).__stdoutHandler;
+      delete (shell as any).__stderrHandler;
+    } catch (err) {
+      // 忽略清理错误，只记录日志
+      console.warn(`Failed to cleanup stream for shell ${shell.id}:`, err);
+    }
+  }
+
+  /**
    * 获取 shell 输出（并清空已读输出）
    */
   getOutput(id: string, options: { clear?: boolean; filter?: RegExp } = {}): string | null {
@@ -270,7 +318,7 @@ export class ShellManager extends EventEmitter {
   }
 
   /**
-   * 终止 shell
+   * 终止 shell (v2.1.14 修复：添加流清理)
    */
   terminateShell(id: string, reason: 'manual' | 'timeout' | 'error' = 'manual'): boolean {
     const shell = this.shells.get(id);
@@ -294,6 +342,9 @@ export class ShellManager extends EventEmitter {
         clearTimeout(shell.timeout);
         shell.timeout = undefined;
       }
+
+      // v2.1.14: 清理所有流资源
+      this.cleanupShellStreams(shell);
 
       this.emit('shell:terminated', { id, reason });
 
@@ -360,7 +411,7 @@ export class ShellManager extends EventEmitter {
   }
 
   /**
-   * 清理已完成的 shell
+   * 清理已完成的 shell (v2.1.14 修复：添加流清理)
    */
   cleanupCompleted(): number {
     let cleaned = 0;
@@ -371,6 +422,10 @@ export class ShellManager extends EventEmitter {
         if (shell.timeout) {
           clearTimeout(shell.timeout);
         }
+
+        // v2.1.14: 清理所有流资源
+        this.cleanupShellStreams(shell);
+
         this.shells.delete(id);
         cleaned++;
       }
@@ -398,13 +453,14 @@ export class ShellManager extends EventEmitter {
   }
 
   /**
-   * 终止所有 shell
+   * 终止所有 shell (v2.1.14 修复：添加流清理)
    */
   terminateAll(): number {
     let terminated = 0;
 
-    Array.from(this.shells.keys()).forEach((id) => {
-      if (this.terminateShell(id)) {
+    Array.from(this.shells.values()).forEach((shell) => {
+      if (this.terminateShell(shell.id)) {
+        // terminateShell已经包含流清理
         terminated++;
       }
     });

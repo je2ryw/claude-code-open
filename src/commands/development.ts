@@ -79,9 +79,14 @@ export const feedbackCommand: SlashCommand = {
         issueTitle = 'Feedback / Bug Report';
       }
 
-      // 生成 GitHub issue URL (基于官方实现的格式)
+      // 生成 GitHub issue URL (v2.1.14: 限制URL长度以防失效)
       const encodedTitle = encodeURIComponent(`[Feedback] ${issueTitle}`);
-      const issueBody = `**Feedback / Bug Description**
+      
+      // v2.1.14 修复：限制 body 长度以避免生成无效 URL
+      // GitHub URL 有大约 8000-8192 字符的限制
+      // 考虑到 title、labels 和其他参数，我们限制 body 为 6000 字符
+      const MAX_BODY_LENGTH = 6000;
+      let issueBody = `**Feedback / Bug Description**
 ${feedbackMessage}
 
 **Environment Info**
@@ -97,29 +102,60 @@ Submitted via /feedback command in Claude Code CLI
 ---
 *This issue was auto-generated from the /feedback command*`;
 
+      // v2.1.14: 如果 body 太长，截断并添加提示
+      if (issueBody.length > MAX_BODY_LENGTH) {
+        const truncatedMessage = feedbackMessage.slice(0, MAX_BODY_LENGTH - 500);
+        issueBody = `**Feedback / Bug Description**
+${truncatedMessage}
+
+... (Message truncated due to length limit)
+
+**Environment Info**
+- Platform: ${environmentInfo.platform}
+- Node: ${environmentInfo.nodeVersion}
+- Version: ${environmentInfo.version}
+- Terminal: ${environmentInfo.terminal}
+- Date: ${environmentInfo.datetime}
+
+**Source**
+Submitted via /feedback command in Claude Code CLI
+
+---
+*This issue was auto-generated from the /feedback command*
+*Note: Original message was truncated. Please copy the full message when submitting.*`;
+      }
+
       const encodedBody = encodeURIComponent(issueBody);
       const githubIssueUrl = `${ISSUES_URL}/new?title=${encodedTitle}&body=${encodedBody}&labels=user-feedback`;
 
+      // v2.1.14: 验证最终 URL 长度
+      const URL_SAFE_MAX_LENGTH = 8000;
+      const isTruncated = issueBody.includes('(Message truncated');
+      
+      const truncationWarning = isTruncated 
+        ? `\n⚠️ **Note**: Your feedback message was truncated to fit URL length limits. Please expand the full message when submitting the GitHub issue.\n` 
+        : '';
+
       const response = `Thank you for your feedback!
 
-"${feedbackMessage}"
+"${feedbackMessage.slice(0, 200)}${feedbackMessage.length > 200 ? '...' : ''}"
 
 Your feedback helps improve Claude Code.
 
 **Next Steps:**
 
 1. Your feedback has been formatted as a GitHub issue
-2. Open this URL in your browser to submit:
+2. ${githubIssueUrl.length > URL_SAFE_MAX_LENGTH ? '⚠️ URL may be too long - consider shortening your message' : 'Open this URL in your browser to submit'}:
 
    ${githubIssueUrl}
 
 3. Or manually visit: ${ISSUES_URL}
 
 **What's included:**
-  ✓ Your feedback message
+  ✓ Your feedback message${isTruncated ? ' (truncated)' : ''}
   ✓ Environment information (platform, version, terminal)
   ✓ Timestamp
-
+${truncationWarning}
 The GitHub issue has been pre-filled - you just need to submit it.
 
 **Alternative:**

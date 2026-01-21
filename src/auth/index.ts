@@ -557,14 +557,70 @@ export async function startAuthorizationCodeFlow(
 
   // 尝试自动打开浏览器
   console.log('Opening browser to sign in...');
+  let browserOpened = false;
   try {
     await open(authUrlString);
+    browserOpened = true;
     console.log('✓ Browser opened. Please complete the authorization in your browser.\n');
   } catch (error) {
     console.log('⚠ Could not open browser automatically.');
     console.log('Please open this URL in your browser:\n');
     console.log(authUrlString);
     console.log('\n');
+
+    // v2.1.10: 添加快捷键 'c' 来复制 URL
+    console.log('📋 Press \u001b[1mc\u001b[0m to copy URL to clipboard');
+    console.log();
+
+    // 设置原始模式监听按键
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+
+      const copyHandler = async (chunk: Buffer) => {
+        const key = chunk.toString('utf8');
+        if (key === 'c' || key === 'C') {
+          // 复制到剪贴板
+          try {
+            const { execSync } = await import('child_process');
+            const platform = process.platform;
+
+            if (platform === 'darwin') {
+              // macOS
+              execSync('pbcopy', { input: authUrlString });
+            } else if (platform === 'win32') {
+              // Windows
+              execSync('clip', { input: authUrlString });
+            } else {
+              // Linux
+              try {
+                execSync('xclip -selection clipboard', { input: authUrlString });
+              } catch {
+                // 如果 xclip 不可用，尝试 xsel
+                execSync('xsel --clipboard --input', { input: authUrlString });
+              }
+            }
+
+            console.log('\n✓ URL copied to clipboard!');
+            console.log();
+          } catch (err) {
+            console.log('\n⚠ Could not copy to clipboard');
+            console.log('Please select and copy the URL manually\n');
+          }
+        }
+      };
+
+      process.stdin.on('data', copyHandler);
+
+      // 在用户开始输入授权码后移除监听器
+      // 使用延时以确保用户有时间按 'c'
+      setTimeout(() => {
+        process.stdin.removeListener('data', copyHandler);
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+      }, 2000);
+    }
   }
 
   console.log('After authorizing, you will see a success page with a code.');

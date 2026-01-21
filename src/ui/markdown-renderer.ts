@@ -112,104 +112,132 @@ function renderTable(data: { header: string[]; rows: string[][]; align?: ('left'
 
 /**
  * 解析 Markdown 为结构化块
+ * v2.1.12: 添加保护性检查，防止特殊情况下的渲染错误
  */
 export function parseMarkdown(markdown: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
 
-  // 配置 marked
-  const tokens = marked.lexer(markdown);
+  // v2.1.12: 空值保护
+  if (!markdown || typeof markdown !== 'string') {
+    return blocks;
+  }
 
-  for (const token of tokens) {
-    switch (token.type) {
-      case 'code':
-        blocks.push({
-          type: 'code',
-          content: token.text,
-          language: token.lang || 'text',
-        });
-        break;
+  // v2.1.12: 移除可能导致渲染问题的特殊字符
+  // 保留换行符和常见标点，但移除控制字符
+  const sanitizedMarkdown = markdown.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 
-      case 'heading':
-        blocks.push({
-          type: 'heading',
-          content: token.text,
-          level: token.depth,
-        });
-        break;
+  try {
+    // 配置 marked
+    const tokens = marked.lexer(sanitizedMarkdown);
 
-      case 'list':
-        const items = token.items.map(item => {
-          // 递归处理嵌套的 tokens
-          if (typeof item.text === 'string') {
-            return item.text;
-          }
-          // 处理包含 tokens 的情况
-          return item.tokens?.map(t => {
-            if ('text' in t && typeof t.text === 'string') {
-              return t.text;
+    for (const token of tokens) {
+      try {
+        // v2.1.12: 每个 token 处理都添加错误边界
+        switch (token.type) {
+          case 'code':
+            blocks.push({
+              type: 'code',
+              content: token.text || '', // v2.1.12: 空值保护
+              language: token.lang || 'text',
+            });
+            break;
+
+          case 'heading':
+            blocks.push({
+              type: 'heading',
+              content: token.text || '', // v2.1.12: 空值保护
+              level: token.depth,
+            });
+            break;
+
+          case 'list':
+            const items = token.items.map(item => {
+              // 递归处理嵌套的 tokens
+              if (typeof item.text === 'string') {
+                return item.text;
+              }
+              // 处理包含 tokens 的情况
+              return item.tokens?.map(t => {
+                if ('text' in t && typeof t.text === 'string') {
+                  return t.text;
+                }
+                return '';
+              }).join('') || '';
+            });
+
+            items.forEach(item => {
+              blocks.push({
+                type: 'list',
+                content: item || '', // v2.1.12: 空值保护
+              });
+            });
+            break;
+
+          case 'blockquote':
+            blocks.push({
+              type: 'quote',
+              content: token.text || '', // v2.1.12: 空值保护
+            });
+            break;
+
+          case 'table':
+            // v2.1.12: 表格数据验证
+            if (token.header && Array.isArray(token.header) && token.rows && Array.isArray(token.rows)) {
+              const header = token.header.map(cell => cell.text || '');
+              const rows = token.rows.map(row => row.map(cell => cell.text || ''));
+              blocks.push({
+                type: 'table',
+                content: '',
+                tableData: {
+                  header,
+                  rows,
+                  align: token.align as ('left' | 'right' | 'center')[],
+                },
+              });
             }
-            return '';
-          }).join('') || '';
-        });
+            break;
 
-        items.forEach(item => {
-          blocks.push({
-            type: 'list',
-            content: item,
-          });
-        });
-        break;
+          case 'hr':
+            blocks.push({
+              type: 'hr',
+              content: '',
+            });
+            break;
 
-      case 'blockquote':
-        blocks.push({
-          type: 'quote',
-          content: token.text,
-        });
-        break;
+          case 'paragraph':
+            // 检查是否包含链接
+            const text = token.text || ''; // v2.1.12: 空值保护
+            blocks.push({
+              type: 'text',
+              content: text,
+            });
+            break;
 
-      case 'table':
-        const header = token.header.map(cell => cell.text);
-        const rows = token.rows.map(row => row.map(cell => cell.text));
-        blocks.push({
-          type: 'table',
-          content: '',
-          tableData: {
-            header,
-            rows,
-            align: token.align as ('left' | 'right' | 'center')[],
-          },
-        });
-        break;
+          case 'space':
+            // 跳过空白
+            break;
 
-      case 'hr':
-        blocks.push({
-          type: 'hr',
-          content: '',
-        });
-        break;
-
-      case 'paragraph':
-        // 检查是否包含链接
-        const text = token.text;
-        blocks.push({
-          type: 'text',
-          content: text,
-        });
-        break;
-
-      case 'space':
-        // 跳过空白
-        break;
-
-      default:
-        // 其他类型作为文本处理
-        if ('text' in token && typeof token.text === 'string') {
-          blocks.push({
-            type: 'text',
-            content: token.text,
-          });
+          default:
+            // 其他类型作为文本处理
+            if ('text' in token && typeof token.text === 'string') {
+              blocks.push({
+                type: 'text',
+                content: token.text,
+              });
+            }
         }
+      } catch (tokenError) {
+        // v2.1.12: token 处理错误时记录并跳过
+        console.warn('[Markdown] Failed to process token:', tokenError);
+      }
     }
+  } catch (parseError) {
+    // v2.1.12: 解析失败时返回纯文本块
+    console.warn('[Markdown] Parse failed, falling back to plain text:', parseError);
+    blocks.push({
+      type: 'text',
+      content: sanitizedMarkdown,
+    });
   }
 
   return blocks;

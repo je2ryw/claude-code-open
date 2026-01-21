@@ -15,6 +15,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import axios, { AxiosInstance } from 'axios';
 import { createRequire } from 'module';
+import http from 'http';
+import https from 'https';
 import { WebSocketConnection } from './websocket-connection.js';
 
 // Import EventSource for Node.js (CommonJS module)
@@ -234,9 +236,30 @@ export class SseConnection extends EventEmitter implements McpTransport {
     super();
     this.url = url;
     this.headers = headers;
+
+    // v2.1.11: 使用 HTTP Agent 连接池优化
+    // keepAlive 启用连接重用，减少 TCP 连接开销
+    const httpAgent = new http.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 5,
+      maxFreeSockets: 2,
+    });
+
+    const httpsAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 5,
+      maxFreeSockets: 2,
+    });
+
     this.httpClient = axios.create({
       baseURL: url,
       headers,
+      httpAgent,
+      httpsAgent,
+      // v2.1.11: 保持长连接
+      timeout: 30000,
     });
   }
 
@@ -357,9 +380,27 @@ export class HttpConnection extends EventEmitter implements McpTransport {
     super();
     this.url = url;
     this.headers = headers;
+
+    // v2.1.11: 使用 HTTP Agent 连接池优化
+    const httpAgent = new http.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 5,
+      maxFreeSockets: 2,
+    });
+
+    const httpsAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 5,
+      maxFreeSockets: 2,
+    });
+
     this.httpClient = axios.create({
       baseURL: url,
       headers,
+      httpAgent,
+      httpsAgent,
       timeout: 30000,
     });
   }

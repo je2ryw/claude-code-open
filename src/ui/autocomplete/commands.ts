@@ -432,6 +432,7 @@ export const ALL_COMMANDS: CompletionItem[] = [
 
 /**
  * 获取命令补全建议
+ * v2.1.14: 修复输入相似命令时选择错误 (如 /context vs /compact)
  * @param query 查询文本 (不含前导斜杠)
  * @param maxResults 最大返回数量
  */
@@ -445,24 +446,47 @@ export function getCommandCompletions(query: string, maxResults: number = 10): C
       .slice(0, maxResults);
   }
 
-  // 过滤匹配的命令
-  const matches = ALL_COMMANDS.filter(cmd => {
+  // v2.1.14 修复：将匹配分为精确匹配和前缀匹配
+  const exactMatches: CompletionItem[] = [];
+  const prefixMatches: CompletionItem[] = [];
+
+  ALL_COMMANDS.forEach(cmd => {
     // 移除前导斜杠进行匹配
     const cmdName = cmd.label.replace(/^\//, '').toLowerCase();
 
-    // 检查命令名称是否匹配
+    // 检查精确匹配（完全相同）
+    if (cmdName === lowerQuery) {
+      exactMatches.push(cmd);
+      return;
+    }
+
+    // 检查别名精确匹配
+    const exactAliasMatch = cmd.aliases?.some(alias =>
+      alias.toLowerCase() === lowerQuery
+    );
+    if (exactAliasMatch) {
+      exactMatches.push(cmd);
+      return;
+    }
+
+    // 检查命令名称前缀匹配
     const matchesName = cmdName.startsWith(lowerQuery);
 
-    // 检查别名是否匹配
+    // 检查别名前缀匹配
     const matchesAlias = cmd.aliases?.some(alias =>
       alias.toLowerCase().startsWith(lowerQuery)
     ) || false;
 
-    return matchesName || matchesAlias;
+    if (matchesName || matchesAlias) {
+      prefixMatches.push(cmd);
+    }
   });
 
+  // v2.1.14: 精确匹配优先，然后是前缀匹配
+  const allMatches = [...exactMatches, ...prefixMatches];
+
   // 按优先级排序并返回
-  return matches
+  return allMatches
     .sort((a, b) => (a.priority || 100) - (b.priority || 100))
     .slice(0, maxResults);
 }

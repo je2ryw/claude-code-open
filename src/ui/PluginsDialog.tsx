@@ -353,6 +353,7 @@ function DiscoverTab({
 }
 
 // Installed Tab 组件（按 marketplace 分组显示，与官方一致）
+// v2.1.14: 添加搜索功能
 function InstalledTab({
   plugins,
   onUninstall,
@@ -363,11 +364,26 @@ function InstalledTab({
   onViewDetails: (plugin: InstalledPlugin) => void;
 }): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // v2.1.14: 添加搜索状态
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // v2.1.14: 过滤插件（按名称或描述）
+  const filteredPlugins = useMemo(() => {
+    if (!searchQuery) return plugins;
+    const q = searchQuery.toLowerCase();
+    return plugins.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.marketplaceName?.toLowerCase().includes(q)
+    );
+  }, [plugins, searchQuery]);
 
   // 按 marketplace 分组
   const groupedPlugins = useMemo(() => {
     const groups: Record<string, InstalledPlugin[]> = {};
-    for (const plugin of plugins) {
+    for (const plugin of filteredPlugins) {
       const marketplace = plugin.marketplaceName || 'unknown';
       if (!groups[marketplace]) {
         groups[marketplace] = [];
@@ -375,7 +391,7 @@ function InstalledTab({
       groups[marketplace].push(plugin);
     }
     return groups;
-  }, [plugins]);
+  }, [filteredPlugins]);
 
   // 扁平化列表用于选择
   const flatList = useMemo(() => {
@@ -397,10 +413,44 @@ function InstalledTab({
   }, [flatList]);
 
   useInput((input, key) => {
+    // v2.1.14: 搜索模式处理
+    if (key.escape) {
+      if (isSearchFocused && searchQuery) {
+        setSearchQuery('');
+      } else if (isSearchFocused) {
+        setIsSearchFocused(false);
+      }
+      return;
+    }
+
+    // v2.1.14: 输入任意字符开始搜索
+    if (!isSearchFocused && input && !key.ctrl && !key.meta && !key.return && !key.upArrow && !key.downArrow) {
+      setIsSearchFocused(true);
+      setSearchQuery(input);
+      return;
+    }
+
+    if (isSearchFocused) {
+      if (key.downArrow) {
+        setIsSearchFocused(false);
+        if (selectableIndices.length > 0) {
+          setSelectedIndex(selectableIndices[0]);
+        }
+      } else if (key.backspace || key.delete) {
+        setSearchQuery(searchQuery.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setSearchQuery(searchQuery + input);
+      }
+      return;
+    }
+
     if (key.upArrow) {
       const currentPos = selectableIndices.indexOf(selectedIndex);
       if (currentPos > 0) {
         setSelectedIndex(selectableIndices[currentPos - 1]);
+      } else {
+        // 返回搜索框
+        setIsSearchFocused(true);
       }
     } else if (key.downArrow) {
       const currentPos = selectableIndices.indexOf(selectedIndex);
@@ -443,7 +493,28 @@ function InstalledTab({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Installed Plugins</Text>
+      <Box>
+        <Text bold>Installed Plugins</Text>
+        {filteredPlugins.length !== plugins.length && (
+          <Text dimColor> ({filteredPlugins.length}/{plugins.length})</Text>
+        )}
+      </Box>
+
+      {/* v2.1.14: 搜索框 */}
+      <Box marginBottom={1}>
+        <SearchInput
+          query={searchQuery}
+          isFocused={isSearchFocused}
+          width={60}
+        />
+      </Box>
+
+      {/* 无搜索结果 */}
+      {filteredPlugins.length === 0 && searchQuery && (
+        <Box marginBottom={1}>
+          <Text dimColor>No plugins match "{searchQuery}"</Text>
+        </Box>
+      )}
 
       <Box flexDirection="column" marginTop={1}>
         {flatList.map((item, index) => {
@@ -456,7 +527,7 @@ function InstalledTab({
           }
 
           const plugin = item.plugin!;
-          const isSelected = index === selectedIndex;
+          const isSelected = index === selectedIndex && !isSearchFocused;
           // scope 默认为 user
           const scope = 'user';
 
@@ -474,7 +545,7 @@ function InstalledTab({
 
       <Box marginTop={1}>
         <Text dimColor italic>
-          Space: toggle · Enter: details · Delete: uninstall · Esc: back
+          Type to search · Space: toggle · Enter: details · Delete: uninstall · Esc: back
         </Text>
       </Box>
     </Box>

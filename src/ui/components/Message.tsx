@@ -71,10 +71,20 @@ const ToolResultBlockComponent: React.FC<{ block: ToolResultBlockParam }> = ({ b
 
 // 合并连续的 text blocks（解决流式消息被拆分成多个小块的问题）
 const mergeTextBlocks = (blocks: AnyContentBlock[]): AnyContentBlock[] => {
+  // v2.1.12: 边界检查
+  if (!blocks || blocks.length === 0) {
+    return [];
+  }
+
   const merged: AnyContentBlock[] = [];
   let currentText = '';
 
   for (const block of blocks) {
+    // v2.1.12: 跳过 null/undefined blocks
+    if (!block) {
+      continue;
+    }
+
     if (block.type === 'text') {
       // 累积文本
       currentText += (block as { text?: string }).text || '';
@@ -98,10 +108,20 @@ const mergeTextBlocks = (blocks: AnyContentBlock[]): AnyContentBlock[] => {
 
 // 渲染内容块
 const renderContentBlocks = (blocks: AnyContentBlock[]) => {
+  // v2.1.12: 处理空数组边界情况
+  if (!blocks || blocks.length === 0) {
+    return null;
+  }
+
   // 先合并连续的 text blocks
   const mergedBlocks = mergeTextBlocks(blocks);
 
   return mergedBlocks.map((block, index) => {
+    // v2.1.12: 跳过 null/undefined blocks
+    if (!block) {
+      return null;
+    }
+
     switch (block.type) {
       case 'text':
         return <Text key={index}>{(block as { text?: string }).text || ''}</Text>;

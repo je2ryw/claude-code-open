@@ -408,7 +408,7 @@ export class UpdateManager extends EventEmitter {
     });
   }
 
-  // 执行 npm 命令
+  // 执行 npm 命令 (v2.1.14 修复：添加流清理)
   private executeNpm(args: string[]): Promise<{ success: boolean; output?: string; error?: string }> {
     return new Promise((resolve) => {
       const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -420,28 +420,44 @@ export class UpdateManager extends EventEmitter {
       let stdout = '';
       let stderr = '';
 
-      proc.stdout.on('data', (data) => {
+      // 保存监听器引用以便清理
+      const stdoutHandler = (data: Buffer) => {
         stdout += data.toString();
-      });
+      };
 
-      proc.stderr.on('data', (data) => {
+      const stderrHandler = (data: Buffer) => {
         stderr += data.toString();
-      });
+      };
 
-      proc.on('close', (code) => {
+      const closeHandler = (code: number | null) => {
+        // v2.1.14: 清理所有流监听器
+        proc.stdout?.removeAllListeners();
+        proc.stderr?.removeAllListeners();
+        proc.removeAllListeners();
+
         resolve({
           success: code === 0,
           output: stdout,
           error: stderr,
         });
-      });
+      };
 
-      proc.on('error', (err) => {
+      const errorHandler = (err: Error) => {
+        // v2.1.14: 清理所有流监听器
+        proc.stdout?.removeAllListeners();
+        proc.stderr?.removeAllListeners();
+        proc.removeAllListeners();
+
         resolve({
           success: false,
           error: String(err),
         });
-      });
+      };
+
+      proc.stdout.on('data', stdoutHandler);
+      proc.stderr.on('data', stderrHandler);
+      proc.on('close', closeHandler);
+      proc.on('error', errorHandler);
     });
   }
 

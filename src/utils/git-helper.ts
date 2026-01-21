@@ -108,13 +108,19 @@ function escapeShellString(str: string): string {
  * @throws Error if message contains dangerous patterns
  */
 export function validateCommitMessage(message: string): void {
+  // v2.1.10: 首先检测 HEREDOC 上下文
+  // 在 heredoc（特别是单引号 heredoc）中，模板字面量是安全的
+  const heredocPattern = /<<-?\s*(['"])?[A-Za-z_]\w*\1?/;
+  const isInHeredoc = heredocPattern.test(message);
+
   // 1. 检测命令替换：$()
   if (/\$\(/.test(message)) {
     throw new Error('Command injection detected: $() command substitution not allowed in commit message');
   }
 
-  // 2. 检测变量替换：${}（修复 2.1.3）
-  if (/\$\{/.test(message)) {
+  // 2. 检测变量替换：${}（修复 v2.1.3, v2.1.10 further fix）
+  // v2.1.10: 在 heredoc 中允许 ${...} 语法（如 ${index + 1}）
+  if (!isInHeredoc && /\$\{/.test(message)) {
     throw new Error('Command injection detected: variable substitution ${} not allowed in commit message');
   }
 
@@ -146,11 +152,7 @@ export function validateCommitMessage(message: string): void {
   // 注意：需要区分 HEREDOC (<<)、邮箱地址 (<email>) 和输入重定向 (< file)
   // HEREDOC 和邮箱地址是安全的，但输入重定向是危险的
 
-  // 检测是否在有效的 HEREDOC 上下文中
-  // 支持的格式：<<'EOF', <<"EOF", <<EOF, <<-EOF（带连字符的格式）
-  const heredocPattern = /<<-?\s*(['"])?[A-Za-z_]\w*\1?/;
-  const isInHeredoc = heredocPattern.test(message);
-
+  // 使用已在函数顶部定义的 isInHeredoc 变量
   // 只有在不是 HEREDOC 上下文时才检测 < 和 > 重定向
   if (!isInHeredoc) {
     // 先移除所有安全的邮箱地址格式，然后检测剩余内容中的 < 和 >

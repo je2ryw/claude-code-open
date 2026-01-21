@@ -425,6 +425,19 @@
   padding: 40px;
 }
 
+.editorContent > .welcomePage.welcomeGraphPage {
+  padding: 12px 16px 16px;
+}
+
+.welcomeGraphPage {
+  align-items: stretch;
+  text-align: left;
+}
+
+.welcomeGraphPage .moduleGraphSection {
+  margin-top: 8px;
+}
+
 .welcomeHero {
   display: flex;
   flex-direction: column;
