@@ -19,6 +19,14 @@ interface ApiConfig {
   requestTimeout?: number;
   /** API Provider */
   apiProvider?: 'anthropic' | 'bedrock' | 'vertex';
+  /** 自定义 API Base URL */
+  apiBaseUrl?: string;
+  /** 自定义 API Key */
+  apiKey?: string;
+  /** 自定义模型名称（用于第三方 API） */
+  customModelName?: string;
+  /** 认证优先级 */
+  authPriority?: 'apiKey' | 'oauth' | 'auto';
 }
 
 /**
@@ -63,6 +71,15 @@ function validateConfig(config: ApiConfig): string | null {
     }
   }
 
+  // 验证 apiBaseUrl
+  if (config.apiBaseUrl !== undefined && config.apiBaseUrl.trim() !== '') {
+    try {
+      new URL(config.apiBaseUrl);
+    } catch {
+      return 'API Base URL 格式无效，必须是有效的 URL（如 https://api.example.com）';
+    }
+  }
+
   return null;
 }
 
@@ -77,6 +94,10 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
     maxRetries: 3,
     requestTimeout: 300000,
     apiProvider: 'anthropic',
+    apiBaseUrl: '',
+    apiKey: '',
+    customModelName: '',
+    authPriority: 'auto',
   });
 
   // 加载状态
@@ -85,6 +106,10 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
   const [error, setError] = useState<string | null>(null);
   // 验证错误
   const [validationError, setValidationError] = useState<string | null>(null);
+  // 测试状态
+  const [testing, setTesting] = useState(false);
+  // 测试成功消息
+  const [testSuccess, setTestSuccess] = useState<string | null>(null);
 
   /**
    * 加载当前配置
@@ -150,6 +175,50 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
   const updateConfig = (field: keyof ApiConfig, value: any) => {
     setConfig({ ...config, [field]: value });
     setValidationError(null); // 清除验证错误
+    setTestSuccess(null); // 清除测试成功消息
+  };
+
+  /**
+   * 测试 API 连接
+   */
+  const handleTest = async () => {
+    // 验证必填项
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      setValidationError('请先输入 API Key');
+      return;
+    }
+
+    setTesting(true);
+    setError(null);
+    setTestSuccess(null);
+    setValidationError(null);
+
+    try {
+      const response = await fetch('/api/config/api/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiBaseUrl: config.apiBaseUrl || '',
+          apiKey: config.apiKey,
+          customModelName: config.customModelName || '',
+        }),
+      });
+      
+      const data = await response.json();
+
+      if (data.success) {
+        setTestSuccess(`连接成功！模型: ${data.data.model}，端点: ${data.data.baseUrl}`);
+        setError(null);
+      } else {
+        setError(data.error || '连接测试失败');
+        setTestSuccess(null);
+      }
+    } catch (err) {
+      setError('测试连接失败: ' + (err instanceof Error ? err.message : String(err)));
+      setTestSuccess(null);
+    } finally {
+      setTesting(false);
+    }
   };
 
   return (
@@ -164,6 +233,20 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
         {(error || validationError) && (
           <div className="mcp-form-error">
             {validationError || error}
+          </div>
+        )}
+
+        {/* 成功消息 */}
+        {testSuccess && (
+          <div className="mcp-form-success" style={{ 
+            padding: '12px', 
+            marginBottom: '16px', 
+            backgroundColor: 'rgba(34, 197, 94, 0.1)', 
+            border: '1px solid rgba(34, 197, 94, 0.3)', 
+            borderRadius: '4px',
+            color: '#22c55e'
+          }}>
+            ✓ {testSuccess}
           </div>
         )}
 
@@ -263,6 +346,83 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
               选择 Claude API 的提供商。不同的提供商可能有不同的功能和定价。
             </span>
           </div>
+
+          {/* 分隔线 */}
+          <div style={{ margin: '24px 0', borderTop: '1px solid var(--border-color)' }} />
+          <h4 style={{ marginBottom: '16px', color: 'var(--text-primary)' }}>自定义 API 配置</h4>
+          <p className="help-text" style={{ marginBottom: '16px' }}>
+            以下配置用于对接第三方兼容 Claude API 的服务。设置自定义 API Key 后，将优先使用该 Key 而不是 OAuth 认证。
+          </p>
+
+          {/* API Base URL */}
+          <div className="mcp-form-group">
+            <label>
+              API Base URL
+              <input
+                type="text"
+                className="mcp-form-input"
+                placeholder="https://api.anthropic.com"
+                value={config.apiBaseUrl ?? ''}
+                onChange={(e) => updateConfig('apiBaseUrl', e.target.value)}
+              />
+            </label>
+            <span className="help-text">
+              自定义 API 端点地址。留空则使用默认端点。用于对接第三方兼容的 Claude API 服务。
+            </span>
+          </div>
+
+          {/* API Key */}
+          <div className="mcp-form-group">
+            <label>
+              API Key
+              <input
+                type="password"
+                className="mcp-form-input"
+                placeholder="sk-ant-..."
+                value={config.apiKey ?? ''}
+                onChange={(e) => updateConfig('apiKey', e.target.value)}
+              />
+            </label>
+            <span className="help-text">
+              自定义 API 密钥。设置后将优先使用此密钥而不是 OAuth 认证。密钥将被加密存储。留空则使用 OAuth 认证。
+            </span>
+          </div>
+
+          {/* Custom Model Name */}
+          <div className="mcp-form-group">
+            <label>
+              自定义模型名称
+              <input
+                type="text"
+                className="mcp-form-input"
+                placeholder="claude-3-opus-20240229"
+                value={config.customModelName ?? ''}
+                onChange={(e) => updateConfig('customModelName', e.target.value)}
+              />
+            </label>
+            <span className="help-text">
+              自定义模型名称，用于第三方 API。设置后将覆盖内置模型选择。留空则使用界面上选择的模型。
+            </span>
+          </div>
+
+          {/* Auth Priority */}
+          <div className="mcp-form-group">
+            <label>
+              认证优先级
+              <select
+                className="mcp-form-input"
+                value={config.authPriority ?? 'auto'}
+                onChange={(e) => updateConfig('authPriority', e.target.value as ApiConfig['authPriority'])}
+              >
+                <option value="auto">自动（有 API Key 则优先使用）</option>
+                <option value="apiKey">API Key 优先</option>
+                <option value="oauth">OAuth 优先</option>
+              </select>
+            </label>
+            <span className="help-text">
+              选择认证方式的优先级。"自动"模式下，如果设置了 API Key 则使用 Key，否则使用 OAuth。
+            </span>
+          </div>
         </div>
 
         {/* 操作按钮 */}
@@ -271,15 +431,23 @@ export function ApiConfigPanel({ onSave, onClose }: ApiConfigPanelProps) {
             <button
               className="mcp-btn-secondary mcp-btn"
               onClick={onClose}
-              disabled={loading}
+              disabled={loading || testing}
             >
               取消
             </button>
           )}
           <button
+            className="mcp-btn-secondary mcp-btn"
+            onClick={handleTest}
+            disabled={loading || testing}
+            style={{ marginLeft: 'auto' }}
+          >
+            {testing ? '测试中...' : '测试连接'}
+          </button>
+          <button
             className="mcp-btn-primary mcp-btn"
             onClick={handleSave}
-            disabled={loading}
+            disabled={loading || testing}
           >
             {loading ? '保存中...' : '保存配置'}
           </button>

@@ -191,6 +191,70 @@ export function setupConfigApiRoutes(app: Express): void {
   });
 
   /**
+   * POST /api/config/api/test
+   * 测试 API 连接
+   */
+  app.post('/api/config/api/test', async (req: Request, res: Response) => {
+    try {
+      const { apiBaseUrl, apiKey, customModelName } = req.body;
+
+      if (!apiKey) {
+        return sendError(res, new Error('需要提供 API Key 进行测试'), 400);
+      }
+
+      // 导入 Anthropic SDK
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+
+      // 创建临时客户端
+      const client = new Anthropic({
+        apiKey: apiKey,
+        baseURL: apiBaseUrl || undefined,
+      });
+
+      // 发送一个简单的测试请求
+      const testModel = customModelName || 'claude-3-5-haiku-20241022';
+      
+      try {
+        const response = await client.messages.create({
+          model: testModel,
+          max_tokens: 10,
+          messages: [{
+            role: 'user',
+            content: 'Hi'
+          }]
+        });
+
+        // 测试成功
+        sendSuccess(res, {
+          success: true,
+          model: testModel,
+          baseUrl: apiBaseUrl || 'https://api.anthropic.com',
+          responseId: response.id,
+        }, 'API 连接测试成功');
+      } catch (apiError: any) {
+        // API 调用失败
+        const errorMessage = apiError.message || String(apiError);
+        const statusCode = apiError.status || 500;
+        
+        console.error('[Config API] API 测试失败:', errorMessage);
+        
+        return res.status(400).json({
+          success: false,
+          error: `API 测试失败: ${errorMessage}`,
+          details: {
+            statusCode,
+            message: errorMessage,
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[Config API] 测试 API 连接失败:', error);
+      sendError(res, error, 500);
+    }
+  });
+
+
+  /**
    * PUT /api/config/permissions
    * 更新权限配置
    */

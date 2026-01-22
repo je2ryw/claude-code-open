@@ -203,7 +203,24 @@ export function getProviderInfo(config: ProviderConfig): ProviderInfo {
 }
 
 /**
+ * 获取 Anthropic API 配置（支持环境变量回退）
+ */
+function getAnthropicApiConfig(config: ProviderConfig): { apiKey: string; baseURL: string } {
+  const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+  const baseURL = config.baseUrl || process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
+  
+  if (!apiKey) {
+    throw new Error(
+      'Anthropic API key is required. Set ANTHROPIC_API_KEY or CLAUDE_API_KEY environment variable, or provide apiKey in config.'
+    );
+  }
+  
+  return { apiKey, baseURL };
+}
+
+/**
  * Create Anthropic client based on provider
+ * 支持从配置中读取自定义 API Key 和 Base URL
  */
 export function createClient(config?: ProviderConfig): Anthropic {
   const providerConfig = config || detectProvider();
@@ -211,15 +228,19 @@ export function createClient(config?: ProviderConfig): Anthropic {
   switch (providerConfig.type) {
     case 'bedrock':
       return createBedrockClient(providerConfig);
+      
     case 'vertex':
       return createVertexClient(providerConfig);
+      
     case 'foundry':
       return createFoundryClient(providerConfig);
+      
+    case 'anthropic':
     default:
-      return new Anthropic({
-        apiKey: providerConfig.apiKey,
-        baseURL: providerConfig.baseUrl,
-      });
+      // Anthropic 官方 API 或未知类型都使用官方客户端
+      // 优先使用配置中的 API Key 和 Base URL，支持环境变量回退
+      const { apiKey, baseURL } = getAnthropicApiConfig(providerConfig);
+      return new Anthropic({ apiKey, baseURL });
   }
 }
 

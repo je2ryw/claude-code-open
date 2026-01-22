@@ -22,6 +22,10 @@ export interface ApiConfig {
   oauthToken?: string;
   maxRetries: number;
   requestTimeout: number;
+  // 自定义 API 配置
+  apiBaseUrl?: string;
+  customModelName?: string;
+  authPriority?: 'apiKey' | 'oauth' | 'auto';
 }
 
 /**
@@ -235,6 +239,10 @@ export class WebConfigService {
         oauthToken: config.oauthToken,
         maxRetries: config.maxRetries,
         requestTimeout: config.requestTimeout,
+        // 自定义 API 配置
+        apiBaseUrl: (config as any).apiBaseUrl,
+        customModelName: (config as any).customModelName,
+        authPriority: (config as any).authPriority || 'auto',
       };
     } catch (error) {
       console.error('[WebConfigService] 获取 API 配置失败:', error);
