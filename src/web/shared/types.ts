@@ -78,7 +78,7 @@ export type ClientMessage =
   | { type: 'user_answer'; payload: UserAnswerPayload }
   | { type: 'session_list'; payload?: SessionListRequestPayload }
   | { type: 'session_create'; payload: SessionCreatePayload }
-  | { type: 'session_new'; payload: { model?: string } }  // 官方规范：创建临时会话
+  | { type: 'session_new'; payload: { model?: string; projectPath?: string | null } }  // 官方规范：创建临时会话
   | { type: 'session_switch'; payload: { sessionId: string } }
   | { type: 'session_delete'; payload: { sessionId: string } }
   | { type: 'session_rename'; payload: { sessionId: string; name: string } }
@@ -162,7 +162,7 @@ export type ServerMessage =
   | { type: 'slash_command_result'; payload: SlashCommandResultPayload }
   | { type: 'session_list_response'; payload: SessionListResponsePayload }
   | { type: 'session_created'; payload: SessionCreatedPayload }
-  | { type: 'session_new_ready'; payload: { sessionId: string; model: string } }  // 官方规范：临时会话已就绪
+  | { type: 'session_new_ready'; payload: { sessionId: string; model: string; projectPath?: string | null } }  // 官方规范：临时会话已就绪
   | { type: 'session_switched'; payload: { sessionId: string } }
   | { type: 'session_deleted'; payload: { sessionId: string; success: boolean } }
   | { type: 'session_renamed'; payload: { sessionId: string; name: string; success: boolean } }
@@ -567,6 +567,8 @@ export interface SessionListRequestPayload {
   search?: string;
   sortBy?: 'createdAt' | 'updatedAt' | 'messageCount' | 'cost';
   sortOrder?: 'asc' | 'desc';
+  /** 按项目路径过滤：undefined 表示不过滤，null 表示只获取全局会话 */
+  projectPath?: string | null;
 }
 
 /**
@@ -598,6 +600,8 @@ export interface SessionSummary {
   };
   tags?: string[];
   workingDirectory: string;
+  /** 项目路径，用于按项目过滤会话，null/undefined 表示全局会话 */
+  projectPath?: string | null;
 }
 
 /**
@@ -607,6 +611,8 @@ export interface SessionCreatePayload {
   name?: string;
   model: string;
   tags?: string[];
+  /** 项目路径，用于按项目过滤会话，null 表示全局会话 */
+  projectPath?: string | null;
 }
 
 /**
@@ -617,6 +623,8 @@ export interface SessionCreatedPayload {
   name?: string;
   model: string;
   createdAt: number;
+  /** 项目路径，用于按项目过滤会话，null/undefined 表示全局会话 */
+  projectPath?: string | null;
 }
 
 // ============ 任务相关 Payload ============

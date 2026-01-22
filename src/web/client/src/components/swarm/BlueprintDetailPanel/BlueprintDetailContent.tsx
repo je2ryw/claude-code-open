@@ -625,8 +625,11 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // 加载架构流程图（AI 生成，支持并行加载多种类型）
   const loadArchitectureGraph = useCallback(async (type: ArchitectureGraphType, forceRefresh: boolean = false) => {
+    console.log(`[ArchitectureGraph] 开始加载: type=${type}, forceRefresh=${forceRefresh}`);
+
     // 如果已有缓存且非强制刷新，直接使用缓存
     if (!forceRefresh && architectureGraphCache.has(type)) {
+      console.log(`[ArchitectureGraph] 使用缓存: type=${type}`);
       setSelectedArchitectureType(type);
       return;
     }
@@ -635,6 +638,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     setArchitectureGraphLoadingSet(prev => {
       const newSet = new Set(prev);
       newSet.add(type);
+      console.log(`[ArchitectureGraph] 添加到加载集合: type=${type}, loadingSet size=${newSet.size}`);
       return newSet;
     });
     // 清除该类型的错误状态
@@ -647,24 +651,40 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
     try {
       const url = `/api/blueprint/blueprints/${blueprintId}/architecture-graph?type=${type}${forceRefresh ? '&forceRefresh=true' : ''}`;
+      console.log(`[ArchitectureGraph] 发送请求: ${url}`);
 
       const response = await fetch(url);
+      console.log(`[ArchitectureGraph] 响应状态: ${response.status} ${response.statusText}`);
+
+      // 检查HTTP状态码
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ArchitectureGraph] HTTP错误: ${response.status}`, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+      }
+
       const result = await response.json();
+      console.log(`[ArchitectureGraph] 响应结果: success=${result.success}`);
+
       if (result.success) {
         // 更新缓存
         setArchitectureGraphCache(prev => {
           const newMap = new Map(prev);
           newMap.set(type, result.data);
+          console.log(`[ArchitectureGraph] 缓存已更新: type=${type}, data length=${result.data?.mermaidCode?.length || 0}`);
           return newMap;
         });
       } else {
         throw new Error(result.error || 'AI 生成架构图失败');
       }
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'AI 生成架构图失败';
+      console.error(`[ArchitectureGraph] 错误:`, err);
       // 设置该类型的错误状态
       setArchitectureGraphErrorMap(prev => {
         const newMap = new Map(prev);
-        newMap.set(type, err instanceof Error ? err.message : 'AI 生成架构图失败');
+        newMap.set(type, errorMsg);
+        console.log(`[ArchitectureGraph] 错误已设置: type=${type}, error=${errorMsg}`);
         return newMap;
       });
     } finally {
@@ -672,6 +692,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
       setArchitectureGraphLoadingSet(prev => {
         const newSet = new Set(prev);
         newSet.delete(type);
+        console.log(`[ArchitectureGraph] 从加载集合移除: type=${type}, loadingSet size=${newSet.size}`);
         return newSet;
       });
     }

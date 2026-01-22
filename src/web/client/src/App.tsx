@@ -11,6 +11,8 @@ import {
 } from './components';
 import { AuthStatus } from './components/AuthStatus';
 import { AuthDialog } from './components/AuthDialog';
+import { ProjectProvider, useProject, useProjectChangeListener, type Project, type BlueprintInfo } from './contexts/ProjectContext';
+import ProjectSelector from './components/swarm/ProjectSelector/ProjectSelector';
 import type {
   ChatMessage,
   ChatContent,
@@ -57,7 +59,12 @@ interface AppProps {
   onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
 }
 
-function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
+/**
+ * App 内部组件 - 使用 ProjectContext
+ */
+function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
+  // 获取项目上下文
+  const { state: projectState, switchProject, openFolder, removeProject } = useProject();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<Status>('idle');
@@ -81,18 +88,29 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   // 防抖的会话列表刷新函数（500ms 内多次调用只会执行最后一次）
   const refreshSessionsRef = useRef<ReturnType<typeof debounce> | null>(null);
 
-  // 初始化防抖函数
+  // 获取当前项目路径
+  const currentProjectPath = projectState.currentProject?.path;
+
+  // 初始化防抖函数（传递 projectPath 过滤会话）
   useEffect(() => {
     refreshSessionsRef.current = debounce(() => {
       if (connected) {
-        send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+        send({
+          type: 'session_list',
+          payload: {
+            limit: 50,
+            sortBy: 'updatedAt',
+            sortOrder: 'desc',
+            projectPath: currentProjectPath,
+          },
+        });
       }
     }, 500);
 
     return () => {
       refreshSessionsRef.current?.cancel();
     };
-  }, [connected, send]);
+  }, [connected, send, currentProjectPath]);
 
   // 刷新会话列表（防抖）
   const refreshSessions = useCallback(() => {
@@ -270,7 +288,9 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 刷新列表以显示新创建的会话
           if (payload.sessionId) {
             // 立即刷新会话列表（不使用防抖），确保新会话立即显示
-            send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+            // 注意：这里不能直接使用 currentProjectPath，因为闭包问题
+            // 使用 refreshSessions() 会应用防抖，但确保项目路径正确
+            refreshSessions();
           }
           break;
 
@@ -547,13 +567,33 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     }
   }, [messages]);
 
-  // 连接成功后请求会话列表
+  // 连接成功后请求会话列表（传递 projectPath 过滤会话）
   useEffect(() => {
     if (connected) {
       // 首次连接时直接发送，不使用防抖（确保立即获取列表）
-      send({ type: 'session_list', payload: { limit: 50, sortBy: 'updatedAt', sortOrder: 'desc' } });
+      send({
+        type: 'session_list',
+        payload: {
+          limit: 50,
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+          projectPath: currentProjectPath,
+        },
+      });
     }
-  }, [connected, send]);
+  }, [connected, send, currentProjectPath]);
+
+  // 监听项目切换事件，刷新会话列表
+  useProjectChangeListener(
+    useCallback(
+      (project: Project | null, _blueprint: BlueprintInfo | null) => {
+        // 项目切换时，刷新会话列表（使用防抖）
+        console.log('[App] 项目切换，刷新会话列表:', project?.path);
+        refreshSessions();
+      },
+      [refreshSessions]
+    )
+  );
 
   // 会话操作
   const handleSessionSelect = useCallback(
@@ -581,8 +621,9 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     setMessages([]);
     // 官方规范：创建临时会话，不立即持久化
     // 会话只有在发送第一条消息后才会出现在列表中
-    send({ type: 'session_new', payload: { model } });
-  }, [send, model]);
+    // 传递 projectPath 关联当前项目
+    send({ type: 'session_new', payload: { model, projectPath: currentProjectPath } });
+  }, [send, model, currentProjectPath]);
 
   // 文件处理
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -889,12 +930,47 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     }
   };
 
+  // ProjectSelector 的事件处理
+  const handleProjectSelectorChange = useCallback(async (project: { id: string; name: string; path: string; lastOpenedAt?: string }) => {
+    try {
+      await switchProject(project);
+    } catch (err) {
+      console.error('项目切换失败:', err);
+    }
+  }, [switchProject]);
+
+  const handleOpenFolderClick = useCallback(async () => {
+    try {
+      await openFolder();
+    } catch (err) {
+      console.error('打开文件夹失败:', err);
+    }
+  }, [openFolder]);
+
+  const handleProjectRemove = useCallback(async (project: { id: string; name: string; path: string; lastOpenedAt?: string }) => {
+    try {
+      await removeProject(project.id);
+    } catch (err) {
+      console.error('移除项目失败:', err);
+    }
+  }, [removeProject]);
+
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       {/* 侧边栏 */}
       <div className="sidebar">
+        {/* 项目选择器 */}
+        <div className="sidebar-project-selector">
+          <ProjectSelector
+            currentProject={projectState.currentProject}
+            onProjectChange={handleProjectSelectorChange}
+            onOpenFolder={handleOpenFolderClick}
+            onProjectRemove={handleProjectRemove}
+          />
+        </div>
+
         <div className="sidebar-header">
-          <h1>🤖 Claude Code</h1>
+          <h1>Claude Code</h1>
           <button className="new-chat-btn" onClick={handleNewSession}>
             + 新对话
           </button>
@@ -1033,6 +1109,17 @@ function App({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * App 主组件 - 包裹 ProjectProvider
+ */
+function App(props: AppProps) {
+  return (
+    <ProjectProvider>
+      <AppContent {...props} />
+    </ProjectProvider>
   );
 }
 

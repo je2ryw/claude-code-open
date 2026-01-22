@@ -10,3 +10,4 @@ export { SettingsPanel } from './SettingsPanel';
 export { McpPanel } from './McpPanel';
 export { PluginsPanel } from './PluginsPanel';
 export { BlueprintSummaryCard } from './BlueprintSummaryCard';
+export { BlueprintRequirementDialog } from './BlueprintRequirementDialog';

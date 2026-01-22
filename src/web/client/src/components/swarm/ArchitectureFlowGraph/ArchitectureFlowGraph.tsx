@@ -354,6 +354,11 @@ export const ArchitectureFlowGraph: React.FC<ArchitectureFlowGraphProps> = ({
     setIsDragging(false);
   }, []);
 
+  // 调试日志：显示当前组件状态
+  useEffect(() => {
+    console.log(`[ArchitectureFlowGraph] 状态更新: loading=${loading}, error=${error}, hasData=${!!data}, selectedType=${selectedType}`);
+  }, [loading, error, data, selectedType]);
+
   return (
     <div
       className={`${styles.container} ${isFullscreen ? styles.fullscreen : ''}`}
@@ -367,7 +372,10 @@ export const ArchitectureFlowGraph: React.FC<ArchitectureFlowGraphProps> = ({
             <button
               key={type}
               className={`${styles.typeButton} ${selectedType === type ? styles.typeButtonActive : ''} ${isLoading ? styles.typeButtonLoading : ''}`}
-              onClick={() => onTypeChange(type)}
+              onClick={() => {
+                console.log(`[ArchitectureFlowGraph] 切换类型: ${type}, 当前selectedType=${selectedType}, isLoading=${isLoading}`);
+                onTypeChange(type);
+              }}
             >
               <span className={styles.typeIcon}>{isLoading ? '⏳' : icon}</span>
               <span className={styles.typeLabel}>{label}</span>
@@ -477,7 +485,10 @@ export const ArchitectureFlowGraph: React.FC<ArchitectureFlowGraphProps> = ({
             <span className={styles.emptyText}>点击上方按钮选择图表类型</span>
             <button
               className={styles.generateButton}
-              onClick={() => onRefresh(selectedType)}
+              onClick={() => {
+                console.log(`[ArchitectureFlowGraph] AI生成按钮被点击: selectedType=${selectedType}, forceRefresh=true`);
+                onRefresh(selectedType, true);
+              }}
             >
               🤖 AI 生成架构图
             </button>

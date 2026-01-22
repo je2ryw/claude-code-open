@@ -105,13 +105,39 @@
       "startTime": "2026-01-16T05:50:13.058Z",
       "endTime": "2026-01-16T05:50:13.058Z",
       "messageCount": 1
+    },
+    {
+      "id": "mem_1768796133122_tq94qa",
+      "sessionId": "mkknjmnd-fac1ac47",
+      "summary": "用户询问: 1 | 助手回复: 你好！我看到你输入了\"1\"。请问你想要什么帮助呢？\n\n我可以协助你完成各种编程和开发任务，比如：\n\n- 分析和修改代码\n- 文件操作（读取、编辑、创建）\n- 项目构建和测试\n- 代码搜索和重构\n- W...",
+      "topics": [],
+      "filesDiscussed": [],
+      "symbolsDiscussed": [],
+      "emotion": "neutral",
+      "importance": 2,
+      "startTime": "2026-01-19T04:15:33.122Z",
+      "endTime": "2026-01-19T04:15:33.122Z",
+      "messageCount": 1
+    },
+    {
+      "id": "mem_1769072538714_0d48pi",
+      "sessionId": "mkp83ws3-402b49d3",
+      "summary": "用户询问: 1 | 助手回复: 你好！我看到你输入了\"1\"。请问你想要什么帮助呢？\n\n我可以协助你完成各种编程和开发任务，比如：\n\n- 分析和修改代码\n- 文件操作（读取、编辑、创建）\n- 项目构建和测试\n- 代码搜索和重构\n- W...",
+      "topics": [],
+      "filesDiscussed": [],
+      "symbolsDiscussed": [],
+      "emotion": "neutral",
+      "importance": 2,
+      "startTime": "2026-01-22T09:02:18.714Z",
+      "endTime": "2026-01-22T09:02:18.714Z",
+      "messageCount": 1
     }
   ],
-  "lastUpdated": "2026-01-16T05:50:13.091Z",
+  "lastUpdated": "2026-01-22T09:02:18.731Z",
   "stats": {
-    "totalConversations": 8,
-    "totalMessages": 8,
+    "totalConversations": 10,
+    "totalMessages": 10,
     "oldestConversation": "2026-01-15T14:26:13.567Z",
-    "newestConversation": "2026-01-16T05:50:13.058Z"
+    "newestConversation": "2026-01-22T09:02:18.714Z"
   }
 }

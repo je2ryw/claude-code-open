@@ -1,11 +1,13 @@
+/* Auth Dialog Styling */
+
 .auth-dialog-backdrop {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background: var(--glass-overlay);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -17,29 +19,34 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
 
 .auth-dialog {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  max-width: 540px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  max-width: 500px;
   width: 90%;
   max-height: 90vh;
   overflow: hidden;
-  animation: slideUp 0.3s ease-out;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideUp {
   from {
-    transform: translateY(20px);
+    transform: translateY(30px) scale(0.95);
     opacity: 0;
   }
+
   to {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
@@ -49,15 +56,15 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid #e0e0e0;
-  background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--glass-header);
 }
 
 .auth-dialog-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-primary);
 }
 
 .close-btn {
@@ -65,10 +72,10 @@
   height: 32px;
   border: none;
   background: transparent;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 20px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -76,44 +83,22 @@
 }
 
 .close-btn:hover {
-  background: #f0f0f0;
-  color: #333;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .auth-dialog-content {
-  padding: 0;
+  padding: 24px;
   overflow-y: auto;
-  max-height: calc(90vh - 80px);
+  flex: 1;
+  color: var(--text-primary);
 }
 
-/* 调整 OAuthLogin 在对话框中的样式 */
+/* Adjust OAuthLogin style inside dialog */
 .auth-dialog-content .oauth-login {
   margin: 0;
   box-shadow: none;
-  border-radius: 0;
-}
-
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-  .auth-dialog {
-    background: #1e1e1e;
-  }
-
-  .auth-dialog-header {
-    border-bottom-color: #444;
-    background: linear-gradient(135deg, #2a2a2a 0%, #1e1e1e 100%);
-  }
-
-  .auth-dialog-header h2 {
-    color: #e0e0e0;
-  }
-
-  .close-btn {
-    color: #999;
-  }
-
-  .close-btn:hover {
-    background: #2a2a2a;
-    color: #e0e0e0;
-  }
+  background: transparent;
+  border: none;
+  padding: 0;
 }

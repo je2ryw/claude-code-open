@@ -116,15 +116,28 @@ export function setupApiRoutes(app: Express, conversationManager: ConversationMa
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
       const search = req.query.search as string | undefined;
+      // 支持按项目路径过滤：
+      // - 不传参数：获取所有会话
+      // - projectPath=null：只获取全局会话
+      // - projectPath=xxx：获取指定项目的会话
+      let projectPath: string | null | undefined;
+      if (req.query.projectPath !== undefined) {
+        const rawProjectPath = req.query.projectPath as string;
+        projectPath = rawProjectPath === 'null' ? null : rawProjectPath;
+      }
 
       const sessions = conversationManager.listPersistedSessions({
         limit,
         offset,
         search,
+        projectPath,
       });
 
       res.json({
-        sessions,
+        sessions: sessions.map(s => ({
+          ...s,
+          projectPath: s.projectPath,
+        })),
         total: sessions.length,
         limit,
         offset,
@@ -165,6 +178,7 @@ export function setupApiRoutes(app: Express, conversationManager: ConversationMa
           tokenUsage: session.metadata.tokenUsage,
           tags: session.metadata.tags,
           workingDirectory: session.metadata.workingDirectory,
+          projectPath: session.metadata.projectPath,
         },
         messages: session.chatHistory || [],
       });

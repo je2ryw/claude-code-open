@@ -274,6 +274,161 @@ export function setupWebSocket(
     });
   });
 
+  // ============================================================================
+  // 监听 BlueprintManager 事件
+  // ============================================================================
+
+  // 广播给所有客户端
+  const broadcastToAllClients = (message: any) => {
+    const messageStr = JSON.stringify(message);
+    clients.forEach((client) => {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(messageStr);
+      }
+    });
+  };
+
+  // 蓝图创建
+  blueprintManager.on('blueprint:created', (blueprint) => {
+    console.log(`[Blueprint] Created: ${blueprint.id}`);
+    broadcastToAllClients({
+      type: 'blueprint:created',
+      payload: {
+        blueprint: serializeBlueprint(blueprint),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图更新
+  blueprintManager.on('blueprint:updated', (blueprint) => {
+    console.log(`[Blueprint] Updated: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:updated',
+      payload: {
+        blueprintId: blueprint.id,
+        blueprint: serializeBlueprint(blueprint),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图提交审核
+  blueprintManager.on('blueprint:submitted', (blueprint) => {
+    console.log(`[Blueprint] Submitted for review: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:status_changed',
+      payload: {
+        blueprintId: blueprint.id,
+        oldStatus: 'draft',
+        newStatus: 'review',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图批准
+  blueprintManager.on('blueprint:approved', (blueprint) => {
+    console.log(`[Blueprint] Approved: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:status_changed',
+      payload: {
+        blueprintId: blueprint.id,
+        oldStatus: 'review',
+        newStatus: 'approved',
+        approvedBy: blueprint.approvedBy,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图拒绝
+  blueprintManager.on('blueprint:rejected', (blueprint, reason) => {
+    console.log(`[Blueprint] Rejected: ${blueprint.id}, reason: ${reason}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:rejected',
+      payload: {
+        blueprintId: blueprint.id,
+        reason: reason || 'No reason provided',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图开始执行
+  blueprintManager.on('blueprint:execution-started', (blueprint) => {
+    console.log(`[Blueprint] Execution started: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:execution_started',
+      payload: {
+        blueprintId: blueprint.id,
+        taskTreeId: blueprint.taskTreeId,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图暂停
+  blueprintManager.on('blueprint:paused', (blueprint) => {
+    console.log(`[Blueprint] Paused: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:paused',
+      payload: {
+        blueprintId: blueprint.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图恢复
+  blueprintManager.on('blueprint:resumed', (blueprint) => {
+    console.log(`[Blueprint] Resumed: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:resumed',
+      payload: {
+        blueprintId: blueprint.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图完成
+  blueprintManager.on('blueprint:completed', (blueprint) => {
+    console.log(`[Blueprint] Completed: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:completed',
+      payload: {
+        blueprintId: blueprint.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图修改（执行期间）
+  blueprintManager.on('blueprint:modified', (blueprint, modifications) => {
+    console.log(`[Blueprint] Modified during execution: ${blueprint.id}`);
+    broadcastToSubscribers(blueprint.id, {
+      type: 'blueprint:modified',
+      payload: {
+        blueprintId: blueprint.id,
+        modifications,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
+  // 蓝图删除
+  blueprintManager.on('blueprint:deleted', (blueprintId) => {
+    console.log(`[Blueprint] Deleted: ${blueprintId}`);
+    broadcastToAllClients({
+      type: 'blueprint:deleted',
+      payload: {
+        blueprintId,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
   });
@@ -1015,11 +1170,14 @@ async function handleSessionList(
     const limit = payload?.limit || 20;
     const offset = payload?.offset || 0;
     const search = payload?.search;
+    // 支持按项目路径过滤，undefined 表示不过滤，null 表示只获取全局会话
+    const projectPath = payload?.projectPath;
 
     const allSessions = conversationManager.listPersistedSessions({
       limit: limit + 50, // 获取更多以便过滤后仍有足够数量
       offset,
       search,
+      projectPath,
     });
 
     // 官方规范：只显示有消息的会话（messageCount > 0）
@@ -1040,6 +1198,7 @@ async function handleSessionList(
           tokenUsage: s.tokenUsage,
           tags: s.tags,
           workingDirectory: s.workingDirectory,
+          projectPath: s.projectPath,
         })),
         total: sessions.length,
         offset,
@@ -1069,13 +1228,14 @@ async function handleSessionCreate(
   const { ws } = client;
 
   try {
-    const { name, model, tags } = payload;
+    const { name, model, tags, projectPath } = payload;
     const sessionManager = conversationManager.getSessionManager();
 
     const newSession = sessionManager.createSession({
       name: name || `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
       model: model || 'sonnet',
       tags: tags || ['webui'],
+      projectPath,
     });
 
     sendMessage(ws, {
@@ -1085,6 +1245,7 @@ async function handleSessionCreate(
         name: newSession.metadata.name,
         model: newSession.metadata.model,
         createdAt: newSession.metadata.createdAt,
+        projectPath: newSession.metadata.projectPath,
       },
     });
   } catch (error) {
@@ -1117,6 +1278,7 @@ async function handleSessionNew(
     // 生成新的临时 sessionId（使用 crypto 生成 UUID）
     const tempSessionId = randomUUID();
     const model = payload?.model || client.model || 'sonnet';
+    const projectPath = payload?.projectPath;
 
     // 更新 client 的 sessionId 和 model
     client.sessionId = tempSessionId;
@@ -1125,7 +1287,7 @@ async function handleSessionNew(
     // 清空内存中的会话状态（如果存在）
     // 不创建持久化会话，等待用户发送第一条消息时再创建
 
-    console.log(`[WebSocket] 新建临时会话: ${tempSessionId}, model: ${model}`);
+    console.log(`[WebSocket] 新建临时会话: ${tempSessionId}, model: ${model}, projectPath: ${projectPath || 'global'}`);
 
     // 通知客户端新会话已就绪
     sendMessage(ws, {
@@ -1133,6 +1295,7 @@ async function handleSessionNew(
       payload: {
         sessionId: tempSessionId,
         model: model,
+        projectPath,
       },
     });
   } catch (error) {

@@ -6605,8 +6605,11 @@ router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Respo
     const graphType = (req.query.type as ArchitectureGraphType) || 'full';
     const forceRefresh = req.query.forceRefresh === 'true';
 
+    console.log(`[Architecture Graph] 收到请求: blueprintId=${id}, type=${graphType}, forceRefresh=${forceRefresh}`);
+
     // 验证图表类型
     if (!ARCHITECTURE_GRAPH_PROMPTS[graphType]) {
+      console.error(`[Architecture Graph] 无效的图表类型: ${graphType}`);
       return res.status(400).json({
         success: false,
         error: `无效的图表类型: ${graphType}`,
@@ -6616,7 +6619,7 @@ router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Respo
     // 检查缓存（1小时内有效），除非强制刷新
     const cached = architectureGraphCache.get(id, graphType);
     if (!forceRefresh && cached) {
-      console.log(`[Architecture Graph] 使用缓存: ${id}-${graphType}`);
+      console.log(`[Architecture Graph] ✓ 使用缓存: ${id}-${graphType}`);
       return res.json({
         success: true,
         data: {
@@ -6630,9 +6633,16 @@ router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Respo
       });
     }
 
+    if (forceRefresh && cached) {
+      console.log(`[Architecture Graph] ⚡ 强制刷新，忽略缓存: ${id}-${graphType}`);
+    } else if (!cached) {
+      console.log(`[Architecture Graph] ℹ️ 无缓存，需要生成: ${id}-${graphType}`);
+    }
+
     // 获取蓝图信息
     const blueprint = blueprintManager.getBlueprint(id);
     if (!blueprint) {
+      console.error(`[Architecture Graph] 蓝图不存在: ${id}`);
       return res.status(404).json({ success: false, error: 'Blueprint not found' });
     }
 

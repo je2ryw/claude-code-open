@@ -7,10 +7,15 @@
  * 3. 系统模块 - 功能模块划分
  * 4. 非功能要求 - 性能、安全、可用性
  * 5. 确认汇总 - 生成蓝图草案供用户确认
+ *
+ * 持久化支持：对话状态自动保存到 ~/.claude/dialogs/，服务重启后可恢复
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import type {
   Blueprint,
   BusinessProcess,
@@ -42,6 +47,7 @@ export type DialogPhase =
 export interface DialogState {
   id: string;
   phase: DialogPhase;
+  projectPath: string;        // 关联的项目路径，用于按项目恢复对话
   projectName: string;
   projectDescription: string;
   targetUsers: string[];
@@ -205,6 +211,52 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 };
 
 // ============================================================================
+// 持久化路径
+// ============================================================================
+
+const getDialogsDir = (): string => {
+  const dir = path.join(os.homedir(), '.claude', 'dialogs');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+};
+
+const getDialogFilePath = (id: string): string => {
+  return path.join(getDialogsDir(), `${id}.json`);
+};
+
+/**
+ * 序列化 DialogState 为 JSON 可存储格式
+ */
+function serializeDialogState(state: DialogState): any {
+  return {
+    ...state,
+    createdAt: state.createdAt.toISOString(),
+    updatedAt: state.updatedAt.toISOString(),
+    history: state.history.map(msg => ({
+      ...msg,
+      timestamp: msg.timestamp.toISOString(),
+    })),
+  };
+}
+
+/**
+ * 反序列化 JSON 数据为 DialogState
+ */
+function deserializeDialogState(data: any): DialogState {
+  return {
+    ...data,
+    createdAt: new Date(data.createdAt),
+    updatedAt: new Date(data.updatedAt),
+    history: data.history.map((msg: any) => ({
+      ...msg,
+      timestamp: new Date(msg.timestamp),
+    })),
+  };
+}
+
+// ============================================================================
 // 需求对话管理器
 // ============================================================================
 
@@ -214,6 +266,113 @@ export class RequirementDialogManager extends EventEmitter {
 
   constructor() {
     super();
+    // 启动时加载所有未完成的对话
+    this.loadAllDialogs();
+  }
+
+  // --------------------------------------------------------------------------
+  // 持久化方法
+  // --------------------------------------------------------------------------
+
+  /**
+   * 保存对话状态到磁盘
+   */
+  private saveDialog(state: DialogState): void {
+    try {
+      const filePath = getDialogFilePath(state.id);
+      const data = serializeDialogState(state);
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error(`Failed to save dialog ${state.id}:`, error);
+    }
+  }
+
+  /**
+   * 从磁盘加载对话状态
+   */
+  private loadDialog(id: string): DialogState | null {
+    try {
+      const filePath = getDialogFilePath(id);
+      if (!fs.existsSync(filePath)) return null;
+
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return deserializeDialogState(data);
+    } catch (error) {
+      console.error(`Failed to load dialog ${id}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 删除对话持久化文件
+   */
+  private deleteDialogFile(id: string): void {
+    try {
+      const filePath = getDialogFilePath(id);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (error) {
+      console.error(`Failed to delete dialog file ${id}:`, error);
+    }
+  }
+
+  /**
+   * 加载所有未完成的对话
+   */
+  private loadAllDialogs(): void {
+    try {
+      const dir = getDialogsDir();
+      const files = fs.readdirSync(dir);
+
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const id = file.replace('.json', '');
+          const dialog = this.loadDialog(id);
+          if (dialog) {
+            // 只加载未完成的对话（phase !== 'complete'）
+            if (dialog.phase !== 'complete') {
+              this.sessions.set(id, dialog);
+              console.log(`Loaded dialog session: ${id} (phase: ${dialog.phase})`);
+            } else {
+              // 已完成的对话，删除持久化文件
+              this.deleteDialogFile(id);
+            }
+          }
+        }
+      }
+
+      console.log(`Loaded ${this.sessions.size} active dialog sessions`);
+    } catch (error) {
+      console.error('Failed to load dialogs:', error);
+    }
+  }
+
+  /**
+   * 根据项目路径获取对话
+   */
+  getDialogByProject(projectPath: string): DialogState | null {
+    const normalizedPath = this.normalizePath(projectPath);
+    for (const dialog of this.sessions.values()) {
+      if (this.normalizePath(dialog.projectPath) === normalizedPath) {
+        return dialog;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 获取所有活跃对话
+   */
+  getAllActiveDialogs(): DialogState[] {
+    return Array.from(this.sessions.values()).filter(d => d.phase !== 'complete');
+  }
+
+  /**
+   * 规范化路径（处理 Windows 和 Unix 路径差异）
+   */
+  private normalizePath(p: string): string {
+    return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   }
 
   /**
@@ -228,11 +387,24 @@ export class RequirementDialogManager extends EventEmitter {
 
   /**
    * 开始新的对话
+   * @param projectPath 关联的项目路径，用于按项目恢复对话
    */
-  startDialog(): DialogState {
+  startDialog(projectPath?: string): DialogState {
+    // 确定项目路径
+    const targetProjectPath = projectPath || blueprintManager.getCurrentProjectPath() || process.cwd();
+
+    // 检查该项目是否已有未完成的对话
+    const existingDialog = this.getDialogByProject(targetProjectPath);
+    if (existingDialog && existingDialog.phase !== 'complete') {
+      // 返回已有的对话，不创建新的
+      console.log(`Found existing dialog for project: ${targetProjectPath}, returning it`);
+      return existingDialog;
+    }
+
     const state: DialogState = {
       id: uuidv4(),
       phase: 'welcome',
+      projectPath: targetProjectPath,
       projectName: '',
       projectDescription: '',
       targetUsers: [],
@@ -255,6 +427,8 @@ export class RequirementDialogManager extends EventEmitter {
     });
 
     this.sessions.set(state.id, state);
+    // 立即持久化
+    this.saveDialog(state);
     this.emit('dialog:started', state);
 
     return state;
@@ -333,6 +507,15 @@ export class RequirementDialogManager extends EventEmitter {
       phase: state.phase,
     };
     state.history.push(assistantMessage);
+
+    // 持久化状态变更
+    if (state.phase === 'complete') {
+      // 对话完成，删除持久化文件
+      this.deleteDialogFile(sessionId);
+    } else {
+      // 保存状态到磁盘
+      this.saveDialog(state);
+    }
 
     this.emit('dialog:message', { sessionId, userMessage, assistantMessage });
 
@@ -825,8 +1008,8 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
    * 从状态创建蓝图
    */
   private async createBlueprintFromState(state: DialogState): Promise<Blueprint> {
-    // 创建蓝图，使用当前项目路径或当前工作目录
-    const projectPath = blueprintManager.getCurrentProjectPath() || process.cwd();
+    // 创建蓝图，使用对话中记录的项目路径
+    const projectPath = state.projectPath || blueprintManager.getCurrentProjectPath() || process.cwd();
     const blueprint = blueprintManager.createBlueprint(state.projectName, state.projectDescription, projectPath);
 
     // 添加业务流程
@@ -913,6 +1096,8 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
    */
   endDialog(sessionId: string): void {
     this.sessions.delete(sessionId);
+    // 删除持久化文件
+    this.deleteDialogFile(sessionId);
     this.emit('dialog:ended', sessionId);
   }
 }

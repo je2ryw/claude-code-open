@@ -97,6 +97,8 @@ export interface SessionMetadata {
   };
   tags?: string[];
   summary?: string;
+  // 项目路径（用于按项目过滤会话，null 表示全局会话）
+  projectPath?: string | null;
   // Fork 相关元数据
   parentId?: string; // 父会话 ID（如果是 fork）
   forkPoint?: number; // 从父会话的哪个消息索引 fork
@@ -187,6 +189,8 @@ export interface SessionListOptions {
   sortBy?: 'createdAt' | 'updatedAt' | 'name';
   sortOrder?: 'asc' | 'desc';
   tags?: string[];
+  /** 按项目路径过滤，null 表示只获取全局会话 */
+  projectPath?: string | null;
 }
 
 export interface SessionStatistics {
@@ -351,6 +355,7 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     sortBy = 'updatedAt',
     sortOrder = 'desc',
     tags,
+    projectPath,
   } = options;
 
   const sessionDir = getSessionDir();
@@ -454,6 +459,17 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     filtered = filtered.filter((s) => s.tags?.some((t) => tags.includes(t)));
   }
 
+  // 按项目路径过滤
+  if (projectPath !== undefined) {
+    if (projectPath === null) {
+      // 只获取全局会话（projectPath 为 null 或 undefined）
+      filtered = filtered.filter((s) => s.projectPath === null || s.projectPath === undefined);
+    } else {
+      // 获取指定项目的会话
+      filtered = filtered.filter((s) => s.projectPath === projectPath);
+    }
+  }
+
   // 排序（添加二级排序以确保稳定性）
   filtered.sort((a, b) => {
     const aVal = a[sortBy] ?? 0;
@@ -534,6 +550,8 @@ export function createSession(options: {
   workingDirectory?: string;
   systemPrompt?: string;
   tags?: string[];
+  /** 项目路径，用于按项目过滤会话，null 表示全局会话 */
+  projectPath?: string | null;
 }): SessionData {
   const now = Date.now();
 
@@ -548,6 +566,7 @@ export function createSession(options: {
       messageCount: 0,
       tokenUsage: { input: 0, output: 0, total: 0 },
       tags: options.tags,
+      projectPath: options.projectPath,
     },
     messages: [],
     systemPrompt: options.systemPrompt,

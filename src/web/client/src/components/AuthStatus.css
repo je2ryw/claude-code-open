@@ -1,7 +1,10 @@
+/* Auth Status Component Styling */
+
 .auth-status {
-  padding: 10px 12px;
-  border-top: 1px solid #2a2a2a;
-  background: #1a1a1a;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+  background: var(--glass-panel);
+  backdrop-filter: blur(var(--blur-amount));
 }
 
 .auth-status.loading {
@@ -14,8 +17,8 @@
 .spinner-small {
   width: 16px;
   height: 16px;
-  border: 2px solid #e0e0e0;
-  border-top-color: #cc785c;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -26,20 +29,20 @@
   }
 }
 
-/* 已认证状态 */
+/* Authenticated State */
 .auth-status.authenticated {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #1a1a1a;
-  border-top: 1px solid #2a2a2a;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--glass-panel);
+  border-top: 1px solid var(--border-color);
 }
 
 .auth-user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex: 1;
   min-width: 0;
 }
@@ -52,9 +55,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #2a2a2a;
+  background: var(--bg-tertiary);
   border-radius: 50%;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
 }
 
 .user-details {
@@ -63,47 +67,47 @@
 }
 
 .user-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  color: #e0e0e0;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .user-type {
-  font-size: 10px;
-  color: #888;
+  font-size: 11px;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
 .btn-logout-small {
-  padding: 4px 8px;
-  font-size: 14px;
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s;
   flex-shrink: 0;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .btn-logout-small:hover {
-  background: #3a3a3a;
-  border-color: #4a4a4a;
-  color: #e0e0e0;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 
-/* 未认证状态 */
+/* Not Authenticated State */
 .auth-status.not-authenticated {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #1a1a1a;
-  border-top: 1px solid #2a2a2a;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--glass-panel);
+  border-top: 1px solid var(--border-color);
 }
 
 .auth-warning {
@@ -111,36 +115,33 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   flex: 1;
 }
 
 .warning-icon {
   font-size: 14px;
-  color: #ff9800;
+  color: var(--accent-warning);
 }
 
 .btn-login-small {
-  padding: 5px 14px;
+  padding: 6px 14px;
   font-size: 12px;
   font-weight: 500;
-  background: #2a2a2a;
-  color: #e0e0e0;
-  border: 1px solid #3a3a3a;
-  border-radius: 6px;
+  background: var(--accent-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s;
   flex-shrink: 0;
 }
 
 .btn-login-small:hover {
-  background: #3a3a3a;
-  border-color: #4a4a4a;
-  color: #fff;
+  background: var(--accent-hover);
+  transform: translateY(-1px);
 }
 
 .btn-login-small:active {
-  transform: scale(0.98);
+  transform: translateY(0);
 }
-
-/* 移除了 Dark mode 媒体查询，因为默认已是暗色主题 */

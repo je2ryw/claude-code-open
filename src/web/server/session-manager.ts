@@ -69,6 +69,8 @@ export class WebSessionManager {
     model: string;
     systemPrompt?: string;
     tags?: string[];
+    /** 项目路径，用于按项目过滤会话，null 表示全局会话 */
+    projectPath?: string | null;
   }): WebSessionData {
     const session = createSession({
       name: options.name,
@@ -76,6 +78,7 @@ export class WebSessionManager {
       workingDirectory: this.cwd,
       systemPrompt: options.systemPrompt,
       tags: options.tags,
+      projectPath: options.projectPath,
     }) as WebSessionData;
 
     // 添加 WebUI 扩展字段
@@ -353,9 +356,14 @@ export class WebSessionManager {
   /**
    * 获取或创建默认会话
    */
-  getOrCreateDefaultSession(model: string = 'sonnet'): WebSessionData {
-    // 尝试加载最近的会话
-    const recentSessions = this.listSessions({ limit: 1, sortBy: 'updatedAt', sortOrder: 'desc' });
+  getOrCreateDefaultSession(model: string = 'sonnet', projectPath?: string | null): WebSessionData {
+    // 尝试加载最近的会话（如果指定了 projectPath，则过滤）
+    const recentSessions = this.listSessions({
+      limit: 1,
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+      projectPath,
+    });
 
     if (recentSessions.length > 0) {
       const sessionId = recentSessions[0].id;
@@ -370,6 +378,7 @@ export class WebSessionManager {
       name: `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
       model,
       tags: ['webui'],
+      projectPath,
     });
   }
 
