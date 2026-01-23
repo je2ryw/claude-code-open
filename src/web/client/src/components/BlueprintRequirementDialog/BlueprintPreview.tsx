@@ -25,11 +25,6 @@ export function BlueprintPreview({ dialogState }: BlueprintPreviewProps) {
 
   return (
     <div className={styles.previewContainer}>
-      <h3 className={styles.previewTitle}>
-        <span className={styles.previewTitleIcon}>📋</span>
-        蓝图预览
-      </h3>
-
       {/* 项目基本信息 */}
       <div className={styles.previewSection}>
         <h4 className={styles.previewSectionTitle}>项目名称</h4>

@@ -43,10 +43,22 @@ const router = Router();
 
 /**
  * 获取所有蓝图
+ * 支持 projectPath 查询参数按项目过滤
  */
 router.get('/blueprints', (req: Request, res: Response) => {
   try {
-    const blueprints = blueprintManager.getAllBlueprints();
+    const { projectPath } = req.query;
+    let blueprints = blueprintManager.getAllBlueprints();
+
+    // 如果指定了项目路径，按项目过滤
+    if (projectPath && typeof projectPath === 'string') {
+      const normalizedPath = projectPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      blueprints = blueprints.filter(b => {
+        const bpPath = b.projectPath?.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        return bpPath === normalizedPath;
+      });
+    }
+
     res.json({
       success: true,
       data: blueprints.map(b => ({
@@ -143,8 +155,21 @@ router.post('/blueprints/:id/processes', (req: Request, res: Response) => {
  */
 router.post('/blueprints/:id/submit', (req: Request, res: Response) => {
   try {
+    // 先获取蓝图用于验证警告
+    const blueprintForValidation = blueprintManager.getBlueprint(req.params.id);
+    let warnings: string[] | undefined;
+    if (blueprintForValidation) {
+      const validation = blueprintManager.validateBlueprint(blueprintForValidation);
+      warnings = validation.warnings;
+    }
+
+    // 提交审核
     const blueprint = blueprintManager.submitForReview(req.params.id);
-    res.json({ success: true, data: blueprint });
+    res.json({
+      success: true,
+      data: blueprint,
+      warnings,  // 返回警告信息给前端
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -4822,6 +4847,86 @@ function generateProjectId(projectPath: string): string {
 }
 
 /**
+ * 检测项目是否为空（无源代码文件）
+ *
+ * 空项目定义：目录中没有任何源代码文件（忽略隐藏目录和配置文件）
+ * 常见源代码扩展名：.js, .ts, .py, .java, .c, .cpp, .go, .rs, .rb, .php, .vue, .jsx, .tsx 等
+ */
+function isProjectEmpty(projectPath: string): boolean {
+  // 忽略的目录名
+  const ignoredDirs = new Set([
+    'node_modules', '.git', '.svn', '.hg', '.claude', '.vscode', '.idea',
+    '__pycache__', '.cache', 'dist', 'build', 'target', 'out', '.next',
+    'coverage', '.nyc_output', 'vendor', 'Pods', '.gradle', 'bin', 'obj'
+  ]);
+
+  // 源代码文件扩展名
+  const sourceExtensions = new Set([
+    '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+    '.py', '.pyw',
+    '.java', '.kt', '.kts', '.scala',
+    '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
+    '.go',
+    '.rs',
+    '.rb', '.rake',
+    '.php',
+    '.swift',
+    '.vue', '.svelte',
+    '.html', '.htm', '.css', '.scss', '.sass', '.less',
+    '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
+    '.sql',
+    '.r', '.R',
+    '.lua',
+    '.dart',
+    '.ex', '.exs',
+    '.clj', '.cljs',
+    '.fs', '.fsx',
+    '.hs',
+    '.ml', '.mli',
+    '.json', '.yaml', '.yml', '.toml', '.xml',
+    '.md', '.mdx', '.rst', '.txt',
+  ]);
+
+  /**
+   * 递归检查目录，找到任意源代码文件即返回 false
+   * 使用深度限制避免无限递归
+   */
+  function hasSourceFiles(dir: string, depth: number = 0): boolean {
+    if (depth > 5) return false; // 限制递归深度
+
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        // 跳过隐藏文件/目录（以 . 开头）和忽略的目录
+        if (entry.name.startsWith('.') || ignoredDirs.has(entry.name)) {
+          continue;
+        }
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (sourceExtensions.has(ext)) {
+            return true; // 找到源代码文件
+          }
+        } else if (entry.isDirectory()) {
+          if (hasSourceFiles(fullPath, depth + 1)) {
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      // 忽略无法访问的目录
+    }
+
+    return false;
+  }
+
+  return !hasSourceFiles(projectPath);
+}
+
+/**
  * 读取最近打开的项目列表
  */
 function loadRecentProjects(): RecentProject[] {
@@ -4954,10 +5059,15 @@ router.post('/projects/open', (req: Request, res: Response) => {
     // 切换蓝图上下文：实现蓝图与项目 1:1 绑定
     const currentBlueprint = blueprintManager.setProject(projectPath);
 
+    // 检测项目是否为空（无源代码文件）
+    const isEmpty = isProjectEmpty(projectPath);
+
     res.json({
       success: true,
       data: {
         ...newProject,
+        // 标记项目是否为空（用于前端判断显示"创建蓝图"还是直接对话）
+        isEmpty,
         // 返回该项目关联的蓝图信息（如果有）
         blueprint: currentBlueprint ? {
           id: currentBlueprint.id,

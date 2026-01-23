@@ -2,7 +2,9 @@
 .blueprintPage {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  width: 100%;
+  flex: 1;
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;
@@ -121,6 +123,9 @@
   flex: 1;
   display: flex;
   overflow: hidden;
+  width: 100%;
+  min-height: 0;
+  position: relative;
 }
 
 /* 居中状态 */
@@ -129,8 +134,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   gap: 16px;
   color: var(--text-muted);
 }
@@ -250,4 +258,173 @@
   .emptyTitle {
     font-size: 18px;
   }
+}
+
+/* 蓝图列表 */
+.blueprintList {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.listTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.refreshButton {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.refreshButton:hover {
+  background: var(--bg-tertiary);
+  transform: scale(1.05);
+}
+
+.listContent {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  align-content: start;
+}
+
+/* 蓝图卡片 */
+.blueprintCard {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: fit-content;
+}
+
+.blueprintCard:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.blueprintCard.selected {
+  border-color: var(--accent-primary);
+  background: var(--bg-tertiary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cardTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+  line-height: 1.3;
+}
+
+.cardStatus {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cardStatus.draft {
+  background: #757575;
+  color: white;
+}
+
+.cardStatus.review {
+  background: #ff9800;
+  color: white;
+}
+
+.cardStatus.approved {
+  background: #4caf50;
+  color: white;
+}
+
+.cardStatus.executing {
+  background: #2196f3;
+  color: white;
+}
+
+.cardStatus.completed {
+  background: #4caf50;
+  color: white;
+}
+
+.cardStatus.paused {
+  background: #9e9e9e;
+  color: white;
+}
+
+.cardDescription {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 16px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cardMeta {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.cardVersion {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.cardDate {
+  color: var(--text-muted);
 }

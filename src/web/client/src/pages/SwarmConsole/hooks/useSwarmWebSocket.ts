@@ -195,6 +195,12 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
 
   // 组件挂载时连接，卸载时清理
   useEffect(() => {
+    // 只在有效 URL 时才连接（避免 undefined 或空 URL 导致错误）
+    if (!url || url.trim() === '') {
+      console.log('[SwarmWebSocket] No valid URL provided, skipping connection');
+      return;
+    }
+
     isMountedRef.current = true;
     connect();
 
@@ -221,7 +227,7 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, url]); // 添加 url 依赖，当 URL 改变时重新连接
 
   // ============= 蜂群控制方法 =============
 

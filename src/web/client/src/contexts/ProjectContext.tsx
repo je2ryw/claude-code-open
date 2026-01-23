@@ -25,6 +25,8 @@ export interface Project {
   path: string;
   /** 最后打开时间 */
   lastOpenedAt?: string;
+  /** 项目是否为空（无源代码文件）*/
+  isEmpty?: boolean;
 }
 
 /**

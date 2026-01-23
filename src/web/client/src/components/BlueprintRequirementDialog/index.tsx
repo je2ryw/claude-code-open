@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styles from './BlueprintRequirementDialog.module.css';
 import { RequirementProgress } from './RequirementProgress';
 import { BlueprintPreview } from './BlueprintPreview';
+import { useProject } from '../../contexts/ProjectContext';
 
 // 对话阶段类型
 export type DialogPhase =
@@ -91,6 +92,10 @@ export function BlueprintRequirementDialog({
   onClose,
   visible = true,
 }: BlueprintRequirementDialogProps) {
+  // 获取当前项目上下文
+  const { state: projectState } = useProject();
+  const currentProjectPath = projectState.currentProject?.path;
+
   // 状态
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DialogMessage[]>([]);
@@ -103,6 +108,8 @@ export function BlueprintRequirementDialog({
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blueprintId, setBlueprintId] = useState<string | null>(null);
+  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -133,6 +140,9 @@ export function BlueprintRequirementDialog({
       const res = await fetch('/api/blueprint/requirement/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectPath: currentProjectPath, // 传递当前项目路径
+        }),
       });
 
       const data = await res.json();
@@ -162,7 +172,7 @@ export function BlueprintRequirementDialog({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentProjectPath]);
 
   // 组件挂载时启动对话
   useEffect(() => {
@@ -219,9 +229,12 @@ export function BlueprintRequirementDialog({
         ]);
       }
 
-      // 检查是否完成
+      // 检查是否完成 - 直接跳转到蓝图详情页
       if (data.isComplete && onComplete) {
-        onComplete(data.dialogState?.id || data.blueprintId || '');
+        const completedBlueprintId = data.dialogState?.id || data.blueprintId || '';
+        setBlueprintId(completedBlueprintId);
+        // 直接跳转到蓝图详情
+        onComplete(completedBlueprintId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '发送消息失败');
@@ -269,11 +282,17 @@ export function BlueprintRequirementDialog({
     }
   }, [visible, handleClose]);
 
+  // 判断是否处于汇总阶段
+  const isSummaryPhase = dialogState?.phase === 'summary';
+
   if (!visible) return null;
 
   return (
     <div className={styles.overlay} onClick={handleClose}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`${styles.dialog} ${isSummaryPhase ? styles.dialogExpanded : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 标题栏 */}
         <div className={styles.header}>
           <h2 className={styles.title}>
@@ -293,44 +312,97 @@ export function BlueprintRequirementDialog({
         {/* 进度条 */}
         <RequirementProgress progress={progress} currentPhase={dialogState?.phase} />
 
-        {/* 消息区域 */}
-        <div className={styles.messagesContainer}>
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`${styles.message} ${
-                msg.role === 'user' ? styles.userMessage : styles.assistantMessage
-              }`}
-            >
-              <div className={styles.messageRole}>
-                {msg.role === 'user' ? '你' : 'AI'}
+        {/* 汇总阶段：蓝图预览作为主内容 */}
+        {isSummaryPhase && dialogState ? (
+          <div className={styles.summaryLayout}>
+            {/* 蓝图预览区域 - 可展开 */}
+            <div className={`${styles.previewWrapper} ${isPreviewExpanded ? styles.previewExpanded : ''}`}>
+              <div className={styles.previewHeader}>
+                <h3 className={styles.previewMainTitle}>
+                  <span>📋</span> 蓝图内容预览
+                </h3>
+                <button
+                  className={styles.previewExpandButton}
+                  onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
+                  title={isPreviewExpanded ? '收起' : '展开全屏'}
+                >
+                  {isPreviewExpanded ? '收起 ↙' : '展开 ↗'}
+                </button>
               </div>
-              <div className={styles.messageContent}>
-                {msg.content.split('\n').map((line, i) => (
-                  <p key={i}>{line || '\u00A0'}</p>
-                ))}
-              </div>
+              <BlueprintPreview dialogState={dialogState} />
             </div>
-          ))}
 
-          {loading && (
-            <div className={`${styles.message} ${styles.assistantMessage}`}>
-              <div className={styles.messageRole}>AI</div>
-              <div className={styles.messageContent}>
-                <span className={styles.typing}>
-                  <span className={styles.typingDot} />
-                  <span className={styles.typingDot} />
-                  <span className={styles.typingDot} />
-                </span>
-              </div>
+            {/* 消息区域 - 汇总阶段变小 */}
+            <div className={styles.summaryMessagesContainer}>
+              {messages.slice(-3).map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`${styles.message} ${
+                    msg.role === 'user' ? styles.userMessage : styles.assistantMessage
+                  }`}
+                >
+                  <div className={styles.messageRole}>
+                    {msg.role === 'user' ? '你' : 'AI'}
+                  </div>
+                  <div className={styles.messageContent}>
+                    {msg.content.split('\n').map((line, i) => (
+                      <p key={i}>{line || '\u00A0'}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div className={`${styles.message} ${styles.assistantMessage}`}>
+                  <div className={styles.messageRole}>AI</div>
+                  <div className={styles.messageContent}>
+                    <span className={styles.typing}>
+                      <span className={styles.typingDot} />
+                      <span className={styles.typingDot} />
+                      <span className={styles.typingDot} />
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-          )}
+          </div>
+        ) : (
+          /* 非汇总阶段：正常消息区域 */
+          <div className={styles.messagesContainer}>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`${styles.message} ${
+                  msg.role === 'user' ? styles.userMessage : styles.assistantMessage
+                }`}
+              >
+                <div className={styles.messageRole}>
+                  {msg.role === 'user' ? '你' : 'AI'}
+                </div>
+                <div className={styles.messageContent}>
+                  {msg.content.split('\n').map((line, i) => (
+                    <p key={i}>{line || '\u00A0'}</p>
+                  ))}
+                </div>
+              </div>
+            ))}
 
-          <div ref={messagesEndRef} />
-        </div>
+            {loading && (
+              <div className={`${styles.message} ${styles.assistantMessage}`}>
+                <div className={styles.messageRole}>AI</div>
+                <div className={styles.messageContent}>
+                  <span className={styles.typing}>
+                    <span className={styles.typingDot} />
+                    <span className={styles.typingDot} />
+                    <span className={styles.typingDot} />
+                  </span>
+                </div>
+              </div>
+            )}
 
-        {/* 蓝图预览（汇总阶段显示） */}
-        {dialogState?.phase === 'summary' && <BlueprintPreview dialogState={dialogState} />}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (
@@ -356,18 +428,18 @@ export function BlueprintRequirementDialog({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              dialogState?.phase === 'complete'
-                ? '对话已完成'
+              isSummaryPhase
+                ? '输入 "确认" 创建蓝图，或说明需要修改的内容'
                 : '输入你的回答... (Shift+Enter 换行)'
             }
-            disabled={loading || dialogState?.phase === 'complete'}
-            rows={3}
+            disabled={loading}
+            rows={isSummaryPhase ? 2 : 3}
             aria-label="输入回答"
           />
           <button
             className={styles.sendButton}
             onClick={sendMessage}
-            disabled={loading || !inputValue.trim() || dialogState?.phase === 'complete'}
+            disabled={loading || !inputValue.trim()}
             aria-label="发送消息"
           >
             {loading ? (

@@ -23,18 +23,18 @@ export default function TopNavBar({ currentPage, onPageChange, onSettingsClick }
           <span>聊天</span>
         </button>
         <button
-          className={`${styles.navTab} ${currentPage === 'swarm' ? styles.active : ''}`}
-          onClick={() => onPageChange('swarm')}
-        >
-          <span className={styles.icon}>🐝</span>
-          <span>蜂群</span>
-        </button>
-        <button
           className={`${styles.navTab} ${currentPage === 'blueprint' ? styles.active : ''}`}
           onClick={() => onPageChange('blueprint')}
         >
           <span className={styles.icon}>📋</span>
           <span>蓝图</span>
+        </button>
+        <button
+          className={`${styles.navTab} ${currentPage === 'swarm' ? styles.active : ''}`}
+          onClick={() => onPageChange('swarm')}
+        >
+          <span className={styles.icon}>🐝</span>
+          <span>蜂群</span>
         </button>
       </div>
 

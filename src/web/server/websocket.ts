@@ -264,6 +264,14 @@ export function setupWebSocket(
     const queen = agentCoordinator.getQueen();
     if (!queen) return;
 
+    // 更新蓝图状态为失败
+    const blueprint = blueprintManager.getBlueprint(queen.blueprintId);
+    if (blueprint) {
+      blueprint.status = 'failed';
+      blueprintManager.saveBlueprint(blueprint);
+      console.log(`[Swarm] Blueprint ${queen.blueprintId} status updated to 'failed'`);
+    }
+
     broadcastToSubscribers(queen.blueprintId, {
       type: 'swarm:error',
       payload: {
@@ -3250,6 +3258,18 @@ async function handleSwarmSubscribe(
     let taskTree = null;
     if (blueprint.taskTreeId) {
       taskTree = taskTreeManager.getTaskTree(blueprint.taskTreeId);
+    } else if (blueprint.modules && blueprint.modules.length > 0) {
+      // 如果蓝图有模块但还没有任务树，自动生成任务树（支持所有状态）
+      console.log(`[Swarm] 蓝图 ${blueprintId} (状态: ${blueprint.status}) 缺少任务树，自动生成...`);
+      try {
+        taskTree = taskTreeManager.generateFromBlueprint(blueprint);
+        // 关联任务树到蓝图
+        blueprint.taskTreeId = taskTree.id;
+        blueprintManager.saveBlueprint(blueprint);
+        console.log(`[Swarm] 任务树已生成并关联：${taskTree.id}`);
+      } catch (genError) {
+        console.error(`[Swarm] 生成任务树失败:`, genError);
+      }
     }
 
     sendMessage(ws, {
@@ -3334,13 +3354,18 @@ function mapBlueprintStatus(status: string): 'pending' | 'running' | 'paused' | 
     case 'draft':
     case 'pending':
     case 'approved':
+    case 'review':
       return 'pending';
     case 'executing':
       return 'running';
+    case 'paused':
+      return 'paused';
     case 'completed':
       return 'completed';
     case 'failed':
       return 'failed';
+    case 'modified':
+      return 'paused'; // 修改后的蓝图暂停执行
     default:
       return 'pending';
   }
@@ -3355,8 +3380,8 @@ function serializeTaskTree(taskTree: any): any {
     blueprintId: taskTree.blueprintId,
     root: serializeTaskNode(taskTree.root),
     stats: taskTree.stats,
-    createdAt: taskTree.createdAt.toISOString(),
-    updatedAt: taskTree.updatedAt.toISOString(),
+    createdAt: taskTree.createdAt?.toISOString() || new Date().toISOString(),
+    updatedAt: (taskTree.completedAt || taskTree.startedAt || taskTree.createdAt)?.toISOString() || new Date().toISOString(),
   };
 }
 
@@ -3364,6 +3389,13 @@ function serializeTaskTree(taskTree: any): any {
  * 序列化 TaskNode
  */
 function serializeTaskNode(task: TaskNode): any {
+  const createdAt = task.createdAt instanceof Date
+    ? task.createdAt.toISOString()
+    : (task.createdAt || new Date().toISOString());
+  const updatedAt = task.completedAt instanceof Date
+    ? task.completedAt.toISOString()
+    : (task.startedAt instanceof Date ? task.startedAt.toISOString() : createdAt);
+
   return {
     id: task.id,
     title: task.name,
@@ -3371,11 +3403,11 @@ function serializeTaskNode(task: TaskNode): any {
     status: mapTaskStatus(task.status),
     assignedTo: task.agentId || null,
     dependencies: task.dependencies,
-    children: task.children.map(serializeTaskNode),
-    result: task.codeArtifacts.length > 0 ? 'Code artifacts generated' : undefined,
+    children: (task.children || []).map(serializeTaskNode),
+    result: (task.codeArtifacts?.length || 0) > 0 ? 'Code artifacts generated' : undefined,
     error: task.status === 'test_failed' || task.status === 'rejected' ? 'Task failed' : undefined,
-    createdAt: task.createdAt.toISOString(),
-    updatedAt: task.createdAt.toISOString(), // TaskNode 没有 updatedAt 字段，使用 createdAt
+    createdAt,
+    updatedAt,
   };
 }
 

@@ -5,6 +5,8 @@
   flex-direction: column;
   overflow: hidden;
   background: #1e1e1e; /* VS Code 深色背景 */
+  width: 100%;
+  height: 100%;
 }
 
 /* 加载和错误状态 */
@@ -51,6 +53,8 @@
   flex: 1;
   display: flex;
   overflow: hidden;
+  width: 100%;
+  height: 100%;
 }
 
 /* 左侧边栏 */

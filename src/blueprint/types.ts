@@ -22,6 +22,7 @@ export type BlueprintStatus =
   | 'executing'    // 执行中：任务树正在执行
   | 'completed'    // 已完成：所有任务都已完成
   | 'paused'       // 已暂停：用户暂停了执行
+  | 'failed'       // 已失败：执行过程中发生错误
   | 'modified';    // 已修改：执行中用户修改了蓝图，需要重新规划
 
 /**

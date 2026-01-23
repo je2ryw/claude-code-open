@@ -71,7 +71,8 @@ interface BlueprintDetail {
 interface BlueprintDetailPanelProps {
   blueprintId: string;
   onClose: () => void;
-  onNavigateToSwarm?: () => void;
+  /** 跳转到蜂群页面，传递蓝图 ID */
+  onNavigateToSwarm?: (blueprintId: string) => void;
   /** 蓝图状态变更后的刷新回调，用于同步列表 */
   onRefresh?: () => void;
   /** 蓝图删除后的回调 */
@@ -146,11 +147,24 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
 
         case 'submit-review':
           if (confirm('确定要提交审核吗？提交后将无法再编辑蓝图。')) {
-            await blueprintApi.submitForReview(blueprintId);
-            console.log('[BlueprintDetailPanel] 蓝图已提交审核');
-            await fetchBlueprint();
-            // 通知父组件刷新列表，确保状态同步
-            onRefresh?.();
+            try {
+              const result = await blueprintApi.submitForReview(blueprintId);
+              console.log('[BlueprintDetailPanel] 蓝图已提交审核');
+              await fetchBlueprint();
+              // 通知父组件刷新列表，确保状态同步
+              onRefresh?.();
+              // 显示成功提示（包含警告信息）
+              if (result.warnings && result.warnings.length > 0) {
+                alert(`✅ 蓝图已成功提交审核\n\n⚠️ 警告信息：\n${result.warnings.join('\n')}`);
+              } else {
+                alert('✅ 蓝图已成功提交审核');
+              }
+            } catch (submitError) {
+              // 提交审核失败时显示详细错误
+              const errorMessage = submitError instanceof Error ? submitError.message : String(submitError);
+              console.error('[BlueprintDetailPanel] 提交审核失败:', errorMessage);
+              alert(`❌ 提交审核失败\n\n${errorMessage}\n\n请检查蓝图配置后重试。`);
+            }
           }
           break;
 
@@ -161,11 +175,12 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
               console.log('[BlueprintDetailPanel] 执行已启动');
               // 通知父组件刷新列表，确保状态同步
               onRefresh?.();
-              onNavigateToSwarm?.();
+              // 跳转到蜂群页面并传递蓝图 ID
+              onNavigateToSwarm?.(blueprintId);
             } catch (error) {
-              // startExecution API 暂未实现，先直接跳转
-              console.warn('[BlueprintDetailPanel] startExecution API 未实现，直接跳转到蜂群页面');
-              onNavigateToSwarm?.();
+              // startExecution API 失败时，也跳转到蜂群页面让用户手动操作
+              console.warn('[BlueprintDetailPanel] startExecution API 调用失败:', error);
+              onNavigateToSwarm?.(blueprintId);
             }
           }
           break;

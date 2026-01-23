@@ -231,6 +231,7 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
       case 'swarm:error':
         // 蜂群错误
         setError(message.payload.error);
+        setIsLoading(false); // 修复：出错时也要结束加载状态
         setState(prev => ({
           ...prev,
           error: message.payload.error,
@@ -335,9 +336,11 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     setState(prev => ({ ...prev, error: err }));
   }, []);
 
-  // 创建 WebSocket 连接
+  // 创建 WebSocket 连接（只在有 blueprintId 时才连接）
   const ws = useSwarmWebSocket({
     ...wsOptions,
+    // 只在有蓝图时才传递有效的 URL，否则传递空字符串跳过连接
+    url: blueprintId ? wsOptions.url : '',
     onMessage: handleMessage,
     onError: handleError,
   });

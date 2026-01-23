@@ -11,7 +11,7 @@ import {
 } from './components';
 import { AuthStatus } from './components/AuthStatus';
 import { AuthDialog } from './components/AuthDialog';
-import { ProjectProvider, useProject, useProjectChangeListener, type Project, type BlueprintInfo } from './contexts/ProjectContext';
+import { useProject, useProjectChangeListener, type Project, type BlueprintInfo } from './contexts/ProjectContext';
 import ProjectSelector from './components/swarm/ProjectSelector/ProjectSelector';
 import type {
   ChatMessage,
@@ -956,7 +956,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   }, [removeProject]);
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    <div style={{ display: 'flex', height: '100%', width: '100%', flex: 1 }}>
       {/* 侧边栏 */}
       <div className="sidebar">
         {/* 项目选择器 */}
@@ -1011,7 +1011,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
 
         <div className="chat-container" ref={chatContainerRef}>
           {messages.length === 0 ? (
-            <WelcomeScreen />
+            <WelcomeScreen onBlueprintCreated={onNavigateToBlueprint} />
           ) : (
             messages.map(msg => (
               <Message
@@ -1113,14 +1113,10 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
 }
 
 /**
- * App 主组件 - 包裹 ProjectProvider
+ * App 主组件 - 直接使用 Root.tsx 中提供的 ProjectProvider
  */
 function App(props: AppProps) {
-  return (
-    <ProjectProvider>
-      <AppContent {...props} />
-    </ProjectProvider>
-  );
+  return <AppContent {...props} />;
 }
 
 export default App;

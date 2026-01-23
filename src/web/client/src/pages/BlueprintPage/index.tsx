@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import styles from './BlueprintPage.module.css';
 import type {
   BlueprintStatus,
   BlueprintListResponse,
   BlueprintListItem,
 } from './types';
-import { BlueprintDetailContent } from '../../components/swarm/BlueprintDetailPanel/BlueprintDetailContent';
+import { BlueprintDetailPanel } from '../../components/swarm/BlueprintDetailPanel';
+import { useProject, useProjectChangeListener, type Project, type BlueprintInfo } from '../../contexts/ProjectContext';
 
 /**
  * 判断蓝图是否为活跃状态
@@ -24,9 +25,9 @@ interface BlueprintPageProps {
    */
   initialBlueprintId?: string | null;
   /**
-   * 跳转到蜂群页面的回调
+   * 跳转到蜂群页面的回调，传递蓝图 ID
    */
-  onNavigateToSwarm?: () => void;
+  onNavigateToSwarm?: (blueprintId: string) => void;
 }
 
 /**
@@ -41,6 +42,10 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   // ============================================================================
   // 状态管理
   // ============================================================================
+
+  // 获取项目上下文 - 与聊天Tab共享同一个项目选择状态
+  const { state: projectState } = useProject();
+  const currentProjectPath = projectState.currentProject?.path;
 
   const [blueprints, setBlueprints] = useState<BlueprintListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialBlueprintId || null);
@@ -61,14 +66,18 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   // ============================================================================
 
   /**
-   * 加载蓝图列表
+   * 加载蓝图列表（按当前项目过滤）
    */
-  const loadBlueprints = async () => {
+  const loadBlueprints = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const url = `/api/blueprint/blueprints`;
+      // 构建URL，传递项目路径参数进行过滤
+      let url = `/api/blueprint/blueprints`;
+      if (currentProjectPath) {
+        url += `?projectPath=${encodeURIComponent(currentProjectPath)}`;
+      }
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -102,13 +111,25 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentProjectPath]);
 
-  // 初始加载
+  // 初始加载 + 项目切换时重新加载
   useEffect(() => {
     loadBlueprints();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadBlueprints]);
+
+  // 监听项目切换事件（与聊天Tab的项目选择同步）
+  useProjectChangeListener(
+    useCallback(
+      (project: Project | null, _blueprint: BlueprintInfo | null) => {
+        console.log('[BlueprintPage] 项目切换，重新加载蓝图列表:', project?.path);
+        // 项目切换时重置选中状态
+        setSelectedId(null);
+        // loadBlueprints 已通过 currentProjectPath 依赖自动触发
+      },
+      []
+    )
+  );
 
   // 当 initialBlueprintId 变化时更新选中状态
   useEffect(() => {
@@ -128,6 +149,15 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
    */
   const handleCreateBlueprint = async () => {
     if (!canCreateBlueprint || isGenerating) return;
+
+    // 检查是否有选中的项目
+    if (!currentProjectPath) {
+      setGenerateResult({
+        type: 'error',
+        message: '请先在聊天Tab中选择一个项目文件夹',
+      });
+      return;
+    }
 
     setGenerateResult(null);
     setIsGenerating(true);
@@ -149,10 +179,11 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
         }
       }, 1500);
 
+      // 使用当前项目路径生成蓝图
       const response = await fetch('/api/blueprint/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectRoot: '.' }),
+        body: JSON.stringify({ projectRoot: currentProjectPath }),
       });
 
       clearInterval(progressInterval);
@@ -274,7 +305,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
         {/* 加载状态 */}
         {isLoading && (
           <div className={styles.centerState}>
-            <div className={styles.spinner}>...</div>
+            <div className={styles.spinner}>⏳</div>
             <div className={styles.stateText}>加载中...</div>
           </div>
         )}
@@ -282,7 +313,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
         {/* 错误状态 */}
         {!isLoading && error && (
           <div className={styles.centerState}>
-            <div className={styles.errorIcon}>X</div>
+            <div className={styles.errorIcon}>❌</div>
             <div className={styles.errorText}>错误: {error}</div>
             <button className={styles.retryButton} onClick={handleRefresh}>
               重试
@@ -290,7 +321,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
           </div>
         )}
 
-        {/* 空状态 - 无蓝图 */}
+        {/* 空状态 - 无蓝图或未选择项目 */}
         {!isLoading && !error && blueprints.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
@@ -301,30 +332,92 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
                 <line x1="20" y1="50" x2="45" y2="50" stroke="currentColor" strokeWidth="2" />
               </svg>
             </div>
-            <h2 className={styles.emptyTitle}>当前项目还没有蓝图</h2>
-            <p className={styles.emptyDescription}>
-              点击下方按钮，AI 将分析代码库并生成项目蓝图
-            </p>
-            <button
-              className={styles.generateLargeButton}
-              onClick={handleCreateBlueprint}
-              disabled={isGenerating}
-            >
-              {isGenerating ? '正在生成...' : '生成项目蓝图'}
-            </button>
+            {currentProjectPath ? (
+              <>
+                <h2 className={styles.emptyTitle}>当前项目还没有蓝图</h2>
+                <p className={styles.emptyDescription}>
+                  项目：{projectState.currentProject?.name || currentProjectPath}
+                  <br />
+                  点击下方按钮，AI 将分析代码库并生成项目蓝图
+                </p>
+                <button
+                  className={styles.generateLargeButton}
+                  onClick={handleCreateBlueprint}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? '正在生成...' : '📋 生成项目蓝图'}
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className={styles.emptyTitle}>请先选择项目</h2>
+                <p className={styles.emptyDescription}>
+                  请在左侧聊天Tab中选择一个项目文件夹，
+                  <br />
+                  然后返回此页面生成项目蓝图
+                </p>
+              </>
+            )}
           </div>
         )}
 
-        {/* 蓝图详情内容 */}
-        {!isLoading && !error && selectedId && (
-          <BlueprintDetailContent
-            blueprintId={selectedId}
-            onNavigateToSwarm={onNavigateToSwarm}
-            onDeleted={handleBlueprintDeleted}
-            onRefresh={loadBlueprints}
-          />
+        {/* 蓝图列表 */}
+        {!isLoading && !error && blueprints.length > 0 && (
+          <div className={styles.blueprintList}>
+            <div className={styles.listHeader}>
+              <h2 className={styles.listTitle}>📋 蓝图列表</h2>
+              <button 
+                className={styles.refreshButton} 
+                onClick={handleRefresh}
+                title="刷新"
+              >
+                🔄
+              </button>
+            </div>
+            <div className={styles.listContent}>
+              {blueprints.map((blueprint) => (
+                <div
+                  key={blueprint.id}
+                  className={`${styles.blueprintCard} ${selectedId === blueprint.id ? styles.selected : ''}`}
+                  onClick={() => setSelectedId(blueprint.id)}
+                >
+                  <div className={styles.cardHeader}>
+                    <h3 className={styles.cardTitle}>{blueprint.name}</h3>
+                    <span className={`${styles.cardStatus} ${styles[blueprint.status]}`}>
+                      {blueprint.status}
+                    </span>
+                  </div>
+                  <p className={styles.cardDescription}>
+                    {blueprint.description || '暂无描述'}
+                  </p>
+                  <div className={styles.cardMeta}>
+                    <span>📦 {blueprint.moduleCount} 模块</span>
+                    <span>🔄 {blueprint.processCount} 流程</span>
+                    <span>🎯 {blueprint.nfrCount} NFR</span>
+                  </div>
+                  <div className={styles.cardFooter}>
+                    <span className={styles.cardVersion}>v{blueprint.version}</span>
+                    <span className={styles.cardDate}>
+                      {new Date(blueprint.updatedAt).toLocaleDateString('zh-CN')}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
+
+      {/* 蓝图详情面板（右侧浮层） */}
+      {selectedId && (
+        <BlueprintDetailPanel
+          blueprintId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onNavigateToSwarm={onNavigateToSwarm}
+          onDeleted={handleBlueprintDeleted}
+          onRefresh={loadBlueprints}
+        />
+      )}
     </div>
   );
 }

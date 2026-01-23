@@ -527,8 +527,9 @@ export class BlueprintManager extends EventEmitter {
   /**
    * 验证蓝图完整性
    */
-  validateBlueprint(blueprint: Blueprint): { valid: boolean; errors: string[] } {
+  validateBlueprint(blueprint: Blueprint): { valid: boolean; errors: string[]; warnings?: string[] } {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
     // 基本信息验证
     if (!blueprint.name?.trim()) {
@@ -565,15 +566,24 @@ export class BlueprintManager extends EventEmitter {
       }
     }
 
-    // 检测循环依赖
+    // 检测循环依赖（只作为警告，不阻止提交）
+    // 原因：两个模块之间的双向依赖在某些架构中是合理的（如类型共享、工具函数共享）
     const cycleCheck = this.detectCyclicDependencies(blueprint.modules);
     if (cycleCheck.hasCycle) {
-      errors.push(`检测到模块循环依赖：${cycleCheck.path?.join(' -> ')}`);
+      // 获取模块名称用于更友好的提示
+      const moduleNames = cycleCheck.path?.map(id => {
+        const mod = blueprint.modules.find(m => m.id === id);
+        return mod ? mod.name : id.slice(0, 8);
+      });
+      const cycleWarning = `检测到模块循环依赖：${moduleNames?.join(' -> ')}（两个模块之间的双向依赖在某些架构中是合理的）`;
+      warnings.push(cycleWarning);
+      console.warn(`[Blueprint] ${cycleWarning}`);
     }
 
     return {
       valid: errors.length === 0,
       errors,
+      warnings: warnings.length > 0 ? warnings : undefined,
     };
   }
 

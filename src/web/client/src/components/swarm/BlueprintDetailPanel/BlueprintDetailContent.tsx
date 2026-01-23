@@ -6,7 +6,7 @@ import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAn
 import { getSyntaxExplanation, extractKeywordsFromLine, SyntaxExplanation } from '../../../utils/syntaxDictionary';
 import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, formatJSDocBrief, hasValidJSDoc } from '../../../utils/jsdocParser';
 // VS Code 风格组件
-import { ProjectSelector, Project } from '../ProjectSelector';
+import { useProject, useProjectChangeListener, type Project, type BlueprintInfo } from '../../../contexts/ProjectContext';
 import { ContextMenu, MenuItem, getFileContextMenuItems, getFolderContextMenuItems, getEmptyContextMenuItems } from '../ContextMenu';
 import { FileDialog, DialogType } from '../FileDialog';
 import { ArchitectureFlowGraph, type ArchitectureGraphData, type ArchitectureGraphType, type NodePathMapping } from '../ArchitectureFlowGraph';
@@ -193,10 +193,12 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // 蓝图基本信息
   const [blueprintInfo, setBlueprintInfo] = useState<{
+    id: string;
     name: string;
     description: string;
     status: string;
     moduleCount: number;
+    version: string;
   } | null>(null);
 
   // 蓝图操作状态
@@ -279,8 +281,9 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // ============ 项目管理和文件操作状态 ============
 
-  // 当前项目
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  // 使用全局 ProjectContext
+  const { state: projectState } = useProject();
+  
   // 项目根路径
   const [projectRoot, setProjectRoot] = useState<string>('');
 
@@ -527,21 +530,18 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         // 调用 openProject API 切换蓝图上下文
         const result = await projectApi.openProject(cwd.path);
 
-        // 设置当前项目信息
-        setCurrentProject({
-          id: result.id,
-          name: result.name,
-          path: result.path,
-        });
+        // 设置项目根路径（项目已由 ProjectContext 管理）
         setProjectRoot(result.path);
 
         // 更新蓝图信息（如果该项目有关联的蓝图）
         if (result.blueprint) {
           setBlueprintInfo({
+            id: result.blueprint.id || result.id,
             name: result.blueprint.name,
             description: '',
-            status: result.blueprint.status,
+            status: result.blueprint.status || 'active',
             moduleCount: 0,
+            version: result.blueprint.version || '1.0.0',
           });
         } else {
           setBlueprintInfo(null);
@@ -564,20 +564,18 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         // 调用 openProject API 切换蓝图上下文
         const result = await projectApi.openProject(lastProject.path);
 
-        setCurrentProject({
-          id: result.id,
-          name: result.name,
-          path: result.path,
-        });
+        // 设置项目根路径（项目已由 ProjectContext 管理）
         setProjectRoot(result.path);
 
         // 更新蓝图信息
         if (result.blueprint) {
           setBlueprintInfo({
+            id: result.blueprint.id || result.id,
             name: result.blueprint.name,
             description: '',
-            status: result.blueprint.status,
+            status: result.blueprint.status || 'active',
             moduleCount: 0,
+            version: result.blueprint.version || '1.0.0',
           });
         } else {
           setBlueprintInfo(null);
@@ -611,10 +609,12 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
         const data = await response.json();
         if (data.success) {
           setBlueprintInfo({
+            id: data.data.id || blueprintId,
             name: data.data.name,
             description: data.data.description,
-            status: data.data.status,
+            status: data.data.status || 'active',
             moduleCount: data.data.modules?.length || 0,
+            version: data.data.version || '1.0.0',
           });
         }
       }
@@ -701,9 +701,9 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
 
   // 组件挂载时初始化项目和蓝图信息
   useEffect(() => {
-    initializeProject();
+    // initializeProject(); // 已禁用：项目现在由全局 ProjectContext 管理
     loadBlueprintInfo();
-  }, [blueprintId, initializeProject]);
+  }, [blueprintId]);
 
   // 模拟目录树（当 API 不可用时）
   const createMockFileTree = (): FileTreeNode => ({
@@ -1167,85 +1167,67 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
     });
   }, [contextMenu, handleDelete, handleCopyPath, handleCutItem, handleCopyItem, handlePaste, clipboardItem, closeContextMenu, projectRoot, loadFileTree]);
 
-  /**
-   * 处理项目切换
-   * 蓝图与项目 1:1 绑定，切换项目时同时切换蓝图
-   */
-  const handleProjectChange = useCallback(async (project: Project) => {
-    setCurrentProject(project);
-    setProjectRoot(project.path);
-
-    // 调用后端 API 切换项目，同时会切换蓝图上下文
-    try {
-      const result = await projectApi.openProject(project.path);
-
-      // 更新蓝图信息（如果该项目有关联的蓝图）
-      if (result.blueprint) {
-        setBlueprintInfo({
-          name: result.blueprint.name,
-          description: '',
-          status: result.blueprint.status,
-          moduleCount: 0,
-        });
-      } else {
-        // 该项目还没有蓝图
-        setBlueprintInfo(null);
-      }
-
-      // 通知父组件刷新蓝图列表，确保状态同步
-      onRefresh?.();
-    } catch (err) {
-      console.warn('切换项目时更新蓝图信息失败:', err);
-    }
-
-    // 重新加载文件树，传入项目路径作为根目录
-    loadFileTree(project.path);
-  }, [loadFileTree, onRefresh]);
 
   /**
-   * 打开系统原生的文件夹选择对话框
-   * 蓝图与项目 1:1 绑定，打开新项目时会切换蓝图
+   * 监听全局项目切换事件
    */
-  const handleOpenFolder = useCallback(async () => {
-    try {
-      // 调用系统原生对话框
-      const selectedPath = await projectApi.showFolderDialog();
-
-      if (selectedPath) {
-        // 用户选择了文件夹，打开项目（同时切换蓝图上下文）
-        const result = await projectApi.openProject(selectedPath);
-        setCurrentProject({
-          id: result.id,
-          name: result.name,
-          path: result.path,
-        });
-        setProjectRoot(result.path);
-
-        // 更新蓝图信息（如果该项目有关联的蓝图）
-        if (result.blueprint) {
+  useProjectChangeListener(
+    useCallback((project: Project | null, blueprint: BlueprintInfo | null) => {
+      if (project) {
+        console.log('[BlueprintDetailContent] 项目切换:', project.path);
+        setProjectRoot(project.path);
+        
+        // 更新蓝图信息
+        if (blueprint) {
           setBlueprintInfo({
-            name: result.blueprint.name,
+            id: blueprint.id,
+            name: blueprint.name,
             description: '',
-            status: result.blueprint.status,
+            status: 'active',
             moduleCount: 0,
+            version: blueprint.version,
           });
         } else {
-          // 该项目还没有蓝图
           setBlueprintInfo(null);
         }
-
-        // 通知父组件刷新蓝图列表，确保状态同步
+        
+        // 重新加载文件树
+        loadFileTree(project.path);
+        
+        // 通知父组件刷新蓝图列表
         onRefresh?.();
-
-        // 传入项目路径作为根目录加载文件树
-        loadFileTree(result.path);
       }
-      // 如果 selectedPath 为 null，说明用户取消了选择，不做任何操作
-    } catch (error: any) {
-      console.error('打开文件夹失败:', error);
-      alert('打开文件夹失败: ' + (error.message || '未知错误'));
+    }, [loadFileTree, onRefresh])
+  );
+
+  /**
+   * 初始化时同步当前项目
+   * 如果ProjectContext中已有项目，立即同步到蓝图Tab
+   */
+  useEffect(() => {
+    if (projectState.currentProject && !projectInitializedRef.current) {
+      console.log('[BlueprintDetailContent] 初始化同步项目:', projectState.currentProject.path);
+      setProjectRoot(projectState.currentProject.path);
+      
+      // 同步蓝图信息
+      if (projectState.currentBlueprint) {
+        setBlueprintInfo({
+          id: projectState.currentBlueprint.id,
+          name: projectState.currentBlueprint.name,
+          description: '',
+          status: 'active',
+          moduleCount: 0,
+          version: projectState.currentBlueprint.version,
+        });
+      }
+      
+      // 加载文件树
+      loadFileTree(projectState.currentProject.path);
+      
+      // 标记已初始化，避免被旧的initializeProject覆盖
+      projectInitializedRef.current = true;
     }
-  }, [loadFileTree, onRefresh]);
+  }, [projectState.currentProject, projectState.currentBlueprint, loadFileTree]);
 
   // 解析代码符号
   const parseCodeSymbols = useCallback((content: string, filePath: string): CodeSymbol[] => {
@@ -4264,16 +4246,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
               </>
             )}
           </div>
-          {/* 项目选择器 - 折叠时隐藏 */}
-          {!sidebarCollapsed && (
-            <div className={styles.projectSelector}>
-              <ProjectSelector
-                currentProject={currentProject}
-                onProjectChange={handleProjectChange}
-                onOpenFolder={handleOpenFolder}
-              />
-            </div>
-          )}
+
           {/* 文件树内容 - 折叠时隐藏 */}
           {!sidebarCollapsed && (
             <div
@@ -4651,7 +4624,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
                   path: result.data.path,
                   lastOpenedAt: result.data.lastOpenedAt,
                 };
-                setCurrentProject(project);
+                // 项目已由 ProjectContext 管理，不再本地设置
                 setProjectRoot(project.path);
                 loadFileTree();
                 setFileDialog(prev => ({ ...prev, visible: false }));

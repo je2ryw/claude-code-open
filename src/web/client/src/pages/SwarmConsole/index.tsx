@@ -6,7 +6,7 @@ import { TDDPanel } from '../../components/swarm/TDDPanel';
 import { TimeTravelPanel } from '../../components/swarm/TimeTravelPanel';
 import { FadeIn } from '../../components/swarm/common';
 import { useSwarmState } from './hooks/useSwarmState';
-import { coordinatorApi, taskTreeApi, projectApi, type RecentProject } from '../../api/blueprint';
+import { coordinatorApi, taskTreeApi } from '../../api/blueprint';
 import type { Blueprint, TaskNode as APITaskNode, TimelineEvent as APITimelineEvent } from './types';
 
 // 获取 WebSocket URL (复用 App.tsx 中的逻辑)
@@ -206,6 +206,12 @@ function convertTimelineEvent(apiEvent: APITimelineEvent): TimelineEvent {
  * 蜂群控制台页面 - 主组件
  * 包含三栏布局 + 可折叠底部时间线
  */
+// SwarmConsole Props
+interface SwarmConsoleProps {
+  /** 初始蓝图 ID（从蓝图页面跳转时传入） */
+  initialBlueprintId?: string | null;
+}
+
 // 仪表板数据类型
 interface DashboardData {
   queen: {
@@ -246,10 +252,11 @@ interface TaskTreeStats {
 // 右侧面板视图类型
 type RightPanelView = 'workers' | 'tdd' | 'timetravel';
 
-export default function SwarmConsole() {
+export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) {
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null);
+  // 使用 initialBlueprintId 作为初始值
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(initialBlueprintId || null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [rightPanelView, setRightPanelView] = useState<RightPanelView>('workers');
   const [loadingBlueprints, setLoadingBlueprints] = useState(true);
@@ -260,10 +267,7 @@ export default function SwarmConsole() {
   const [taskTreeStats, setTaskTreeStats] = useState<TaskTreeStats | null>(null);
   const [loadingCoordinator, setLoadingCoordinator] = useState(false);
 
-  // 项目信息状态
-  const [currentProject, setCurrentProject] = useState<RecentProject | null>(null);
-  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(false);
+
 
   // 时间线增强功能状态
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilterType>('all');
@@ -323,14 +327,14 @@ export default function SwarmConsole() {
     const fetchBlueprints = async () => {
       try {
         setLoadingBlueprints(true);
-        const response = await fetch('/api/blueprints');
+        const response = await fetch('/api/blueprint/blueprints');
         const result = await response.json();
 
         if (result.success && result.data) {
           setBlueprints(result.data);
 
-          // 自动选中第一个蓝图
-          if (result.data.length > 0 && !selectedBlueprintId) {
+          // 只有在没有 initialBlueprintId 且没有选中蓝图时才自动选中第一个
+          if (result.data.length > 0 && !selectedBlueprintId && !initialBlueprintId) {
             setSelectedBlueprintId(result.data[0].id);
           }
         }
@@ -345,40 +349,7 @@ export default function SwarmConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只在挂载时运行一次
 
-  // 获取项目列表
-  const fetchProjects = useCallback(async () => {
-    setLoadingProjects(true);
-    try {
-      const projects = await projectApi.getRecentProjects();
-      setRecentProjects(projects);
-      // 如果有项目，设置第一个为当前项目
-      if (projects.length > 0 && !currentProject) {
-        setCurrentProject(projects[0]);
-      }
-    } catch (err) {
-      console.error('获取项目列表失败:', err);
-    } finally {
-      setLoadingProjects(false);
-    }
-  }, [currentProject]);
 
-  // 初始加载项目列表
-  useEffect(() => {
-    fetchProjects();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 选择项目
-  const handleSelectProject = async (project: RecentProject) => {
-    try {
-      await projectApi.openProject(project.path);
-      setCurrentProject(project);
-      // 刷新项目列表以更新最后打开时间
-      fetchProjects();
-    } catch (err) {
-      console.error('切换项目失败:', err);
-    }
-  };
 
   // 转换数据为组件所需格式
   const taskTreeRoot: ComponentTaskNode | null = useMemo(() => {
@@ -438,35 +409,7 @@ export default function SwarmConsole() {
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  // 操作按钮处理
-  const handleCreateBlueprint = async () => {
-    const name = prompt('请输入蓝图名称:');
-    if (!name) return;
 
-    const description = prompt('请输入蓝图描述:');
-
-    try {
-      const response = await fetch('/api/blueprints', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description: description || '' }),
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        // 刷新蓝图列表
-        const listResponse = await fetch('/api/blueprints');
-        const listResult = await listResponse.json();
-        if (listResult.success) {
-          setBlueprints(listResult.data);
-          setSelectedBlueprintId(result.data.id);
-        }
-      }
-    } catch (err) {
-      console.error('创建蓝图失败:', err);
-      alert('创建蓝图失败');
-    }
-  };
 
   const handleStartExecution = async () => {
     if (!selectedBlueprintId) {
@@ -539,48 +482,6 @@ export default function SwarmConsole() {
       <div className={styles.mainArea}>
         {/* 左侧：蓝图列表 */}
         <aside className={styles.leftPanel}>
-          {/* 项目信息区域 */}
-          <div className={styles.projectInfoSection}>
-            <div className={styles.projectInfoHeader}>
-              <span className={styles.projectInfoIcon}>📁</span>
-              <span className={styles.projectInfoTitle}>当前项目</span>
-            </div>
-            {loadingProjects ? (
-              <div className={styles.projectInfoLoading}>加载中...</div>
-            ) : currentProject ? (
-              <div className={styles.currentProjectInfo}>
-                <div className={styles.currentProjectName}>{currentProject.name}</div>
-                <div className={styles.currentProjectPath} title={currentProject.path}>{currentProject.path}</div>
-              </div>
-            ) : (
-              <div className={styles.noProjectInfo}>未选择项目</div>
-            )}
-            {/* 最近项目列表 */}
-            {recentProjects.length > 0 && (
-              <div className={styles.recentProjectsSection}>
-                <div className={styles.recentProjectsTitle}>最近项目</div>
-                <div className={styles.recentProjectsList}>
-                  {recentProjects.slice(0, 5).map((project) => (
-                    <button
-                      key={project.id}
-                      className={`${styles.recentProjectItem} ${currentProject?.id === project.id ? styles.activeProject : ''}`}
-                      onClick={() => handleSelectProject(project)}
-                      title={project.path}
-                    >
-                      <span className={styles.recentProjectName}>{project.name}</span>
-                      {project.lastOpenedAt && (
-                        <span className={styles.recentProjectTime}>
-                          {new Date(project.lastOpenedAt).toLocaleDateString('zh-CN')}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className={styles.panelDivider} />
 
           <div className={styles.panelHeader}>
             <h2>📋 蓝图列表</h2>
@@ -620,10 +521,6 @@ export default function SwarmConsole() {
                 </div>
               ))
             )}
-
-            <button className={styles.actionButton} onClick={handleCreateBlueprint}>
-              + 新建蓝图
-            </button>
           </div>
         </aside>
 

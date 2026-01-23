@@ -204,12 +204,28 @@ export const blueprintApi = {
 
   /**
    * 提交审核
+   * @returns 包含蓝图和可能的警告信息
    */
-  submitForReview: async (id: string): Promise<Blueprint> => {
+  submitForReview: async (id: string): Promise<{ blueprint: Blueprint; warnings?: string[] }> => {
     const response = await fetch(`/api/blueprint/blueprints/${id}/submit`, {
       method: 'POST',
     });
-    return handleResponse<Blueprint>(response);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || 'API request failed');
+    }
+
+    return {
+      blueprint: result.data as Blueprint,
+      warnings: result.warnings,
+    };
   },
 
   /**

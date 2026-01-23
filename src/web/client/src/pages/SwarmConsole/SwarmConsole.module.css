@@ -2,7 +2,9 @@
 .swarmConsole {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  width: 100%;
+  flex: 1;
   background: var(--bg-primary);
   overflow: hidden;
 }
@@ -14,6 +16,7 @@
   gap: 0;
   overflow: hidden;
   border-top: 1px solid var(--border-color);
+  width: 100%;
 }
 
 /* 左侧面板 - 蓝图列表 */
@@ -279,17 +282,35 @@
   flex-shrink: 0;
 }
 
-.blueprintStatus[data-status="running"] {
+/* 执行中状态 */
+.blueprintStatus[data-status="running"],
+.blueprintStatus[data-status="executing"] {
   color: #22c55e;
   animation: statusPulse 1.5s ease-in-out infinite;
 }
 
+/* 已完成状态 */
 .blueprintStatus[data-status="completed"] {
   color: #3b82f6;
 }
 
+/* 失败状态 */
 .blueprintStatus[data-status="failed"] {
   color: #ef4444;
+}
+
+/* 暂停状态 */
+.blueprintStatus[data-status="paused"],
+.blueprintStatus[data-status="modified"] {
+  color: #f59e0b;
+}
+
+/* 等待/审核状态 */
+.blueprintStatus[data-status="pending"],
+.blueprintStatus[data-status="draft"],
+.blueprintStatus[data-status="review"],
+.blueprintStatus[data-status="approved"] {
+  color: #9ca3af;
 }
 
 @keyframes statusPulse {
