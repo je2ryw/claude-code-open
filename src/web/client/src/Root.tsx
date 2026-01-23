@@ -2,10 +2,11 @@ import { useState } from 'react';
 import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
+import CodeBrowserPage from './pages/CodeBrowserPage';
 import TopNavBar from './components/swarm/TopNavBar';
 import { ProjectProvider } from './contexts/ProjectContext';
 
-type Page = 'chat' | 'swarm' | 'blueprint';
+type Page = 'chat' | 'swarm' | 'blueprint' | 'code';
 
 /**
  * 根组件 - 处理顶层导航和页面路由
@@ -60,6 +61,8 @@ export default function Root() {
             onNavigateToSwarm={navigateToSwarmPage}
           />
         );
+      case 'code':
+        return <CodeBrowserPage />;
       default:
         return null;
     }

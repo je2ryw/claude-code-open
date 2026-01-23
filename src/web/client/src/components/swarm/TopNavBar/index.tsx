@@ -1,8 +1,8 @@
 import styles from './TopNavBar.module.css';
 
 export interface TopNavBarProps {
-  currentPage: 'chat' | 'swarm' | 'blueprint';
-  onPageChange: (page: 'chat' | 'swarm' | 'blueprint') => void;
+  currentPage: 'chat' | 'swarm' | 'blueprint' | 'code';
+  onPageChange: (page: 'chat' | 'swarm' | 'blueprint' | 'code') => void;
   onSettingsClick?: () => void;
 }
 
@@ -15,28 +15,35 @@ export default function TopNavBar({ currentPage, onPageChange, onSettingsClick }
     <nav className={styles.topNavBar}>
       {/* 左侧：导航标签 */}
       <div className={styles.navTabs}>
-        <button
-          className={`${styles.navTab} ${currentPage === 'chat' ? styles.active : ''}`}
-          onClick={() => onPageChange('chat')}
-        >
-          <span className={styles.icon}>💬</span>
-          <span>聊天</span>
-        </button>
-        <button
-          className={`${styles.navTab} ${currentPage === 'blueprint' ? styles.active : ''}`}
-          onClick={() => onPageChange('blueprint')}
-        >
-          <span className={styles.icon}>📋</span>
-          <span>蓝图</span>
-        </button>
-        <button
-          className={`${styles.navTab} ${currentPage === 'swarm' ? styles.active : ''}`}
-          onClick={() => onPageChange('swarm')}
-        >
-          <span className={styles.icon}>🐝</span>
-          <span>蜂群</span>
-        </button>
-      </div>
+      <button
+        className={`${styles.navTab} ${currentPage === 'chat' ? styles.active : ''}`}
+        onClick={() => onPageChange('chat')}
+      >
+        <span className={styles.icon}>💬</span>
+        <span>聊天</span>
+      </button>
+      <button
+        className={`${styles.navTab} ${currentPage === 'blueprint' ? styles.active : ''}`}
+        onClick={() => onPageChange('blueprint')}
+      >
+        <span className={styles.icon}>📋</span>
+        <span>蓝图</span>
+      </button>
+      <button
+        className={`${styles.navTab} ${currentPage === 'swarm' ? styles.active : ''}`}
+        onClick={() => onPageChange('swarm')}
+      >
+        <span className={styles.icon}>🐝</span>
+        <span>蜂群</span>
+      </button>
+      <button
+        className={`${styles.navTab} ${currentPage === 'code' ? styles.active : ''}`}
+        onClick={() => onPageChange('code')}
+      >
+        <span className={styles.icon}>📁</span>
+        <span>代码</span>
+      </button>
+    </div>
 
       {/* 中央：标题 */}
       <div className={styles.title}>
