@@ -6,7 +6,7 @@ import type {
   BlueprintListItem,
 } from './types';
 import { BlueprintDetailPanel } from '../../components/swarm/BlueprintDetailPanel';
-import { useProject, useProjectChangeListener, type Project, type BlueprintInfo } from '../../contexts/ProjectContext';
+import { useProject } from '../../contexts/ProjectContext';
 
 /**
  * 判断蓝图是否为活跃状态
@@ -31,11 +31,11 @@ interface BlueprintPageProps {
 }
 
 /**
- * 蓝图页面 - 单蓝图视图模式
+ * 蓝图页面 - 全局蓝图视图
  *
  * 功能：
- * - 显示当前项目的蓝图详情
- * - 顶部下拉切换历史版本
+ * - 显示所有项目的蓝图列表（与蜂群页面保持一致）
+ * - 点击查看蓝图详情
  * - 无蓝图时显示生成引导
  */
 export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }: BlueprintPageProps) {
@@ -66,19 +66,15 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
   // ============================================================================
 
   /**
-   * 加载蓝图列表（按当前项目过滤）
+   * 加载蓝图列表（全局视图，显示所有项目的蓝图）
    */
   const loadBlueprints = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // 构建URL，传递项目路径参数进行过滤
-      let url = `/api/blueprint/blueprints`;
-      if (currentProjectPath) {
-        url += `?projectPath=${encodeURIComponent(currentProjectPath)}`;
-      }
-      const response = await fetch(url);
+      // 不传项目过滤参数，获取所有蓝图（与蜂群页面一致）
+      const response = await fetch('/api/blueprint/blueprints');
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -111,25 +107,12 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
     } finally {
       setIsLoading(false);
     }
-  }, [currentProjectPath]);
+  }, []);
 
-  // 初始加载 + 项目切换时重新加载
+  // 初始加载
   useEffect(() => {
     loadBlueprints();
   }, [loadBlueprints]);
-
-  // 监听项目切换事件（与聊天Tab的项目选择同步）
-  useProjectChangeListener(
-    useCallback(
-      (project: Project | null, _blueprint: BlueprintInfo | null) => {
-        console.log('[BlueprintPage] 项目切换，重新加载蓝图列表:', project?.path);
-        // 项目切换时重置选中状态
-        setSelectedId(null);
-        // loadBlueprints 已通过 currentProjectPath 依赖自动触发
-      },
-      []
-    )
-  );
 
   // 当 initialBlueprintId 变化时更新选中状态
   useEffect(() => {
@@ -321,7 +304,7 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
           </div>
         )}
 
-        {/* 空状态 - 无蓝图或未选择项目 */}
+        {/* 空状态 - 无蓝图 */}
         {!isLoading && !error && blueprints.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
@@ -332,32 +315,12 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
                 <line x1="20" y1="50" x2="45" y2="50" stroke="currentColor" strokeWidth="2" />
               </svg>
             </div>
-            {currentProjectPath ? (
-              <>
-                <h2 className={styles.emptyTitle}>当前项目还没有蓝图</h2>
-                <p className={styles.emptyDescription}>
-                  项目：{projectState.currentProject?.name || currentProjectPath}
-                  <br />
-                  点击下方按钮，AI 将分析代码库并生成项目蓝图
-                </p>
-                <button
-                  className={styles.generateLargeButton}
-                  onClick={handleCreateBlueprint}
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? '正在生成...' : '📋 生成项目蓝图'}
-                </button>
-              </>
-            ) : (
-              <>
-                <h2 className={styles.emptyTitle}>请先选择项目</h2>
-                <p className={styles.emptyDescription}>
-                  请在左侧聊天Tab中选择一个项目文件夹，
-                  <br />
-                  然后返回此页面生成项目蓝图
-                </p>
-              </>
-            )}
+            <h2 className={styles.emptyTitle}>还没有蓝图</h2>
+            <p className={styles.emptyDescription}>
+              请在聊天 Tab 中选择一个项目文件夹，
+              <br />
+              然后点击「生成项目蓝图」按钮
+            </p>
           </div>
         )}
 
@@ -387,6 +350,12 @@ export default function BlueprintPage({ initialBlueprintId, onNavigateToSwarm }:
                       {blueprint.status}
                     </span>
                   </div>
+                  {/* 显示项目路径 */}
+                  {blueprint.projectPath && (
+                    <div className={styles.cardProjectPath} title={blueprint.projectPath}>
+                      📁 {blueprint.projectPath.split(/[/\\]/).slice(-2).join('/')}
+                    </div>
+                  )}
                   <p className={styles.cardDescription}>
                     {blueprint.description || '暂无描述'}
                   </p>

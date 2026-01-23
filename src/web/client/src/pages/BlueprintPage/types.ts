@@ -157,6 +157,7 @@ export interface BlueprintListItem {
   moduleCount: number;      // 已预计算的数量
   processCount: number;     // 已预计算的数量
   nfrCount: number;         // 非功能要求数量
+  projectPath?: string;     // 关联的项目路径（全局视图时显示）
 }
 
 /**

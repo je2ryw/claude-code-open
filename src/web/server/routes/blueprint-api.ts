@@ -72,6 +72,7 @@ router.get('/blueprints', (req: Request, res: Response) => {
         moduleCount: b.modules?.length || 0,
         processCount: b.businessProcesses?.length || 0,
         nfrCount: b.nfrs?.length || 0,
+        projectPath: b.projectPath,  // 全局视图需要显示项目路径
       })),
       total: blueprints.length,
     });

@@ -1,0 +1,12 @@
+{
+    "name": "claude-code-landing-page",
+    "version": "1.0.0",
+    "description": "Claude Code Open Landing Page",
+    "private": true,
+    "scripts": {
+        "build": "echo 'No build needed for static site'"
+    },
+    "engines": {
+        "node": ">=18.0.0 <=20.x"
+    }
+}
