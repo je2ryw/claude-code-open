@@ -9,43 +9,113 @@
   overflow: hidden;
 }
 
-/* 主内容区域 - 三栏布局 */
+/* 主内容区域 - 三栏布局 (Resizable Panels) */
 .mainArea {
   flex: 1;
   display: flex;
-  gap: 0;
   overflow: hidden;
   border-top: 1px solid var(--border-color);
   width: 100%;
+  height: 100%;
+  /* 确保填满父容器 */
+}
+
+/* 拖拽手柄样式 */
+.resizeHandle {
+  width: 2px;
+  background: var(--border-color);
+  cursor: col-resize;
+  transition: all 0.2s;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  /* remove focus outline */
+}
+
+/* 增加可点击区域而不改变视觉宽度(通过伪元素或透明背景) - 但是为了放按钮，我们可能需要特殊处理 */
+.resizeHandleInner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.resizeHandle:hover,
+.resizeHandle[data-resize-handle-state="hover"] {
+  background: var(--accent-primary);
+  /* Hover 时不需要变宽，避免布局抖动，或者仅改变颜色 */
+}
+
+.resizeHandle:active,
+.resizeHandle[data-resize-handle-state="drag"] {
+  background: var(--accent-primary);
+}
+
+.collapseHandleButton {
+  width: 16px;
+  height: 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  /* 默认不接收事件，只有 hover 时显示 */
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 只有当鼠标悬停在 handle 上或者按钮本身被 focus 时才显示 */
+.resizeHandle:hover .collapseHandleButton,
+.collapseHandleButton:hover,
+.collapseHandleButton:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.collapseHandleButton:hover {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
 }
 
 /* 左侧面板 - 蓝图列表 */
 .leftPanel {
-  width: 200px;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  overflow: hidden;
+  /* 防止内容溢出 */
 }
 
 /* 中央面板 - 任务树 */
 .centerPanel {
-  flex: 1;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  overflow: hidden;
 }
 
 /* 右侧面板 - Worker 面板 */
 .rightPanel {
-  width: 320px;
   background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 
 /* 面板头部通用样式 */
@@ -314,8 +384,15 @@
 }
 
 @keyframes statusPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 /* 任务统计样式 */
@@ -391,8 +468,13 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 错误状态 */
@@ -538,8 +620,15 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
 }
 
 /* 协调器 Workers 列表 */

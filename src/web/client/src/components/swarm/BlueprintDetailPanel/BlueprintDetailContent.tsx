@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import styles from './BlueprintDetailContent.module.css';
-import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject, aiHoverApi, AIHoverResult, blueprintApi } from '../../../api/blueprint';
+import { codebaseApi, fileApi, FileTreeNode, NodeAnalysis, FileContent, SymbolAnalysis, projectApi, fileOperationApi, RecentProject, aiHoverApi, AIHoverResult, blueprintApi, taskTreeApi } from '../../../api/blueprint';
 import { getSyntaxExplanation, extractKeywordsFromLine, SyntaxExplanation } from '../../../utils/syntaxDictionary';
 import { extractJSDocForLine, extractAllJSDocs, clearJSDocCache, ParsedJSDoc, formatJSDocBrief, hasValidJSDoc } from '../../../utils/jsdocParser';
 // VS Code 风格组件
@@ -204,6 +204,15 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
   // 蓝图操作状态
   const [blueprintOperating, setBlueprintOperating] = useState(false);
   const [blueprintOperationError, setBlueprintOperationError] = useState<string | null>(null);
+
+  // 任务树统计
+  const [taskTreeStats, setTaskTreeStats] = useState<{
+    totalTasks: number;
+    completedTasks: number;
+    pendingTasks: number;
+    runningTasks: number;
+    failedTasks: number;
+  } | null>(null);
 
   // 架构流程图数据（按类型缓存，支持并行加载）
   const [architectureGraphCache, setArchitectureGraphCache] = useState<Map<ArchitectureGraphType, ArchitectureGraphData>>(new Map());
@@ -616,12 +625,38 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             moduleCount: data.data.modules?.length || 0,
             version: data.data.version || '1.0.0',
           });
+
+          // 如果蓝图有关联的taskTreeId，则加载任务树统计
+          if (data.data.taskTreeId) {
+            loadTaskTreeStats(data.data.taskTreeId);
+          }
         }
       }
     } catch (err) {
       console.error('加载蓝图信息失败:', err);
     }
   };
+
+  /**
+   * 加载任务树统计
+   */
+  const loadTaskTreeStats = async (taskTreeId: string) => {
+    try {
+      const stats = await taskTreeApi.getTaskTreeStats(taskTreeId);
+      setTaskTreeStats({
+        totalTasks: stats.totalTasks || 0,
+        completedTasks: stats.completedTasks || 0,
+        pendingTasks: stats.pendingTasks || 0,
+        runningTasks: stats.runningTasks || 0,
+        failedTasks: stats.failedTasks || 0,
+      });
+    } catch (err) {
+      console.error('加载任务树统计失败:', err);
+      // 失败时设置为null，不会显示统计
+      setTaskTreeStats(null);
+    }
+  };
+
 
   // 加载架构流程图（AI 生成，支持并行加载多种类型）
   const loadArchitectureGraph = useCallback(async (type: ArchitectureGraphType, forceRefresh: boolean = false) => {
@@ -4020,7 +4055,7 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
           )}
 
           {/* 关系图谱（文件才显示） */}
-          {currentAnalysis.type === 'file' && (currentAnalysis.dependencies?.length > 0 || currentAnalysis.reverseDependencies?.length > 0) && (
+          {currentAnalysis.type === 'file' && ((currentAnalysis.dependencies?.length ?? 0) > 0 || (currentAnalysis.reverseDependencies?.length ?? 0) > 0) && (
             <div className={styles.analysisSection}>
               <h3 className={styles.sectionTitle}>关系图谱</h3>
               <div className={styles.relationshipGraph}>
@@ -4305,6 +4340,15 @@ export const BlueprintDetailContent: React.FC<BlueprintDetailContentProps> = ({
             {selectedPath && (
               <div className={styles.breadcrumb}>
                 <span className={styles.breadcrumbPath}>{selectedPath}</span>
+              </div>
+            )}
+
+            {/* 任务树统计 - 显示在tabBar右侧 */}
+            {taskTreeStats && (
+              <div className={styles.tabStats}>
+                <span className={styles.tabStat}>
+                  {taskTreeStats.completedTasks}/{taskTreeStats.totalTasks} 完成
+                </span>
               </div>
             )}
           </div>

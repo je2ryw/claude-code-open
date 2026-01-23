@@ -459,14 +459,28 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     filtered = filtered.filter((s) => s.tags?.some((t) => tags.includes(t)));
   }
 
-  // 按项目路径过滤
+  // 按项目路径过滤（兼容 CLI 会话：回退到 workingDirectory）
   if (projectPath !== undefined) {
     if (projectPath === null) {
-      // 只获取全局会话（projectPath 为 null 或 undefined）
-      filtered = filtered.filter((s) => s.projectPath === null || s.projectPath === undefined);
+      // 只获取全局会话（projectPath 为 null 或 undefined，且 workingDirectory 也为空）
+      filtered = filtered.filter((s) =>
+        (s.projectPath === null || s.projectPath === undefined) &&
+        (s.workingDirectory === null || s.workingDirectory === undefined)
+      );
     } else {
       // 获取指定项目的会话
-      filtered = filtered.filter((s) => s.projectPath === projectPath);
+      // 路径标准化：统一转小写、统一斜杠方向（兼容 Windows 路径差异）
+      const normalizePathForCompare = (p: string | undefined | null): string => {
+        if (!p) return '';
+        return p.replace(/\\/g, '/').toLowerCase();
+      };
+      const normalizedTarget = normalizePathForCompare(projectPath);
+
+      filtered = filtered.filter((s) => {
+        // 优先匹配 projectPath，回退到 workingDirectory（兼容 CLI 会话）
+        const sessionPath = s.projectPath || s.workingDirectory;
+        return normalizePathForCompare(sessionPath) === normalizedTarget;
+      });
     }
   }
 

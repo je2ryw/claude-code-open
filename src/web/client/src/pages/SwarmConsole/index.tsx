@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
 import styles from './SwarmConsole.module.css';
 import { TaskTree, TaskNode as ComponentTaskNode } from '../../components/swarm/TaskTree';
 import { WorkerPanel, QueenAgent as ComponentQueenAgent, WorkerAgent as ComponentWorkerAgent } from '../../components/swarm/WorkerPanel';
@@ -223,6 +224,7 @@ interface DashboardData {
     total: number;
     active: number;
     idle: number;
+    // ...
   };
   tasks: {
     total: number;
@@ -261,13 +263,15 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [rightPanelView, setRightPanelView] = useState<RightPanelView>('workers');
   const [loadingBlueprints, setLoadingBlueprints] = useState(true);
 
+  // 面板折叠状态
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  const leftPanelRef = useRef<PanelImperativeHandle>(null);
+
   // 协调器数据状态
   const [coordinatorWorkers, setCoordinatorWorkers] = useState<any[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [taskTreeStats, setTaskTreeStats] = useState<TaskTreeStats | null>(null);
   const [loadingCoordinator, setLoadingCoordinator] = useState(false);
-
-
 
   // 时间线增强功能状态
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilterType>('all');
@@ -418,13 +422,18 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
 
     try {
+      // 确保 Queen 已初始化
+      if (!state.queen) {
+        await coordinatorApi.initializeQueen(selectedBlueprintId);
+      }
+
       await coordinatorApi.start();
       alert('执行已启动');
       refresh();
       fetchCoordinatorData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('启动执行失败:', err);
-      alert('启动执行失败');
+      alert(`启动执行失败: ${err.message || '未知错误'}`);
     }
   };
 
@@ -478,11 +487,23 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
   return (
     <div className={styles.swarmConsole}>
-      {/* 主内容区域 - 三栏布局 */}
-      <div className={styles.mainArea}>
+      {/* 主内容区域 - PanelGroup 三栏布局 */}
+      <PanelGroup orientation="horizontal" className={styles.mainArea}>
         {/* 左侧：蓝图列表 */}
-        <aside className={styles.leftPanel}>
-
+        <Panel
+          panelRef={leftPanelRef}
+          defaultSize="17"
+          minSize="17"
+          maxSize="40"
+          collapsible={true}
+          onResize={(size) => {
+            const isCollapsed = size.asPercentage === 0;
+            if (isCollapsed !== isLeftPanelCollapsed) {
+              setIsLeftPanelCollapsed(isCollapsed);
+            }
+          }}
+          className={styles.leftPanel}
+        >
           <div className={styles.panelHeader}>
             <h2>📋 蓝图列表</h2>
           </div>
@@ -522,10 +543,32 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               ))
             )}
           </div>
-        </aside>
+        </Panel>
+
+        <PanelResizeHandle className={styles.resizeHandle}>
+          <div className={styles.resizeHandleInner}>
+            <button
+              className={styles.collapseHandleButton}
+              onClick={(e) => {
+                e.stopPropagation(); // 防止触发拖拽
+                const panel = leftPanelRef.current;
+                if (panel) {
+                  if (isLeftPanelCollapsed) {
+                    panel.expand();
+                  } else {
+                    panel.collapse();
+                  }
+                }
+              }}
+              title={isLeftPanelCollapsed ? "展开" : "折叠"}
+            >
+              {isLeftPanelCollapsed ? "▶" : "◀"}
+            </button>
+          </div>
+        </PanelResizeHandle>
 
         {/* 中央：任务树区域 */}
-        <main className={styles.centerPanel}>
+        <Panel defaultSize="45" minSize="30" className={styles.centerPanel}>
           <div className={styles.panelHeader}>
             <h2>🌳 任务树</h2>
             {/* 任务树统计 */}
@@ -596,10 +639,12 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               </FadeIn>
             )}
           </div>
-        </main>
+        </Panel>
+
+        <PanelResizeHandle className={styles.resizeHandle} />
 
         {/* 右侧：Worker 面板 / TDD 面板（可切换） */}
-        <aside className={styles.rightPanel}>
+        <Panel defaultSize="30" minSize="20" collapsible={true} className={styles.rightPanel}>
           <div className={styles.panelHeader}>
             {/* 视图切换标签 */}
             <div className={styles.viewTabs}>
@@ -700,8 +745,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               </FadeIn>
             )}
           </div>
-        </aside>
-      </div>
+        </Panel>
+      </PanelGroup>
 
       {/* 底部：时间线区域（可折叠） - 增强版 */}
       <div className={`${styles.timelineArea} ${timelineCollapsed ? styles.collapsed : ''}`}>

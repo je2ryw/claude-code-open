@@ -13,6 +13,7 @@
     "marked": "^12.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-resizable-panels": "^4.4.1",
     "react-window": "^1.8.10",
     "recharts": "^3.6.0"
   },

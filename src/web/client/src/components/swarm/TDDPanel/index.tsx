@@ -97,8 +97,15 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
       const guidanceText = await tddApi.getPhaseGuidance(tid);
       setGuidance(guidanceText);
     } catch (err: any) {
-      setError(err.message || '加载TDD状态失败');
-      setLoopState(null);
+      // 如果是 "TDD loop not found" 错误，说明还没有启动循环，这不是一个真正的错误
+      // 我们应该重置状态，以便显示启动按钮
+      if (err.message && err.message.includes('TDD loop not found')) {
+        setLoopState(null);
+        setError(null);
+      } else {
+        setError(err.message || '加载TDD状态失败');
+        setLoopState(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -358,10 +365,51 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
   // 渲染活跃循环列表
   const renderActiveLoops = () => {
     if (activeLoops.length === 0) {
+      // 根据条件显示不同的引导信息
+      let guidance = null;
+      if (!treeId) {
+        guidance = (
+          <>
+            <div className={styles.emptyHint}>
+              <span className={styles.hintIcon}>💡</span>
+              <span>请先创建或选择一个任务树</span>
+            </div>
+            <div className={styles.emptySteps}>
+              <div className={styles.stepItem}>
+                <span className={styles.stepNumber}>1</span>
+                <span>在蓝图管理中创建新蓝图</span>
+              </div>
+              <div className={styles.stepItem}>
+                <span className={styles.stepNumber}>2</span>
+                <span>生成任务分解树</span>
+              </div>
+              <div className={styles.stepItem}>
+                <span className={styles.stepNumber}>3</span>
+                <span>选择要执行TDD的任务</span>
+              </div>
+            </div>
+          </>
+        );
+      } else if (!taskId) {
+        guidance = (
+          <>
+            <div className={styles.emptyHint}>
+              <span className={styles.hintIcon}>👈</span>
+              <span>请在任务树中选择一个任务</span>
+            </div>
+            <div className={styles.emptyDescription}>
+              选择任务后，可以为该任务启动TDD循环，<br />
+              按照 <strong>编写测试 → 红灯 → 编写代码 → 绿灯 → 重构</strong> 的流程进行开发
+            </div>
+          </>
+        );
+      }
+
       return (
         <div className={styles.emptyLoops}>
           <div className={styles.emptyIcon}>🔄</div>
           <div className={styles.emptyText}>暂无活跃的TDD循环</div>
+          {guidance}
           {treeId && taskId && (
             <button className={styles.startButton} onClick={startLoop} disabled={loading}>
               {loading ? '启动中...' : '启动TDD循环'}
@@ -535,31 +583,56 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
       )}
 
       <div className={styles.content}>
-        {/* 左侧：活跃循环列表 */}
-        <div className={styles.sidebar}>
-          {renderActiveLoops()}
-        </div>
-
-        {/* 右侧：详情面板 */}
-        <div className={styles.main}>
-          {loopState ? (
-            <>
-              {renderPhaseIndicator()}
-              {renderStats()}
-              {renderCurrentState()}
-              {renderTestResults()}
-              {renderPhaseHistory()}
-              {renderGuidance()}
-            </>
-          ) : (
-            <div className={styles.noSelection}>
-              <div className={styles.noSelectionIcon}>📋</div>
-              <div className={styles.noSelectionText}>
-                选择一个TDD循环查看详情
-              </div>
+        {/* 当有活跃循环时使用两栏布局 */}
+        {activeLoops.length > 0 ? (
+          <>
+            {/* 左侧：活跃循环列表 */}
+            <div className={styles.sidebar}>
+              {renderActiveLoops()}
             </div>
-          )}
-        </div>
+
+            {/* 右侧：详情面板 */}
+            <div className={styles.main}>
+              {loopState ? (
+                <>
+                  {renderPhaseIndicator()}
+                  {renderStats()}
+                  {renderCurrentState()}
+                  {renderTestResults()}
+                  {renderPhaseHistory()}
+                  {renderGuidance()}
+                </>
+              ) : (
+                <div className={styles.noSelection}>
+                  {taskId ? (
+                    <div className={styles.startLoopState}>
+                       <div className={styles.emptyIcon}>🚀</div>
+                       <div className={styles.emptyText}>当前任务尚未启动TDD循环</div>
+                       <div className={styles.emptyDescription}>
+                        点击下方按钮开始 TDD 流程
+                       </div>
+                       <button className={styles.startButton} onClick={startLoop} disabled={loading}>
+                        {loading ? '启动中...' : '启动TDD循环'}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={styles.noSelectionIcon}>📋</div>
+                      <div className={styles.noSelectionText}>
+                        选择一个TDD循环查看详情
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          /* 没有活跃循环时使用单栏布局 */
+          <div className={styles.singleColumn}>
+            {renderActiveLoops()}
+          </div>
+        )}
       </div>
 
       {renderReportModal()}
