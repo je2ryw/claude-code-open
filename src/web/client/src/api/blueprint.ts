@@ -303,6 +303,22 @@ export const blueprintApi = {
   },
 
   /**
+   * 重置所有失败的任务
+   * 将 test_failed 和 rejected 状态的任务重置为 pending，以便重新执行
+   */
+  resetFailedTasks: async (
+    id: string,
+    resetRetryCount: boolean = true
+  ): Promise<{ resetCount: number; taskTreeId: string; message: string }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/reset-failed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resetRetryCount }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
    * 删除蓝图
    */
   deleteBlueprint: async (id: string): Promise<void> => {

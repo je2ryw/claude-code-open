@@ -37,10 +37,18 @@ export class BoundaryChecker {
       };
     }
 
-    // 2. 查找文件所属的模块
+    // 2. 检查是否是测试文件（TDD 流程的特殊例外）
+    if (this.isTestFile(normalizedPath)) {
+      return {
+        allowed: true,
+        warnings: ['测试文件不受模块边界限制'],
+      };
+    }
+
+    // 3. 查找文件所属的模块
     const module = this.findModuleByPath(normalizedPath);
 
-    // 3. 如果是写操作，必须在某个模块范围内
+    // 4. 如果是写操作，必须在某个模块范围内
     if (operation !== 'read' && !module) {
       return {
         allowed: false,
@@ -75,6 +83,16 @@ export class BoundaryChecker {
    * 检查任务的文件修改是否在其模块边界内
    */
   checkTaskBoundary(taskModuleId: string | undefined, filePath: string): BoundaryCheckResult {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+
+    // 测试文件不受模块边界限制（TDD 流程特殊例外）
+    if (this.isTestFile(normalizedPath)) {
+      return {
+        allowed: true,
+        warnings: ['测试文件不受模块边界限制'],
+      };
+    }
+
     if (!taskModuleId) {
       // 没有指定模块，使用通用检查
       return this.checkFilePath(filePath);
@@ -85,7 +103,6 @@ export class BoundaryChecker {
       return this.checkFilePath(filePath);
     }
 
-    const normalizedPath = filePath.replace(/\\/g, '/');
     const modulePath = this.getModulePath(taskModule);
 
     // 检查文件是否在任务所属模块内
@@ -152,6 +169,28 @@ export class BoundaryChecker {
     ];
 
     return protectedPatterns.some(p => p.test(filePath));
+  }
+
+  /**
+   * 检查是否是测试文件
+   * TDD 流程中生成的测试文件不受模块边界限制
+   */
+  private isTestFile(filePath: string): boolean {
+    const testPatterns = [
+      // 测试目录
+      /__tests__\//,
+      /\/tests?\//,
+      /\/test\//,
+      /\/__mocks__\//,
+      /\/__fixtures__\//,
+      // 测试文件后缀
+      /\.test\.[jt]sx?$/,
+      /\.spec\.[jt]sx?$/,
+      /_test\.[jt]sx?$/,
+      /_spec\.[jt]sx?$/,
+    ];
+
+    return testPatterns.some(p => p.test(filePath));
   }
 
   /**

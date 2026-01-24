@@ -475,6 +475,31 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   };
 
+  // 重置失败任务
+  const handleResetFailedTasks = async () => {
+    if (!selectedBlueprintId) {
+      alert('请先选择一个蓝图');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      '确定要重置所有失败的任务吗？\n这将把所有失败的任务状态重置为待执行，以便重新开始执行。'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { blueprintApi } = await import('../../api/blueprint');
+      const result = await blueprintApi.resetFailedTasks(selectedBlueprintId);
+      alert(`成功重置 ${result.resetCount} 个失败任务`);
+      refresh();
+      fetchCoordinatorData();
+    } catch (err: any) {
+      console.error('重置失败任务失败:', err);
+      alert(`重置失败任务失败: ${err.message || '未知错误'}`);
+    }
+  };
+
   const handleBlueprintSelect = (blueprintId: string) => {
     setSelectedBlueprintId(blueprintId);
   };
@@ -590,7 +615,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               </div>
             )}
             {/* 仪表板快速预览 */}
-            {dashboardData && (
+            {dashboardData?.workers && (
               <div className={styles.dashboardPreview}>
                 <span className={styles.dashboardItem} title="工作中/总Workers">
                   👷 {dashboardData.workers.active}/{dashboardData.workers.total}
@@ -608,6 +633,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
               <button className={styles.iconButton} title="恢复执行" onClick={handleResumeExecution}>▶️</button>
               <button className={styles.iconButton} title="停止执行" onClick={handleStopExecution}>⏹️</button>
+              <button className={styles.iconButton} title="重置失败任务" onClick={handleResetFailedTasks}>🔁</button>
             </div>
           </div>
           <div className={styles.panelContent}>
@@ -669,7 +695,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
             </div>
             {rightPanelView === 'workers' && (
               <span className={styles.workerCount}>
-                {dashboardData ? `${dashboardData.workers.active}/${dashboardData.workers.total}` :
+                {dashboardData?.workers ? `${dashboardData.workers.active}/${dashboardData.workers.total}` :
                   `${workers.filter(w => w.status !== 'idle' && w.status !== 'waiting').length}/${workers.length}`}
               </span>
             )}

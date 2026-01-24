@@ -7,7 +7,7 @@
  * 3. 运行测试并解析结果
  */
 
-import { ClaudeClient } from '../core/client.js';
+import { ClaudeClient, createClientWithModel } from '../core/client.js';
 import type { TaskNode, TestResult, AcceptanceTest, Blueprint } from './types.js';
 import { BoundaryChecker, createBoundaryChecker } from './boundary-checker.js';
 import type { TDDPhase } from './tdd-executor.js';
@@ -102,12 +102,9 @@ export class WorkerExecutor {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.workerId = this.config.workerId;
 
-    // 创建 Claude 客户端
-    this.client = new ClaudeClient({
-      model: this.config.model,
-      maxTokens: this.config.maxTokens,
-      debug: this.config.debug,
-    });
+    // 创建 Claude 客户端 - 使用 createClientWithModel 自动处理认证
+    // 这样可以正确支持 OAuth 订阅模式和 API Key 模式
+    this.client = createClientWithModel(this.config.model);
   }
 
 

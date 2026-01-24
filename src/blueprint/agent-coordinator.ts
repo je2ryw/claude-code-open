@@ -140,6 +140,12 @@ export class AgentCoordinator extends EventEmitter {
       throw new Error(`Blueprint must be approved before execution. Current status: ${blueprint.status}`);
     }
 
+    // 使用蓝图的项目路径更新配置（确保 Worker 在正确的目录下工作）
+    if (blueprint.projectPath) {
+      this.config.projectRoot = blueprint.projectPath;
+      console.log(`[AgentCoordinator] 项目路径已设置为蓝图路径: ${blueprint.projectPath}`);
+    }
+
     taskTreeManager.setCurrentBlueprint(blueprint);
 
     // 生成任务树（如果还没有）
@@ -238,6 +244,9 @@ export class AgentCoordinator extends EventEmitter {
       // 6. 更新全局上下文
       this.updateGlobalContext();
 
+      // 7. 检查是否有僵局（没有执行中和待执行的任务，但有失败的任务）
+      this.checkForStalemate(tree);
+
     } catch (error) {
       console.error('主循环错误:', error);
       this.emit('queen:error', { error });
@@ -248,6 +257,47 @@ export class AgentCoordinator extends EventEmitter {
       this.mainLoopTimer = setTimeout(() => this.runMainLoop(), this.config.mainLoopInterval);
     }
   }
+
+  /**
+   * 检查僵局状态（没有任务可执行，但有失败任务）
+   */
+  private checkForStalemate(tree: TaskTree): void {
+    const { pendingTasks, runningTasks, failedTasks, totalTasks, passedTasks } = tree.stats;
+
+    // 获取可执行任务
+    const executableTasks = taskTreeManager.getExecutableTasks(tree.id);
+    const activeWorkers = Array.from(this.workers.values()).filter(w => w.status !== 'idle');
+
+    // 如果没有可执行任务、没有活跃 Worker、但有失败任务
+    if (executableTasks.length === 0 && activeWorkers.length === 0 && failedTasks > 0) {
+      // 发出僵局事件，通知前端
+      this.emit('queen:stalemate', {
+        message: `检测到僵局：${failedTasks} 个任务失败，无法继续执行`,
+        stats: {
+          totalTasks,
+          passedTasks,
+          failedTasks,
+          pendingTasks,
+          runningTasks,
+        },
+        suggestion: '请重置失败任务或手动干预',
+      });
+
+      // 只发出一次僵局事件（避免重复）
+      if (!this._stalemateReported) {
+        this._stalemateReported = true;
+        this.addTimelineEvent('task_start', `检测到僵局：${failedTasks} 个任务失败，等待人工干预`, {
+          failedTasks,
+          pendingTasks,
+        });
+      }
+    } else {
+      // 重置僵局标记
+      this._stalemateReported = false;
+    }
+  }
+
+  private _stalemateReported: boolean = false;
 
   /**
    * 停止主循环
@@ -1243,6 +1293,8 @@ export class AgentCoordinator extends EventEmitter {
     const worker = this.workers.get(workerId);
     if (!worker) return;
 
+    const failedTaskId = worker.taskId;
+
     // 清除活跃任务上下文
     clearActiveTask(workerId);
     this.workerExecutors.delete(workerId);
@@ -1252,18 +1304,30 @@ export class AgentCoordinator extends EventEmitter {
 
     this.recordWorkerAction(worker, 'report', '任务失败', { error });
 
-    // 记录决策：是否重试
+    // 记录决策并执行重试
     const tree = this.queen ? taskTreeManager.getTaskTree(this.queen.taskTreeId) : null;
-    const task = tree ? taskTreeManager.findTask(tree.root, worker.taskId) : null;
+    const task = tree ? taskTreeManager.findTask(tree.root, failedTaskId) : null;
 
     if (task && task.retryCount < task.maxRetries) {
-      this.recordDecision('retry', `任务 ${worker.taskId} 失败，安排重试`, error);
+      this.recordDecision('retry', `任务 ${failedTaskId} 失败，安排重试 (${task.retryCount + 1}/${task.maxRetries})`, error);
+
+      // 实际执行重试：将任务状态重置为 pending，以便下一轮主循环可以重新分配
+      taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, failedTaskId, 'pending', {
+        retryCount: task.retryCount + 1,
+      });
+
+      this.addTimelineEvent('task_start', `任务 ${failedTaskId} 已重置为待执行，等待重新分配`, {
+        workerId,
+        taskId: failedTaskId,
+        retryCount: task.retryCount + 1,
+      });
     } else {
-      this.recordDecision('escalate', `任务 ${worker.taskId} 多次失败，需要人工介入`, error);
+      this.recordDecision('escalate', `任务 ${failedTaskId} 已达最大重试次数 (${task?.maxRetries || 0})，需要人工介入`, error);
+
+      this.addTimelineEvent('test_fail', `Worker 任务失败: ${failedTaskId}`, { workerId, error });
     }
 
-    this.addTimelineEvent('test_fail', `Worker 任务失败: ${worker.taskId}`, { workerId, error });
-    this.emit('worker:task-failed', { workerId, taskId: worker.taskId, error });
+    this.emit('worker:task-failed', { workerId, taskId: failedTaskId, error });
   }
 
   /**

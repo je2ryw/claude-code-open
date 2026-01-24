@@ -78,6 +78,16 @@ export class TaskTreeManager extends EventEmitter {
    */
   setCurrentBlueprint(blueprint: Blueprint): void {
     this.currentBlueprint = blueprint;
+
+    // 如果蓝图有项目路径，更新验收测试生成器的配置
+    if (blueprint.projectPath) {
+      this.acceptanceTestGenerator = createAcceptanceTestGenerator({
+        projectRoot: blueprint.projectPath,
+        testFramework: 'vitest',
+        testDirectory: '__tests__',
+      });
+      console.log(`[TaskTreeManager] 验收测试生成器已更新为蓝图项目路径: ${blueprint.projectPath}`);
+    }
   }
 
   /**
@@ -595,6 +605,50 @@ export class TaskTreeManager extends EventEmitter {
     for (const child of node.children) {
       this.collectExecutableTasks(child, result, treeId);
     }
+  }
+
+  /**
+   * 重置所有失败的任务为 pending 状态，以便重新执行
+   * @param treeId 任务树 ID
+   * @param resetRetryCount 是否重置重试计数（默认 true）
+   * @returns 重置的任务数量
+   */
+  resetFailedTasks(treeId: string, resetRetryCount: boolean = true): number {
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      throw new Error(`Task tree ${treeId} not found`);
+    }
+
+    let resetCount = 0;
+
+    const resetNode = (node: TaskNode): void => {
+      // 重置失败状态的任务
+      if (node.status === 'test_failed' || node.status === 'rejected') {
+        node.status = 'pending';
+        node.completedAt = undefined;
+        if (resetRetryCount) {
+          node.retryCount = 0;
+        }
+        resetCount++;
+      }
+
+      // 递归处理子节点
+      for (const child of node.children) {
+        resetNode(child);
+      }
+    };
+
+    resetNode(tree.root);
+
+    // 更新统计
+    tree.stats = this.calculateStats(tree.root);
+
+    // 保存
+    this.saveTaskTree(tree);
+
+    this.emit('tasks:reset', { treeId, resetCount });
+
+    return resetCount;
   }
 
   // --------------------------------------------------------------------------

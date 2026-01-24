@@ -315,6 +315,37 @@ router.post('/blueprints/:id/complete', (req: Request, res: Response) => {
 });
 
 /**
+ * 重置所有失败的任务
+ * 将 test_failed 和 rejected 状态的任务重置为 pending，以便重新执行
+ */
+router.post('/blueprints/:id/reset-failed', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.getBlueprint(req.params.id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: '蓝图不存在' });
+    }
+
+    if (!blueprint.taskTreeId) {
+      return res.status(400).json({ success: false, error: '蓝图没有关联的任务树' });
+    }
+
+    const resetRetryCount = req.body.resetRetryCount !== false; // 默认重置重试计数
+    const resetCount = taskTreeManager.resetFailedTasks(blueprint.taskTreeId, resetRetryCount);
+
+    res.json({
+      success: true,
+      data: {
+        resetCount,
+        taskTreeId: blueprint.taskTreeId,
+      },
+      message: `已重置 ${resetCount} 个失败任务`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * 删除蓝图
  */
 router.delete('/blueprints/:id', (req: Request, res: Response) => {
