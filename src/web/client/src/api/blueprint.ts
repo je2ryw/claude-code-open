@@ -1083,11 +1083,14 @@ export const coordinatorApi = {
   },
 
   /**
-   * 恢复主循环（与 start 相同，但语义上表示恢复）
+   * 恢复主循环
+   * @param blueprintId 蓝图 ID，用于在蜂王未初始化时重新初始化
    */
-  resume: async (): Promise<void> => {
+  resume: async (blueprintId?: string): Promise<void> => {
     const response = await fetch('/api/blueprint/coordinator/start', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blueprintId }),
     });
     await handleResponse(response);
   },

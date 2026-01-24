@@ -464,14 +464,18 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
   // 恢复执行
   const handleResumeExecution = async () => {
+    if (!selectedBlueprintId) {
+      alert('请先选择一个蓝图');
+      return;
+    }
     try {
-      await coordinatorApi.resume();
+      await coordinatorApi.resume(selectedBlueprintId);
       alert('执行已恢复');
       refresh();
       fetchCoordinatorData();
     } catch (err) {
       console.error('恢复执行失败:', err);
-      alert('恢复执行失败');
+      alert('恢复执行失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 

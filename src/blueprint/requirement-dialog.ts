@@ -91,6 +91,7 @@ export interface SystemModuleDraft {
   responsibilities: string[];
   techStack: string[];
   dependencies: string[];  // 依赖的其他模块名称
+  rootPath?: string;       // 模块根目录路径
 }
 
 /**
@@ -843,7 +844,11 @@ ${summary}
         break;
       case 'modules':
         if (result.action === 'add' && result.newValue) {
-          state.modules.push(result.newValue);
+          // 确保模块有 rootPath（边界检查需要）
+          state.modules.push({
+            ...result.newValue,
+            rootPath: result.newValue.rootPath || 'src',
+          });
         } else if (result.action === 'delete' && result.target) {
           state.modules = state.modules.filter(m => m.name !== result.target);
         } else if (result.action === 'update' && result.target && result.newValue) {
@@ -1043,6 +1048,7 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
         techStack: module.techStack,
         interfaces: [],
         dependencies: [],  // 先设为空，后面再更新
+        rootPath: module.rootPath,  // 传入用户指定的 rootPath（addModule 会设置默认值）
       });
       moduleIdMap.set(module.name, created.id);
     }

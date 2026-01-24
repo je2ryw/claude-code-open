@@ -274,6 +274,8 @@ export class BlueprintManager extends EventEmitter {
     const newModule: SystemModule = {
       id: uuidv4(),
       ...module,
+      // 如果没有指定 rootPath，默认为 'src'（确保边界检查能通过）
+      rootPath: module.rootPath || 'src',
     };
 
     blueprint.modules.push(newModule);
@@ -880,7 +882,7 @@ export class BlueprintManager extends EventEmitter {
             responsibilities: [`实现：${requirement}`],
             dependencies: [],
             interfaces: [],
-            rootPath: moduleImpact.modulePath,
+            rootPath: moduleImpact.modulePath || 'src',
           });
         }
       }

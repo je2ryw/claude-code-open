@@ -1,12 +1,21 @@
 /**
  * 边界检查器
  *
- * 用于检查文件修改是否在蓝图定义的模块边界内
+ * 简化的权限模型：
+ * - Queen/Human: 完全权限
+ * - Worker: 只限制蓝图文件、验收测试、禁止路径
  */
 
 import { Blueprint, SystemModule } from './types.js';
-import * as path from 'path';
 
+/**
+ * 操作者角色
+ */
+export type OperatorRole = 'worker' | 'queen' | 'human';
+
+/**
+ * 边界检查结果
+ */
 export interface BoundaryCheckResult {
   allowed: boolean;
   reason?: string;
@@ -14,6 +23,33 @@ export interface BoundaryCheckResult {
   moduleName?: string;
   modulePath?: string;
 }
+
+/**
+ * 禁止访问的路径（所有角色都禁止）
+ */
+const FORBIDDEN_PATHS = [
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+];
+
+/**
+ * Worker 禁止修改的文件模式
+ */
+const WORKER_FORBIDDEN_PATTERNS = [
+  // 蓝图相关文件
+  /\.blueprint\.json$/,
+  /\.blueprint\.ya?ml$/,
+  /blueprint\.json$/,
+  /blueprint\.ya?ml$/,
+
+  // 验收测试文件（由 Queen 生成，Worker 不能修改）
+  /\.acceptance\.test\.[jt]sx?$/,
+  /\.acceptance\.spec\.[jt]sx?$/,
+  /acceptance[-_]test\.[jt]sx?$/,
+  /__acceptance__\//,
+];
 
 export class BoundaryChecker {
   private blueprint: Blueprint;
@@ -23,69 +59,91 @@ export class BoundaryChecker {
   }
 
   /**
-   * 检查文件路径是否在模块边界内
+   * 检查文件操作权限
+   *
+   * 简化逻辑：
+   * - Queen/Human: 除了禁止路径外，完全放开
+   * - Worker: 只限制蓝图文件和验收测试
    */
-  checkFilePath(filePath: string, operation: 'read' | 'write' | 'delete' = 'write'): BoundaryCheckResult {
-    // 标准化路径
+  checkFilePath(
+    filePath: string,
+    operation: 'read' | 'write' | 'delete' = 'write',
+    role: OperatorRole = 'worker'
+  ): BoundaryCheckResult {
     const normalizedPath = filePath.replace(/\\/g, '/');
 
-    // 1. 检查是否是受保护的配置文件
-    if (operation !== 'read' && this.isProtectedFile(normalizedPath)) {
+    // 1. 禁止路径 - 所有角色都禁止（node_modules, .git 等）
+    if (this.isInForbiddenPath(normalizedPath)) {
       return {
         allowed: false,
-        reason: `文件 ${normalizedPath} 是受保护的配置文件，禁止修改。`,
+        reason: `禁止访问路径: ${normalizedPath}`,
       };
     }
 
-    // 2. 检查是否是测试文件（TDD 流程的特殊例外）
-    if (this.isTestFile(normalizedPath)) {
-      return {
-        allowed: true,
-        warnings: ['测试文件不受模块边界限制'],
-      };
+    // 2. 读操作 - 所有角色都允许
+    if (operation === 'read') {
+      return { allowed: true };
     }
 
-    // 3. 查找文件所属的模块
-    const module = this.findModuleByPath(normalizedPath);
+    // 3. Queen/Human - 完全权限
+    if (role === 'queen' || role === 'human') {
+      return { allowed: true };
+    }
 
-    // 4. 如果是写操作，必须在某个模块范围内
-    if (operation !== 'read' && !module) {
+    // 4. Worker 特殊限制
+    // 4.1 不能修改蓝图文件
+    if (this.isBlueprintFile(normalizedPath)) {
       return {
         allowed: false,
-        reason: `文件 ${normalizedPath} 不在任何蓝图模块的范围内，禁止修改。如需修改，请先更新蓝图。`,
+        reason: `Worker 禁止修改蓝图文件: ${normalizedPath}。如需修改蓝图，请向蜂王报告。`,
       };
     }
 
-    // 4. 检查文件类型是否符合模块技术栈
-    if (module && operation === 'write') {
-      const fileExt = path.extname(normalizedPath).slice(1);
-      const allowedExts = this.getExtensionsFromTechStack(module.techStack || []);
-
-      if (allowedExts.length > 0 && !allowedExts.includes(fileExt)) {
-        return {
-          allowed: false,
-          reason: `模块 ${module.name} 使用 ${module.techStack?.join('/')} 技术栈，不允许创建 .${fileExt} 文件。`,
-          moduleName: module.name,
-        };
-      }
+    // 4.2 不能修改验收测试
+    if (this.isAcceptanceTestFile(normalizedPath)) {
+      return {
+        allowed: false,
+        reason: `Worker 禁止修改验收测试: ${normalizedPath}。验收测试由蜂王生成和管理。`,
+      };
     }
 
-    // 5. 通过检查
-    const modulePath = module ? this.getModulePath(module) : undefined;
-    return {
-      allowed: true,
-      moduleName: module?.name,
-      modulePath,
-    };
+    // 5. Worker 其他文件 - 允许
+    return { allowed: true };
   }
 
   /**
-   * 检查任务的文件修改是否在其模块边界内
+   * 检查任务边界（Worker 专用）
+   *
+   * Worker 在执行任务时的额外检查：
+   * - 如果任务绑定了模块，检查是否在模块范围内
    */
-  checkTaskBoundary(taskModuleId: string | undefined, filePath: string): BoundaryCheckResult {
+  checkTaskBoundary(
+    taskModuleId: string | undefined,
+    filePath: string
+  ): BoundaryCheckResult {
     const normalizedPath = filePath.replace(/\\/g, '/');
 
-    // 测试文件不受模块边界限制（TDD 流程特殊例外）
+    // 1. 先做基础权限检查
+    const baseResult = this.checkFilePath(normalizedPath, 'write', 'worker');
+    if (!baseResult.allowed) {
+      return baseResult;
+    }
+
+    // 2. 如果任务没有绑定模块，直接通过
+    if (!taskModuleId) {
+      return { allowed: true };
+    }
+
+    // 3. 查找任务绑定的模块
+    const taskModule = this.blueprint.modules.find(m => m.id === taskModuleId);
+    if (!taskModule) {
+      return { allowed: true };
+    }
+
+    // 4. 检查是否在模块范围内
+    const modulePath = this.getModulePath(taskModule);
+
+    // 测试文件不受模块边界限制
     if (this.isTestFile(normalizedPath)) {
       return {
         allowed: true,
@@ -93,23 +151,19 @@ export class BoundaryChecker {
       };
     }
 
-    if (!taskModuleId) {
-      // 没有指定模块，使用通用检查
-      return this.checkFilePath(filePath);
+    // 共享路径不受模块边界限制
+    if (this.isSharedPath(normalizedPath)) {
+      return {
+        allowed: true,
+        warnings: ['共享代码路径'],
+      };
     }
 
-    const taskModule = this.blueprint.modules.find(m => m.id === taskModuleId);
-    if (!taskModule) {
-      return this.checkFilePath(filePath);
-    }
-
-    const modulePath = this.getModulePath(taskModule);
-
-    // 检查文件是否在任务所属模块内
+    // 检查是否在模块内
     if (!normalizedPath.includes(modulePath)) {
       return {
         allowed: false,
-        reason: `你正在尝试修改: ${normalizedPath}\n你的模块范围: ${modulePath}/\n\n此文件不在你的模块范围内。如需跨模块修改，请向蜂王报告。`,
+        reason: `文件 ${normalizedPath} 不在模块 ${taskModule.name} (${modulePath}) 范围内。如需跨模块修改，请向蜂王报告。`,
         moduleName: taskModule.name,
         modulePath,
       };
@@ -122,15 +176,83 @@ export class BoundaryChecker {
     };
   }
 
+  // ==========================================================================
+  // 私有方法
+  // ==========================================================================
+
   /**
-   * 获取模块的路径
+   * 检查是否在禁止路径中
+   */
+  private isInForbiddenPath(filePath: string): boolean {
+    return FORBIDDEN_PATHS.some(forbidden =>
+      filePath.includes(`/${forbidden}/`) ||
+      filePath.includes(`/${forbidden}`) ||
+      filePath.startsWith(`${forbidden}/`)
+    );
+  }
+
+  /**
+   * 检查是否是蓝图文件
+   */
+  private isBlueprintFile(filePath: string): boolean {
+    return WORKER_FORBIDDEN_PATTERNS.slice(0, 4).some(p => p.test(filePath));
+  }
+
+  /**
+   * 检查是否是验收测试文件
+   */
+  private isAcceptanceTestFile(filePath: string): boolean {
+    return WORKER_FORBIDDEN_PATTERNS.slice(4).some(p => p.test(filePath));
+  }
+
+  /**
+   * 检查是否是测试文件
+   */
+  private isTestFile(filePath: string): boolean {
+    const testPatterns = [
+      /__tests__\//,
+      /\/tests?\//,
+      /\/test\//,
+      /\/__mocks__\//,
+      /\/__fixtures__\//,
+      /\.test\.[jt]sx?$/,
+      /\.spec\.[jt]sx?$/,
+      /_test\.[jt]sx?$/,
+      /_spec\.[jt]sx?$/,
+    ];
+    return testPatterns.some(p => p.test(filePath));
+  }
+
+  /**
+   * 检查是否是共享路径
+   */
+  private isSharedPath(filePath: string): boolean {
+    const sharedPaths = [
+      'src/utils',
+      'src/types',
+      'src/constants',
+      'src/shared',
+      'src/common',
+      'src/lib',
+      'lib',
+      'utils',
+      'types',
+      'shared',
+      'common',
+    ];
+    return sharedPaths.some(sp =>
+      filePath.includes(`/${sp}/`) || filePath.startsWith(`${sp}/`)
+    );
+  }
+
+  /**
+   * 获取模块路径
    */
   private getModulePath(module: SystemModule): string {
     if (module.rootPath && module.rootPath.trim()) {
       return module.rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
     }
 
-    // 根据模块类型推导路径
     const typePathMap: Record<string, string> = {
       'frontend': 'src/web/client',
       'backend': 'src/web/server',
@@ -140,7 +262,6 @@ export class BoundaryChecker {
       'other': 'src',
     };
 
-    // 使用模块名称的小写形式作为默认路径
     const basePath = typePathMap[module.type] || 'src';
     return `${basePath}/${module.name.toLowerCase()}`;
   }
@@ -148,55 +269,21 @@ export class BoundaryChecker {
   /**
    * 根据文件路径查找所属模块
    */
-  private findModuleByPath(filePath: string): SystemModule | undefined {
+  findModuleByPath(filePath: string): SystemModule | undefined {
+    const normalizedPath = filePath.replace(/\\/g, '/');
     return this.blueprint.modules.find(m => {
       const modulePath = this.getModulePath(m);
-      return filePath.includes(modulePath);
+      return normalizedPath.includes(modulePath);
     });
   }
 
   /**
-   * 检查是否是受保护的文件
+   * 获取模块允许的文件扩展名
    */
-  private isProtectedFile(filePath: string): boolean {
-    const protectedPatterns = [
-      /package\.json$/,
-      /package-lock\.json$/,
-      /tsconfig\.json$/,
-      /\.env$/,
-      /\.env\.\w+$/,
-      /config\/(production|staging|development)\./,
-    ];
+  getAllowedExtensions(moduleId: string): string[] {
+    const module = this.blueprint.modules.find(m => m.id === moduleId);
+    if (!module || !module.techStack) return [];
 
-    return protectedPatterns.some(p => p.test(filePath));
-  }
-
-  /**
-   * 检查是否是测试文件
-   * TDD 流程中生成的测试文件不受模块边界限制
-   */
-  private isTestFile(filePath: string): boolean {
-    const testPatterns = [
-      // 测试目录
-      /__tests__\//,
-      /\/tests?\//,
-      /\/test\//,
-      /\/__mocks__\//,
-      /\/__fixtures__\//,
-      // 测试文件后缀
-      /\.test\.[jt]sx?$/,
-      /\.spec\.[jt]sx?$/,
-      /_test\.[jt]sx?$/,
-      /_spec\.[jt]sx?$/,
-    ];
-
-    return testPatterns.some(p => p.test(filePath));
-  }
-
-  /**
-   * 根据技术栈获取允许的文件扩展名
-   */
-  private getExtensionsFromTechStack(techStack: string[]): string[] {
     const mapping: Record<string, string[]> = {
       'TypeScript': ['ts', 'tsx'],
       'JavaScript': ['js', 'jsx'],
@@ -211,22 +298,13 @@ export class BoundaryChecker {
     };
 
     const exts: string[] = [];
-    for (const tech of techStack) {
+    for (const tech of module.techStack) {
       const techExts = mapping[tech];
       if (techExts) {
         exts.push(...techExts);
       }
     }
-    return Array.from(new Set(exts));
-  }
-
-  /**
-   * 获取模块的允许文件扩展名
-   */
-  getAllowedExtensions(moduleId: string): string[] {
-    const module = this.blueprint.modules.find(m => m.id === moduleId);
-    if (!module) return [];
-    return this.getExtensionsFromTechStack(module.techStack || []);
+    return [...new Set(exts)];
   }
 }
 

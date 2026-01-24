@@ -94,6 +94,32 @@ export interface NonFunctionalRequirement {
 }
 
 /**
+ * 项目边界定义
+ * 定义项目级的文件访问边界，用于边界检查器
+ */
+export interface ProjectBoundary {
+  // 共享代码路径（不属于任何模块但允许修改）
+  // 例如: ['src/utils', 'src/types', 'src/constants', 'src/shared']
+  sharedPaths: string[];
+
+  // 允许修改的配置文件模式（正则表达式字符串）
+  // 例如: ['vitest\\.config\\.[jt]s$', 'vite\\.config\\.[jt]s$']
+  allowedConfigPatterns: string[];
+
+  // 禁止访问的路径（即使在 projectPath 内也禁止）
+  // 例如: ['node_modules', '.git', 'dist', 'build']
+  forbiddenPaths: string[];
+
+  // 只读路径（可以读取但不能修改）
+  // 例如: ['vendor', 'third_party', 'generated']
+  readOnlyPaths: string[];
+
+  // 允许修改的根目录文件扩展名
+  // 例如: ['.md', '.txt', '.json'] - 允许修改根目录的这些文件
+  allowedRootExtensions: string[];
+}
+
+/**
  * 项目蓝图
  */
 export interface Blueprint {
@@ -105,6 +131,7 @@ export interface Blueprint {
 
   // 项目关联（蓝图与项目 1:1 绑定）
   projectPath: string;                    // 关联的项目路径
+  projectBoundary?: ProjectBoundary;      // 项目边界定义
 
   // 核心内容
   businessProcesses: BusinessProcess[];   // 业务流程

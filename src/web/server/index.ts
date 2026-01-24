@@ -28,7 +28,7 @@ export interface WebServerOptions {
 export async function startWebServer(options: WebServerOptions = {}): Promise<void> {
   const {
     port = parseInt(process.env.CLAUDE_WEB_PORT || '3456'),
-    host = process.env.CLAUDE_WEB_HOST || '0.0.0.0',
+    host = process.env.CLAUDE_WEB_HOST || '127.0.0.1',
     cwd = process.cwd(),
     model = process.env.CLAUDE_MODEL || 'sonnet',
   } = options;

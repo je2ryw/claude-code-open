@@ -283,9 +283,16 @@ router.post('/blueprints/:id/pause', (req: Request, res: Response) => {
 /**
  * 恢复蓝图执行
  */
-router.post('/blueprints/:id/resume', (req: Request, res: Response) => {
+router.post('/blueprints/:id/resume', async (req: Request, res: Response) => {
   try {
-    const blueprint = blueprintManager.resumeExecution(req.params.id);
+    const blueprintId = req.params.id;
+    const blueprint = blueprintManager.resumeExecution(blueprintId);
+
+    // 检查蜂王是否已初始化，如果没有则重新初始化
+    if (!agentCoordinator.getQueen()) {
+      await agentCoordinator.initializeQueen(blueprintId);
+    }
+
     agentCoordinator.startMainLoop();
     res.json({
       success: true,
@@ -1846,10 +1853,25 @@ router.get('/coordinator/queen', (req: Request, res: Response) => {
 });
 
 /**
- * 启动主循环
+ * 启动/恢复主循环
+ * 如果蜂王未初始化，需要传入 blueprintId 来初始化
  */
-router.post('/coordinator/start', (req: Request, res: Response) => {
+router.post('/coordinator/start', async (req: Request, res: Response) => {
   try {
+    const { blueprintId } = req.body;
+
+    // 检查蜂王是否已初始化
+    if (!agentCoordinator.getQueen()) {
+      if (!blueprintId) {
+        return res.status(400).json({
+          success: false,
+          error: '蜂王未初始化，请先调用 initializeQueen() 或提供 blueprintId',
+        });
+      }
+      // 初始化蜂王
+      await agentCoordinator.initializeQueen(blueprintId);
+    }
+
     agentCoordinator.startMainLoop();
     res.json({ success: true, message: '主循环已启动' });
   } catch (error: any) {
