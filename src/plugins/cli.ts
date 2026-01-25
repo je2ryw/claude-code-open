@@ -206,7 +206,7 @@ async function installPlugin(
       if (fs.existsSync(packageJsonPath)) {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
         packageJson._source = pluginPath;
-        packageJson._pinnedSha = options.sha;
+        packageJson.gitCommitSha = options.sha;
         packageJson._updatedAt = new Date().toISOString();
         fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
       }
@@ -328,12 +328,12 @@ interface PluginSourceInfo {
   source: string;
   currentVersion: string;
   /** v2.1.14: 固定的 git commit SHA */
-  pinnedSha?: string;
+  gitCommitSha?: string;
 }
 
 /**
  * 解析插件源信息
- * v2.1.14: 添加对 pinnedSha 的支持
+ * v2.1.14: 添加对 gitCommitSha 的支持
  */
 async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo | null> {
   const fs = await import('fs');
@@ -348,13 +348,13 @@ async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
     const currentVersion = packageJson.version || '0.0.0';
     // v2.1.14: 读取固定的 git commit SHA
-    const pinnedSha = packageJson._pinnedSha || undefined;
+    const gitCommitSha = packageJson.gitCommitSha || undefined;
 
     // 检查 package.json 中的 _source 字段（安装时记录的来源）
     if (packageJson._source) {
       const source = packageJson._source;
       if (source.startsWith('git+') || source.includes('.git')) {
-        return { type: 'git', source, currentVersion, pinnedSha };
+        return { type: 'git', source, currentVersion, gitCommitSha };
       } else if (source.startsWith('http://') || source.startsWith('https://')) {
         return { type: 'url', source, currentVersion };
       } else if (source.startsWith('npm:')) {
@@ -371,7 +371,7 @@ async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo
         ? packageJson.repository
         : packageJson.repository.url;
       if (repo && (repo.startsWith('git+') || repo.includes('github.com'))) {
-        return { type: 'git', source: repo, currentVersion, pinnedSha };
+        return { type: 'git', source: repo, currentVersion, gitCommitSha };
       }
     }
 
@@ -520,10 +520,10 @@ async function installFromNpm(packageName: string, targetDir: string): Promise<b
  * - 拉取后执行 git submodule update --init --recursive
  *
  * v2.1.14: 支持固定到特定 git commit SHA
- * - 添加 pinnedSha 参数，允许 checkout 到指定的 commit
+ * - 添加 gitCommitSha 参数，允许 checkout 到指定的 commit
  * - 这允许 marketplace 条目安装精确版本
  */
-async function updateFromGit(gitUrl: string, targetDir: string, pinnedSha?: string): Promise<boolean> {
+async function updateFromGit(gitUrl: string, targetDir: string, gitCommitSha?: string): Promise<boolean> {
   const { execSync } = await import('child_process');
   const fs = await import('fs');
 
@@ -533,11 +533,11 @@ async function updateFromGit(gitUrl: string, targetDir: string, pinnedSha?: stri
 
     if (fs.existsSync(gitDir)) {
       // 如果是 git 仓库
-      if (pinnedSha) {
+      if (gitCommitSha) {
         // v2.1.14: 如果指定了 SHA，fetch 并 checkout 到该 SHA
-        console.log(`  Fetching and checking out pinned SHA: ${pinnedSha.substring(0, 8)}...`);
+        console.log(`  Fetching and checking out pinned SHA: ${gitCommitSha.substring(0, 8)}...`);
         execSync('git fetch --all', { cwd: targetDir, stdio: 'pipe' });
-        execSync(`git checkout ${pinnedSha}`, { cwd: targetDir, stdio: 'pipe' });
+        execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
       } else {
         // 执行 git pull
         console.log(`  Pulling latest changes from git...`);
@@ -595,15 +595,15 @@ async function updateFromGit(gitUrl: string, targetDir: string, pinnedSha?: stri
       }
 
       // v2.1.14: 如果指定了 SHA，checkout 到该 SHA
-      if (pinnedSha) {
-        console.log(`  Checking out pinned SHA: ${pinnedSha.substring(0, 8)}...`);
+      if (gitCommitSha) {
+        console.log(`  Checking out pinned SHA: ${gitCommitSha.substring(0, 8)}...`);
         try {
-          execSync(`git checkout ${pinnedSha}`, { cwd: targetDir, stdio: 'pipe' });
+          execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
         } catch (checkoutErr) {
           // 如果是短 SHA，可能需要 fetch 更多历史
           console.log(`  SHA not found in shallow clone, fetching full history...`);
           execSync('git fetch --unshallow', { cwd: targetDir, stdio: 'pipe' });
-          execSync(`git checkout ${pinnedSha}`, { cwd: targetDir, stdio: 'pipe' });
+          execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
         }
       }
     }
@@ -615,8 +615,8 @@ async function updateFromGit(gitUrl: string, targetDir: string, pinnedSha?: stri
       packageJson._source = gitUrl;
       packageJson._updatedAt = new Date().toISOString();
       // v2.1.14: 记录固定的 SHA
-      if (pinnedSha) {
-        packageJson._pinnedSha = pinnedSha;
+      if (gitCommitSha) {
+        packageJson.gitCommitSha = gitCommitSha;
       } else {
         // 如果没有固定 SHA，记录当前 HEAD 的 SHA
         try {
@@ -625,7 +625,7 @@ async function updateFromGit(gitUrl: string, targetDir: string, pinnedSha?: stri
         } catch {
           // 忽略获取 SHA 失败的情况
         }
-        delete packageJson._pinnedSha;
+        delete packageJson.gitCommitSha;
       }
       fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
@@ -783,10 +783,10 @@ async function updatePlugin(pluginName: string): Promise<void> {
       case 'git': {
         // 从 git 更新
         // v2.1.14: 如果插件固定到特定 SHA，维持在该 SHA
-        if (sourceInfo.pinnedSha) {
-          console.log(`  Plugin is pinned to SHA: ${sourceInfo.pinnedSha.substring(0, 8)}`);
+        if (sourceInfo.gitCommitSha) {
+          console.log(`  Plugin is pinned to SHA: ${sourceInfo.gitCommitSha.substring(0, 8)}`);
           console.log(`  Updating from git repository (maintaining pinned version)...`);
-          updateSuccess = await updateFromGit(sourceInfo.source, state.path, sourceInfo.pinnedSha);
+          updateSuccess = await updateFromGit(sourceInfo.source, state.path, sourceInfo.gitCommitSha);
         } else {
           console.log(`  Updating from git repository...`);
           updateSuccess = await updateFromGit(sourceInfo.source, state.path);
@@ -864,8 +864,8 @@ async function showPluginInfo(pluginName: string): Promise<void> {
     // v2.1.14: 显示 pinned SHA 信息
     const sourceInfo = await getPluginSourceInfo(state.path);
     if (sourceInfo?.type === 'git') {
-      if (sourceInfo.pinnedSha) {
-        console.log(`Pinned SHA:   ${sourceInfo.pinnedSha} (version locked)`);
+      if (sourceInfo.gitCommitSha) {
+        console.log(`Pinned SHA:   ${sourceInfo.gitCommitSha} (version locked)`);
       } else {
         console.log(`Git source:   ${sourceInfo.source}`);
       }
@@ -1156,16 +1156,16 @@ async function unpinPlugin(pluginName: string): Promise<void> {
       return;
     }
 
-    if (!sourceInfo.pinnedSha) {
+    if (!sourceInfo.gitCommitSha) {
       console.log(`  Plugin ${pluginName} is not pinned.`);
       return;
     }
 
-    // 移除 pinnedSha 并更新到最新版本
+    // 移除 gitCommitSha 并更新到最新版本
     const packageJsonPath = path.join(state.path, 'package.json');
     if (fs.existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      delete packageJson._pinnedSha;
+      delete packageJson.gitCommitSha;
       fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
 
