@@ -300,6 +300,7 @@ export class CodebaseAnalyzer extends EventEmitter {
    * - 限制最大分析文件数量（防止大项目超时）
    * - 添加单文件分析超时（防止 LSP 卡住）
    * - 快速检测 LSP 可用性，不可用时快速跳过
+   * - **预热 LSP 服务器**：在分析文件前先启动服务器
    */
   private async extractSymbolsWithLSP(codebase: CodebaseInfo): Promise<ExtractedSymbols> {
     const symbols: ExtractedSymbols = {
@@ -321,8 +322,52 @@ export class CodebaseAnalyzer extends EventEmitter {
     let processedFiles = 0;
     let lspAvailable = true;
 
-    // 单文件分析超时（毫秒）
-    const FILE_TIMEOUT = 5000;
+    // 单文件分析超时（毫秒）- 增加到 15 秒，因为首次请求可能需要等待 LSP 初始化
+    const FILE_TIMEOUT = 15000;
+
+    // ========================================
+    // 预热 LSP 服务器（关键优化）
+    // ========================================
+    // 在开始分析文件之前，先启动需要的 LSP 服务器
+    // 这样可以避免第一个文件请求时因为服务器启动而超时
+    const languagesNeeded = new Set<string>();
+    for (const filePath of codeFiles) {
+      const ext = path.extname(filePath);
+      const language = this.lspManager.getLanguageByExtension(ext);
+      if (language) {
+        languagesNeeded.add(language);
+      }
+    }
+
+    // 预热：尝试启动所有需要的 LSP 服务器
+    if (languagesNeeded.size > 0) {
+      this.emit('analyze:lsp-warmup', { languages: [...languagesNeeded] });
+      console.log(`[CodebaseAnalyzer] Warming up LSP servers for: ${[...languagesNeeded].join(', ')}`);
+
+      const LSP_WARMUP_TIMEOUT = 30000; // 30秒预热超时
+
+      for (const language of languagesNeeded) {
+        try {
+          await Promise.race([
+            this.lspManager.getClient(language),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`LSP warmup timeout for ${language}`)), LSP_WARMUP_TIMEOUT)
+            ),
+          ]);
+          console.log(`[CodebaseAnalyzer] LSP server ready: ${language}`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.warn(`[CodebaseAnalyzer] LSP warmup failed for ${language}: ${errorMsg}`);
+          // 预热失败不阻塞，继续尝试其他语言
+          // 但如果是主要语言（如 typescript），标记 LSP 不可用
+          if (language === 'typescript' || language === 'javascript') {
+            lspAvailable = false;
+            console.warn('[CodebaseAnalyzer] Primary LSP (TypeScript) not available, skipping symbol extraction');
+            return symbols;
+          }
+        }
+      }
+    }
 
     for (const filePath of codeFiles) {
       // 如果 LSP 不可用，跳过剩余文件
