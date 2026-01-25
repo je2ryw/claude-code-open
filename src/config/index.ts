@@ -259,7 +259,7 @@ export type UserConfig = z.infer<typeof UserConfigSchema>;
 // ============ 默认配置 ============
 
 const DEFAULT_CONFIG: Partial<UserConfig> = {
-  version: '2.1.7',
+  version: '2.1.18',
   model: 'sonnet',
   maxTokens: 32000,
   temperature: 1,
@@ -1846,6 +1846,37 @@ export {
   hasBinaryContent,
 } from './claude-md-parser.js';
 export { ConfigCommand, createConfigCommand } from './config-command.js';
+
+// ============ v2.1.18 Keybindings 模块导出 ============
+export {
+  // 类型
+  type ParsedKey,
+  type KeybindingContext,
+  type KeybindingBlock,
+  type ReservedKey,
+  type KeybindingWarning,
+  type KeybindingsLoadResult,
+  type KeybindingsConfig,
+  // 常量
+  DEFAULT_KEYBINDINGS,
+  CHORD_KEYBINDINGS,
+  // 函数
+  getReservedKeys,
+  parseKeyString,
+  normalizeKeyString,
+  getKeybindingsPath,
+  getDefaultBindings,
+  isUserCustomizationEnabled,
+  loadKeybindings,
+  getKeybindings,
+  initKeybindings,
+  onKeybindingsChange,
+  stopFileWatcher,
+  generateTemplateContent,
+  findKeybinding,
+  getContextBindings,
+  matchKeyInput,
+} from './keybindings.js';
 
 // ============ 重新导出环境变量模块 ============
 
