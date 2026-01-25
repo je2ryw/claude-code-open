@@ -42,12 +42,14 @@ export function createPluginCommand(): Command {
     });
 
   // claude plugin install <plugin> - 官方命令
+  // v2.1.14: 添加 --sha 选项支持固定到特定 git commit SHA
   pluginCommand
     .command('install <plugin>')
     .alias('i')
     .description('Install a plugin from available marketplaces')
     .option('--no-auto-load', 'Do not automatically load the plugin after installation')
     .option('--enable-hot-reload', 'Enable hot reload for the plugin')
+    .option('--sha <commit>', 'Pin to a specific git commit SHA (for git sources only)')
     .action(async (plugin, options) => {
       await installPlugin(plugin, options);
     });
@@ -83,6 +85,22 @@ export function createPluginCommand(): Command {
     .description('Update a plugin to the latest version')
     .action(async (plugin) => {
       await updatePlugin(plugin);
+    });
+
+  // claude plugin pin <plugin> <sha> - v2.1.14 新增命令
+  pluginCommand
+    .command('pin <plugin> <sha>')
+    .description('Pin a git-based plugin to a specific commit SHA')
+    .action(async (plugin, sha) => {
+      await pinPlugin(plugin, sha);
+    });
+
+  // claude plugin unpin <plugin> - v2.1.14 新增命令
+  pluginCommand
+    .command('unpin <plugin>')
+    .description('Unpin a plugin and allow updates to latest version')
+    .action(async (plugin) => {
+      await unpinPlugin(plugin);
     });
 
   // claude plugin info <plugin> - 额外命令，保留（虽然官方没有，但很有用）
@@ -149,13 +167,65 @@ async function listPlugins(options: { all?: boolean; verbose?: boolean }): Promi
 
 /**
  * 安装插件
+ * v2.1.14: 添加 sha 选项支持固定到特定 git commit SHA
  */
 async function installPlugin(
   pluginPath: string,
-  options: { autoLoad?: boolean; enableHotReload?: boolean }
+  options: { autoLoad?: boolean; enableHotReload?: boolean; sha?: string }
 ): Promise<void> {
   try {
     console.log(`Installing plugin from ${pluginPath}...`);
+
+    // v2.1.14: 如果是 git URL 且指定了 SHA，先克隆到临时目录
+    if (options.sha && (pluginPath.startsWith('git+') || pluginPath.includes('.git') || pluginPath.includes('github.com'))) {
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+
+      // 创建临时目录
+      const tempDir = path.join(os.tmpdir(), `claude-plugin-git-${Date.now()}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      console.log(`  Cloning with pinned SHA: ${options.sha.substring(0, 8)}...`);
+
+      // 使用带 SHA 的 git 克隆
+      const success = await updateFromGit(pluginPath, tempDir, options.sha);
+      if (!success) {
+        throw new Error('Failed to clone repository with pinned SHA');
+      }
+
+      // 从临时目录安装
+      const state = await pluginManager.install(tempDir, {
+        autoLoad: options.autoLoad,
+        enableHotReload: options.enableHotReload,
+      });
+
+      // 更新 package.json 中的源信息和 SHA
+      const installedPath = state.path;
+      const packageJsonPath = path.join(installedPath, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        packageJson._source = pluginPath;
+        packageJson.gitCommitSha = options.sha;
+        packageJson._updatedAt = new Date().toISOString();
+        fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      }
+
+      // 清理临时目录
+      fs.rmSync(tempDir, { recursive: true });
+
+      console.log(`✓ Successfully installed plugin: ${state.metadata.name}@${state.metadata.version}`);
+      console.log(`  Pinned to SHA: ${options.sha}`);
+
+      if (state.loaded) {
+        console.log(`  Plugin is loaded and ready to use.`);
+      }
+
+      if (options.enableHotReload) {
+        console.log(`  Hot reload is enabled.`);
+      }
+      return;
+    }
 
     const state = await pluginManager.install(pluginPath, {
       autoLoad: options.autoLoad,
@@ -250,15 +320,20 @@ async function disablePlugin(pluginName: string): Promise<void> {
  * - npm: 包名称（如 "claude-code-plugin-xxx"）
  * - git: git+https://github.com/xxx/yyy.git
  * - url: https://example.com/plugin.tar.gz
+ *
+ * v2.1.14: 支持固定到特定 git commit SHA
  */
 interface PluginSourceInfo {
   type: 'npm' | 'git' | 'url' | 'local';
   source: string;
   currentVersion: string;
+  /** v2.1.14: 固定的 git commit SHA */
+  gitCommitSha?: string;
 }
 
 /**
  * 解析插件源信息
+ * v2.1.14: 添加对 gitCommitSha 的支持
  */
 async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo | null> {
   const fs = await import('fs');
@@ -272,12 +347,14 @@ async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo
   try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
     const currentVersion = packageJson.version || '0.0.0';
+    // v2.1.14: 读取固定的 git commit SHA
+    const gitCommitSha = packageJson.gitCommitSha || undefined;
 
     // 检查 package.json 中的 _source 字段（安装时记录的来源）
     if (packageJson._source) {
       const source = packageJson._source;
       if (source.startsWith('git+') || source.includes('.git')) {
-        return { type: 'git', source, currentVersion };
+        return { type: 'git', source, currentVersion, gitCommitSha };
       } else if (source.startsWith('http://') || source.startsWith('https://')) {
         return { type: 'url', source, currentVersion };
       } else if (source.startsWith('npm:')) {
@@ -294,7 +371,7 @@ async function getPluginSourceInfo(pluginPath: string): Promise<PluginSourceInfo
         ? packageJson.repository
         : packageJson.repository.url;
       if (repo && (repo.startsWith('git+') || repo.includes('github.com'))) {
-        return { type: 'git', source: repo, currentVersion };
+        return { type: 'git', source: repo, currentVersion, gitCommitSha };
       }
     }
 
@@ -441,8 +518,12 @@ async function installFromNpm(packageName: string, targetDir: string): Promise<b
  * v2.1.7: 修复了 git submodules 未完全初始化的问题
  * - 克隆时使用 --recurse-submodules 和 --shallow-submodules 标志
  * - 拉取后执行 git submodule update --init --recursive
+ *
+ * v2.1.14: 支持固定到特定 git commit SHA
+ * - 添加 gitCommitSha 参数，允许 checkout 到指定的 commit
+ * - 这允许 marketplace 条目安装精确版本
  */
-async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean> {
+async function updateFromGit(gitUrl: string, targetDir: string, gitCommitSha?: string): Promise<boolean> {
   const { execSync } = await import('child_process');
   const fs = await import('fs');
 
@@ -451,9 +532,17 @@ async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean
     const gitDir = `${targetDir}/.git`;
 
     if (fs.existsSync(gitDir)) {
-      // 如果是 git 仓库，执行 git pull
-      console.log(`  Pulling latest changes from git...`);
-      execSync('git pull', { cwd: targetDir, stdio: 'pipe' });
+      // 如果是 git 仓库
+      if (gitCommitSha) {
+        // v2.1.14: 如果指定了 SHA，fetch 并 checkout 到该 SHA
+        console.log(`  Fetching and checking out pinned SHA: ${gitCommitSha.substring(0, 8)}...`);
+        execSync('git fetch --all', { cwd: targetDir, stdio: 'pipe' });
+        execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
+      } else {
+        // 执行 git pull
+        console.log(`  Pulling latest changes from git...`);
+        execSync('git pull', { cwd: targetDir, stdio: 'pipe' });
+      }
 
       // v2.1.7: 拉取后更新子模块，确保子模块完全初始化
       console.log(`  Updating submodules...`);
@@ -504,14 +593,40 @@ async function updateFromGit(gitUrl: string, targetDir: string): Promise<boolean
           console.warn(`  Warning: submodule initialization failed: ${submoduleErrMsg}`);
         }
       }
+
+      // v2.1.14: 如果指定了 SHA，checkout 到该 SHA
+      if (gitCommitSha) {
+        console.log(`  Checking out pinned SHA: ${gitCommitSha.substring(0, 8)}...`);
+        try {
+          execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
+        } catch (checkoutErr) {
+          // 如果是短 SHA，可能需要 fetch 更多历史
+          console.log(`  SHA not found in shallow clone, fetching full history...`);
+          execSync('git fetch --unshallow', { cwd: targetDir, stdio: 'pipe' });
+          execSync(`git checkout ${gitCommitSha}`, { cwd: targetDir, stdio: 'pipe' });
+        }
+      }
     }
 
-    // 记录更新源
+    // 记录更新源和固定的 SHA
     const packageJsonPath = `${targetDir}/package.json`;
     if (fs.existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
       packageJson._source = gitUrl;
       packageJson._updatedAt = new Date().toISOString();
+      // v2.1.14: 记录固定的 SHA
+      if (gitCommitSha) {
+        packageJson.gitCommitSha = gitCommitSha;
+      } else {
+        // 如果没有固定 SHA，记录当前 HEAD 的 SHA
+        try {
+          const currentSha = execSync('git rev-parse HEAD', { cwd: targetDir, encoding: 'utf-8' }).trim();
+          packageJson._currentSha = currentSha;
+        } catch {
+          // 忽略获取 SHA 失败的情况
+        }
+        delete packageJson.gitCommitSha;
+      }
       fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
 
@@ -667,8 +782,15 @@ async function updatePlugin(pluginName: string): Promise<void> {
 
       case 'git': {
         // 从 git 更新
-        console.log(`  Updating from git repository...`);
-        updateSuccess = await updateFromGit(sourceInfo.source, state.path);
+        // v2.1.14: 如果插件固定到特定 SHA，维持在该 SHA
+        if (sourceInfo.gitCommitSha) {
+          console.log(`  Plugin is pinned to SHA: ${sourceInfo.gitCommitSha.substring(0, 8)}`);
+          console.log(`  Updating from git repository (maintaining pinned version)...`);
+          updateSuccess = await updateFromGit(sourceInfo.source, state.path, sourceInfo.gitCommitSha);
+        } else {
+          console.log(`  Updating from git repository...`);
+          updateSuccess = await updateFromGit(sourceInfo.source, state.path);
+        }
         break;
       }
 
@@ -738,6 +860,16 @@ async function showPluginInfo(pluginName: string): Promise<void> {
 
   if (state.path !== '<inline>') {
     console.log(`Path:         ${state.path}`);
+
+    // v2.1.14: 显示 pinned SHA 信息
+    const sourceInfo = await getPluginSourceInfo(state.path);
+    if (sourceInfo?.type === 'git') {
+      if (sourceInfo.gitCommitSha) {
+        console.log(`Pinned SHA:   ${sourceInfo.gitCommitSha} (version locked)`);
+      } else {
+        console.log(`Git source:   ${sourceInfo.source}`);
+      }
+    }
   }
 
   if (metadata.engines) {
@@ -926,6 +1058,138 @@ async function validatePlugin(pluginPath: string): Promise<void> {
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`✗ Validation error: ${errorMsg}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * 固定插件到特定 git commit SHA
+ * v2.1.14: 支持将插件固定到特定版本
+ */
+async function pinPlugin(pluginName: string, sha: string): Promise<void> {
+  try {
+    console.log(`Pinning plugin ${pluginName} to SHA: ${sha}...`);
+
+    const state = pluginManager.getPluginState(pluginName);
+    if (!state) {
+      console.error(`✗ Plugin not found: ${pluginName}`);
+      process.exit(1);
+      return;
+    }
+
+    if (state.path === '<inline>') {
+      console.error(`✗ Cannot pin inline plugin: ${pluginName}`);
+      process.exit(1);
+      return;
+    }
+
+    // 获取插件的远程源信息
+    const sourceInfo = await getPluginSourceInfo(state.path);
+
+    if (!sourceInfo || sourceInfo.type !== 'git') {
+      console.error(`✗ Plugin ${pluginName} is not a git-based plugin. Only git plugins can be pinned.`);
+      process.exit(1);
+      return;
+    }
+
+    // 验证 SHA 格式（至少 7 个字符）
+    if (!/^[a-f0-9]{7,40}$/i.test(sha)) {
+      console.error(`✗ Invalid SHA format: ${sha}`);
+      console.error(`  SHA must be 7-40 hexadecimal characters`);
+      process.exit(1);
+      return;
+    }
+
+    // 更新到指定的 SHA
+    console.log(`  Updating plugin to pinned SHA...`);
+    const success = await updateFromGit(sourceInfo.source, state.path, sha);
+
+    if (!success) {
+      console.error(`✗ Failed to checkout SHA: ${sha}`);
+      console.error(`  Make sure the SHA exists in the repository`);
+      process.exit(1);
+      return;
+    }
+
+    // 重新加载插件
+    await pluginManager.reload(pluginName);
+
+    console.log(`✓ Successfully pinned plugin ${pluginName} to SHA: ${sha}`);
+    console.log(`  The plugin will stay at this version until unpinned.`);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`✗ Failed to pin plugin: ${errorMsg}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * 取消固定插件版本
+ * v2.1.14: 允许插件恢复到最新版本更新
+ */
+async function unpinPlugin(pluginName: string): Promise<void> {
+  try {
+    console.log(`Unpinning plugin ${pluginName}...`);
+
+    const state = pluginManager.getPluginState(pluginName);
+    if (!state) {
+      console.error(`✗ Plugin not found: ${pluginName}`);
+      process.exit(1);
+      return;
+    }
+
+    if (state.path === '<inline>') {
+      console.error(`✗ Cannot unpin inline plugin: ${pluginName}`);
+      process.exit(1);
+      return;
+    }
+
+    const fs = await import('fs');
+    const path = await import('path');
+
+    // 获取插件的远程源信息
+    const sourceInfo = await getPluginSourceInfo(state.path);
+
+    if (!sourceInfo || sourceInfo.type !== 'git') {
+      console.error(`✗ Plugin ${pluginName} is not a git-based plugin.`);
+      process.exit(1);
+      return;
+    }
+
+    if (!sourceInfo.gitCommitSha) {
+      console.log(`  Plugin ${pluginName} is not pinned.`);
+      return;
+    }
+
+    // 移除 gitCommitSha 并更新到最新版本
+    const packageJsonPath = path.join(state.path, 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      delete packageJson.gitCommitSha;
+      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+    }
+
+    // 更新到最新版本
+    console.log(`  Updating plugin to latest version...`);
+    const success = await updateFromGit(sourceInfo.source, state.path);
+
+    if (!success) {
+      console.error(`✗ Failed to update to latest version`);
+      process.exit(1);
+      return;
+    }
+
+    // 重新加载插件
+    await pluginManager.reload(pluginName);
+
+    const updatedState = pluginManager.getPluginState(pluginName);
+    const newVersion = updatedState?.metadata.version || 'unknown';
+
+    console.log(`✓ Successfully unpinned plugin ${pluginName}`);
+    console.log(`  Updated to version: ${newVersion}`);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`✗ Failed to unpin plugin: ${errorMsg}`);
     process.exit(1);
   }
 }
