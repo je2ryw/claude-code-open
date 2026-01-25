@@ -11,7 +11,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { EventEmitter } from 'events';
 import type {
   Blueprint,
@@ -24,19 +23,19 @@ import type {
 } from './types.js';
 
 // ============================================================================
-// 持久化路径
+// 持久化路径 - 蓝图保存在项目目录下的 .blueprint 文件夹
 // ============================================================================
 
-const getBlueprintsDir = (): string => {
-  const dir = path.join(os.homedir(), '.claude', 'blueprints');
+const getBlueprintsDir = (projectPath: string): string => {
+  const dir = path.join(projectPath, '.blueprint');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
 };
 
-const getBlueprintFilePath = (id: string): string => {
-  return path.join(getBlueprintsDir(), `${id}.json`);
+const getBlueprintFilePath = (projectPath: string, id: string): string => {
+  return path.join(getBlueprintsDir(projectPath), `${id}.json`);
 };
 
 // ============================================================================
@@ -50,7 +49,7 @@ export class BlueprintManager extends EventEmitter {
 
   constructor() {
     super();
-    this.loadAllBlueprints();
+    // 不再在构造函数里加载蓝图，改为在 setProject() 时加载
   }
 
   // --------------------------------------------------------------------------
@@ -62,18 +61,20 @@ export class BlueprintManager extends EventEmitter {
    * 蓝图会自动切换到该项目关联的蓝图
    */
   setProject(projectPath: string): Blueprint | null {
-    // 规范化路径
-    const normalizedPath = this.normalizePath(projectPath);
-    this.currentProjectPath = normalizedPath;
+    // 使用原始路径保存（不规范化，保持大小写和斜杠）
+    this.currentProjectPath = projectPath;
+
+    // 从项目目录加载蓝图
+    this.loadProjectBlueprints(projectPath);
 
     // 查找该项目的蓝图
-    const blueprint = this.getBlueprintByProject(normalizedPath);
+    const blueprint = this.getBlueprintByProject(projectPath);
     if (blueprint) {
       this.currentBlueprintId = blueprint.id;
-      this.emit('project:changed', normalizedPath, blueprint);
+      this.emit('project:changed', projectPath, blueprint);
     } else {
       this.currentBlueprintId = null;
-      this.emit('project:changed', normalizedPath, null);
+      this.emit('project:changed', projectPath, null);
     }
 
     return blueprint;
@@ -637,19 +638,10 @@ export class BlueprintManager extends EventEmitter {
 
   /**
    * 获取蓝图
+   * 蓝图必须先通过 setProject() 加载
    */
   getBlueprint(id: string): Blueprint | null {
-    let blueprint = this.blueprints.get(id);
-
-    if (!blueprint) {
-      // 尝试从磁盘加载
-      blueprint = this.loadBlueprint(id);
-      if (blueprint) {
-        this.blueprints.set(id, blueprint);
-      }
-    }
-
-    return blueprint || null;
+    return this.blueprints.get(id) || null;
   }
 
   /**
@@ -685,7 +677,7 @@ export class BlueprintManager extends EventEmitter {
    */
   public saveBlueprint(blueprint: Blueprint): void {
     try {
-      const filePath = getBlueprintFilePath(blueprint.id);
+      const filePath = getBlueprintFilePath(blueprint.projectPath, blueprint.id);
       const data = {
         ...blueprint,
         createdAt: blueprint.createdAt.toISOString(),
@@ -704,21 +696,20 @@ export class BlueprintManager extends EventEmitter {
 
   /**
    * 加载蓝图
-   * 对于旧蓝图（没有 projectPath），使用当前工作目录作为默认值
    */
-  private loadBlueprint(id: string): Blueprint | null {
+  private loadBlueprint(projectPath: string, id: string): Blueprint | null {
     try {
-      const filePath = getBlueprintFilePath(id);
+      const filePath = getBlueprintFilePath(projectPath, id);
       if (!fs.existsSync(filePath)) return null;
 
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 
-      // 兼容旧蓝图：如果没有 projectPath，使用当前工作目录
-      const projectPath = data.projectPath || process.cwd();
+      // 使用传入的 projectPath，确保蓝图与项目绑定
+      const blueprintProjectPath = data.projectPath || projectPath;
 
       return {
         ...data,
-        projectPath, // 确保始终有 projectPath
+        projectPath: blueprintProjectPath, // 确保始终有 projectPath
         createdAt: new Date(data.createdAt),
         updatedAt: new Date(data.updatedAt),
         approvedAt: data.approvedAt ? new Date(data.approvedAt) : undefined,
@@ -734,24 +725,31 @@ export class BlueprintManager extends EventEmitter {
   }
 
   /**
-   * 加载所有蓝图
+   * 加载项目的蓝图
    */
-  private loadAllBlueprints(): void {
+  private loadProjectBlueprints(projectPath: string): void {
     try {
-      const dir = getBlueprintsDir();
+      const dir = path.join(projectPath, '.blueprint');
+      if (!fs.existsSync(dir)) {
+        return; // 目录不存在，没有蓝图
+      }
+
       const files = fs.readdirSync(dir);
 
       for (const file of files) {
         if (file.endsWith('.json')) {
           const id = file.replace('.json', '');
-          const blueprint = this.loadBlueprint(id);
+          // 如果已经加载过，跳过
+          if (this.blueprints.has(id)) continue;
+
+          const blueprint = this.loadBlueprint(projectPath, id);
           if (blueprint) {
             this.blueprints.set(id, blueprint);
           }
         }
       }
     } catch (error) {
-      console.error('Failed to load blueprints:', error);
+      console.error('Failed to load project blueprints:', error);
     }
   }
 
@@ -804,7 +802,7 @@ export class BlueprintManager extends EventEmitter {
     this.blueprints.delete(id);
 
     try {
-      const filePath = getBlueprintFilePath(id);
+      const filePath = getBlueprintFilePath(blueprint.projectPath, id);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

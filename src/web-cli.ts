@@ -42,7 +42,7 @@ program
   .description('Claude Code WebUI 服务器')
   .version(VERSION_BASE)
   .option('-p, --port <port>', '服务器端口', '3456')
-  .option('-H, --host <host>', '服务器主机', 'localhost')
+  .option('-H, --host <host>', '服务器主机', '127.0.0.1')
   .option('-m, --model <model>', '默认模型 (opus/sonnet/haiku)', 'sonnet')
   .option('-d, --dir <directory>', '工作目录', process.cwd())
   .action(async (options) => {

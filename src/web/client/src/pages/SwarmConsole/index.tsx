@@ -267,6 +267,9 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
 
+  // 时间线滚动 ref
+  const timelineListRef = useRef<HTMLDivElement>(null);
+
   // 协调器数据状态
   const [coordinatorWorkers, setCoordinatorWorkers] = useState<any[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -412,6 +415,21 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
+
+  // 时间线滚动函数
+  const scrollTimeline = useCallback((direction: 'left' | 'right') => {
+    if (timelineListRef.current) {
+      const scrollAmount = 300; // 每次滚动的像素数
+      const currentScroll = timelineListRef.current.scrollLeft;
+      const newScroll = direction === 'left'
+        ? currentScroll - scrollAmount
+        : currentScroll + scrollAmount;
+      timelineListRef.current.scrollTo({
+        left: newScroll,
+        behavior: 'smooth'
+      });
+    }
+  }, []);
 
 
 
@@ -793,6 +811,17 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
           <div className={styles.timelineContent}>
             {/* 时间线过滤器和搜索 */}
             <div className={styles.timelineFilters}>
+              {/* 左滚动按钮 */}
+              <button
+                className={styles.timelineNavButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  scrollTimeline('left');
+                }}
+                title="向左滚动"
+              >
+                ◀
+              </button>
               <select
                 className={styles.timelineFilterSelect}
                 value={timelineFilter}
@@ -826,6 +855,17 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   ✕
                 </button>
               )}
+              {/* 右滚动按钮 */}
+              <button
+                className={styles.timelineNavButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  scrollTimeline('right');
+                }}
+                title="向右滚动"
+              >
+                ▶
+              </button>
             </div>
 
             {filteredTimeline.length === 0 ? (
@@ -835,43 +875,59 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 </div>
               </div>
             ) : (
-              <div className={styles.timelineList}>
-                {filteredTimeline.slice().reverse().map((event) => (
+              <div className={styles.timelineList} ref={timelineListRef}>
+                {filteredTimeline.slice().reverse().map((event, index, arr) => (
                   <FadeIn key={event.id}>
-                    <div
-                      className={`${styles.timelineEvent} ${styles[event.category]} ${expandedEventId === event.id ? styles.expanded : ''}`}
-                      onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
-                    >
-                      <span
-                        className={styles.eventIcon}
-                        style={{ color: EVENT_COLORS[event.type] }}
+                    <>
+                      <div
+                        className={`${styles.timelineEvent} ${styles[event.category]} ${expandedEventId === event.id ? styles.expanded : ''}`}
+                        onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
                       >
-                        {EVENT_ICONS[event.type]}
-                      </span>
-                      <span className={styles.eventTime}>{formatTime(event.timestamp)}</span>
-                      <span className={`${styles.eventCategory} ${styles[event.category]}`}>
-                        {event.category === 'task' ? '任务' :
-                         event.category === 'worker' ? 'Worker' :
-                         event.category === 'system' ? '系统' : '错误'}
-                      </span>
-                      <span className={styles.eventDesc}>{event.description}</span>
-                      {event.actor && (
-                        <span className={styles.eventActor}>{event.actor}</span>
-                      )}
-                      {event.details && (
-                        <span className={styles.eventExpandIcon}>
-                          {expandedEventId === event.id ? '▼' : '▶'}
-                        </span>
-                      )}
-                      {/* 事件详情展开 */}
-                      {expandedEventId === event.id && event.details && (
-                        <div className={styles.eventDetails} onClick={(e) => e.stopPropagation()}>
-                          <pre className={styles.eventDetailsContent}>
-                            {JSON.stringify(event.details, null, 2)}
-                          </pre>
+                        {/* 事件头部 */}
+                        <div className={styles.eventHeader}>
+                          <span
+                            className={styles.eventIcon}
+                            style={{ color: EVENT_COLORS[event.type] }}
+                          >
+                            {EVENT_ICONS[event.type]}
+                          </span>
+                          <span className={styles.eventTime}>{formatTime(event.timestamp)}</span>
+                          {event.details && (
+                            <span className={styles.eventExpandIcon}>
+                              {expandedEventId === event.id ? '▼' : '▶'}
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </div>
+
+                        {/* 事件内容 */}
+                        <div className={styles.eventBody}>
+                          <span className={styles.eventDesc}>{event.description}</span>
+                        </div>
+
+                        {/* 事件底部 */}
+                        <div className={styles.eventFooter}>
+                          <span className={`${styles.eventCategory} ${styles[event.category]}`}>
+                            {event.category === 'task' ? '任务' :
+                             event.category === 'worker' ? 'Worker' :
+                             event.category === 'system' ? '系统' : '错误'}
+                          </span>
+                          {event.actor && (
+                            <span className={styles.eventActor}>{event.actor}</span>
+                          )}
+                        </div>
+
+                        {/* 事件详情展开 */}
+                        {expandedEventId === event.id && event.details && (
+                          <div className={styles.eventDetails} onClick={(e) => e.stopPropagation()}>
+                            <pre className={styles.eventDetailsContent}>
+                              {JSON.stringify(event.details, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                      {/* 分隔符 */}
+                      {index < arr.length - 1 && <div className={styles.timelineDivider} />}
+                    </>
                   </FadeIn>
                 ))}
               </div>

@@ -476,13 +476,27 @@ export class WorkerExecutor {
     } catch (error: any) {
       const duration = Date.now() - startTime;
 
+      // 测试命令返回非0退出码是正常的测试失败情况
+      // 需要从 stdout 和 stderr 中提取实际的测试失败信息
+      const stdout = error.stdout || '';
+      const stderr = error.stderr || '';
+      const output = stdout + (stderr ? '\n' + stderr : '');
+
+      // 尝试从输出中提取有意义的错误信息
+      let errorMessage = this.extractErrorMessage(output);
+      if (!errorMessage || errorMessage.trim() === '') {
+        // 如果无法提取错误信息，使用命令错误但附带输出摘要
+        const outputSummary = output.trim().split('\n').slice(-10).join('\n');
+        errorMessage = outputSummary || error.message || String(error);
+      }
+
       return {
         id: uuidv4(),
         timestamp: new Date(),
         passed: false,
         duration,
-        output: error.stdout || '',
-        errorMessage: error.message || String(error),
+        output,
+        errorMessage,
       };
     }
   }

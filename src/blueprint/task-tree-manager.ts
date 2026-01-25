@@ -152,18 +152,13 @@ export class TaskTreeManager extends EventEmitter {
    * 为任务树中的所有任务生成验收测试（蜂王先行）
    * 这是 TDD 的核心：测试在任务创建时就生成，而不是在执行时
    *
-   * 注意：从代码逆向生成的蓝图 (source: 'codebase') 不需要生成验收测试
-   * 因为代码已经存在，验收测试用于验证新开发的代码，而不是已有的代码
+   * 注意：验收测试生成现在是任务级别判断，而非蓝图级别
+   * - 如果任务的 source='codebase'，说明是从现有代码逆向生成的，不需要验收测试
+   * - 如果任务的 source='requirement' 或未设置，说明是新增需求，需要 TDD 验收测试
+   * 这样可以支持混合场景：蓝图从代码生成后，用户新增功能，新功能需要 TDD
    */
   private async generateAllAcceptanceTests(taskTree: TaskTree, blueprint: Blueprint): Promise<void> {
     if (!this.acceptanceTestGenerator) return;
-
-    // 从代码逆向生成的蓝图不需要验收测试
-    // 验收测试是用于 TDD 开发新功能的，已有代码不需要
-    if (blueprint.source === 'codebase') {
-      console.log('[TaskTreeManager] 跳过验收测试生成：蓝图从现有代码生成，不需要 TDD 验收测试');
-      return;
-    }
 
     this.emit('acceptance-tests:generation-started', { treeId: taskTree.id });
 
@@ -171,10 +166,28 @@ export class TaskTreeManager extends EventEmitter {
     const leafTasks: TaskNode[] = [];
     this.collectLeafTasks(taskTree.root, leafTasks);
 
+    // 过滤掉从代码逆向生成的任务（这些任务不需要 TDD 验收测试）
+    const tasksNeedingTests = leafTasks.filter(task => {
+      // 任务级别判断：只有来源为 'requirement' 或未设置的任务才需要验收测试
+      // source='codebase' 的任务是从现有代码生成的，代码已存在，无需 TDD
+      if (task.source === 'codebase') {
+        console.log(`[TaskTreeManager] 跳过任务 ${task.id} 的验收测试生成：任务从现有代码生成`);
+        return false;
+      }
+      return true;
+    });
+
+    if (tasksNeedingTests.length === 0) {
+      console.log('[TaskTreeManager] 所有任务都来自现有代码，无需生成验收测试');
+      return;
+    }
+
+    console.log(`[TaskTreeManager] 共 ${leafTasks.length} 个叶子任务，其中 ${tasksNeedingTests.length} 个需要生成验收测试`);
+
     let generated = 0;
     let failed = 0;
 
-    for (const task of leafTasks) {
+    for (const task of tasksNeedingTests) {
       try {
         // 获取对应的模块
         const module = blueprint.modules.find(m => m.id === task.blueprintModuleId);
@@ -252,6 +265,8 @@ export class TaskTreeManager extends EventEmitter {
       retryCount: 0,
       maxRetries: 3,
       checkpoints: [],
+      // 继承蓝图的来源标记（用于判断是否需要 TDD）
+      source: blueprint.source,
     };
   }
 
@@ -284,6 +299,9 @@ export class TaskTreeManager extends EventEmitter {
         moduleType: module.type,
         techStack: module.techStack,
       },
+      // 继承蓝图的来源标记，或从模块元数据获取（支持混合场景）
+      // 如果模块有自己的 source 标记（新增模块），优先使用；否则使用蓝图的 source
+      source: (module as any).source || this.currentBlueprint?.source,
     };
 
     // 为每个职责创建子任务
@@ -336,6 +354,8 @@ export class TaskTreeManager extends EventEmitter {
       retryCount: 0,
       maxRetries: 5,
       checkpoints: [],
+      // 继承蓝图的来源标记
+      source: this.currentBlueprint?.source,
     };
 
     // 为每个功能创建更细粒度的子任务
@@ -378,6 +398,8 @@ export class TaskTreeManager extends EventEmitter {
       retryCount: 0,
       maxRetries: 5,
       checkpoints: [],
+      // 继承蓝图的来源标记
+      source: this.currentBlueprint?.source,
     }));
   }
 
@@ -408,6 +430,8 @@ export class TaskTreeManager extends EventEmitter {
       metadata: {
         interfaceType: iface.type,
       },
+      // 继承蓝图的来源标记
+      source: this.currentBlueprint?.source,
     };
   }
 

@@ -1049,6 +1049,8 @@ ${state.nfrs.map(n => `- [${n.priority.toUpperCase()}] ${n.name}：${n.descripti
         interfaces: [],
         dependencies: [],  // 先设为空，后面再更新
         rootPath: module.rootPath,  // 传入用户指定的 rootPath（addModule 会设置默认值）
+        // 标记为从需求生成，需要 TDD 开发
+        source: 'requirement',
       });
       moduleIdMap.set(module.name, created.id);
     }

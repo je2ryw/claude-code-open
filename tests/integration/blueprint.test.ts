@@ -43,10 +43,10 @@ function cleanupBlueprintState() {
   }
 }
 
-// 辅助函数：清理持久化文件
-function cleanupPersistedFiles() {
-  // 清理蓝图文件
-  const blueprintsDir = path.join(os.homedir(), '.claude', 'blueprints');
+// 辅助函数：清理持久化文件（在指定项目目录下）
+function cleanupPersistedFiles(projectDir: string) {
+  // 清理蓝图文件（现在保存在项目目录下的 .blueprint 文件夹）
+  const blueprintsDir = path.join(projectDir, '.blueprint');
   if (fs.existsSync(blueprintsDir)) {
     const files = fs.readdirSync(blueprintsDir);
     for (const file of files) {
@@ -79,7 +79,6 @@ function cleanupPersistedFiles() {
 describe('Blueprint System Integration Tests', () => {
   // 创建临时测试目录
   let testDir: string;
-  let blueprintsDir: string;
 
   beforeEach(() => {
     testDir = path.join(os.tmpdir(), `blueprint-test-${Date.now()}`);
@@ -94,12 +93,12 @@ describe('Blueprint System Integration Tests', () => {
 
     // 清理蓝图状态和持久化文件
     cleanupBlueprintState();
-    cleanupPersistedFiles();
+    cleanupPersistedFiles(testDir);
   });
 
   describe('BlueprintManager', () => {
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
     });
 
     it('should create a new blueprint', () => {
@@ -204,7 +203,7 @@ describe('Blueprint System Integration Tests', () => {
     let blueprint: Blueprint;
 
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
       blueprint = blueprintManager.createBlueprint('任务树测试', '测试任务树生成');
       blueprintManager.addModule(blueprint.id, {
         name: '模块A',
@@ -286,7 +285,7 @@ describe('Blueprint System Integration Tests', () => {
     let tree: TaskTree;
 
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
       blueprint = blueprintManager.createBlueprint('TDD 测试', '测试 TDD 循环');
       blueprintManager.addModule(blueprint.id, {
         name: '计算模块',
@@ -465,7 +464,7 @@ describe('Blueprint System Integration Tests', () => {
     let tree: TaskTree;
 
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
       blueprint = blueprintManager.createBlueprint('时光倒流测试', '测试时光倒流功能');
       blueprintManager.addModule(blueprint.id, {
         name: '核心模块',
@@ -540,7 +539,7 @@ describe('Blueprint System Integration Tests', () => {
     let blueprint: Blueprint;
 
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
       blueprint = blueprintManager.createBlueprint('协调器测试', '测试 Agent 协调');
       blueprintManager.addModule(blueprint.id, {
         name: '测试模块',
@@ -807,7 +806,7 @@ describe('Blueprint System Integration Tests', () => {
     let tree: TaskTree;
 
     beforeEach(() => {
-      cleanupPersistedFiles();
+      cleanupPersistedFiles(testDir);
       blueprint = blueprintManager.createBlueprint('Worker 执行测试', '测试 Worker 执行 TDD 流程');
       blueprintManager.addModule(blueprint.id, {
         name: '计算器模块',

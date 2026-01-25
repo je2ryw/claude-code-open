@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BlueprintRequirementDialog } from './BlueprintRequirementDialog';
+import { CodebaseAnalysisDialog } from './CodebaseAnalysisDialog';
 import { useProject } from '../contexts/ProjectContext';
 
 interface WelcomeScreenProps {
@@ -8,23 +9,63 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
   const [showRequirementDialog, setShowRequirementDialog] = useState(false);
+  const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
+  const [analysisTriggered, setAnalysisTriggered] = useState(false);
   const { state: projectState } = useProject();
 
-  // 判断是否显示创建蓝图流程
-  // 只有当：1. 已选择项目 且 2. 项目为空 时才显示创建蓝图
-  // 否则显示普通的 AI 对话界面
+  // 判断项目状态
   const hasProject = !!projectState.currentProject;
   const isEmptyProject = hasProject && projectState.currentProject?.isEmpty === true;
+  const hasBlueprint = projectState.currentProject?.hasBlueprint === true;
+
+  // 老仓库：有代码但无蓝图
+  const isLegacyRepo = hasProject && !isEmptyProject && !hasBlueprint;
+
+  // 自动触发老仓库分析对话框
+  useEffect(() => {
+    // 只触发一次，避免重复弹出
+    if (isLegacyRepo && !analysisTriggered && !showAnalysisDialog) {
+      setAnalysisTriggered(true);
+      // 延迟一点触发，让用户先看到界面
+      const timer = setTimeout(() => {
+        setShowAnalysisDialog(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLegacyRepo, analysisTriggered, showAnalysisDialog]);
+
+  // 当项目变化时重置触发状态
+  useEffect(() => {
+    setAnalysisTriggered(false);
+  }, [projectState.currentProject?.id]);
 
   const handleBlueprintComplete = (blueprintId: string) => {
     setShowRequirementDialog(false);
     onBlueprintCreated?.(blueprintId);
   };
 
+  const handleAnalysisComplete = (blueprintId: string) => {
+    setShowAnalysisDialog(false);
+    onBlueprintCreated?.(blueprintId);
+  };
+
+  const handleAnalysisClose = () => {
+    setShowAnalysisDialog(false);
+  };
+
   return (
     <div className="welcome-screen">
       <img src="/logo.png" alt="Claude Code" className="welcome-logo" />
       <h2 className="welcome-title">Claude Code WebUI</h2>
+
+      {/* 老仓库分析对话框 */}
+      {showAnalysisDialog && (
+        <CodebaseAnalysisDialog
+          visible={showAnalysisDialog}
+          onComplete={handleAnalysisComplete}
+          onClose={handleAnalysisClose}
+        />
+      )}
 
       {isEmptyProject ? (
         // 空项目：显示创建蓝图流程

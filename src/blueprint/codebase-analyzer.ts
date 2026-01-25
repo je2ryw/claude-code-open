@@ -253,7 +253,7 @@ export class CodebaseAnalyzer extends EventEmitter {
       }
     }
 
-    // 3. AI 语义分析（可选）
+    // 3. AI 语义分析（必须成功）
     if (this.config.useAI) {
       this.emit('analyze:ai-start', {});
       try {
@@ -263,7 +263,8 @@ export class CodebaseAnalyzer extends EventEmitter {
         this.emit('analyze:ai-complete', { aiAnalysis: codebase.aiAnalysis });
       } catch (error) {
         this.emit('analyze:ai-error', { error });
-        // AI 分析失败不阻塞流程
+        // AI 分析失败，直接抛出错误
+        throw error;
       }
     }
 
@@ -294,6 +295,11 @@ export class CodebaseAnalyzer extends EventEmitter {
 
   /**
    * 使用 LSP 提取代码符号
+   *
+   * 优化：
+   * - 限制最大分析文件数量（防止大项目超时）
+   * - 添加单文件分析超时（防止 LSP 卡住）
+   * - 快速检测 LSP 可用性，不可用时快速跳过
    */
   private async extractSymbolsWithLSP(codebase: CodebaseInfo): Promise<ExtractedSymbols> {
     const symbols: ExtractedSymbols = {
@@ -306,13 +312,32 @@ export class CodebaseAnalyzer extends EventEmitter {
     };
 
     // 收集所有代码文件
-    const codeFiles = this.collectCodeFiles(codebase.structure);
+    const allCodeFiles = this.collectCodeFiles(codebase.structure);
+
+    // 限制最大分析文件数量（防止大项目超时）
+    const MAX_FILES_TO_ANALYZE = 100;
+    const codeFiles = allCodeFiles.slice(0, MAX_FILES_TO_ANALYZE);
     const totalFiles = codeFiles.length;
     let processedFiles = 0;
+    let lspAvailable = true;
+
+    // 单文件分析超时（毫秒）
+    const FILE_TIMEOUT = 5000;
 
     for (const filePath of codeFiles) {
+      // 如果 LSP 不可用，跳过剩余文件
+      if (!lspAvailable) {
+        break;
+      }
+
       try {
-        const fileSymbols = await this.symbolExtractor.extractSymbols(filePath);
+        // 使用超时包装单文件分析
+        const fileSymbols = await Promise.race([
+          this.symbolExtractor.extractSymbols(filePath),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('LSP timeout')), FILE_TIMEOUT)
+          ),
+        ]);
 
         if (fileSymbols.length > 0) {
           symbols.byFile.set(filePath, fileSymbols);
@@ -347,9 +372,27 @@ export class CodebaseAnalyzer extends EventEmitter {
           percentage: Math.round((processedFiles / totalFiles) * 100),
         });
       } catch (error) {
-        // 单个文件失败不阻塞
-        this.emit('analyze:lsp-file-error', { file: filePath, error });
+        // 检查是否是 LSP 不可用（服务器启动失败等）
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('LSP timeout') ||
+            errorMsg.includes('Failed to start') ||
+            errorMsg.includes('Failed to install') ||
+            errorMsg.includes('not supported')) {
+          // LSP 不可用，标记并跳过剩余文件
+          lspAvailable = false;
+          this.emit('analyze:lsp-error', { error, fatal: true });
+          console.warn('[CodebaseAnalyzer] LSP not available, skipping symbol extraction:', errorMsg);
+        } else {
+          // 单个文件失败不阻塞
+          this.emit('analyze:lsp-file-error', { file: filePath, error });
+        }
+        processedFiles++;
       }
+    }
+
+    // 如果分析了部分文件后 LSP 失败，仍然返回已分析的符号
+    if (allCodeFiles.length > MAX_FILES_TO_ANALYZE) {
+      console.log(`[CodebaseAnalyzer] Analyzed ${totalFiles}/${allCodeFiles.length} files (limited)`);
     }
 
     return symbols;
@@ -404,25 +447,19 @@ export class CodebaseAnalyzer extends EventEmitter {
     // 调用 AI 分析
     // 使用 getDefaultClient() 获取已认证的客户端
 
-    try {
-      const { getDefaultClient } = await import('../core/client.js');
-      const client = getDefaultClient();
+    const { getDefaultClient } = await import('../core/client.js');
+    const client = getDefaultClient();
 
-      const prompt = this.buildAIPrompt(context);
-      const response = await client.createMessage([{
-        role: 'user',
-        content: prompt,
-      }]);
+    const prompt = this.buildAIPrompt(context);
+    const response = await client.createMessage([{
+      role: 'user',
+      content: prompt,
+    }]);
 
-      // 解析 AI 响应
-      const textContent = response.content.find(block => block.type === 'text');
-      const responseText = textContent && 'text' in textContent ? textContent.text : '';
-      return this.parseAIResponse(responseText);
-    } catch (error) {
-      // AI 分析失败，返回基于规则的分析结果
-      console.warn('AI analysis failed, falling back to rule-based analysis:', error);
-      return this.generateRuleBasedAnalysis(codebase);
-    }
+    // 解析 AI 响应
+    const textContent = response.content.find(block => block.type === 'text');
+    const responseText = textContent && 'text' in textContent ? textContent.text : '';
+    return this.parseAIResponse(responseText);
   }
 
   /**
@@ -1544,6 +1581,8 @@ ${context}
         interfaces: [],
         techStack: this.inferTechStack(codebase, module),
         rootPath,
+        // 标记为从代码库逆向分析得到，不需要 TDD
+        source: 'codebase',
       });
       moduleIdByRootPath.set(rootPath, created.id);
       moduleIdByName.set(module.name, created.id);

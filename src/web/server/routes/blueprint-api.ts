@@ -34,8 +34,12 @@ import { calculateTotalLines, groupByDirectory, detectEntryPoints, getCoreSymbol
 import { configManager } from '../../../config/index.js';
 import { getAuth } from '../../../auth/index.js';
 import { TaskManager } from '../task-manager.js';
+import codebaseAnalysisRouter from './codebase-analysis-api.js';
 
 const router = Router();
+
+// 挂载代码库分析子路由
+router.use('/codebase-analysis', codebaseAnalysisRouter);
 
 // ============================================================================
 // 蓝图 API
@@ -4981,6 +4985,25 @@ function isProjectEmpty(projectPath: string): boolean {
 }
 
 /**
+ * 检测项目是否有蓝图文件
+ *
+ * 检查项目目录下的 .blueprint 文件夹是否存在有效的蓝图 JSON 文件
+ */
+function projectHasBlueprint(projectPath: string): boolean {
+  try {
+    const blueprintDir = path.join(projectPath, '.blueprint');
+    if (!fs.existsSync(blueprintDir)) {
+      return false;
+    }
+    // 检查目录下是否有 .json 文件
+    const files = fs.readdirSync(blueprintDir);
+    return files.some(file => file.endsWith('.json'));
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * 读取最近打开的项目列表
  */
 function loadRecentProjects(): RecentProject[] {
@@ -5024,10 +5047,15 @@ router.get('/projects', (req: Request, res: Response) => {
     const projects = loadRecentProjects();
     // 按最后打开时间倒序排列
     projects.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
+    // 为每个项目添加蓝图状态
+    const projectsWithBlueprint = projects.map(project => ({
+      ...project,
+      hasBlueprint: projectHasBlueprint(project.path),
+    }));
     res.json({
       success: true,
-      data: projects,
-      total: projects.length,
+      data: projectsWithBlueprint,
+      total: projectsWithBlueprint.length,
     });
   } catch (error: any) {
     console.error('[GET /projects]', error);

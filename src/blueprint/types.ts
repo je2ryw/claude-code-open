@@ -67,6 +67,11 @@ export interface SystemModule {
   interfaces: ModuleInterface[];  // 对外接口
   techStack?: string[];        // 技术栈
   rootPath?: string;           // 模块根目录路径
+
+  // 模块来源（支持混合场景：codebase 蓝图上新增 requirement 模块）
+  // - 'codebase': 从现有代码逆向分析得到
+  // - 'requirement': 从需求新增，需要 TDD 开发
+  source?: 'codebase' | 'requirement';
 }
 
 /**
@@ -308,6 +313,11 @@ export interface TaskNode {
 
   // 元数据
   metadata?: Record<string, any>;
+
+  // 任务来源（用于判断是否需要 TDD）
+  // - 'codebase': 从现有代码逆向生成，不需要验收测试
+  // - 'requirement': 从需求新增，需要 TDD 验收测试
+  source?: 'codebase' | 'requirement';
 }
 
 /**

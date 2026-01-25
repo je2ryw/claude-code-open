@@ -27,6 +27,8 @@ export interface Project {
   lastOpenedAt?: string;
   /** 项目是否为空（无源代码文件）*/
   isEmpty?: boolean;
+  /** 是否已有蓝图文件 */
+  hasBlueprint?: boolean;
 }
 
 /**

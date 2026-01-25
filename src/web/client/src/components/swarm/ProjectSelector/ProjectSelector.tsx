@@ -13,6 +13,8 @@ export interface Project {
   path: string;
   /** 最后打开时间 */
   lastOpenedAt?: string;
+  /** 是否已有蓝图文件 */
+  hasBlueprint?: boolean;
 }
 
 /**
@@ -243,7 +245,12 @@ export default function ProjectSelector({
                     aria-selected={currentProject?.id === project.id}
                   >
                     <div className={styles.projectItemInfo}>
-                      <span className={styles.projectItemName}>{project.name}</span>
+                      <div className={styles.projectItemNameRow}>
+                        <span className={styles.projectItemName}>{project.name}</span>
+                        {project.hasBlueprint && (
+                          <span className={styles.blueprintTag}>蓝图</span>
+                        )}
+                      </div>
                       <span className={styles.projectItemPath}>{project.path}</span>
                     </div>
                     <button
