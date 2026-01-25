@@ -35,6 +35,26 @@ const additionalDirectories: string[] = [];
 let mcpCleanupScheduled = false;
 
 /**
+ * 安全退出函数
+ * 官方 Ch6() 函数 - v2.1.19 新增
+ *
+ * 当 process.exit() 失败时（例如终端已关闭导致 EIO 错误），
+ * 使用 SIGKILL 强制终止进程，避免悬挂的进程。
+ *
+ * @param exitCode 退出码
+ */
+function safeExit(exitCode: number = 0): never {
+  try {
+    process.exit(exitCode);
+  } catch (err) {
+    // 如果 process.exit 失败（例如 EIO 错误），使用 SIGKILL
+    process.kill(process.pid, 'SIGKILL');
+  }
+  // 理论上不应该到达这里
+  throw new Error('unreachable');
+}
+
+/**
  * 确保所有 MCP 服务器进程在程序退出前被正确清理
  *
  * 这个函数会在以下情况被调用：
@@ -74,27 +94,27 @@ process.on('beforeExit', async () => {
 // 注册 SIGINT 信号处理（Ctrl+C）
 process.on('SIGINT', async () => {
   await cleanupMcpServers();
-  process.exit(0);
+  safeExit(0);
 });
 
 // 注册 SIGTERM 信号处理
 process.on('SIGTERM', async () => {
   await cleanupMcpServers();
-  process.exit(0);
+  safeExit(0);
 });
 
 // 注册未捕获异常处理
 process.on('uncaughtException', async (err) => {
   console.error('Uncaught exception:', err);
   await cleanupMcpServers();
-  process.exit(1);
+  safeExit(1);
 });
 
 // 注册未处理的 Promise 拒绝
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('Unhandled rejection at:', promise, 'reason:', reason);
   await cleanupMcpServers();
-  process.exit(1);
+  safeExit(1);
 });
 
 const program = new Command();
@@ -2469,7 +2489,7 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
       console.log(chalk.yellow('\nGoodbye!'));
       const exitStats = loop.getSession().getStats();
       console.log(chalk.gray(`Session: ${exitStats.messageCount} messages, ${exitStats.totalCost}`));
-      process.exit(0);
+      safeExit(0);
 
     default:
       console.log(chalk.red(`Unknown command: /${cmd}`));
@@ -2483,7 +2503,7 @@ process.on('uncaughtException', (err) => {
   if (process.env.CLAUDE_DEBUG) {
     console.error(chalk.red('Stack trace:'), err.stack);
   }
-  process.exit(1);
+  safeExit(1);
 });
 
 process.on('unhandledRejection', (reason: any) => {
@@ -2545,5 +2565,5 @@ async function main(): Promise<void> {
 // 运行主函数
 main().catch((error) => {
   console.error(chalk.red('Fatal error:'), error);
-  process.exit(1);
+  safeExit(1);
 });
