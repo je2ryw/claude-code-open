@@ -148,10 +148,20 @@ export type {
   // WebSearchInput 已移除 - 使用 Server Tool (web_search_20250305)
 } from './tools.js';
 
-// --- Todo 工具 ---
+// --- Todo 工具 (v1 Legacy) ---
 export type {
   TodoItem,
   TodoWriteInput as TodoWriteToolInput,
+} from './tools.js';
+
+// --- Task v2 工具 (2.1.16+) ---
+export type {
+  TaskV2Status,
+  TaskV2Item,
+  TaskCreateInput as TaskCreateToolInput,
+  TaskGetInput as TaskGetToolInput,
+  TaskUpdateInput as TaskUpdateToolInput,
+  TaskListInput as TaskListToolInput,
 } from './tools.js';
 
 // --- Notebook 工具 ---

@@ -380,11 +380,11 @@ export interface WebFetchInput {
 // Server Tool 由 Anthropic 服务器执行，客户端不需要处理输入参数
 
 // ============================================================================
-// Todo Tool
+// Todo Tool (v1 - Legacy)
 // ============================================================================
 
 /**
- * A single todo item
+ * A single todo item (v1 - Legacy)
  */
 export interface TodoItem {
   /**
@@ -408,7 +408,7 @@ export interface TodoItem {
 }
 
 /**
- * Input parameters for the TodoWrite tool
+ * Input parameters for the TodoWrite tool (v1 - Legacy)
  *
  * Manages a structured task list for tracking progress.
  */
@@ -417,6 +417,94 @@ export interface TodoWriteInput {
    * The updated todo list
    */
   todos: TodoItem[];
+}
+
+// ============================================================================
+// Task v2 System (2.1.16+)
+// Supports dependency tracking with blocks/blockedBy
+// ============================================================================
+
+/**
+ * Task v2 status
+ */
+export type TaskV2Status = "pending" | "in_progress" | "completed";
+
+/**
+ * Task v2 data structure
+ * New task management system with dependency tracking
+ */
+export interface TaskV2Item {
+  /** Unique identifier */
+  id: string;
+  /** Brief task title */
+  subject: string;
+  /** Detailed description */
+  description: string;
+  /** Text shown in spinner when in_progress */
+  activeForm?: string;
+  /** Owner (for multi-agent scenarios) */
+  owner?: string;
+  /** Task status */
+  status: TaskV2Status;
+  /** IDs of tasks this task blocks */
+  blocks: string[];
+  /** IDs of tasks blocking this task */
+  blockedBy: string[];
+  /** Arbitrary metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input for TaskCreate tool
+ */
+export interface TaskCreateInput {
+  /** Brief task title */
+  subject: string;
+  /** Detailed description */
+  description: string;
+  /** Text shown in spinner when in_progress */
+  activeForm?: string;
+  /** Arbitrary metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input for TaskGet tool
+ */
+export interface TaskGetInput {
+  /** Task ID to retrieve */
+  taskId: string;
+}
+
+/**
+ * Input for TaskUpdate tool
+ */
+export interface TaskUpdateInput {
+  /** Task ID to update */
+  taskId: string;
+  /** New title */
+  subject?: string;
+  /** New description */
+  description?: string;
+  /** New spinner text */
+  activeForm?: string;
+  /** New status */
+  status?: TaskV2Status;
+  /** Task IDs that this task blocks */
+  addBlocks?: string[];
+  /** Task IDs that block this task */
+  addBlockedBy?: string[];
+  /** New owner */
+  owner?: string;
+  /** Metadata to merge (set key to null to delete) */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input for TaskList tool (no parameters)
+ */
+export interface TaskListInput {
+  // No parameters required
 }
 
 // ============================================================================
@@ -760,6 +848,11 @@ export type ToolInputSchemas =
   | WebFetchInput
   // WebSearchInput 已移除 - 使用 Server Tool
   | TodoWriteInput
+  // Task v2 (2.1.16+)
+  | TaskCreateInput
+  | TaskGetInput
+  | TaskUpdateInput
+  | TaskListInput
   | NotebookEditInput
   | McpInput
   | ListMcpResourcesInput
