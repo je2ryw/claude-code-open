@@ -18,6 +18,8 @@ export * from './sandbox.js';
 export * from './skill.js';
 export * from './lsp.js';
 export * from './blueprint.js';
+export * from './task-storage.js';
+export * from './task-v2.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -27,6 +29,8 @@ import { WebFetchTool } from './web.js';
 // WebSearchTool 已移除 - 使用 Anthropic API Server Tool (web_search_20250305) 替代
 import { TodoWriteTool } from './todo.js';
 import { TaskTool, TaskOutputTool } from './agent.js';
+import { TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool } from './task-v2.js';
+import { isTasksEnabled } from './task-storage.js';
 import { NotebookEditTool } from './notebook.js';
 import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
 import { MCPSearchTool, ListMcpResourcesTool, ReadMcpResourceTool } from './mcp.js';
@@ -57,10 +61,18 @@ export function registerAllTools(): void {
   // WebSearch: 使用 Anthropic API Server Tool (web_search_20250305)
   // 在 client.ts 的 buildApiTools 中自动添加，无需注册客户端工具
 
-  // 5. 任务管理 (3个)
+  // 5. 任务管理 (3个 + Task v2 工具 4个)
   toolRegistry.register(new TodoWriteTool());
   toolRegistry.register(new TaskTool());
   toolRegistry.register(new TaskOutputTool());
+
+  // Task v2 系统 (2.1.16 新增，支持依赖追踪)
+  if (isTasksEnabled()) {
+    toolRegistry.register(new TaskCreateTool());
+    toolRegistry.register(new TaskGetTool());
+    toolRegistry.register(new TaskUpdateTool());
+    toolRegistry.register(new TaskListTool());
+  }
 
   // 6. Notebook 编辑 (1个)
   toolRegistry.register(new NotebookEditTool());

@@ -1,6 +1,6 @@
 {
   "name": "claude-code-open",
-  "version": "2.1.14",
+  "version": "2.1.16",
   "description": "Open source Claude Code CLI - Educational Purpose Only",
   "type": "module",
   "bin": {
@@ -85,7 +85,7 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-code": "^2.1.14",
+    "@anthropic-ai/claude-code": "^2.1.19",
     "@types/chokidar": "^1.7.5",
     "@types/eventsource": "^1.1.15",
     "@types/express": "^5.0.6",
