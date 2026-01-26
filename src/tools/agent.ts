@@ -89,6 +89,30 @@ export function resolveAgentModel(
   return undefined;
 }
 
+/**
+ * 格式化代理模型名称用于显示
+ * 官方 w71() 函数 - v2.1.19 修复
+ *
+ * 修复：当代理没有设置模型时显示 "Inherit (default)" 而不是 "Sonnet (default)"
+ *
+ * @param model 模型名称 (undefined, 'inherit', 'sonnet', 'opus', 'haiku' 等)
+ * @returns 格式化的显示名称
+ */
+export function formatAgentModel(model: string | undefined): string {
+  // v2.1.19 修复：如果没有模型，返回 "Inherit (default)"
+  if (!model) {
+    return 'Inherit (default)';
+  }
+
+  // 如果是 inherit，返回 "Inherit from parent"
+  if (model === 'inherit') {
+    return 'Inherit from parent';
+  }
+
+  // 否则首字母大写
+  return model.charAt(0).toUpperCase() + model.slice(1);
+}
+
 // 内置代理类型
 export const BUILT_IN_AGENT_TYPES: AgentTypeDefinition[] = [
   {
@@ -378,7 +402,7 @@ export class TaskTool extends BaseTool<AgentInput, ToolResult> {
 The Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
 Available agent types and the tools they have access to:
-${BUILT_IN_AGENT_TYPES.map(def => `- ${def.agentType}: ${def.whenToUse}${def.forkContext ? ' (Properties: access to current context)' : ''}`).join('\n')}
+${BUILT_IN_AGENT_TYPES.map(def => `- ${def.agentType}: ${def.whenToUse}${def.forkContext ? ' (Properties: access to current context)' : ''} (Tools: ${def.tools?.join(', ') || '*'})${def.model ? ` (Model: ${formatAgentModel(def.model)})` : ''}`).join('\n')}
 
 When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
 

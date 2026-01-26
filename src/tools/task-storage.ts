@@ -376,20 +376,73 @@ export function addDependency(listId: string, blockerId: string, blockedId: stri
 }
 
 /**
+ * 检查值是否为 falsy
+ * 官方 $2() 函数
+ * 支持: 0, false, no, off (不区分大小写)
+ */
+function isFalsy(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  if (typeof value === 'boolean') return !value;
+  if (!value) return false;
+  const lower = value.toLowerCase().trim();
+  return ['0', 'false', 'no', 'off'].includes(lower);
+}
+
+/**
+ * 检查值是否为 truthy
+ * 官方 E1() 函数
+ * 支持: 1, true, yes, on (不区分大小写)
+ */
+function isTruthy(value: string | undefined): boolean {
+  if (!value) return false;
+  if (typeof value === 'boolean') return value;
+  const lower = value.toLowerCase().trim();
+  return ['1', 'true', 'yes', 'on'].includes(lower);
+}
+
+/**
+ * 检查是否是非交互（SDK）模式
+ * 官方 h7() 函数
+ * 在 SDK 模式下，默认禁用 Tasks（保持旧的 TodoWrite 行为）
+ */
+function isNonInteractiveMode(): boolean {
+  // 检查是否是 SDK 模式
+  if (process.env.CLAUDE_CODE_SDK_MODE === '1' || process.env.CLAUDE_CODE_SDK_MODE === 'true') {
+    return true;
+  }
+  // 检查是否没有 TTY（非交互式终端）
+  if (!process.stdout.isTTY && !process.env.FORCE_INTERACTIVE) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * 检查是否启用了 Task v2 系统
  * 官方 ew() 函数
+ *
+ * 逻辑（官方 2.1.19）:
+ * 1. 如果 CLAUDE_CODE_ENABLE_TASKS 显式设为 false -> 返回 false
+ * 2. 如果 CLAUDE_CODE_ENABLE_TASKS 显式设为 true -> 返回 true
+ * 3. 如果是非交互（SDK）模式 -> 返回 false（兼容性）
+ * 4. 否则返回 true（默认启用）
  */
 export function isTasksEnabled(): boolean {
   const envValue = process.env.CLAUDE_CODE_ENABLE_TASKS;
 
   // 显式禁用
-  if (envValue === '0' || envValue === 'false') {
+  if (isFalsy(envValue)) {
     return false;
   }
 
   // 显式启用
-  if (envValue === '1' || envValue === 'true') {
+  if (isTruthy(envValue)) {
     return true;
+  }
+
+  // 非交互模式默认禁用（兼容性）
+  if (isNonInteractiveMode()) {
+    return false;
   }
 
   // 默认启用（与官方 2.1.16+ 保持一致）

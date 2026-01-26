@@ -66,6 +66,11 @@ export interface CommandHookConfig {
   timeout?: number;
   /** 是否阻塞（等待完成，默认 true） */
   blocking?: boolean;
+  /**
+   * 是否异步执行（后台运行，不等待完成）
+   * 官方 2.1.19: 当 async: true 时，命令在后台运行，hook 立即返回
+   */
+  async?: boolean;
   /** 匹配条件（工具名或正则） */
   matcher?: string;
 }
@@ -502,6 +507,27 @@ async function executeCommandHook(
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true, // 使用 shell 执行以支持复杂命令
     });
+
+    // 官方 2.1.19: 当 async: true 或 blocking: false 时，后台运行并立即返回
+    const isBackgrounded = hook.async === true || hook.blocking === false;
+
+    if (isBackgrounded) {
+      // 写入 stdin 并关闭
+      proc.stdin?.write(inputJson);
+      proc.stdin?.end();
+
+      // 使进程脱离父进程，允许后台运行
+      // unref() 使进程不阻止 Node.js 进程退出
+      proc.unref();
+
+      // 立即返回成功，标记为异步
+      resolve({
+        success: true,
+        async: true,
+        output: '',
+      });
+      return;
+    }
 
     const timeoutId = setTimeout(() => {
       proc.kill('SIGKILL');

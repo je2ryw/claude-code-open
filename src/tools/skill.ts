@@ -39,6 +39,171 @@ function getFileInode(filePath: string): string | null {
   }
 }
 
+/**
+ * 解析参数字符串为数组
+ * 官方 zk6 函数 - 使用 shell-quote 风格解析
+ *
+ * 支持:
+ * - 空格分隔的参数
+ * - 引号包裹的参数 (单引号/双引号)
+ * - 转义字符
+ */
+function parseArgumentsToArray(argsString: string): string[] {
+  if (!argsString || !argsString.trim()) {
+    return [];
+  }
+
+  const result: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escape = false;
+
+  for (let i = 0; i < argsString.length; i++) {
+    const char = argsString[i];
+
+    if (escape) {
+      current += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\' && !inSingleQuote) {
+      escape = true;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === ' ' && !inSingleQuote && !inDoubleQuote) {
+      if (current) {
+        result.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) {
+    result.push(current);
+  }
+
+  return result;
+}
+
+/**
+ * 替换参数占位符
+ * 官方 qDA 函数 - v2.1.19 新增 $N 和 $ARGUMENTS[N] 语法
+ *
+ * 支持的占位符:
+ * - $ARGUMENTS[N] - 第 N 个参数 (0 索引，括号语法)
+ * - $N - 第 N 个参数 (0 索引，简写语法，如 $0, $1, $2)
+ * - $ARGUMENTS - 完整参数字符串
+ *
+ * 官方实现:
+ * ```javascript
+ * function qDA(A, K, q = true, Y = []) {
+ *   if (K === undefined || K === null) return A;
+ *   let z = zk6(K);  // 解析参数数组
+ *   let w = A;       // 保存原始内容
+ *
+ *   // 1. 替换具名参数 $PARAM_NAME
+ *   for (let H = 0; H < Y.length; H++) {
+ *     let J = Y[H];
+ *     if (!J) continue;
+ *     A = A.replace(new RegExp(`\\$${J}(?![\\[\\w])`, "g"), z[H] ?? "");
+ *   }
+ *
+ *   // 2. 替换 $ARGUMENTS[N] 语法
+ *   A = A.replace(/\$ARGUMENTS\[(\d+)\]/g, (H, J) => {
+ *     let X = parseInt(J, 10);
+ *     return z[X] ?? "";
+ *   });
+ *
+ *   // 3. 替换 $N 简写语法
+ *   A = A.replace(/\$(\d+)(?!\w)/g, (H, J) => {
+ *     let X = parseInt(J, 10);
+ *     return z[X] ?? "";
+ *   });
+ *
+ *   // 4. 替换 $ARGUMENTS 为完整参数
+ *   A = A.replaceAll("$ARGUMENTS", K);
+ *
+ *   // 5. 如果没有替换发生且有参数，追加 ARGUMENTS:
+ *   if (A === w && q && K) {
+ *     A = A + `\n\nARGUMENTS: ${K}`;
+ *   }
+ *
+ *   return A;
+ * }
+ * ```
+ *
+ * @param content 原始内容
+ * @param argsString 完整参数字符串
+ * @param appendIfNoPlaceholder 如果没有占位符是否追加参数
+ * @param namedParams 具名参数数组（可选）
+ */
+function substituteArguments(
+  content: string,
+  argsString: string | undefined | null,
+  appendIfNoPlaceholder: boolean = true,
+  namedParams: string[] = []
+): string {
+  if (argsString === undefined || argsString === null) {
+    return content;
+  }
+
+  const argsArray = parseArgumentsToArray(argsString);
+  const originalContent = content;
+
+  // 1. 替换具名参数 $PARAM_NAME
+  for (let i = 0; i < namedParams.length; i++) {
+    const paramName = namedParams[i];
+    if (!paramName) continue;
+    // 使用正则确保 $PARAM 不会匹配 $PARAM_OTHER 或 $PARAM[0]
+    content = content.replace(
+      new RegExp(`\\$${paramName}(?![\\[\\w])`, 'g'),
+      argsArray[i] ?? ''
+    );
+  }
+
+  // 2. 替换 $ARGUMENTS[N] 语法 (括号语法)
+  content = content.replace(/\$ARGUMENTS\[(\d+)\]/g, (_, index) => {
+    const idx = parseInt(index, 10);
+    return argsArray[idx] ?? '';
+  });
+
+  // 3. 替换 $N 简写语法 (如 $0, $1, $2)
+  // 使用负向前瞻确保 $1 不会匹配 $1abc 或 $10 中的部分
+  content = content.replace(/\$(\d+)(?!\w)/g, (_, index) => {
+    const idx = parseInt(index, 10);
+    return argsArray[idx] ?? '';
+  });
+
+  // 4. 替换 $ARGUMENTS 为完整参数字符串
+  content = content.replaceAll('$ARGUMENTS', argsString);
+
+  // 5. 如果没有任何替换发生，且有参数，追加 ARGUMENTS 部分
+  if (content === originalContent && appendIfNoPlaceholder && argsString) {
+    content = content + `\n\nARGUMENTS: ${argsString}`;
+  }
+
+  return content;
+}
+
+// 导出参数替换函数，以便其他模块（如 hooks）使用
+export { substituteArguments, parseArgumentsToArray };
+
 interface SkillInput {
   skill: string;
   args?: string;
@@ -847,9 +1012,11 @@ ${skillsXml}
 
     // 构建输出内容
     let skillContent = skill.markdownContent;
-    if (args) {
-      skillContent += `\n\n**ARGUMENTS:** ${args}`;
-    }
+
+    // v2.1.19: 使用参数替换函数处理占位符
+    // 支持: $ARGUMENTS[N], $N, $ARGUMENTS
+    // 如果没有占位符则追加 ARGUMENTS: 部分
+    skillContent = substituteArguments(skillContent, args, true);
 
     // v2.1.9: 替换 ${CLAUDE_SESSION_ID} 占位符
     // 官网实现：M = M.replace(/\$\{CLAUDE_SESSION_ID\}/g, H0())
@@ -879,6 +1046,9 @@ ${skillsXml}
     // 对齐官网实现：
     // - output（tool_result 内容）只是简短的 "Launching skill: xxx"
     // - skill 的完整内容通过 newMessages 作为独立的 user 消息传递
+    // 官网 2.1.19: 没有额外权限的技能无需批准
+    const hasAdditionalPermissions = skill.allowedTools && skill.allowedTools.length > 0;
+
     return {
       success: true,
       output: `Launching skill: ${skill.displayName}`,
@@ -886,6 +1056,8 @@ ${skillsXml}
       commandName: skill.displayName,
       allowedTools: skill.allowedTools,
       model: skill.model,
+      // 官网 2.1.19: 技能是否需要批准（只有声明了额外权限的技能才需要批准）
+      needsApproval: hasAdditionalPermissions,
       // newMessages：skill 内容作为独立的 user 消息（对齐官网实现）
       newMessages: [
         {
