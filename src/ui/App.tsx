@@ -221,9 +221,11 @@ export const App: React.FC<AppProps> = ({
   const [currentBackgroundTaskId, setCurrentBackgroundTaskId] = useState<string | null>(null);
   const [shouldMoveToBackground, setShouldMoveToBackground] = useState(false);
 
-  // 登录屏幕状�?
+  // 登录屏幕状态
   const [showLoginScreen, setShowLoginScreen] = useState(false);
   const [loginPreselect, setLoginPreselect] = useState<'claudeai' | 'console' | null>(null);
+  // OAuth流程进行中状态 - 用于在OAuth期间阻止Input组件渲染，防止stdin冲突
+  const [isOAuthInProgress, setIsOAuthInProgress] = useState(false);
 
   // 官方 local-jsx 命令支持：用于显示命令返回的 JSX 组件
   const [commandJsx, setCommandJsx] = useState<React.ReactElement | null>(null);
@@ -605,6 +607,9 @@ export const App: React.FC<AppProps> = ({
     addActivity(`Starting ${isClaudeAi ? 'Claude.ai' : 'Console'} OAuth login...`);
     addMessage('assistant', `Starting OAuth login with ${isClaudeAi ? 'Claude.ai subscription' : 'Anthropic Console'}...\n\nPlease follow the instructions in the terminal.`);
 
+    // 标记OAuth流程开始 - 阻止Input组件渲染以避免stdin冲突
+    setIsOAuthInProgress(true);
+
     try {
       // 启动 OAuth 流程 - 转换类型名称
       const accountType = isClaudeAi ? 'claude.ai' : 'console';
@@ -614,19 +619,30 @@ export const App: React.FC<AppProps> = ({
       });
 
       if (result && result.accessToken) {
-        // 重新初始化客户端以使用新的凭�?
+        // 重新初始化客户端以使用新的凭证
         const reinitSuccess = loop.reinitializeClient();
         if (reinitSuccess) {
-          addMessage('assistant', `�?Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\nClient has been reinitialized with new credentials. You can now start chatting!`);
+          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\nClient has been reinitialized with new credentials. You can now start chatting!`);
           addActivity('OAuth login completed and client reinitialized');
         } else {
-          addMessage('assistant', `�?Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\n⚠️ Note: Could not reinitialize client. Please restart the application.`);
+          addMessage('assistant', `✅ Login successful!\n\nYou are now authenticated with ${isClaudeAi ? 'Claude.ai' : 'Anthropic Console'}.\n\n⚠️ Note: Could not reinitialize client. Please restart the application.`);
           addActivity('OAuth login completed but client reinitialization failed');
         }
       }
     } catch (error) {
-      addMessage('assistant', `�?Login failed: ${error instanceof Error ? error.message : String(error)}\n\nPlease try again or use /login --api-key to set up an API key.`);
+      addMessage('assistant', `❌ Login failed: ${error instanceof Error ? error.message : String(error)}\n\nPlease try again or use /login --api-key to set up an API key.`);
       addActivity('OAuth login failed');
+    } finally {
+      // OAuth流程结束 - 恢复stdin状态并清屏
+      // readline会把stdin设置为line mode，需要恢复raw mode让Ink正常工作
+      if (process.stdin.isTTY && process.stdin.setRawMode) {
+        process.stdin.setRawMode(true);
+      }
+      // 确保stdin恢复监听
+      process.stdin.resume();
+      // 清屏以消除readline输出和Ink渲染的冲突
+      process.stdout.write('\x1b[2J\x1b[H');
+      setIsOAuthInProgress(false);
     }
   }, [addActivity, addMessage, loop]);
 
@@ -1237,8 +1253,8 @@ export const App: React.FC<AppProps> = ({
         />
       )}
 
-      {/* Input with suggestion - 当显示 JSX 命令组件时隐藏输入框 */}
-      {!hidePromptForJsx && !showRewindUI && (
+      {/* Input with suggestion - 当显示 JSX 命令组件、登录选择器、Rewind UI 或 OAuth 流程进行中时隐藏输入框 */}
+      {!hidePromptForJsx && !showRewindUI && !showLoginScreen && !isOAuthInProgress && (
         <Box marginTop={1}>
           <Input
             onSubmit={handleSubmit}
