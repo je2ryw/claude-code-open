@@ -87,10 +87,29 @@ router.get('/blueprints', (req: Request, res: Response) => {
 
 /**
  * 获取单个蓝图详情
+ * 如果内存中找不到，会尝试从所有已注册项目的蓝图文件中加载
  */
 router.get('/blueprints/:id', (req: Request, res: Response) => {
   try {
-    const blueprint = blueprintManager.getBlueprint(req.params.id);
+    const blueprintId = req.params.id;
+
+    // 首先从内存中查找
+    let blueprint = blueprintManager.getBlueprint(blueprintId);
+
+    // 如果内存中没有，尝试从所有项目中加载
+    if (!blueprint) {
+      const projects = loadRecentProjects();
+      for (const project of projects) {
+        const blueprintFilePath = path.join(project.path, '.blueprint', `${blueprintId}.json`);
+        if (fs.existsSync(blueprintFilePath)) {
+          // 找到蓝图文件，加载该项目的蓝图
+          blueprintManager.setProject(project.path);
+          blueprint = blueprintManager.getBlueprint(blueprintId);
+          if (blueprint) break;
+        }
+      }
+    }
+
     if (!blueprint) {
       return res.status(404).json({ success: false, error: 'Blueprint not found' });
     }

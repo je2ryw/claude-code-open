@@ -3258,11 +3258,41 @@ async function handleSwarmSubscribe(
     let taskTree = null;
     if (blueprint.taskTreeId) {
       taskTree = taskTreeManager.getTaskTree(blueprint.taskTreeId);
+      if (taskTree) {
+        // 任务树存在，检查是否需要修复状态
+        // 如果是从代码库生成的蓝图，但任务树状态不是 completed，则修复
+        if (blueprint.source === 'codebase' && taskTree.status !== 'completed') {
+          console.log(`[Swarm] 蓝图来源为 codebase，但任务树状态为 ${taskTree.status}，修复为 passed`);
+          taskTreeManager.markAllTasksAsPassed(taskTree);
+        }
+      } else if (blueprint.modules && blueprint.modules.length > 0) {
+        // 任务树 ID 存在但加载失败（文件不存在），则需要重新生成
+        console.log(`[Swarm] 蓝图 ${blueprintId} 的任务树 ${blueprint.taskTreeId} 不存在，重新生成...`);
+        try {
+          taskTree = taskTreeManager.generateFromBlueprint(blueprint);
+          // 如果是从代码库生成的蓝图，标记所有任务为 passed
+          if (blueprint.source === 'codebase') {
+            console.log(`[Swarm] 蓝图来源为 codebase，标记所有任务为 passed`);
+            taskTreeManager.markAllTasksAsPassed(taskTree);
+          }
+          // 更新蓝图的任务树 ID
+          blueprint.taskTreeId = taskTree.id;
+          blueprintManager.saveBlueprint(blueprint);
+          console.log(`[Swarm] 任务树已重新生成并关联：${taskTree.id}`);
+        } catch (genError) {
+          console.error(`[Swarm] 重新生成任务树失败:`, genError);
+        }
+      }
     } else if (blueprint.modules && blueprint.modules.length > 0) {
       // 如果蓝图有模块但还没有任务树，自动生成任务树（支持所有状态）
       console.log(`[Swarm] 蓝图 ${blueprintId} (状态: ${blueprint.status}) 缺少任务树，自动生成...`);
       try {
         taskTree = taskTreeManager.generateFromBlueprint(blueprint);
+        // 如果是从代码库生成的蓝图，标记所有任务为 passed
+        if (blueprint.source === 'codebase') {
+          console.log(`[Swarm] 蓝图来源为 codebase，标记所有任务为 passed`);
+          taskTreeManager.markAllTasksAsPassed(taskTree);
+        }
         // 关联任务树到蓝图
         blueprint.taskTreeId = taskTree.id;
         blueprintManager.saveBlueprint(blueprint);
