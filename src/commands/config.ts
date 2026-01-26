@@ -2588,6 +2588,67 @@ export const sandboxCommand: SlashCommand = {
   },
 };
 
+// /keybindings - 键盘快捷键配置 (v2.1.18)
+export const keybindingsCommand: SlashCommand = {
+  name: 'keybindings',
+  aliases: ['keys', 'shortcuts'],
+  description: 'Open or create your keybindings configuration file',
+  usage: '/keybindings',
+  category: 'config',
+  execute: async (ctx: CommandContext): Promise<CommandResult> => {
+    // 动态导入以避免循环依赖
+    const { getKeybindingsPath, generateTemplateContent, isUserCustomizationEnabled } = await import('../config/keybindings.js');
+    const { openInEditor } = await import('../utils/editor.js');
+    const fsPromises = await import('fs/promises');
+
+    if (!isUserCustomizationEnabled()) {
+      ctx.ui.addMessage('assistant', 'Keybinding customization is not enabled. This feature is currently in preview.');
+      return { success: false };
+    }
+
+    const filePath = getKeybindingsPath();
+    let fileExists = false;
+
+    try {
+      await fsPromises.stat(filePath);
+      fileExists = true;
+    } catch {
+      // 文件不存在
+    }
+
+    if (!fileExists) {
+      // 创建默认模板
+      const template = generateTemplateContent();
+      const dirPath = path.dirname(filePath);
+
+      try {
+        await fsPromises.mkdir(dirPath, { recursive: true });
+        await fsPromises.writeFile(filePath, template, 'utf-8');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        ctx.ui.addMessage('assistant', `Failed to create keybindings.json: ${message}`);
+        return { success: false };
+      }
+    }
+
+    // 尝试在编辑器中打开
+    try {
+      await openInEditor(filePath);
+      const message = fileExists
+        ? `Opened ${filePath} in your editor.`
+        : `Created ${filePath} with template. Opened in your editor.`;
+      ctx.ui.addMessage('assistant', message);
+      ctx.ui.addActivity('Opened keybindings configuration');
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const prefix = fileExists ? 'Opened' : 'Created';
+      ctx.ui.addMessage('assistant', `${prefix} ${filePath}. Could not open in editor: ${message}\n\nYou can edit the file manually at:\n${filePath}`);
+      return { success: true };
+    }
+  },
+};
+
 // 注册所有配置命令
 export function registerConfigCommands(): void {
   commandRegistry.register(configCommand);
@@ -2605,4 +2666,5 @@ export function registerConfigCommands(): void {
   commandRegistry.register(remoteEnvCommand);
   commandRegistry.register(terminalSetupCommand);
   commandRegistry.register(sandboxCommand);
+  commandRegistry.register(keybindingsCommand);
 }
