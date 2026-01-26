@@ -1046,6 +1046,9 @@ ${skillsXml}
     // 对齐官网实现：
     // - output（tool_result 内容）只是简短的 "Launching skill: xxx"
     // - skill 的完整内容通过 newMessages 作为独立的 user 消息传递
+    // 官网 2.1.19: 没有额外权限的技能无需批准
+    const hasAdditionalPermissions = skill.allowedTools && skill.allowedTools.length > 0;
+
     return {
       success: true,
       output: `Launching skill: ${skill.displayName}`,
@@ -1053,6 +1056,8 @@ ${skillsXml}
       commandName: skill.displayName,
       allowedTools: skill.allowedTools,
       model: skill.model,
+      // 官网 2.1.19: 技能是否需要批准（只有声明了额外权限的技能才需要批准）
+      needsApproval: hasAdditionalPermissions,
       // newMessages：skill 内容作为独立的 user 消息（对齐官网实现）
       newMessages: [
         {

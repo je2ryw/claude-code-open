@@ -11,6 +11,49 @@ import type { Message, ContentBlock } from '../types/index.js';
 import { configManager } from '../config/index.js';
 
 // ============================================================================
+// v2.1.19: 恢复会话路径追踪
+// 当从不同目录恢复会话时，需要记住原始会话文件路径
+// 用于修复 /rename 和 /tag 在不同目录恢复时更新错误会话的问题
+// ============================================================================
+
+/**
+ * 恢复的会话文件路径（官方 resumedTranscriptPath）
+ * 当恢复会话时设置，用于确保 rename/tag 更新正确的会话文件
+ */
+let resumedTranscriptPath: string | null = null;
+
+/**
+ * 获取恢复的会话路径
+ * 官方 Fd6() 函数
+ */
+export function getResumedTranscriptPath(): string | null {
+  return resumedTranscriptPath;
+}
+
+/**
+ * 设置恢复的会话路径
+ * 官方 blA() 函数
+ */
+export function setResumedTranscriptPath(filePath: string | null): void {
+  resumedTranscriptPath = filePath;
+}
+
+/**
+ * 获取当前活动会话的文件路径
+ * 官方 O$() 函数
+ *
+ * 逻辑：
+ * 1. 如果有恢复的会话路径，使用它
+ * 2. 否则使用当前会话 ID 生成路径
+ */
+export function getActiveSessionPath(sessionId: string): string {
+  if (resumedTranscriptPath) {
+    return resumedTranscriptPath;
+  }
+  return getSessionPath(sessionId);
+}
+
+// ============================================================================
 // 会话元数据缓存系统（解决 listSessions 性能问题）
 // ============================================================================
 
@@ -247,8 +290,11 @@ function getSessionPath(sessionId: string): string {
 
 /**
  * 保存会话
+ *
+ * v2.1.19 修复：支持 resumedTranscriptPath
+ * 当从不同目录恢复会话时，使用原始的会话文件路径
  */
-export function saveSession(session: SessionData): void {
+export function saveSession(session: SessionData, options?: { useResumedPath?: boolean }): void {
   // 验证 sessionId 有效性
   const sessionId = session.metadata.id;
   if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
@@ -258,7 +304,15 @@ export function saveSession(session: SessionData): void {
 
   ensureSessionDir();
 
-  const sessionPath = getSessionPath(sessionId);
+  // v2.1.19: 如果指定使用恢复路径且有 resumedTranscriptPath，使用它
+  // 这修复了从不同目录（如 git worktree）恢复时 /rename 和 /tag 更新错误会话的问题
+  let sessionPath: string;
+  if (options?.useResumedPath && resumedTranscriptPath) {
+    sessionPath = resumedTranscriptPath;
+  } else {
+    sessionPath = getSessionPath(sessionId);
+  }
+
   session.metadata.updatedAt = Date.now();
   session.metadata.messageCount = session.messages.length;
 
@@ -1132,6 +1186,9 @@ export function importSessionFromFile(
 
 /**
  * 重命名会话
+ *
+ * v2.1.19 修复：当从不同目录恢复会话时，使用 resumedTranscriptPath
+ * 确保更新正确的会话文件
  */
 export function renameSession(sessionId: string, newName: string): boolean {
   const session = loadSession(sessionId);
@@ -1141,12 +1198,16 @@ export function renameSession(sessionId: string, newName: string): boolean {
 
   session.metadata.name = newName;
   session.metadata.updatedAt = Date.now();
-  saveSession(session);
+  // 使用 useResumedPath 确保更新正确的会话文件
+  saveSession(session, { useResumedPath: true });
   return true;
 }
 
 /**
  * 更新会话标签
+ *
+ * v2.1.19 修复：当从不同目录恢复会话时，使用 resumedTranscriptPath
+ * 确保更新正确的会话文件
  */
 export function updateSessionTags(
   sessionId: string,
@@ -1173,7 +1234,8 @@ export function updateSessionTags(
   }
 
   session.metadata.updatedAt = Date.now();
-  saveSession(session);
+  // 使用 useResumedPath 确保更新正确的会话文件
+  saveSession(session, { useResumedPath: true });
   return true;
 }
 
@@ -1527,11 +1589,16 @@ export class SessionManager {
 
   /**
    * 恢复会话
+   *
+   * v2.1.19 修复：设置 resumedTranscriptPath
+   * 确保 /rename 和 /tag 在从不同目录恢复时更新正确的会话文件
    */
   resume(sessionId: string): SessionData | null {
     const session = loadSession(sessionId);
     if (session) {
       this.currentSession = session;
+      // v2.1.19: 设置恢复的会话路径，用于后续的 rename/tag 操作
+      setResumedTranscriptPath(getSessionPath(sessionId));
     }
     return session;
   }
