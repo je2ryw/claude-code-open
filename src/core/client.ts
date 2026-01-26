@@ -222,13 +222,19 @@ function buildMetadata(accountUuid?: string): { user_id: string } {
  * - system prompt 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
  * - 只有满足这个条件，OAuth token 才能使用 sonnet/opus 模型
  */
-function buildBetas(_model: string, isOAuth: boolean): string[] {
+function buildBetas(model: string, isOAuth: boolean): string[] {
   const betas: string[] = [];
 
-  // OAuth 模式需要添加 claude-code beta
+  // 非 haiku 模型添加 claude-code beta（官方逻辑：if(!q)K.push(Ld6)）
+  // 这个 beta 允许使用 Claude Code 特定功能
+  const isHaiku = model.toLowerCase().includes('haiku');
+  if (!isHaiku) {
+    betas.push(CLAUDE_CODE_BETA);
+  }
+
+  // OAuth 订阅用户额外添加 oauth beta（官方逻辑：if(W4())K.push(Th)）
   // 这个 beta 配合正确的 system prompt 可以解锁 sonnet/opus 模型
   if (isOAuth) {
-    betas.push(CLAUDE_CODE_BETA);
     betas.push(OAUTH_BETA);
   }
 
@@ -311,10 +317,14 @@ export class ClaudeClient {
     }
 
     // 构建默认 headers（与官方 Claude Code 完全一致）
-    // 通过抓包分析得到的官方请求头
+    // 官方 User-Agent 格式: claude-cli/${VERSION} (external, ${ENTRYPOINT}${agent-sdk})
+    const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT || 'claude-vscode';
+    const agentSdkVersion = process.env.CLAUDE_AGENT_SDK_VERSION;
+    const agentSdkSuffix = agentSdkVersion ? `, agent-sdk/${agentSdkVersion}` : '';
+
     const defaultHeaders: Record<string, string> = {
       'x-app': 'cli',
-      'User-Agent': `claude-cli/${VERSION_BASE} (external, claude-vscode, agent-sdk/0.1.75)`,
+      'User-Agent': `claude-cli/${VERSION_BASE} (external, ${entrypoint}${agentSdkSuffix})`,
       'anthropic-dangerous-direct-browser-access': 'true',
     };
 

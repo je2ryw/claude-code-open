@@ -213,3 +213,4 @@ export * from './embedder.js';
 export * from './vector-store.js';
 export * from './compressor.js';
 export * from './unified-memory.js';
+export * from './bm25-engine.js';

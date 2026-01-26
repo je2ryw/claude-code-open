@@ -2518,6 +2518,12 @@ process.on('unhandledRejection', (reason: any) => {
  * 对应官方的 ZV7 函数和 tK7 函数
  */
 async function main(): Promise<void> {
+  // 设置 CLAUDE_CODE_ENTRYPOINT 环境变量（如果未设置）
+  // 官方 Claude Code 使用此变量标识启动入口点
+  if (!process.env.CLAUDE_CODE_ENTRYPOINT) {
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'cli';
+  }
+
   // CLI 级别生命周期事件
   await emitLifecycleEvent('cli_entry');
   await emitLifecycleEvent('cli_imports_loaded');

@@ -26,6 +26,13 @@ export interface WebServerOptions {
 }
 
 export async function startWebServer(options: WebServerOptions = {}): Promise<void> {
+  // 设置 CLAUDE_CODE_ENTRYPOINT 环境变量（如果未设置）
+  // 官方 Claude Code 使用此变量标识启动入口点
+  // WebUI 模式使用 'claude-vscode' 以匹配官方的 VSCode 扩展入口
+  if (!process.env.CLAUDE_CODE_ENTRYPOINT) {
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'claude-vscode';
+  }
+
   const {
     port = parseInt(process.env.CLAUDE_WEB_PORT || '3456'),
     host = process.env.CLAUDE_WEB_HOST || '127.0.0.1',

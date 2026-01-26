@@ -5163,12 +5163,17 @@ router.post('/projects/open', (req: Request, res: Response) => {
     // 检测项目是否为空（无源代码文件）
     const isEmpty = isProjectEmpty(projectPath);
 
+    // 判断项目是否有蓝图（用于前端判断是否需要触发代码库分析）
+    const hasBlueprint = !!currentBlueprint || projectHasBlueprint(projectPath);
+
     res.json({
       success: true,
       data: {
         ...newProject,
         // 标记项目是否为空（用于前端判断显示"创建蓝图"还是直接对话）
         isEmpty,
+        // 标记项目是否已有蓝图（用于前端判断是否触发代码库分析）
+        hasBlueprint,
         // 返回该项目关联的蓝图信息（如果有）
         blueprint: currentBlueprint ? {
           id: currentBlueprint.id,

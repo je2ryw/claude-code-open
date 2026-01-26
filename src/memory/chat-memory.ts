@@ -22,6 +22,7 @@ import {
   type MemoryHierarchyConfig,
 } from './types.js';
 import { ConversationVectorStore, type ConversationVectorDoc } from './vector-store.js';
+import { BM25Engine, type BM25SearchResult } from './bm25-engine.js';
 
 // ============================================================================
 // 常量定义
@@ -97,6 +98,8 @@ export class ChatMemory {
   private config: MemoryHierarchyConfig;
   private vectorStore: ConversationVectorStore;
   private useSemanticSearch: boolean;
+  private bm25Engine: BM25Engine;
+  private useBM25Search: boolean;
 
   /**
    * 构造函数
@@ -112,11 +115,27 @@ export class ChatMemory {
     this.vectorStore = new ConversationVectorStore(projectPath);
     this.useSemanticSearch = true;
 
+    // 初始化 BM25 引擎（用于关键词搜索）
+    this.bm25Engine = new BM25Engine({
+      k1: 1.2,  // 词频饱和度
+      b: 0.75,  // 文档长度归一化
+      fieldWeights: {
+        text: 1,      // 摘要内容
+        topics: 2,    // 话题权重更高
+        files: 1.5,   // 文件名
+        symbols: 1.5, // 符号名
+      },
+    });
+    this.useBM25Search = true;
+
     // 初始化存储
     this.store = this.createEmptyStore(projectPath || '');
 
     // 加载现有数据
     this.load();
+
+    // 构建 BM25 索引
+    this.rebuildBM25Index();
   }
 
   // ============================================================================
@@ -157,6 +176,11 @@ export class ChatMemory {
       }
     }
 
+    // 同步添加到 BM25 索引（用于关键词搜索）
+    if (this.useBM25Search) {
+      this.addToBM25Index(summary);
+    }
+
     // 更新统计信息
     this.updateStats();
 
@@ -170,12 +194,65 @@ export class ChatMemory {
   }
 
   /**
-   * 搜索对话
+   * 搜索对话（使用 BM25 算法）
+   *
+   * BM25 相比简单字符串匹配的优势：
+   * - 词频加权：同一词出现多次权重不会无限增长（词频饱和）
+   * - IDF 加权：稀有词（如专业术语）权重更高
+   * - 文档长度归一化：避免长文档占优势
    */
   async search(query: string, options?: {
     limit?: number;
     timeRange?: { start: Timestamp; end: Timestamp };
   }): Promise<ConversationSummary[]> {
+    const limit = options?.limit ?? 10;
+
+    // 使用 BM25 搜索
+    if (this.useBM25Search && this.bm25Engine.getDocumentCount() > 0) {
+      // BM25 搜索
+      const bm25Results = this.bm25Engine.search(query, limit * 2);
+
+      // 获取完整摘要对象并过滤
+      const results: Array<{ summary: ConversationSummary; score: number }> = [];
+
+      for (const result of bm25Results) {
+        const summary = this.getById(result.id);
+        if (!summary) continue;
+
+        // 时间范围过滤
+        if (options?.timeRange) {
+          const summaryTime = parseTimestamp(summary.startTime);
+          const startTime = parseTimestamp(options.timeRange.start);
+          const endTime = parseTimestamp(options.timeRange.end);
+          if (summaryTime < startTime || summaryTime > endTime) {
+            continue;
+          }
+        }
+
+        // 综合评分：BM25 分数 + 重要性加权
+        let finalScore = result.score;
+        finalScore += summary.importance * 0.5;  // 重要性加权
+
+        results.push({ summary, score: finalScore });
+      }
+
+      // 按分数排序
+      results.sort((a, b) => b.score - a.score);
+
+      return results.slice(0, limit).map(r => r.summary);
+    }
+
+    // 降级：简单字符串匹配（当 BM25 不可用时）
+    return this.fallbackSearch(query, options);
+  }
+
+  /**
+   * 降级搜索（简单字符串匹配）
+   */
+  private fallbackSearch(query: string, options?: {
+    limit?: number;
+    timeRange?: { start: Timestamp; end: Timestamp };
+  }): ConversationSummary[] {
     const limit = options?.limit ?? 10;
     const queryLower = query.toLowerCase();
 
@@ -190,53 +267,29 @@ export class ChatMemory {
         }
       }
 
-      // 关键词匹配（摘要内容）
-      if (summary.summary.toLowerCase().includes(queryLower)) {
-        return true;
-      }
-
-      // 话题匹配
-      if (summary.topics.some(topic => topic.toLowerCase().includes(queryLower))) {
-        return true;
-      }
-
-      // 文件名匹配
-      if (summary.filesDiscussed.some(file => file.toLowerCase().includes(queryLower))) {
-        return true;
-      }
-
-      // 符号匹配
-      if (summary.symbolsDiscussed.some(symbol => symbol.toLowerCase().includes(queryLower))) {
-        return true;
-      }
+      // 关键词匹配
+      if (summary.summary.toLowerCase().includes(queryLower)) return true;
+      if (summary.topics.some(topic => topic.toLowerCase().includes(queryLower))) return true;
+      if (summary.filesDiscussed.some(file => file.toLowerCase().includes(queryLower))) return true;
+      if (summary.symbolsDiscussed.some(symbol => symbol.toLowerCase().includes(queryLower))) return true;
 
       return false;
     });
 
-    // 按相关度排序（简单的匹配计数）
-    results = results.map(summary => {
+    // 按相关度排序
+    const scored = results.map(summary => {
       let score = 0;
-
-      // 摘要中的匹配
       const summaryMatches = (summary.summary.toLowerCase().match(new RegExp(queryLower, 'g')) || []).length;
       score += summaryMatches * 2;
-
-      // 话题中的匹配
       const topicMatches = summary.topics.filter(t => t.toLowerCase().includes(queryLower)).length;
       score += topicMatches * 3;
-
-      // 重要性加权
       score += summary.importance;
-
-      // 时间衰减（越新越好）
       const daysAgo = daysBetween(summary.endTime, now());
       score -= Math.min(daysAgo, 30) * 0.1;
-
       return { summary, score };
-    }).sort((a, b) => b.score - a.score)
-      .map(item => item.summary);
+    }).sort((a, b) => b.score - a.score);
 
-    return results.slice(0, limit);
+    return scored.slice(0, limit).map(item => item.summary);
   }
 
   /**
@@ -325,10 +378,23 @@ export class ChatMemory {
   }
 
   /**
-   * 混合搜索（结合关键词、语义和时间）
+   * 混合搜索（结合 BM25、语义向量和时间衰减）
    *
-   * 同时使用关键词匹配、语义相似度和时间衰减，
-   * 融合三种因素以获得最佳效果。
+   * 架构：
+   * ```
+   * 查询 → 并行搜索
+   *        ├── BM25 关键词搜索 (TF-IDF 加权) → 30%权重
+   *        └── 向量语义搜索 (余弦相似度) → 50%权重
+   *                                      ↓
+   *                              每个结果计算时间衰减 → 20%权重
+   *                                      ↓
+   *                              分数融合 → 排序 → TopN
+   * ```
+   *
+   * BM25 vs 简单匹配的优势：
+   * - IDF 加权：稀有词（专业术语）权重更高
+   * - 词频饱和：避免高频词主导
+   * - 长度归一化：公平比较长短文档
    *
    * 时间衰减策略：
    * - 7天内：无衰减（timeScore = 1.0）
@@ -347,35 +413,41 @@ export class ChatMemory {
     timeWeight?: number;
   }): Promise<Array<{ summary: ConversationSummary; score: number }>> {
     const limit = options?.limit ?? 10;
-    // 默认权重分配：语义 50%，关键词 30%，时间 20%
+    // 默认权重分配：语义 50%，BM25 关键词 30%，时间 20%
     const keywordWeight = options?.keywordWeight ?? 0.3;
     const semanticWeight = options?.semanticWeight ?? 0.5;
     const timeWeight = options?.timeWeight ?? 0.2;
 
-    // 并行执行两种搜索
-    const [keywordResults, semanticResults] = await Promise.all([
-      this.search(query, { limit: limit * 2 }),
+    // 并行执行 BM25 搜索和语义搜索
+    const [bm25Results, semanticResults] = await Promise.all([
+      this.bm25Search(query, limit * 2),
       this.semanticSearch(query, { limit: limit * 2 }),
     ]);
 
     // 合并结果
     const scoreMap = new Map<string, {
       summary: ConversationSummary;
-      keywordScore: number;
-      semanticScore: number;
-      timeScore: number;
+      bm25Score: number;      // BM25 分数（已归一化）
+      semanticScore: number;  // 语义相似度分数
+      timeScore: number;      // 时间衰减分数
     }>();
 
-    // 添加关键词结果
-    keywordResults.forEach((summary, index) => {
-      const normalizedScore = 1 - (index / keywordResults.length);
+    // 添加 BM25 结果（归一化分数到 0-1 范围）
+    const maxBM25Score = bm25Results.length > 0 ? bm25Results[0].score : 1;
+    for (const result of bm25Results) {
+      const summary = this.getById(result.id);
+      if (!summary) continue;
+
+      // 归一化 BM25 分数到 0-1
+      const normalizedBM25 = maxBM25Score > 0 ? result.score / maxBM25Score : 0;
+
       scoreMap.set(summary.id, {
         summary,
-        keywordScore: normalizedScore,
+        bm25Score: normalizedBM25,
         semanticScore: 0,
         timeScore: this.calculateTimeDecay(summary.endTime),
       });
-    });
+    }
 
     // 添加语义结果
     for (const { summary, score } of semanticResults) {
@@ -385,7 +457,7 @@ export class ChatMemory {
       } else {
         scoreMap.set(summary.id, {
           summary,
-          keywordScore: 0,
+          bm25Score: 0,
           semanticScore: score,
           timeScore: this.calculateTimeDecay(summary.endTime),
         });
@@ -393,14 +465,29 @@ export class ChatMemory {
     }
 
     // 计算综合分数并排序
+    // finalScore = 0.3 × BM25 + 0.5 × Semantic + 0.2 × Time
     const results = Array.from(scoreMap.values())
-      .map(({ summary, keywordScore, semanticScore, timeScore }) => ({
+      .map(({ summary, bm25Score, semanticScore, timeScore }) => ({
         summary,
-        score: keywordWeight * keywordScore + semanticWeight * semanticScore + timeWeight * timeScore,
+        score: keywordWeight * bm25Score + semanticWeight * semanticScore + timeWeight * timeScore,
+        // 调试信息（可选）
+        _debug: { bm25Score, semanticScore, timeScore },
       }))
       .sort((a, b) => b.score - a.score);
 
-    return results.slice(0, limit);
+    return results.slice(0, limit).map(({ summary, score }) => ({ summary, score }));
+  }
+
+  /**
+   * BM25 搜索（直接返回原始分数）
+   */
+  private async bm25Search(query: string, limit: number): Promise<BM25SearchResult[]> {
+    if (!this.useBM25Search || this.bm25Engine.getDocumentCount() === 0) {
+      // 降级：返回空结果
+      return [];
+    }
+
+    return this.bm25Engine.search(query, limit);
   }
 
   /**
@@ -511,6 +598,9 @@ export class ChatMemory {
 
     // 更新统计
     this.updateStats();
+
+    // 重建 BM25 索引（因为文档列表变了）
+    this.rebuildBM25Index();
 
     // 保存
     this.save();
@@ -670,6 +760,9 @@ export class ChatMemory {
       // 更新统计
       this.updateStats();
 
+      // 重建 BM25 索引
+      this.rebuildBM25Index();
+
       // 保存
       this.save();
     } catch (error) {
@@ -682,6 +775,7 @@ export class ChatMemory {
    */
   clear(): void {
     this.store = this.createEmptyStore(this.store.projectPath);
+    this.bm25Engine.clear();  // 同时清空 BM25 索引
     this.save();
   }
 
@@ -863,6 +957,83 @@ export class ChatMemory {
       console.error(`Failed to save ChatMemory to ${dir}:`, error);
       throw error;
     }
+  }
+
+  // ============================================================================
+  // BM25 索引管理方法
+  // ============================================================================
+
+  /**
+   * 添加单个摘要到 BM25 索引
+   */
+  private addToBM25Index(summary: ConversationSummary): void {
+    // 构建文档，包含所有可搜索字段
+    const doc = {
+      id: summary.id,
+      text: summary.summary,
+      fields: {
+        topics: summary.topics.join(' '),
+        files: summary.filesDiscussed.join(' '),
+        symbols: summary.symbolsDiscussed.join(' '),
+      },
+    };
+
+    this.bm25Engine.addDocument(doc);
+    // 每次添加后重建索引（BM25 需要在搜索前 consolidate）
+    this.bm25Engine.buildIndex();
+  }
+
+  /**
+   * 重建整个 BM25 索引
+   *
+   * 在以下情况调用：
+   * - 初始化时加载现有数据后
+   * - 压缩记忆后
+   * - 导入记忆后
+   */
+  private rebuildBM25Index(): void {
+    this.bm25Engine.clear();
+
+    for (const summary of this.store.summaries) {
+      const doc = {
+        id: summary.id,
+        text: summary.summary,
+        fields: {
+          topics: summary.topics.join(' '),
+          files: summary.filesDiscussed.join(' '),
+          symbols: summary.symbolsDiscussed.join(' '),
+        },
+      };
+      this.bm25Engine.addDocument(doc);
+    }
+
+    this.bm25Engine.buildIndex();
+  }
+
+  /**
+   * 启用/禁用 BM25 搜索
+   */
+  setBM25SearchEnabled(enabled: boolean): void {
+    this.useBM25Search = enabled;
+  }
+
+  /**
+   * 检查 BM25 搜索是否启用
+   */
+  isBM25SearchEnabled(): boolean {
+    return this.useBM25Search;
+  }
+
+  /**
+   * 获取 BM25 统计信息
+   */
+  getBM25Stats(): {
+    documentCount: number;
+    vocabularySize: number;
+    avgDocLength: number;
+    isIndexBuilt: boolean;
+  } {
+    return this.bm25Engine.getStats();
   }
 }
 
