@@ -345,6 +345,27 @@ async function runAnalysis(session: AnalysisSession): Promise<void> {
   };
 
   try {
+    // 首先检查项目是否已有蓝图
+    blueprintManager.setProject(session.projectPath);
+    const existingBlueprint = blueprintManager.getCurrentBlueprint();
+
+    if (existingBlueprint) {
+      // 如果已有蓝图且不是 draft 状态，直接使用现有蓝图
+      if (existingBlueprint.status !== 'draft') {
+        session.logs.push(`项目已有蓝图 "${existingBlueprint.name}"（状态：${existingBlueprint.status}），直接使用现有蓝图`);
+
+        // 将现有蓝图转换为结果格式
+        session.result = convertBlueprintToResult(existingBlueprint);
+
+        // 直接进入预览完成状态
+        updateProgress('completed', 100, '已加载现有蓝图', `使用现有蓝图: ${existingBlueprint.name}`);
+        return;
+      }
+
+      // 如果是 draft 状态，可以重新分析
+      session.logs.push(`项目有草稿蓝图 "${existingBlueprint.name}"，将重新分析并覆盖`);
+    }
+
     // 创建分析器
     const analyzer = new CodebaseAnalyzer({
       rootDir: session.projectPath,
@@ -615,6 +636,55 @@ async function generateFinalBlueprint(session: AnalysisSession): Promise<Bluepri
   session.logs.push(`蓝图创建完成: ${finalBlueprint.id}`);
 
   return finalBlueprint;
+}
+
+/**
+ * 将现有蓝图转换为前端需要的结果格式
+ */
+function convertBlueprintToResult(blueprint: Blueprint): AnalysisResult {
+  // 模块
+  const modules = blueprint.modules.map((m, i) => ({
+    id: m.id || `module-${i}`,
+    name: m.name,
+    type: m.type,
+    description: m.description,
+    rootPath: m.rootPath || '',
+    responsibilities: m.responsibilities,
+    dependencies: m.dependencies,
+  }));
+
+  // 业务流程
+  const businessProcesses = blueprint.businessProcesses.map((p, i) => ({
+    id: p.id || `process-${i}`,
+    name: p.name,
+    type: 'core' as const,
+    description: p.description,
+    steps: p.steps.map(s => s.name),
+  }));
+
+  // 非功能性需求
+  const nfrs = blueprint.nfrs.map(n => ({
+    name: n.name,
+    category: n.category,
+    description: n.description,
+  }));
+
+  // 技术栈（从模块的 techStack 收集）
+  const techStack: string[] = [];
+  for (const module of blueprint.modules) {
+    if (module.techStack) {
+      techStack.push(...module.techStack);
+    }
+  }
+
+  return {
+    projectName: blueprint.name,
+    description: blueprint.description,
+    techStack: [...new Set(techStack)],
+    modules,
+    businessProcesses,
+    nfrs,
+  };
 }
 
 export default router;

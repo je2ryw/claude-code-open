@@ -38,6 +38,12 @@ import {
 } from './acceptance-test-generator.js';
 import { setBlueprint, clearBlueprint, setActiveTask, clearActiveTask } from './blueprint-context.js';
 import type { WorkerSubmission, GateResult } from './regression-gate.js';
+import {
+  TestReviewer,
+  createTestReviewer,
+  type TestReviewContext,
+  type ReviewResult,
+} from './test-reviewer.js';
 
 // ============================================================================
 // 协调器配置
@@ -108,6 +114,7 @@ export class AgentCoordinator extends EventEmitter {
   private mainLoopTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private acceptanceTestGenerator: AcceptanceTestGenerator | null = null;
+  private testReviewer: TestReviewer;
   private submissionValidator?: (submission: WorkerSubmission) => Promise<GateResult>;
 
   constructor(config?: Partial<CoordinatorConfig>) {
@@ -119,6 +126,14 @@ export class AgentCoordinator extends EventEmitter {
       projectRoot: this.config.projectRoot || process.cwd(),
       testFramework: this.config.testFramework,
       testDirectory: this.config.testDirectory,
+    });
+
+    // 初始化测试验收员
+    this.testReviewer = createTestReviewer({
+      minTestsPerBranch: 1,
+      requiredEdgeCases: ['null', 'empty', 'boundary'],
+      minAssertionDensity: 1.5,
+      requireErrorTests: true,
     });
   }
 
@@ -592,6 +607,31 @@ export class AgentCoordinator extends EventEmitter {
         loopState = tddExecutor.getLoopState(currentTask.id);
       }
 
+      // ========================================================================
+      // 测试验收员审查
+      // ========================================================================
+      const finalTask = this.getCurrentTask(task.id) || task;
+      const reviewResult = await this.reviewWorkerTests(worker, finalTask, loopState);
+      if (!reviewResult.passed) {
+        // 测试审查未通过，需要 Worker 改进
+        if (reviewResult.status === 'rejected') {
+          taskTreeManager.updateTaskStatus(this.queen.taskTreeId, task.id, 'test_failed');
+          this.workerFailTask(worker.id, `测试审查未通过: ${reviewResult.report.conclusion}`);
+          this.emit('review:rejected', {
+            workerId: worker.id,
+            taskId: task.id,
+            result: reviewResult,
+          });
+          return;
+        }
+        // 警告状态：记录但继续
+        this.emit('review:warning', {
+          workerId: worker.id,
+          taskId: task.id,
+          result: reviewResult,
+        });
+      }
+
       // 回归门禁校验（如已配置）
       const gatePassed = await this.validateWorkerSubmission(worker, task);
       if (!gatePassed) {
@@ -679,6 +719,112 @@ export class AgentCoordinator extends EventEmitter {
     worker.tddCycle.testWritten = !!loopState.testSpec;
     worker.tddCycle.codeWritten = loopState.codeWritten;
     worker.tddCycle.testPassed = loopState.phase === 'done';
+  }
+
+  // --------------------------------------------------------------------------
+  // 测试验收员审查
+  // --------------------------------------------------------------------------
+
+  /**
+   * 审查 Worker 的测试质量
+   *
+   * 测试验收员会分析：
+   * 1. 实现代码的复杂度和边界条件
+   * 2. 测试代码的覆盖程度
+   * 3. 对比检查：测试是否充分覆盖了代码的各种情况
+   */
+  private async reviewWorkerTests(
+    worker: WorkerAgent,
+    task: TaskNode,
+    loopState: TDDLoopState
+  ): Promise<ReviewResult> {
+    this.recordWorkerAction(worker, 'test', '测试验收员审查', { phase: 'review' });
+
+    // 构建审查上下文
+    const reviewContext = this.buildReviewContext(task, loopState);
+
+    // 执行审查
+    const result = await this.testReviewer.review(reviewContext);
+
+    // 记录审查结果
+    this.addTimelineEvent('task_review', `测试审查: ${result.status}`, {
+      workerId: worker.id,
+      taskId: task.id,
+      score: result.score,
+      issueCount: result.issues.length,
+      coverage: result.report.coverageAnalysis,
+    });
+
+    // 发出审查完成事件
+    this.emit('review:complete', {
+      workerId: worker.id,
+      taskId: task.id,
+      result,
+    });
+
+    return result;
+  }
+
+  /**
+   * 构建测试审查上下文
+   */
+  private buildReviewContext(task: TaskNode, loopState: TDDLoopState): TestReviewContext {
+    // 获取测试代码
+    let testCode = '';
+    let testFilePath = '';
+
+    if (loopState.hasAcceptanceTests && loopState.acceptanceTests.length > 0) {
+      // 使用验收测试
+      testCode = loopState.acceptanceTests.map(t => t.testCode).join('\n\n');
+      testFilePath = loopState.acceptanceTests[0]?.testFilePath || '';
+    } else if (loopState.testSpec) {
+      // 使用 Worker 生成的测试
+      testCode = loopState.testSpec.testCode;
+      testFilePath = loopState.testSpec.testFilePath;
+    }
+
+    // 获取实现代码
+    const implFiles: Array<{ filePath: string; content: string }> = [];
+    for (const artifact of task.codeArtifacts || []) {
+      if (artifact.type === 'file' && artifact.filePath && artifact.content) {
+        // 排除测试文件
+        if (!artifact.filePath.includes('.test.') && !artifact.filePath.includes('.spec.')) {
+          implFiles.push({
+            filePath: artifact.filePath,
+            content: artifact.content,
+          });
+        }
+      }
+    }
+
+    // 构建任务意图
+    // 将数字优先级转换为字符串优先级
+    const priorityMap: Record<number, 'high' | 'medium' | 'low'> = {
+      1: 'low',
+      2: 'medium',
+      3: 'high',
+    };
+    const taskIntent = {
+      description: task.description,
+      acceptanceCriteria: loopState.testSpec?.acceptanceCriteria || [],
+      boundaryConstraints: [] as string[], // TaskNode 没有边界约束，留空
+      priority: priorityMap[task.priority] || 'medium',
+    };
+
+    // 检查测试是否通过
+    const testPassed = loopState.testResults.length > 0 &&
+      loopState.testResults[loopState.testResults.length - 1]?.passed;
+
+    return {
+      task: taskIntent,
+      submission: {
+        testCode,
+        testFilePath,
+        implFiles,
+        testPassed,
+        testOutput: loopState.testResults[loopState.testResults.length - 1]?.output,
+      },
+    };
   }
 
   /**

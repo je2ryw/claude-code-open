@@ -72,8 +72,8 @@ export function BlueprintPreview({ dialogState }: BlueprintPreviewProps) {
             <span className={styles.previewCount}>({businessProcesses.length})</span>
           </h4>
           <div className={styles.previewCards}>
-            {businessProcesses.map((process) => (
-              <ProcessCard key={process.id} process={process} />
+            {businessProcesses.map((process, index) => (
+              <ProcessCard key={process.id || `process-${index}`} process={process} />
             ))}
           </div>
         </div>
@@ -87,8 +87,8 @@ export function BlueprintPreview({ dialogState }: BlueprintPreviewProps) {
             <span className={styles.previewCount}>({modules.length})</span>
           </h4>
           <div className={styles.previewCards}>
-            {modules.map((module) => (
-              <ModuleCard key={module.id} module={module} />
+            {modules.map((module, index) => (
+              <ModuleCard key={module.id || `module-${index}`} module={module} />
             ))}
           </div>
         </div>
@@ -102,8 +102,8 @@ export function BlueprintPreview({ dialogState }: BlueprintPreviewProps) {
             <span className={styles.previewCount}>({nfrs.length})</span>
           </h4>
           <div className={styles.previewNfrs}>
-            {nfrs.map((nfr) => (
-              <NFRCard key={nfr.id} nfr={nfr} />
+            {nfrs.map((nfr, index) => (
+              <NFRCard key={nfr.id || `nfr-${index}`} nfr={nfr} />
             ))}
           </div>
         </div>

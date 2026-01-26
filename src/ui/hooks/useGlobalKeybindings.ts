@@ -1,11 +1,21 @@
 /**
  * 全局快捷键管理 Hook
  * 实现 Ctrl+O, Ctrl+T, Ctrl+S, Ctrl+Z, Ctrl+_, Ctrl+G 等全局快捷键
+ * v2.1.18: 支持可自定义的键盘快捷键配置
  */
 
 import { useInput } from 'ink';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import type { UserConfig } from '../../config/index.js';
+import {
+  getKeybindings,
+  onKeybindingsChange,
+  initKeybindings,
+  getContextBindings,
+  parseKeyString as parseKeybindingString,
+  type KeybindingContext,
+  type KeybindingsLoadResult,
+} from '../../config/keybindings.js';
 import { isBackgroundTasksDisabled } from '../../utils/env-check.js';
 import {
   editInExternalEditor,
@@ -64,6 +74,30 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const stashedPromptRef = useRef<string>('');
+
+  // v2.1.18: 管理 keybindings 配置状态
+  const [keybindingsConfig, setKeybindingsConfig] = useState<KeybindingsLoadResult>(() => getKeybindings());
+  const [keybindingsReloaded, setKeybindingsReloaded] = useState(false);
+
+  // 初始化 keybindings 并监听变化
+  useEffect(() => {
+    // 异步初始化
+    initKeybindings().then((result) => {
+      setKeybindingsConfig(result);
+    });
+
+    // 监听配置变化
+    const unsubscribe = onKeybindingsChange((result) => {
+      setKeybindingsConfig(result);
+      setKeybindingsReloaded(true);
+      // 3秒后清除重载标志
+      setTimeout(() => setKeybindingsReloaded(false), 3000);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // 内置快捷键映射
   const builtinKeybindings: GlobalKeybinding[] = [
@@ -227,6 +261,10 @@ export function useGlobalKeybindings(options: UseGlobalKeybindingsOptions) {
     stashedPrompt: stashedPromptRef.current,
     editorError, // v2.1.6: 编辑器错误信息
     clearEditorError: () => setEditorError(null), // 手动清除错误信息
+    // v2.1.18: keybindings 配置
+    keybindingsConfig,
+    keybindingsReloaded,
+    keybindingsWarnings: keybindingsConfig.warnings,
   };
 }
 

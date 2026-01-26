@@ -323,6 +323,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         }));
         break;
 
+      case 'connected':
+        // 服务端连接确认消息，清除之前的错误状态
+        console.log('[SwarmState] Server connection confirmed:', (message as any).payload);
+        setError(null);
+        setState(prev => ({ ...prev, error: null }));
+        break;
+
       default:
         // 未知消息类型，记录日志但不中断
         console.warn('[SwarmState] Unknown message type:', (message as any).type);

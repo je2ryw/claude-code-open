@@ -318,7 +318,8 @@ export function CodebaseAnalysisDialog({
 
   const isAnalyzing = ['initializing', 'scanning', 'analyzing', 'identifying', 'generating'].includes(progress.phase);
   const isPreview = progress.phase === 'preview' || progress.phase === 'refining';
-  const isCompleting = progress.phase === 'completing' || progress.phase === 'completed';
+  const isCompleting = progress.phase === 'completing';
+  const isCompleted = progress.phase === 'completed';
 
   return (
     <div className={styles.overlay} onClick={handleClose}>
@@ -399,14 +400,14 @@ export function CodebaseAnalysisDialog({
           )}
 
           {/* 预览区域 */}
-          {(isPreview || isCompleting) && analysisResult && (
+          {(isPreview || isCompleting || isCompleted) && analysisResult && (
             <div className={styles.previewSection}>
               <div className={styles.previewHeader}>
                 <h3 className={styles.previewTitle}>
                   <span>📋</span> 蓝图预览
                 </h3>
                 <span className={styles.previewStatus}>
-                  {isCompleting ? '生成中...' : '待确认'}
+                  {isCompleted ? '已完成' : isCompleting ? '生成中...' : '待确认'}
                 </span>
               </div>
 
@@ -511,6 +512,7 @@ export function CodebaseAnalysisDialog({
             {isAnalyzing && '分析完成后将展示蓝图预览'}
             {isPreview && '确认无误后点击"确认生成"'}
             {isCompleting && '正在生成蓝图...'}
+            {isCompleted && '蓝图已就绪，可以关闭此窗口'}
           </span>
           <div className={styles.footerActions}>
             {isPreview && feedback.trim() && (

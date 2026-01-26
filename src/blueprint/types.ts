@@ -548,7 +548,7 @@ export interface TreeViewNode {
 export interface TimelineEvent {
   id: string;
   timestamp: Date;
-  type: 'task_start' | 'task_complete' | 'test_pass' | 'test_fail' | 'checkpoint' | 'rollback' | 'user_action';
+  type: 'task_start' | 'task_complete' | 'test_pass' | 'test_fail' | 'checkpoint' | 'rollback' | 'user_action' | 'task_review';
   taskId?: string;
   agentId?: string;
   description: string;

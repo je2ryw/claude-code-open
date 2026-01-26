@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { PermissionHandler, type PermissionDestination } from '../../src/web/server/permission-handler.js';
 
 describe('PermissionDestinationSelector', () => {
@@ -19,8 +20,8 @@ describe('PermissionDestinationSelector', () => {
       handler = new PermissionHandler({ timeout: 5000 });
       originalCwd = process.cwd();
 
-      // 创建临时目录用于测试
-      tempDir = path.join(process.cwd(), '.test-permissions-' + Date.now());
+      // 创建临时目录用于测试（使用系统临时目录，避免污染项目根目录）
+      tempDir = path.join(os.tmpdir(), '.test-permissions-' + Date.now());
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }

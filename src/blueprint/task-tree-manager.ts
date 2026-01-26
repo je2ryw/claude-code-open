@@ -1401,6 +1401,25 @@ export class TaskTreeManager extends EventEmitter {
     return stats;
   }
 
+  /**
+   * 将任务树的所有任务标记为 passed 状态
+   * 用于从代码库生成的蓝图（已存在的功能）
+   */
+  markAllTasksAsPassed(tree: TaskTree): void {
+    const markNode = (node: TaskNode): void => {
+      node.status = 'passed';
+      node.completedAt = new Date();
+      for (const child of node.children) {
+        markNode(child);
+      }
+    };
+
+    markNode(tree.root);
+    tree.stats = this.calculateStats(tree.root);
+    tree.status = 'completed';
+    this.saveTaskTree(tree);
+  }
+
   // --------------------------------------------------------------------------
   // 持久化
   // --------------------------------------------------------------------------

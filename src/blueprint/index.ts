@@ -159,6 +159,27 @@ export {
   type AcceptanceTestRunnerConfig,
 } from './acceptance-test-runner.js';
 
+// 测试验收员（审查层）
+export {
+  TestReviewer,
+  testReviewer,
+  createTestReviewer,
+  type TaskIntent,
+  type WorkerSubmission as TestWorkerSubmission,
+  type CodeAnalysis,
+  type FunctionInfo,
+  type ParameterInfo,
+  type BoundaryCondition,
+  type EdgeCase,
+  type TestAnalysis,
+  type TestCaseInfo,
+  type ReviewStandards,
+  type ReviewResult as TestReviewResult,
+  type ReviewIssue,
+  type ReviewReport,
+  type TestReviewContext,
+} from './test-reviewer.js';
+
 // ============================================================================
 // 持续开发组件（融入 Cursor 经验）
 // ============================================================================
