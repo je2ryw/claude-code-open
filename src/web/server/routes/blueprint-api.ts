@@ -376,6 +376,38 @@ router.post('/blueprints/:id/reset-failed', (req: Request, res: Response) => {
 });
 
 /**
+ * 重置所有中断的任务
+ * 将 coding、testing、test_writing、review 状态的任务重置为 pending
+ * 用于服务重启后恢复被中断的任务
+ */
+router.post('/blueprints/:id/reset-interrupted', (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintManager.getBlueprint(req.params.id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: '蓝图不存在' });
+    }
+
+    if (!blueprint.taskTreeId) {
+      return res.status(400).json({ success: false, error: '蓝图没有关联的任务树' });
+    }
+
+    const resetRetryCount = req.body.resetRetryCount === true; // 默认不重置重试计数
+    const resetCount = taskTreeManager.resetInterruptedTasks(blueprint.taskTreeId, resetRetryCount);
+
+    res.json({
+      success: true,
+      data: {
+        resetCount,
+        taskTreeId: blueprint.taskTreeId,
+      },
+      message: `已重置 ${resetCount} 个中断任务`,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * 删除蓝图
  */
 router.delete('/blueprints/:id', (req: Request, res: Response) => {

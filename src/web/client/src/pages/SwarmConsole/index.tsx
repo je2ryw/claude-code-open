@@ -522,6 +522,31 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   };
 
+  // 重置中断任务（服务重启后恢复）
+  const handleResetInterruptedTasks = async () => {
+    if (!selectedBlueprintId) {
+      alert('请先选择一个蓝图');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      '确定要重置所有中断的任务吗？\n这将把所有"执行中"状态（coding、testing等）的任务重置为待执行，用于服务重启后恢复。'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { blueprintApi } = await import('../../api/blueprint');
+      const result = await blueprintApi.resetInterruptedTasks(selectedBlueprintId);
+      alert(`成功重置 ${result.resetCount} 个中断任务`);
+      refresh();
+      fetchCoordinatorData();
+    } catch (err: any) {
+      console.error('重置中断任务失败:', err);
+      alert(`重置中断任务失败: ${err.message || '未知错误'}`);
+    }
+  };
+
   const handleBlueprintSelect = (blueprintId: string) => {
     setSelectedBlueprintId(blueprintId);
   };
@@ -656,6 +681,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               <button className={styles.iconButton} title="恢复执行" onClick={handleResumeExecution}>▶️</button>
               <button className={styles.iconButton} title="停止执行" onClick={handleStopExecution}>⏹️</button>
               <button className={styles.iconButton} title="重置失败任务" onClick={handleResetFailedTasks}>🔁</button>
+              <button className={styles.iconButton} title="重置中断任务(重启恢复)" onClick={handleResetInterruptedTasks}>🔄</button>
             </div>
           </div>
           <div className={styles.panelContent}>
