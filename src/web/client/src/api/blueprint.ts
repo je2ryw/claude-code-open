@@ -319,6 +319,23 @@ export const blueprintApi = {
   },
 
   /**
+   * 重置所有中断的任务
+   * 将 coding、testing、test_writing、review 状态的任务重置为 pending
+   * 用于服务重启后恢复被中断的任务
+   */
+  resetInterruptedTasks: async (
+    id: string,
+    resetRetryCount: boolean = false
+  ): Promise<{ resetCount: number; taskTreeId: string; message: string }> => {
+    const response = await fetch(`/api/blueprint/blueprints/${id}/reset-interrupted`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resetRetryCount }),
+    });
+    return handleResponse(response);
+  },
+
+  /**
    * 删除蓝图
    */
   deleteBlueprint: async (id: string): Promise<void> => {

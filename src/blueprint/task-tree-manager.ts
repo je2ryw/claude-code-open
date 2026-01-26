@@ -675,6 +675,52 @@ export class TaskTreeManager extends EventEmitter {
     return resetCount;
   }
 
+  /**
+   * 重置所有中断的任务为 pending 状态
+   * 用于服务重启后，将那些处于"执行中"但实际没有 Worker 在执行的任务重置
+   * @param treeId 任务树 ID
+   * @param resetRetryCount 是否重置重试计数（默认 false，因为中断不是失败）
+   * @returns 重置的任务数量
+   */
+  resetInterruptedTasks(treeId: string, resetRetryCount: boolean = false): number {
+    const tree = this.getTaskTree(treeId);
+    if (!tree) {
+      throw new Error(`Task tree ${treeId} not found`);
+    }
+
+    // 这些状态表示任务正在执行中，但重启后没有 Worker 继续执行
+    const interruptedStatuses: TaskStatus[] = ['coding', 'testing', 'test_writing', 'review'];
+    let resetCount = 0;
+
+    const resetNode = (node: TaskNode): void => {
+      if (interruptedStatuses.includes(node.status)) {
+        node.status = 'pending';
+        node.startedAt = undefined;
+        node.completedAt = undefined;
+        if (resetRetryCount) {
+          node.retryCount = 0;
+        }
+        resetCount++;
+      }
+
+      for (const child of node.children) {
+        resetNode(child);
+      }
+    };
+
+    resetNode(tree.root);
+
+    // 更新统计
+    tree.stats = this.calculateStats(tree.root);
+
+    // 保存
+    this.saveTaskTree(tree);
+
+    this.emit('tasks:interrupted-reset', { treeId, resetCount });
+
+    return resetCount;
+  }
+
   // --------------------------------------------------------------------------
   // 测试规格管理
   // --------------------------------------------------------------------------
