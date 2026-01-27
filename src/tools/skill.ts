@@ -223,6 +223,18 @@ interface SkillFrontmatter {
   [key: string]: any;
 }
 
+/**
+ * Skill 来源类型（对齐官网 v2.1.20+）
+ * - policySettings: 企业策略配置的 skills
+ * - userSettings: 用户级 skills (~/.claude/skills)
+ * - projectSettings: 项目级 skills (.claude/skills)
+ * - plugin: 插件提供的 skills
+ */
+type SkillSource = 'policySettings' | 'userSettings' | 'projectSettings' | 'plugin';
+
+/**
+ * Skill 定义接口（对齐官网 NE7 函数参数）
+ */
 interface SkillDefinition {
   skillName: string;
   displayName: string;
@@ -231,15 +243,19 @@ interface SkillDefinition {
   markdownContent: string;
   allowedTools?: string[];
   argumentHint?: string;
+  argumentNames?: string[];  // v2.1.20+ 具名参数名称数组
   whenToUse?: string;
   version?: string;
   model?: string;
   disableModelInvocation: boolean;
   userInvocable: boolean;
-  source: 'user' | 'project' | 'plugin';
+  source: SkillSource;
   baseDir: string;
   filePath: string;
   loadedFrom: 'skills' | 'commands_DEPRECATED';
+  hooks?: Record<string, any>;  // v2.1.20+ hooks 配置
+  executionContext?: 'fork' | undefined;  // v2.1.20+ 执行上下文
+  agent?: string;  // v2.1.20+ 关联的 agent
 }
 
 // 全局状态：已调用的 skills（对齐官网 KP0/VP0）
@@ -357,7 +373,7 @@ function parseBoolean(value: string | undefined, defaultValue = false): boolean 
 }
 
 /**
- * 构建 Skill 对象（对齐官网 AY9 函数）
+ * 构建 Skill 对象（对齐官网 NE7 函数）
  */
 function buildSkillDefinition(params: {
   skillName: string;
@@ -367,15 +383,19 @@ function buildSkillDefinition(params: {
   markdownContent: string;
   allowedTools?: string[];
   argumentHint?: string;
+  argumentNames?: string[];
   whenToUse?: string;
   version?: string;
   model?: string;
   disableModelInvocation: boolean;
   userInvocable: boolean;
-  source: 'user' | 'project' | 'plugin';
+  source: SkillSource;
   baseDir: string;
   filePath: string;
   loadedFrom: 'skills' | 'commands_DEPRECATED';
+  hooks?: Record<string, any>;
+  executionContext?: 'fork' | undefined;
+  agent?: string;
 }): SkillDefinition {
   return {
     skillName: params.skillName,
@@ -385,6 +405,7 @@ function buildSkillDefinition(params: {
     markdownContent: params.markdownContent,
     allowedTools: params.allowedTools,
     argumentHint: params.argumentHint,
+    argumentNames: params.argumentNames,
     whenToUse: params.whenToUse,
     version: params.version,
     model: params.model,
@@ -394,11 +415,34 @@ function buildSkillDefinition(params: {
     baseDir: params.baseDir,
     filePath: params.filePath,
     loadedFrom: params.loadedFrom,
+    hooks: params.hooks,
+    executionContext: params.executionContext,
+    agent: params.agent,
   };
 }
 
 /**
- * 从文件创建 Skill（简化版 CPA 函数）
+ * 解析 arguments 字段（对齐官网 yBA 函数）
+ * 用于获取具名参数名称数组
+ */
+function parseArgumentNames(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+
+  // 支持逗号分隔的参数名
+  if (value.includes(',')) {
+    return value.split(',').map(t => t.trim()).filter(t => t.length > 0);
+  }
+
+  // 单个参数名
+  if (value.trim()) {
+    return [value.trim()];
+  }
+
+  return undefined;
+}
+
+/**
+ * 从文件创建 Skill（对齐官网 CPA 函数）
  */
 function createSkillFromFile(
   skillName: string,
@@ -408,7 +452,7 @@ function createSkillFromFile(
     frontmatter: SkillFrontmatter;
     content: string;
   },
-  source: 'user' | 'project' | 'plugin',
+  source: SkillSource,
   isSkillMode: boolean
 ): SkillDefinition | null {
   const { frontmatter, content, filePath, baseDir } = fileInfo;
@@ -418,11 +462,14 @@ function createSkillFromFile(
   const description = frontmatter.description || '';
   const allowedTools = parseAllowedTools(frontmatter['allowed-tools']);
   const argumentHint = frontmatter['argument-hint'];
+  const argumentNames = parseArgumentNames(frontmatter.arguments);
   const whenToUse = frontmatter['when-to-use'] || frontmatter.when_to_use;
   const version = frontmatter.version;
-  const model = frontmatter.model;
+  const model = frontmatter.model === 'inherit' ? undefined : frontmatter.model;
   const disableModelInvocation = parseBoolean(frontmatter['disable-model-invocation']);
   const userInvocable = parseBoolean(frontmatter['user-invocable'], true);
+  const executionContext = frontmatter.context === 'fork' ? 'fork' as const : undefined;
+  const agent = frontmatter.agent;
 
   return buildSkillDefinition({
     skillName,
@@ -432,6 +479,7 @@ function createSkillFromFile(
     markdownContent: content,
     allowedTools,
     argumentHint,
+    argumentNames,
     whenToUse,
     version,
     model,
@@ -441,6 +489,8 @@ function createSkillFromFile(
     baseDir,
     filePath,
     loadedFrom: isSkillMode ? 'skills' : 'commands_DEPRECATED',
+    executionContext,
+    agent,
   });
 }
 
@@ -489,7 +539,7 @@ function createSkillFromFile(
  */
 async function loadSkillsFromDirectory(
   dirPath: string,
-  namespace: 'user' | 'project' | 'plugin'
+  source: SkillSource
 ): Promise<SkillDefinition[]> {
   const results: SkillDefinition[] = [];
 
@@ -506,7 +556,7 @@ async function loadSkillsFromDirectory(
         const { frontmatter, content: markdownContent } = parseFrontmatter(content);
 
         // 使用目录名作为 skillName
-        const skillName = `${namespace}:${path.basename(dirPath)}`;
+        const skillName = path.basename(dirPath);
 
         const skill = createSkillFromFile(
           skillName,
@@ -516,7 +566,7 @@ async function loadSkillsFromDirectory(
             frontmatter,
             content: markdownContent,
           },
-          namespace,
+          source,
           true // isSkillMode
         );
 
@@ -546,8 +596,8 @@ async function loadSkillsFromDirectory(
           const content = fs.readFileSync(skillFile, { encoding: 'utf-8' });
           const { frontmatter, content: markdownContent } = parseFrontmatter(content);
 
-          // 使用子目录名作为 skillName（带命名空间）
-          const skillName = `${namespace}:${entry.name}`;
+          // 使用子目录名作为 skillName
+          const skillName = entry.name;
 
           const skill = createSkillFromFile(
             skillName,
@@ -557,7 +607,7 @@ async function loadSkillsFromDirectory(
               frontmatter,
               content: markdownContent,
             },
-            namespace,
+            source,
             true // isSkillMode
           );
 
@@ -787,16 +837,16 @@ export async function initializeSkills(): Promise<void> {
     allSkillsWithPath.push({ skill, filePath: skill.filePath });
   }
 
-  // 2. 加载用户级 skills
+  // 2. 加载用户级 skills（对齐官网 userSettings）
   const userSkillsDir = path.join(claudeDir, 'skills');
-  const userSkills = await loadSkillsFromDirectory(userSkillsDir, 'user');
+  const userSkills = await loadSkillsFromDirectory(userSkillsDir, 'userSettings');
   for (const skill of userSkills) {
     allSkillsWithPath.push({ skill, filePath: skill.filePath });
   }
 
-  // 3. 加载项目级 skills（优先级最高）
+  // 3. 加载项目级 skills（对齐官网 projectSettings，优先级最高）
   const projectSkillsDir = path.join(projectDir, 'skills');
-  const projectSkills = await loadSkillsFromDirectory(projectSkillsDir, 'project');
+  const projectSkills = await loadSkillsFromDirectory(projectSkillsDir, 'projectSettings');
   for (const skill of projectSkills) {
     allSkillsWithPath.push({ skill, filePath: skill.filePath });
   }
@@ -808,7 +858,7 @@ export async function initializeSkills(): Promise<void> {
     // 避免重复加载根目录的 skills
     if (nestedDir === projectSkillsDir) continue;
 
-    const nestedSkills = await loadSkillsFromDirectory(nestedDir, 'project');
+    const nestedSkills = await loadSkillsFromDirectory(nestedDir, 'projectSettings');
     for (const skill of nestedSkills) {
       // 添加子目录路径前缀以区分来源
       const relativePath = path.relative(process.cwd(), nestedDir);
@@ -816,11 +866,9 @@ export async function initializeSkills(): Promise<void> {
       const prefixedSkillName = parentDir ? `${skill.skillName}@${parentDir}` : skill.skillName;
 
       // 重新设置 skillName 以包含路径前缀
-      // source 保持为 'project'，但在 skillName 中添加路径信息以区分来源
       const modifiedSkill = {
         ...skill,
         skillName: prefixedSkillName,
-        // source 必须是 'user' | 'plugin' | 'project'，使用 project 表示嵌套的项目级 skills
       };
 
       allSkillsWithPath.push({ skill: modifiedSkill, filePath: skill.filePath });
@@ -911,38 +959,92 @@ export function findSkill(skillInput: string): SkillDefinition | undefined {
 }
 
 /**
- * Skill 工具类
+ * 格式化 skill 描述（对齐官网 WKK 函数）
+ */
+function formatSkillDescription(skill: SkillDefinition): string {
+  if (skill.whenToUse) {
+    return `${skill.description} - ${skill.whenToUse}`;
+  }
+  return skill.description;
+}
+
+/**
+ * 格式化单个 skill 为列表项（对齐官网 Oj2 函数）
+ */
+function formatSkillListItem(skill: SkillDefinition): string {
+  return `- ${skill.skillName}: ${formatSkillDescription(skill)}`;
+}
+
+/**
+ * 格式化 skills 列表（对齐官网 $j2 函数）
+ * 支持三种格式：
+ * - 完整格式：当所有 skills 描述在预算内
+ * - 截断格式：当描述太长时截断
+ * - 超短格式：只显示名称
+ */
+function formatSkillsList(skills: SkillDefinition[]): string {
+  if (skills.length === 0) {
+    return '';
+  }
+
+  const CHAR_BUDGET = Number(process.env.SLASH_COMMAND_TOOL_CHAR_BUDGET) || 15000;
+  const MIN_DESC_LENGTH = 20;
+
+  // 计算完整格式
+  const fullItems = skills.map(s => ({
+    skill: s,
+    full: formatSkillListItem(s),
+  }));
+
+  const totalFullLength = fullItems.reduce((sum, item) => sum + item.full.length, 0) + (fullItems.length - 1);
+
+  // 如果完整格式在预算内，使用完整格式
+  if (totalFullLength <= CHAR_BUDGET) {
+    return fullItems.map(item => item.full).join('\n');
+  }
+
+  // 计算只有名称时的长度
+  const namesOnlyLength = skills.reduce((sum, s) => sum + s.skillName.length + 4, 0) + (skills.length - 1);
+  const remainingBudget = CHAR_BUDGET - namesOnlyLength;
+  const descBudgetPerSkill = Math.floor(remainingBudget / skills.length);
+
+  // 如果每个 skill 的描述预算太小，使用超短格式
+  if (descBudgetPerSkill < MIN_DESC_LENGTH) {
+    return skills.map(s => `- ${s.skillName}`).join('\n');
+  }
+
+  // 使用截断格式
+  return skills.map(s => {
+    const desc = formatSkillDescription(s);
+    const truncatedDesc = desc.length > descBudgetPerSkill
+      ? desc.slice(0, descBudgetPerSkill - 1) + '…'
+      : desc;
+    return `- ${s.skillName}: ${truncatedDesc}`;
+  }).join('\n');
+}
+
+/**
+ * Skill 工具类（对齐官网 v2.1.20+ 实现）
  */
 export class SkillTool extends BaseTool<SkillInput, any> {
   name = 'Skill';
 
+  /**
+   * 获取工具描述（对齐官网 cI6 函数）
+   */
   get description(): string {
     const skills = getAllSkills();
-    const skillsXml = skills.map(skill => {
-      return `<skill>
-<name>
-${skill.skillName}
-</name>
-<description>
-${skill.description}
-</description>
-<location>
-${skill.source}
-</location>
-</skill>`;
-    }).join('\n');
+    const skillsList = formatSkillsList(skills);
 
     return `Execute a skill within the main conversation
 
-<skills_instructions>
 When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
 
 When users ask you to run a "slash command" or reference "/<something>" (e.g., "/commit", "/review-pr"), they are referring to a skill. Use this tool to invoke the corresponding skill.
 
-<example>
-User: "run /commit"
-Assistant: [Calls Skill tool with skill: "commit"]
-</example>
+Example:
+  User: "run /commit"
+  Assistant: [Calls Skill tool with skill: "commit"]
 
 How to invoke:
 - Use this tool with the skill name and optional arguments
@@ -950,20 +1052,18 @@ How to invoke:
   - \`skill: "pdf"\` - invoke the pdf skill
   - \`skill: "commit", args: "-m 'Fix bug'"\` - invoke with arguments
   - \`skill: "review-pr", args: "123"\` - invoke with arguments
-  - \`skill: "user:pdf"\` - invoke using fully qualified name
+  - \`skill: "ms-office-suite:pdf"\` - invoke using fully qualified name
 
 Important:
 - When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action
 - NEVER just announce or mention a skill in your text response without actually calling this tool
 - This is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task
-- Only use skills listed in <available_skills> below
+- Skills listed below are available for invocation
 - Do not invoke a skill that is already running
 - Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
-</skills_instructions>
 
-<available_skills>
-${skillsXml}
-</available_skills>
+Available skills:
+${skillsList}
 `;
   }
 
@@ -1013,10 +1113,10 @@ ${skillsXml}
     // 构建输出内容
     let skillContent = skill.markdownContent;
 
-    // v2.1.19: 使用参数替换函数处理占位符
-    // 支持: $ARGUMENTS[N], $N, $ARGUMENTS
+    // v2.1.19+: 使用参数替换函数处理占位符
+    // 支持: $ARGUMENTS[N], $N, $ARGUMENTS, $PARAM_NAME（具名参数）
     // 如果没有占位符则追加 ARGUMENTS: 部分
-    skillContent = substituteArguments(skillContent, args, true);
+    skillContent = substituteArguments(skillContent, args, true, skill.argumentNames || []);
 
     // v2.1.9: 替换 ${CLAUDE_SESSION_ID} 占位符
     // 官网实现：M = M.replace(/\$\{CLAUDE_SESSION_ID\}/g, H0())
