@@ -243,12 +243,26 @@ function hasInferenceScope(scopes?: string[]): boolean {
  */
 export function initAuth(): AuthConfig | null {
   // 1. 检查环境变量 (最高优先级)
+  // 1a. 检查 API Key
   const envApiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
   if (envApiKey) {
     currentAuth = {
       type: 'api_key',
       accountType: 'api',
       apiKey: envApiKey,
+    };
+    return currentAuth;
+  }
+
+  // 1b. 检查 Auth Token (Issue #64: 支持 ANTHROPIC_AUTH_TOKEN 环境变量)
+  // 这允许用户使用第三方API服务（配合 ANTHROPIC_BASE_URL）
+  const envAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  if (envAuthToken) {
+    currentAuth = {
+      type: 'oauth',
+      accountType: 'api',
+      authToken: envAuthToken,
+      accessToken: envAuthToken,
     };
     return currentAuth;
   }

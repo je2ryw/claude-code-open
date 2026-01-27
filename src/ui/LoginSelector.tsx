@@ -95,11 +95,23 @@ export function LoginSelector({ onSelect }: LoginSelectorProps): React.ReactElem
 /**
  * 检查是否需要显示登录选择器
  * 如果用户已经有认证凭据,则不需要
+ *
+ * 支持以下认证方式（跳过登录选择器）：
+ * 1. ANTHROPIC_API_KEY 或 CLAUDE_API_KEY 环境变量
+ * 2. ANTHROPIC_AUTH_TOKEN 环境变量（OAuth token）
+ * 3. ANTHROPIC_BASE_URL + 上述任一认证方式（第三方API服务）
  */
 export function shouldShowLoginSelector(): boolean {
   // 检查环境变量中的 API key
   const hasEnvKey = !!(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
   if (hasEnvKey) {
+    return false;
+  }
+
+  // 检查环境变量中的 Auth Token（支持第三方API服务）
+  // Issue #64: 支持 ANTHROPIC_AUTH_TOKEN 环境变量
+  const hasAuthToken = !!process.env.ANTHROPIC_AUTH_TOKEN;
+  if (hasAuthToken) {
     return false;
   }
 
