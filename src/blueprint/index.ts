@@ -228,3 +228,29 @@ export {
   type DevFlowPhase,
   type DevFlowState,
 } from './continuous-dev-orchestrator.js';
+
+// 验收测试修正器（AI 测试自愈机制）
+export {
+  AcceptanceTestFixer,
+  createAcceptanceTestFixer,
+  getAcceptanceTestFixer,
+  type TestFixRequest,
+  type TestFixResult,
+  type TestProblemAnalysis,
+  type TestProblemLocation,
+  type TestFixHistory,
+  type TestFixerConfig,
+} from './acceptance-test-fixer.js';
+
+// 蜂王智能体执行器（真正的蜂王介入机制）
+export {
+  QueenExecutor,
+  createQueenExecutor,
+  getQueenExecutor,
+  type InterventionType,
+  type QueenInterventionRequest,
+  type QueenDecision,
+  type QueenAction,
+  type QueenInterventionResult,
+  type QueenExecutorConfig,
+} from './queen-executor.js';

@@ -79,6 +79,10 @@ export interface TDDLoopState {
   hasAcceptanceTests: boolean;
   acceptanceTests: AcceptanceTest[];
   acceptanceTestResults: Map<string, TestResult>;  // testId -> result
+
+  // 重复错误检测
+  consecutiveSameErrorCount: number;  // 连续相同错误次数
+  lastErrorSignature?: string;        // 错误签名（用于比较）
 }
 
 export interface PhaseTransition {
@@ -142,6 +146,9 @@ export class TDDExecutor extends EventEmitter {
       hasAcceptanceTests,
       acceptanceTests: hasAcceptanceTests ? [...task.acceptanceTests] : [],
       acceptanceTestResults: new Map(),
+      // 重复错误检测
+      consecutiveSameErrorCount: 0,
+      lastErrorSignature: undefined,
     };
 
     this.loopStates.set(taskId, loopState);
@@ -180,7 +187,7 @@ export class TDDExecutor extends EventEmitter {
     testCommand: string,
     acceptanceCriteria: string[]
   ): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'write_test') {
       throw new Error(`Cannot submit test code in phase ${state.phase}. Expected: write_test`);
@@ -224,7 +231,7 @@ export class TDDExecutor extends EventEmitter {
    * 验证测试确实会失败（因为还没写实现代码）
    */
   submitRedTestResult(taskId: string, result: Omit<TestResult, 'id' | 'timestamp'>): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'run_test_red') {
       throw new Error(`Cannot submit red test result in phase ${state.phase}. Expected: run_test_red`);
@@ -268,7 +275,7 @@ export class TDDExecutor extends EventEmitter {
    * 从 write_code 阶段转换到 run_test_green 阶段
    */
   submitImplementationCode(taskId: string, codeArtifacts: Array<{ filePath: string; content: string }>): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'write_code') {
       throw new Error(`Cannot submit implementation code in phase ${state.phase}. Expected: write_code`);
@@ -293,6 +300,12 @@ export class TDDExecutor extends EventEmitter {
       }
     }
 
+    // 清空验收测试结果，准备绿灯阶段重新运行
+    // 关键修复：防止红灯阶段的旧结果干扰绿灯阶段的判断
+    if (state.hasAcceptanceTests) {
+      state.acceptanceTestResults.clear();
+    }
+
     // 转换阶段
     this.transitionPhase(state, 'run_test_green', '实现代码已编写');
     taskTreeManager.updateTaskStatus(state.treeId, taskId, 'testing');
@@ -305,7 +318,7 @@ export class TDDExecutor extends EventEmitter {
    * 这是关键！测试必须通过才能继续
    */
   submitGreenTestResult(taskId: string, result: Omit<TestResult, 'id' | 'timestamp'>): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'run_test_green') {
       throw new Error(`Cannot submit green test result in phase ${state.phase}. Expected: run_test_green`);
@@ -350,7 +363,41 @@ export class TDDExecutor extends EventEmitter {
       state.iteration++;
       state.lastError = result.errorMessage;
 
-      if (state.iteration >= this.config.maxIterations) {
+      // 重复错误检测：生成错误签名（提取核心错误信息）
+      const errorSignature = this.generateErrorSignature(result.errorMessage || '');
+      if (errorSignature === state.lastErrorSignature) {
+        state.consecutiveSameErrorCount++;
+      } else {
+        state.consecutiveSameErrorCount = 1;
+        state.lastErrorSignature = errorSignature;
+      }
+
+      // 检测到连续 3 次相同错误，可能是测试用例本身有问题
+      const MAX_SAME_ERROR_COUNT = 3;
+      if (state.consecutiveSameErrorCount >= MAX_SAME_ERROR_COUNT) {
+        taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
+        this.emit('loop:repeated-error-detected', {
+          taskId,
+          iteration: state.iteration,
+          errorSignature,
+          consecutiveCount: state.consecutiveSameErrorCount,
+          lastError: state.lastError,
+          suggestion: '连续多次出现相同错误，可能是测试用例本身有问题（如测试数据与验证规则不匹配）',
+        });
+
+        // 创建失败检查点
+        if (this.config.enableCheckpoints) {
+          taskTreeManager.createTaskCheckpoint(
+            state.treeId,
+            taskId,
+            `重复错误检测 - 迭代 ${state.iteration}`,
+            `连续 ${state.consecutiveSameErrorCount} 次相同错误: ${result.errorMessage?.substring(0, 200)}`
+          );
+        }
+
+        // 终止循环，避免无效重试
+        this.transitionPhase(state, 'done', `连续 ${state.consecutiveSameErrorCount} 次相同错误，疑似测试用例问题，终止循环`);
+      } else if (state.iteration >= this.config.maxIterations) {
         // 超过最大迭代次数，任务失败
         taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
         this.emit('loop:max-iterations', { taskId, iteration: state.iteration, lastError: state.lastError });
@@ -364,6 +411,9 @@ export class TDDExecutor extends EventEmitter {
             `错误: ${result.errorMessage}`
           );
         }
+
+        // 关键修复：将 phase 设置为 done，避免死循环
+        this.transitionPhase(state, 'done', `超过最大迭代次数 (${this.config.maxIterations})，任务失败`);
       } else {
         // 回到编写代码阶段继续修复
         this.transitionPhase(state, 'write_code', `测试失败，进入第 ${state.iteration + 1} 次迭代`);
@@ -385,7 +435,7 @@ export class TDDExecutor extends EventEmitter {
    * 完成重构阶段
    */
   completeRefactoring(taskId: string, refactoredArtifacts?: Array<{ filePath: string; content: string }>): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'refactor') {
       throw new Error(`Cannot complete refactoring in phase ${state.phase}. Expected: refactor`);
@@ -420,7 +470,7 @@ export class TDDExecutor extends EventEmitter {
    * 跳过重构阶段
    */
   skipRefactoring(taskId: string): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'refactor') {
       throw new Error(`Cannot skip refactoring in phase ${state.phase}. Expected: refactor`);
@@ -440,7 +490,7 @@ export class TDDExecutor extends EventEmitter {
    * 用于 UI 上的阶段切换操作
    */
   manualTransitionPhase(taskId: string, targetPhase: TDDPhase): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
     const currentPhase = state.phase;
 
     // 验证目标阶段
@@ -473,7 +523,7 @@ export class TDDExecutor extends EventEmitter {
    * 阶段顺序: write_test -> run_test_red -> write_code -> run_test_green -> refactor -> done
    */
   markPhaseComplete(taskId: string): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
     const currentPhase = state.phase;
 
     if (currentPhase === 'done') {
@@ -504,7 +554,7 @@ export class TDDExecutor extends EventEmitter {
    * 回退到上一阶段
    */
   revertPhase(taskId: string): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
     const currentPhase = state.phase;
 
     if (currentPhase === 'done') {
@@ -566,7 +616,7 @@ export class TDDExecutor extends EventEmitter {
     testId: string,
     result: Omit<TestResult, 'id' | 'timestamp'>
   ): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'run_test_red') {
       throw new Error(`Cannot submit acceptance test result in phase ${state.phase}. Expected: run_test_red`);
@@ -619,7 +669,7 @@ export class TDDExecutor extends EventEmitter {
     testId: string,
     result: Omit<TestResult, 'id' | 'timestamp'>
   ): TDDLoopState {
-    const state = this.getLoopState(taskId);
+    const state = this.getInternalLoopState(taskId);
 
     if (state.phase !== 'run_test_green') {
       throw new Error(`Cannot submit acceptance test result in phase ${state.phase}. Expected: run_test_green`);
@@ -680,7 +730,40 @@ export class TDDExecutor extends EventEmitter {
 
         state.lastError = `验收测试失败: ${failedTests.map(t => t.error).join(', ')}`;
 
-        if (state.iteration >= this.config.maxIterations) {
+        // 重复错误检测
+        const errorSignature = this.generateErrorSignature(state.lastError);
+        if (errorSignature === state.lastErrorSignature) {
+          state.consecutiveSameErrorCount++;
+        } else {
+          state.consecutiveSameErrorCount = 1;
+          state.lastErrorSignature = errorSignature;
+        }
+
+        // 检测到连续 3 次相同错误
+        const MAX_SAME_ERROR_COUNT = 3;
+        if (state.consecutiveSameErrorCount >= MAX_SAME_ERROR_COUNT) {
+          taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
+          this.emit('loop:repeated-error-detected', {
+            taskId,
+            iteration: state.iteration,
+            errorSignature,
+            consecutiveCount: state.consecutiveSameErrorCount,
+            lastError: state.lastError,
+            failedTests,
+            suggestion: '连续多次出现相同验收测试失败，可能是测试用例本身有问题',
+          });
+
+          if (this.config.enableCheckpoints) {
+            taskTreeManager.createTaskCheckpoint(
+              state.treeId,
+              taskId,
+              `验收测试重复错误 - 迭代 ${state.iteration}`,
+              `连续 ${state.consecutiveSameErrorCount} 次相同错误: ${state.lastError?.substring(0, 200)}`
+            );
+          }
+
+          this.transitionPhase(state, 'done', `连续 ${state.consecutiveSameErrorCount} 次相同验收测试失败，疑似测试用例问题，终止循环`);
+        } else if (state.iteration >= this.config.maxIterations) {
           // 超过最大迭代次数
           taskTreeManager.updateTaskStatus(state.treeId, taskId, 'test_failed');
           this.emit('loop:max-iterations', {
@@ -689,6 +772,9 @@ export class TDDExecutor extends EventEmitter {
             lastError: state.lastError,
             failedTests,
           });
+
+          // 关键修复：将 phase 设置为 done，避免死循环
+          this.transitionPhase(state, 'done', `超过最大迭代次数 (${this.config.maxIterations})，验收测试失败`);
         } else {
           // 回到编写代码阶段继续修复
           // 清除之前的验收测试结果，准备重新运行
@@ -756,7 +842,19 @@ export class TDDExecutor extends EventEmitter {
     this.transitionPhase(state, 'done', reason);
 
     // 更新任务状态为通过
-    taskTreeManager.updateTaskStatus(state.treeId, state.taskId, 'passed');
+    // 关键修复：检查更新是否成功，如果失败则记录错误
+    const updatedTask = taskTreeManager.updateTaskStatus(state.treeId, state.taskId, 'passed');
+    if (!updatedTask) {
+      console.error(`[TDDExecutor] 任务树状态更新失败！treeId=${state.treeId}, taskId=${state.taskId}`);
+      console.error(`[TDDExecutor] TDD 循环已完成，但任务树中的任务状态未能同步更新`);
+      // 触发错误事件，通知上层处理
+      this.emit('loop:sync-error', {
+        taskId: state.taskId,
+        treeId: state.treeId,
+        reason: '任务树状态更新失败',
+        tddPhase: 'done',
+      });
+    }
 
     // 创建最终检查点
     if (this.config.enableCheckpoints) {
@@ -781,6 +879,47 @@ export class TDDExecutor extends EventEmitter {
   // --------------------------------------------------------------------------
 
   /**
+   * 生成错误签名（用于检测重复错误）
+   * 提取错误的核心信息，忽略可变部分（如时间戳、行号等）
+   */
+  private generateErrorSignature(errorMessage: string): string {
+    if (!errorMessage) return '';
+
+    // 移除 ANSI 转义码
+    let normalized = errorMessage.replace(/\u001b\[\d+m/g, '');
+
+    // 移除时间戳（常见格式）
+    normalized = normalized.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*/g, '');
+    normalized = normalized.replace(/\d{1,2}:\d{2}:\d{2}(\.\d+)?/g, '');
+
+    // 移除文件路径中的可变部分（保留文件名）
+    normalized = normalized.replace(/[A-Za-z]:[\\\/][^\s:]+[\\\/]/g, '');
+    normalized = normalized.replace(/\/[^\s:]+\//g, '/');
+
+    // 移除行号列号（保留关键错误类型）
+    normalized = normalized.replace(/:(\d+):(\d+)/g, ':LINE:COL');
+    normalized = normalized.replace(/line \d+/gi, 'line N');
+    normalized = normalized.replace(/column \d+/gi, 'column N');
+
+    // 提取关键错误模式
+    // 例如：expected 'X' to match /REGEX/ -> expected_to_match_REGEX
+    const matchPattern = normalized.match(/expected\s+['"](.*?)['"]\s+to\s+match\s+\/(.*?)\//i);
+    if (matchPattern) {
+      return `expected_to_match:${matchPattern[2].substring(0, 50)}`;
+    }
+
+    // AssertionError 模式
+    const assertionMatch = normalized.match(/AssertionError[:\s]+(.*)/);
+    if (assertionMatch) {
+      return `assertion:${assertionMatch[1].substring(0, 100).trim()}`;
+    }
+
+    // 通用：取前 150 字符的哈希
+    const truncated = normalized.substring(0, 150).trim().toLowerCase();
+    return truncated;
+  }
+
+  /**
    * 阶段转换
    */
   private transitionPhase(state: TDDLoopState, to: TDDPhase, reason: string): void {
@@ -799,9 +938,38 @@ export class TDDExecutor extends EventEmitter {
   }
 
   /**
-   * 获取循环状态
+   * 将 TDDLoopState 序列化为可 JSON 传输的格式
+   * 注意：Map 类型不能直接 JSON.stringify，需要转换为普通对象
    */
-  getLoopState(taskId: string): TDDLoopState {
+  private serializeLoopState(state: TDDLoopState): any {
+    return {
+      ...state,
+      // 将 Map 转换为普通对象
+      acceptanceTestResults: Object.fromEntries(state.acceptanceTestResults),
+      // 确保 testResults 是数组的副本，避免引用问题
+      testResults: [...state.testResults],
+      // 确保 phaseHistory 是数组的副本
+      phaseHistory: [...state.phaseHistory],
+      // 确保 acceptanceTests 是数组的副本
+      acceptanceTests: [...state.acceptanceTests],
+    };
+  }
+
+  /**
+   * 获取循环状态（返回可序列化的副本）
+   */
+  getLoopState(taskId: string): any {
+    const state = this.loopStates.get(taskId);
+    if (!state) {
+      throw new Error(`TDD loop not found for task ${taskId}`);
+    }
+    return this.serializeLoopState(state);
+  }
+
+  /**
+   * 获取内部循环状态（供内部使用，返回原始引用）
+   */
+  private getInternalLoopState(taskId: string): TDDLoopState {
     const state = this.loopStates.get(taskId);
     if (!state) {
       throw new Error(`TDD loop not found for task ${taskId}`);
@@ -817,10 +985,12 @@ export class TDDExecutor extends EventEmitter {
   }
 
   /**
-   * 获取所有活跃的 TDD 循环
+   * 获取所有活跃的 TDD 循环（返回可序列化的副本）
    */
-  getActiveLoops(): TDDLoopState[] {
-    return Array.from(this.loopStates.values()).filter(s => s.phase !== 'done');
+  getActiveLoops(): any[] {
+    return Array.from(this.loopStates.values())
+      .filter(s => s.phase !== 'done')
+      .map(s => this.serializeLoopState(s));
   }
 
   /**
@@ -834,6 +1004,249 @@ export class TDDExecutor extends EventEmitter {
     taskTreeManager.updateTaskStatus(state.treeId, taskId, 'cancelled');
 
     this.emit('loop:terminated', { taskId, reason });
+  }
+
+  /**
+   * 移除 TDD 循环（用于任务重置时清理）
+   */
+  removeLoop(taskId: string): boolean {
+    const existed = this.loopStates.has(taskId);
+    if (existed) {
+      this.loopStates.delete(taskId);
+      this.emit('loop:removed', { taskId });
+    }
+    return existed;
+  }
+
+  /**
+   * 同步 TDD 循环状态到任务树（修复状态不一致）
+   *
+   * 当 TDD 循环完成但任务树状态未更新时，调用此方法手动同步
+   */
+  syncLoopStateToTaskTree(taskId: string): {
+    success: boolean;
+    message: string;
+    tddPhase?: TDDPhase;
+    taskStatus?: string;
+  } {
+    const state = this.loopStates.get(taskId);
+    if (!state) {
+      return {
+        success: false,
+        message: `任务 ${taskId} 没有 TDD 循环状态`,
+      };
+    }
+
+    // 根据 TDD 阶段确定应该同步的任务状态
+    const expectedTaskStatus = this.getTaskStatusForPhase(state.phase);
+
+    // 尝试更新任务树状态
+    const tree = taskTreeManager.getTaskTree(state.treeId);
+    if (!tree) {
+      return {
+        success: false,
+        message: `任务树 ${state.treeId} 不存在`,
+        tddPhase: state.phase,
+      };
+    }
+
+    const task = taskTreeManager.findTask(tree.root, taskId);
+    if (!task) {
+      return {
+        success: false,
+        message: `任务 ${taskId} 在任务树中不存在`,
+        tddPhase: state.phase,
+      };
+    }
+
+    // 执行同步
+    const updatedTask = taskTreeManager.updateTaskStatus(
+      state.treeId,
+      taskId,
+      expectedTaskStatus
+    );
+
+    if (updatedTask) {
+      console.log(`[TDDExecutor] 状态同步成功: taskId=${taskId}, tddPhase=${state.phase}, taskStatus=${expectedTaskStatus}`);
+      this.emit('loop:synced', {
+        taskId,
+        tddPhase: state.phase,
+        taskStatus: expectedTaskStatus,
+      });
+      return {
+        success: true,
+        message: `状态同步成功: TDD 阶段 ${state.phase} -> 任务状态 ${expectedTaskStatus}`,
+        tddPhase: state.phase,
+        taskStatus: expectedTaskStatus,
+      };
+    } else {
+      return {
+        success: false,
+        message: `状态同步失败: 无法更新任务树状态`,
+        tddPhase: state.phase,
+      };
+    }
+  }
+
+  /**
+   * 检查所有 TDD 循环与任务树的状态一致性
+   * 返回不一致的任务列表
+   */
+  checkStateConsistency(): Array<{
+    taskId: string;
+    treeId: string;
+    tddPhase: TDDPhase;
+    expectedTaskStatus: TaskStatus;
+    actualTaskStatus: TaskStatus | null;
+    isConsistent: boolean;
+  }> {
+    const results: Array<{
+      taskId: string;
+      treeId: string;
+      tddPhase: TDDPhase;
+      expectedTaskStatus: TaskStatus;
+      actualTaskStatus: TaskStatus | null;
+      isConsistent: boolean;
+    }> = [];
+
+    for (const [taskId, state] of this.loopStates.entries()) {
+      const expectedTaskStatus = this.getTaskStatusForPhase(state.phase);
+      const tree = taskTreeManager.getTaskTree(state.treeId);
+      let actualTaskStatus: TaskStatus | null = null;
+
+      if (tree) {
+        const task = taskTreeManager.findTask(tree.root, taskId);
+        if (task) {
+          actualTaskStatus = task.status;
+        }
+      }
+
+      // 判断是否一致（对于 done 阶段，任务状态应该是 passed）
+      let isConsistent = actualTaskStatus === expectedTaskStatus;
+      // 特殊处理：approved 也视为通过
+      if (expectedTaskStatus === 'passed' && actualTaskStatus === 'approved') {
+        isConsistent = true;
+      }
+
+      results.push({
+        taskId,
+        treeId: state.treeId,
+        tddPhase: state.phase,
+        expectedTaskStatus,
+        actualTaskStatus,
+        isConsistent,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * 批量同步所有不一致的状态
+   */
+  syncAllInconsistentStates(): {
+    total: number;
+    synced: number;
+    failed: number;
+    details: Array<{ taskId: string; success: boolean; message: string }>;
+  } {
+    const inconsistent = this.checkStateConsistency().filter(r => !r.isConsistent);
+    const details: Array<{ taskId: string; success: boolean; message: string }> = [];
+    let synced = 0;
+    let failed = 0;
+
+    for (const item of inconsistent) {
+      const result = this.syncLoopStateToTaskTree(item.taskId);
+      details.push({
+        taskId: item.taskId,
+        success: result.success,
+        message: result.message,
+      });
+      if (result.success) {
+        synced++;
+      } else {
+        failed++;
+      }
+    }
+
+    return {
+      total: inconsistent.length,
+      synced,
+      failed,
+      details,
+    };
+  }
+
+  /**
+   * 重启 TDD 循环（用于测试修正后重新开始）
+   *
+   * 当蜂王修正了验收测试后，需要重启循环让 Worker 使用新测试
+   */
+  restartLoop(
+    taskId: string,
+    options: {
+      acceptanceTests?: AcceptanceTest[];
+      resetIteration?: boolean;
+      resetErrorCount?: boolean;
+    }
+  ): TDDLoopState | null {
+    const state = this.loopStates.get(taskId);
+    if (!state) {
+      console.error(`[TDDExecutor] 无法找到任务 ${taskId} 的循环状态`);
+      return null;
+    }
+
+    // 更新验收测试
+    if (options.acceptanceTests) {
+      state.acceptanceTests = options.acceptanceTests;
+      state.hasAcceptanceTests = options.acceptanceTests.length > 0;
+      // 清空验收测试结果
+      state.acceptanceTestResults.clear();
+    }
+
+    // 重置迭代计数
+    if (options.resetIteration) {
+      state.iteration = 0;
+    }
+
+    // 重置错误计数
+    if (options.resetErrorCount) {
+      state.consecutiveSameErrorCount = 0;
+      state.lastErrorSignature = undefined;
+      state.lastError = undefined;
+    }
+
+    // 重置阶段到测试运行
+    // 如果有验收测试，直接进入 run_test_green 阶段（因为测试已经写好了）
+    if (state.hasAcceptanceTests) {
+      this.transitionPhase(state, 'run_test_green', 'TDD 循环重启（使用修正后的验收测试）');
+    } else {
+      // 没有验收测试，从头开始
+      this.transitionPhase(state, 'write_test', 'TDD 循环重启');
+    }
+
+    this.emit('loop:restarted', {
+      taskId,
+      newPhase: state.phase,
+      hasFixedTests: !!options.acceptanceTests,
+    });
+
+    return state;
+  }
+
+  /**
+   * 根据任务树 ID 移除所有相关的 TDD 循环
+   */
+  removeLoopsByTreeId(treeId: string): number {
+    let removedCount = 0;
+    for (const [taskId, state] of this.loopStates.entries()) {
+      if (state.treeId === treeId) {
+        this.loopStates.delete(taskId);
+        this.emit('loop:removed', { taskId });
+        removedCount++;
+      }
+    }
+    return removedCount;
   }
 
   // --------------------------------------------------------------------------

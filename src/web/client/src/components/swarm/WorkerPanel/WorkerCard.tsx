@@ -115,12 +115,17 @@ export const WorkerCard: React.FC<WorkerCardProps> = ({ worker }) => {
           </span>
         </div>
 
-        {worker.taskName && (
-          <div className={styles.workerInfoRow}>
-            <span className={styles.workerInfoLabel}>任务:</span>
-            <span className={styles.workerInfoValue}>{worker.taskName}</span>
-          </div>
-        )}
+        {/* 只在非空闲状态下显示当前任务，空闲状态下显示"等待分配" */}
+        <div className={styles.workerInfoRow}>
+          <span className={styles.workerInfoLabel}>任务:</span>
+          <span className={styles.workerInfoValue}>
+            {worker.status === 'idle' ? (
+              <span className={styles.noTask}>等待分配任务</span>
+            ) : (
+              worker.taskName || '未知任务'
+            )}
+          </span>
+        </div>
       </div>
 
       {/* TDD 阶段指示器 */}

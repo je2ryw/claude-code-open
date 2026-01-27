@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styles from './TDDPanel.module.css';
 import { tddApi, TDDLoopState, TDDPhase, TestResult, PhaseTransition } from '../../../api/blueprint';
+import { SplitPanes } from '../../common/SplitPanes';
 
 // ============================================================================
 // 类型定义
@@ -84,6 +85,23 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(taskId || null);
   const [phaseTransitioning, setPhaseTransitioning] = useState(false);
 
+  // 状态一致性检查
+  const [consistencyCheck, setConsistencyCheck] = useState<{
+    total: number;
+    consistent: number;
+    inconsistent: number;
+    details: Array<{
+      taskId: string;
+      treeId: string;
+      tddPhase: TDDPhase;
+      expectedTaskStatus: string;
+      actualTaskStatus: string | null;
+      isConsistent: boolean;
+    }>;
+  } | null>(null);
+  const [showConsistencyPanel, setShowConsistencyPanel] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
   // 加载单个任务的TDD状态
   const loadLoopState = useCallback(async (tid: string) => {
     try {
@@ -102,6 +120,12 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
       if (err.message && err.message.includes('TDD loop not found')) {
         setLoopState(null);
         setError(null);
+        setGuidance(null);
+        // 重要：如果当前选中的任务 TDD loop 不存在，且不是从 props 传入的 taskId，
+        // 则清除选中状态以停止轮询
+        if (tid === selectedTaskId && tid !== taskId) {
+          setSelectedTaskId(null);
+        }
       } else {
         setError(err.message || '加载TDD状态失败');
         setLoopState(null);
@@ -109,7 +133,7 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [onStateChange]);
+  }, [onStateChange, selectedTaskId, taskId]);
 
   // 加载所有活跃的TDD循环
   const loadActiveLoops = useCallback(async () => {
@@ -125,6 +149,11 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
         // 否则选择第一个
         setSelectedTaskId(loops[0].taskId);
         loadLoopState(loops[0].taskId);
+      } else if (selectedTaskId && !loops.some(l => l.taskId === selectedTaskId)) {
+        // 如果当前选中的任务不在活跃列表中（可能被重置或清理了），清除选中状态
+        setSelectedTaskId(null);
+        setLoopState(null);
+        setGuidance(null);
       }
     } catch (err: any) {
       console.error('加载活跃TDD循环失败:', err);
@@ -235,6 +264,96 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
       setPhaseTransitioning(false);
     }
   }, [selectedTaskId, onStateChange]);
+
+  // 检查状态一致性
+  const handleCheckConsistency = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await tddApi.checkConsistency();
+      setConsistencyCheck(result);
+      setShowConsistencyPanel(true);
+    } catch (err: any) {
+      setError(err.message || '检查状态一致性失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 同步单个任务状态
+  const handleSyncState = useCallback(async (taskIdToSync: string) => {
+    try {
+      setSyncing(true);
+      setError(null);
+      const result = await tddApi.syncState(taskIdToSync);
+      if (result.success) {
+        // 重新检查一致性
+        const checkResult = await tddApi.checkConsistency();
+        setConsistencyCheck(checkResult);
+        // 刷新当前状态
+        if (taskIdToSync === selectedTaskId) {
+          loadLoopState(taskIdToSync);
+        }
+        loadActiveLoops();
+      } else {
+        setError(result.message);
+      }
+    } catch (err: any) {
+      setError(err.message || '同步状态失败');
+    } finally {
+      setSyncing(false);
+    }
+  }, [selectedTaskId, loadLoopState, loadActiveLoops]);
+
+  // 批量同步所有不一致状态
+  const handleSyncAll = useCallback(async () => {
+    try {
+      setSyncing(true);
+      setError(null);
+      const result = await tddApi.syncAllStates();
+      if (result.synced > 0 || result.failed > 0) {
+        // 重新检查一致性
+        const checkResult = await tddApi.checkConsistency();
+        setConsistencyCheck(checkResult);
+        // 刷新状态
+        if (selectedTaskId) {
+          loadLoopState(selectedTaskId);
+        }
+        loadActiveLoops();
+      }
+    } catch (err: any) {
+      setError(err.message || '批量同步失败');
+    } finally {
+      setSyncing(false);
+    }
+  }, [selectedTaskId, loadLoopState, loadActiveLoops]);
+
+  // 清理孤立的 TDD 循环
+  const handleCleanupOrphaned = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await tddApi.cleanupOrphaned();
+      if (result.removedCount > 0) {
+        // 刷新状态
+        loadActiveLoops();
+        if (selectedTaskId) {
+          // 如果当前选中的循环被清理了，清除选中状态
+          if (result.removedTasks.includes(selectedTaskId)) {
+            setSelectedTaskId(null);
+            setLoopState(null);
+            setGuidance(null);
+          } else {
+            loadLoopState(selectedTaskId);
+          }
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || '清理孤立循环失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTaskId, loadLoopState, loadActiveLoops]);
 
   // 初始加载
   useEffect(() => {
@@ -446,6 +565,41 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
     );
   };
 
+  // 渲染活跃循环水平列表（紧凑布局）
+  const renderActiveLoopsHorizontal = () => {
+    if (activeLoops.length === 0) return null;
+
+    return (
+      <div className={styles.loopsHorizontal}>
+        <div className={styles.loopsHeader}>
+          <span className={styles.loopsTitle}>活跃循环 ({activeLoops.length})</span>
+          {treeId && taskId && !loopState && (
+            <button className={styles.startButtonSmall} onClick={startLoop} disabled={loading}>
+              {loading ? '...' : '+ 新建'}
+            </button>
+          )}
+        </div>
+        <div className={styles.loopsScroll}>
+          {activeLoops.map(loop => (
+            <div
+              key={loop.taskId}
+              className={`${styles.loopChip} ${selectedTaskId === loop.taskId ? styles.selected : ''}`}
+              onClick={() => handleSelectTask(loop.taskId)}
+              title={loop.taskId}
+            >
+              <span className={styles.loopChipIcon}>
+                {PHASE_CONFIG[loop.phase]?.icon || '🔄'}
+              </span>
+              <span className={styles.loopChipText}>
+                {loop.taskId.substring(0, 6)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染指南面板
   const renderGuidance = () => {
     if (!guidance) return null;
@@ -485,31 +639,171 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
     );
   };
 
-  // 渲染统计信息
-  const renderStats = () => {
+  // 渲染状态一致性检查面板
+  const renderConsistencyPanel = () => {
+    if (!showConsistencyPanel) return null;
+
+    const inconsistentItems = consistencyCheck?.details.filter(d => !d.isConsistent) || [];
+
+    return (
+      <div className={styles.modalOverlay} onClick={() => setShowConsistencyPanel(false)}>
+        <div className={styles.modal} onClick={e => e.stopPropagation()}>
+          <div className={styles.modalHeader}>
+            <span className={styles.modalTitle}>状态一致性检查</span>
+            <button className={styles.modalClose} onClick={() => setShowConsistencyPanel(false)}>×</button>
+          </div>
+          <div className={styles.modalContent}>
+            {consistencyCheck ? (
+              <div className={styles.consistencyContent}>
+                <div className={styles.consistencySummary}>
+                  <div className={styles.consistencyStat}>
+                    <span className={styles.statLabel}>总数</span>
+                    <span className={styles.statValue}>{consistencyCheck.total}</span>
+                  </div>
+                  <div className={styles.consistencyStat}>
+                    <span className={styles.statLabel}>一致</span>
+                    <span className={styles.statValue} style={{ color: '#4caf50' }}>{consistencyCheck.consistent}</span>
+                  </div>
+                  <div className={styles.consistencyStat}>
+                    <span className={styles.statLabel}>不一致</span>
+                    <span className={styles.statValue} style={{ color: '#f44336' }}>{consistencyCheck.inconsistent}</span>
+                  </div>
+                </div>
+
+                {inconsistentItems.length > 0 && (
+                  <>
+                    <div className={styles.consistencyActions}>
+                      <button
+                        className={styles.syncAllButton}
+                        onClick={handleSyncAll}
+                        disabled={syncing}
+                      >
+                        {syncing ? '同步中...' : `同步全部 (${inconsistentItems.length})`}
+                      </button>
+                    </div>
+
+                    <div className={styles.inconsistentList}>
+                      <div className={styles.listHeader}>不一致的任务</div>
+                      {inconsistentItems.map(item => (
+                        <div key={item.taskId} className={styles.inconsistentItem}>
+                          <div className={styles.itemInfo}>
+                            <span className={styles.itemTaskId}>{item.taskId.substring(0, 8)}...</span>
+                            <span className={styles.itemStatus}>
+                              TDD: {item.tddPhase} → 期望: {item.expectedTaskStatus}
+                            </span>
+                            <span className={styles.itemActual}>
+                              实际: {item.actualTaskStatus || '未知'}
+                            </span>
+                          </div>
+                          <button
+                            className={styles.syncButton}
+                            onClick={() => handleSyncState(item.taskId)}
+                            disabled={syncing}
+                          >
+                            {syncing ? '...' : '同步'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {inconsistentItems.length === 0 && (
+                  <div className={styles.allConsistent}>
+                    <span className={styles.checkIcon}>✅</span>
+                    <span>所有 TDD 循环状态与任务树一致</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={styles.loadingText}>加载中...</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 计算统计信息（使用 useMemo 避免重复计算和数据不一致）
+  // 关键修复：只显示当前阶段的测试结果，而不是累计所有历史
+  const stats = useMemo(() => {
     if (!loopState) return null;
 
-    const passedTests = loopState.testResults.filter(r => r.passed).length;
-    const failedTests = loopState.testResults.filter(r => !r.passed).length;
-    const totalDuration = loopState.testResults.reduce((sum, r) => sum + r.duration, 0);
+    const iteration = typeof loopState.iteration === 'number' ? loopState.iteration : 0;
+
+    // 如果有验收测试，使用 acceptanceTestResults（当前阶段的验收测试结果）
+    if (loopState.hasAcceptanceTests) {
+      const acceptanceResults = loopState.acceptanceTestResults || {};
+      const results = Object.values(acceptanceResults) as TestResult[];
+      const passedTests = results.filter(r => r && r.passed === true).length;
+      const failedTests = results.filter(r => r && r.passed === false).length;
+      const totalDuration = results.reduce((sum, r) => sum + (r?.duration || 0), 0);
+      const totalTests = loopState.acceptanceTests?.length || 0;
+
+      return {
+        iteration: iteration + 1,
+        passedTests,
+        failedTests,
+        // 显示待运行的测试数（总测试数 - 已运行数）
+        pendingTests: Math.max(0, totalTests - results.length),
+        totalDuration: (totalDuration / 1000).toFixed(1),
+      };
+    }
+
+    // 没有验收测试，使用最近一次测试结果
+    const testResults = Array.isArray(loopState.testResults) ? loopState.testResults : [];
+
+    // 只统计最近一次测试运行的结果（绿灯阶段的最后一次）
+    const lastResult = testResults.length > 0 ? testResults[testResults.length - 1] : null;
+
+    if (lastResult) {
+      return {
+        iteration: iteration + 1,
+        passedTests: lastResult.passed ? 1 : 0,
+        failedTests: lastResult.passed ? 0 : 1,
+        totalDuration: ((lastResult.duration || 0) / 1000).toFixed(1),
+      };
+    }
+
+    // 默认返回空统计
+    return {
+      iteration: iteration + 1,
+      passedTests: 0,
+      failedTests: 0,
+      totalDuration: '0.0',
+    };
+  }, [loopState?.iteration, loopState?.testResults, loopState?.acceptanceTestResults, loopState?.hasAcceptanceTests, loopState?.acceptanceTests]);
+
+  // 渲染统计信息
+  const renderStats = () => {
+    if (!stats) return null;
+
+    // 检查是否有待运行的测试
+    const hasPending = 'pendingTests' in stats && stats.pendingTests > 0;
 
     return (
       <div className={styles.stats}>
         <div className={styles.statItem}>
-          <span className={styles.statValue}>{loopState.iteration + 1}</span>
+          <span className={styles.statValue}>{stats.iteration}</span>
           <span className={styles.statLabel}>当前迭代</span>
         </div>
         <div className={styles.statItem}>
-          <span className={styles.statValue} style={{ color: '#4caf50' }}>{passedTests}</span>
+          <span className={styles.statValue} style={{ color: '#4caf50' }}>{stats.passedTests}</span>
           <span className={styles.statLabel}>通过</span>
         </div>
         <div className={styles.statItem}>
-          <span className={styles.statValue} style={{ color: '#f44336' }}>{failedTests}</span>
+          <span className={styles.statValue} style={{ color: '#f44336' }}>{stats.failedTests}</span>
           <span className={styles.statLabel}>失败</span>
         </div>
+        {hasPending && (
+          <div className={styles.statItem}>
+            <span className={styles.statValue} style={{ color: '#ff9800' }}>{stats.pendingTests}</span>
+            <span className={styles.statLabel}>待运行</span>
+          </div>
+        )}
         <div className={styles.statItem}>
-          <span className={styles.statValue}>{(totalDuration / 1000).toFixed(1)}s</span>
-          <span className={styles.statLabel}>总耗时</span>
+          <span className={styles.statValue}>{stats.totalDuration}s</span>
+          <span className={styles.statLabel}>耗时</span>
         </div>
       </div>
     );
@@ -536,6 +830,31 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
           <div className={styles.stateError}>
             <span className={styles.errorIcon}>⚠️</span>
             <span className={styles.errorText}>{loopState.lastError}</span>
+          </div>
+        )}
+
+        {/* 重复错误检测警告 */}
+        {loopState.consecutiveSameErrorCount && loopState.consecutiveSameErrorCount >= 2 && (
+          <div className={styles.repeatedErrorWarning}>
+            <div className={styles.warningHeader}>
+              <span className={styles.warningIcon}>🔄</span>
+              <span className={styles.warningTitle}>
+                检测到重复错误（连续 {loopState.consecutiveSameErrorCount} 次）
+              </span>
+            </div>
+            <div className={styles.warningDescription}>
+              {loopState.consecutiveSameErrorCount >= 3 ? (
+                <>
+                  <strong>蜂王正在介入分析...</strong><br />
+                  可能是测试用例本身存在问题（如测试数据与验证规则不匹配）。
+                  蜂王将尝试自动修正测试用例。
+                </>
+              ) : (
+                <>
+                  连续遇到相同错误，如果再失败一次，蜂王将介入分析。
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -566,13 +885,29 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
     );
   };
 
-  // 主渲染
+  // 主渲染 - 紧凑垂直布局
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
         <span className={styles.headerIcon}>🔄</span>
-        <span className={styles.headerTitle}>TDD 驱动开发</span>
-        {loading && <span className={styles.loadingIndicator}>加载中...</span>}
+        <span className={styles.headerTitle}>TDD</span>
+        {loading && <span className={styles.loadingIndicator}>...</span>}
+        <button
+          className={styles.consistencyButton}
+          onClick={handleCleanupOrphaned}
+          disabled={loading}
+          title="清理孤立的 TDD 循环（没有 Worker 执行的循环）"
+        >
+          🧹
+        </button>
+        <button
+          className={styles.consistencyButton}
+          onClick={handleCheckConsistency}
+          disabled={loading}
+          title="检查 TDD 状态与任务树的一致性"
+        >
+          🔍
+        </button>
       </div>
 
       {error && (
@@ -583,59 +918,53 @@ export const TDDPanel: React.FC<TDDPanelProps> = ({
       )}
 
       <div className={styles.content}>
-        {/* 当有活跃循环时使用两栏布局 */}
-        {activeLoops.length > 0 ? (
-          <>
-            {/* 左侧：活跃循环列表 */}
-            <div className={styles.sidebar}>
-              {renderActiveLoops()}
-            </div>
+        {/* 顶部：活跃循环水平列表 */}
+        {activeLoops.length > 0 && renderActiveLoopsHorizontal()}
 
-            {/* 右侧：详情面板 */}
-            <div className={styles.main}>
-              {loopState ? (
-                <>
-                  {renderPhaseIndicator()}
-                  {renderStats()}
-                  {renderCurrentState()}
-                  {renderTestResults()}
-                  {renderPhaseHistory()}
-                  {renderGuidance()}
-                </>
-              ) : (
-                <div className={styles.noSelection}>
-                  {taskId ? (
-                    <div className={styles.startLoopState}>
-                       <div className={styles.emptyIcon}>🚀</div>
-                       <div className={styles.emptyText}>当前任务尚未启动TDD循环</div>
-                       <div className={styles.emptyDescription}>
-                        点击下方按钮开始 TDD 流程
-                       </div>
-                       <button className={styles.startButton} onClick={startLoop} disabled={loading}>
-                        {loading ? '启动中...' : '启动TDD循环'}
-                      </button>
+        {/* 主内容区 */}
+        <div className={styles.main}>
+          {activeLoops.length > 0 ? (
+            loopState ? (
+              <>
+                {renderPhaseIndicator()}
+                {renderStats()}
+                {renderCurrentState()}
+                {renderTestResults()}
+                {renderPhaseHistory()}
+                {renderGuidance()}
+              </>
+            ) : (
+              <div className={styles.noSelection}>
+                {taskId ? (
+                  <div className={styles.startLoopState}>
+                    <div className={styles.emptyIcon}>🚀</div>
+                    <div className={styles.emptyText}>当前任务尚未启动TDD循环</div>
+                    <div className={styles.emptyDescription}>
+                      点击下方按钮开始 TDD 流程
                     </div>
-                  ) : (
-                    <>
-                      <div className={styles.noSelectionIcon}>📋</div>
-                      <div className={styles.noSelectionText}>
-                        选择一个TDD循环查看详情
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          /* 没有活跃循环时使用单栏布局 */
-          <div className={styles.singleColumn}>
-            {renderActiveLoops()}
-          </div>
-        )}
+                    <button className={styles.startButton} onClick={startLoop} disabled={loading}>
+                      {loading ? '启动中...' : '启动TDD循环'}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.noSelectionIcon}>📋</div>
+                    <div className={styles.noSelectionText}>
+                      选择一个TDD循环查看详情
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          ) : (
+            /* 没有活跃循环时显示空状态 */
+            renderActiveLoops()
+          )}
+        </div>
       </div>
 
       {renderReportModal()}
+      {renderConsistencyPanel()}
     </div>
   );
 };

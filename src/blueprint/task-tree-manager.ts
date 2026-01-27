@@ -19,6 +19,7 @@ import type {
   TaskTree,
   TaskNode,
   TaskStatus,
+  TaskType,
   TaskTreeStats,
   TestSpec,
   TestResult,
@@ -104,6 +105,9 @@ export class TaskTreeManager extends EventEmitter {
   /**
    * 从蓝图生成任务树
    * 这是核心函数：将蓝图的系统模块转化为可执行的任务树
+   *
+   * 核心改进：添加"项目初始化"任务作为所有任务的前置依赖
+   * 解决的问题：Worker 各自为战，没有人管理 package.json 等共享资源
    */
   generateFromBlueprint(blueprint: Blueprint): TaskTree {
     // 保存蓝图引用
@@ -112,9 +116,16 @@ export class TaskTreeManager extends EventEmitter {
     // 创建根任务节点
     const rootTask = this.createRootTask(blueprint);
 
+    // ========== 创建项目初始化任务（蜂王作为项目管理者的第一步）==========
+    // 这是任务树的第一个子任务，所有模块任务都依赖它
+    const projectInitTask = this.createProjectInitTask(blueprint, rootTask.id);
+    rootTask.children.push(projectInitTask);
+
     // 为每个系统模块创建任务分支
     for (const module of blueprint.modules) {
       const moduleTask = this.createModuleTask(module, rootTask.id, 1);
+      // 所有模块任务都依赖项目初始化任务
+      moduleTask.dependencies.push(projectInitTask.id);
       rootTask.children.push(moduleTask);
     }
 
@@ -267,6 +278,81 @@ export class TaskTreeManager extends EventEmitter {
       checkpoints: [],
       // 继承蓝图的来源标记（用于判断是否需要 TDD）
       source: blueprint.source,
+    };
+  }
+
+  /**
+   * 创建项目初始化任务
+   * 这是蜂王作为"项目管理者"的核心任务：
+   * 1. 创建 package.json
+   * 2. 配置 tsconfig.json
+   * 3. 搭建目录结构
+   * 4. 定义公共类型
+   *
+   * 所有模块任务都依赖这个任务
+   */
+  private createProjectInitTask(blueprint: Blueprint, parentId: string): TaskNode {
+    // 收集项目技术栈
+    const techStacks = new Set<string>();
+    for (const module of blueprint.modules) {
+      for (const tech of module.techStack || []) {
+        techStacks.add(tech);
+      }
+    }
+
+    const hasTypeScript = techStacks.has('TypeScript');
+    const hasReact = techStacks.has('React');
+
+    // 构建描述
+    const descriptionParts = [
+      '项目初始化任务（由蜂王执行，确保项目基础设施就绪）：',
+      '',
+      '1. 创建 package.json',
+      '   - 配置项目名称、版本、描述',
+      '   - 添加基础依赖（vitest 测试框架）',
+      hasTypeScript ? '   - 添加 TypeScript 相关依赖' : '',
+      hasReact ? '   - 添加 React 相关依赖' : '',
+      '',
+      '2. 创建项目配置文件',
+      hasTypeScript ? '   - tsconfig.json（TypeScript 配置）' : '',
+      '   - 测试配置',
+      '',
+      '3. 创建目录结构',
+      '   - src/ - 源代码目录',
+      '   - __tests__/ - 测试目录',
+      '   - src/types/ - 公共类型定义',
+      '   - src/utils/ - 公共工具函数',
+      '   - src/shared/ - 共享资源',
+      '',
+      '4. 安装依赖',
+      '   - 执行 npm install / yarn install / pnpm install',
+      '',
+      '⚠️ 重要：这个任务完成前，任何模块任务都不能开始！',
+    ].filter(line => line !== '').join('\n');
+
+    return {
+      id: uuidv4(),
+      parentId,
+      name: '项目初始化',
+      description: descriptionParts,
+      priority: 1000,  // 最高优先级，确保最先执行
+      depth: 1,
+      taskType: 'project_init',  // 特殊任务类型
+      status: 'pending',
+      children: [],
+      dependencies: [],
+      acceptanceTests: [],  // 项目初始化不需要验收测试
+      codeArtifacts: [],
+      createdAt: new Date(),
+      retryCount: 0,
+      maxRetries: 3,
+      checkpoints: [],
+      source: 'requirement',  // 项目初始化是必须的，不是从代码逆向
+      metadata: {
+        isInfrastructure: true,
+        techStacks: Array.from(techStacks),
+        autoExecuteByQueen: true,  // 标记：由蜂王自动执行，不分配给 Worker
+      },
     };
   }
 
@@ -497,10 +583,16 @@ export class TaskTreeManager extends EventEmitter {
     additionalData?: Partial<TaskNode>
   ): TaskNode | null {
     const tree = this.getTaskTree(treeId);
-    if (!tree) return null;
+    if (!tree) {
+      console.warn(`[TaskTreeManager] updateTaskStatus 失败：任务树 ${treeId} 不存在`);
+      return null;
+    }
 
     const task = this.findTask(tree.root, taskId);
-    if (!task) return null;
+    if (!task) {
+      console.warn(`[TaskTreeManager] updateTaskStatus 失败：任务 ${taskId} 在任务树 ${treeId} 中不存在`);
+      return null;
+    }
 
     const previousStatus = task.status;
     task.status = status;

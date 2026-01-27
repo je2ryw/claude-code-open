@@ -311,6 +311,11 @@ router.post('/blueprints/:id/resume', async (req: Request, res: Response) => {
     const blueprintId = req.params.id;
     const blueprint = blueprintManager.resumeExecution(blueprintId);
 
+    // 确保 projectRoot 被正确设置（即使蜂王已存在）
+    if (blueprint.projectPath) {
+      agentCoordinator.setProjectRoot(blueprint.projectPath);
+    }
+
     // 检查蜂王是否已初始化，如果没有则重新初始化
     if (!agentCoordinator.getQueen()) {
       await agentCoordinator.initializeQueen(blueprintId);
@@ -394,13 +399,17 @@ router.post('/blueprints/:id/reset-interrupted', (req: Request, res: Response) =
     const resetRetryCount = req.body.resetRetryCount === true; // 默认不重置重试计数
     const resetCount = taskTreeManager.resetInterruptedTasks(blueprint.taskTreeId, resetRetryCount);
 
+    // 清理相关的 TDD 循环，避免前端持续轮询已被重置的任务
+    const removedTddLoops = tddExecutor.removeLoopsByTreeId(blueprint.taskTreeId);
+
     res.json({
       success: true,
       data: {
         resetCount,
+        removedTddLoops,
         taskTreeId: blueprint.taskTreeId,
       },
-      message: `已重置 ${resetCount} 个中断任务`,
+      message: `已重置 ${resetCount} 个中断任务，清理 ${removedTddLoops} 个 TDD 循环`,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -1887,7 +1896,7 @@ router.post('/task-trees/:treeId/tasks/:parentId/subtasks', (req: Request, res: 
  */
 router.post('/coordinator/queen', async (req: Request, res: Response) => {
   try {
-    const { blueprintId } = req.body;
+    const { blueprintId } = req.body || {};
     const queen = await agentCoordinator.initializeQueen(blueprintId);
     res.json({ success: true, data: queen });
   } catch (error: any) {
@@ -1913,10 +1922,21 @@ router.get('/coordinator/queen', (req: Request, res: Response) => {
  */
 router.post('/coordinator/start', async (req: Request, res: Response) => {
   try {
-    const { blueprintId } = req.body;
+    const { blueprintId } = req.body || {};
+
+    // 确保 projectRoot 被正确设置
+    const queen = agentCoordinator.getQueen();
+    let targetBlueprintId = blueprintId || queen?.blueprintId;
+
+    if (targetBlueprintId) {
+      const blueprint = blueprintManager.getBlueprint(targetBlueprintId);
+      if (blueprint?.projectPath) {
+        agentCoordinator.setProjectRoot(blueprint.projectPath);
+      }
+    }
 
     // 检查蜂王是否已初始化
-    if (!agentCoordinator.getQueen()) {
+    if (!queen) {
       if (!blueprintId) {
         return res.status(400).json({
           success: false,
@@ -1985,6 +2005,9 @@ router.get('/coordinator/timeline', (req: Request, res: Response) => {
 // ============================================================================
 // TDD 循环 API
 // ============================================================================
+// 重要：Express 路由匹配是按定义顺序进行的！
+// 固定路径（如 /tdd/start, /tdd/consistency-check）必须在参数路径（如 /tdd/:taskId）之前定义
+// 否则 "consistency-check" 会被当作 taskId 参数处理
 
 /**
  * 启动 TDD 循环
@@ -1998,6 +2021,75 @@ router.post('/tdd/start', (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * 获取活跃的 TDD 循环
+ */
+router.get('/tdd', (req: Request, res: Response) => {
+  try {
+    const loops = tddExecutor.getActiveLoops();
+    res.json({ success: true, data: loops });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 检查 TDD 循环与任务树的状态一致性
+ */
+router.get('/tdd/consistency-check', (req: Request, res: Response) => {
+  try {
+    const results = tddExecutor.checkStateConsistency();
+    const inconsistent = results.filter(r => !r.isConsistent);
+    res.json({
+      success: true,
+      data: {
+        total: results.length,
+        consistent: results.filter(r => r.isConsistent).length,
+        inconsistent: inconsistent.length,
+        details: results,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 批量同步所有不一致的状态
+ */
+router.post('/tdd/sync-all', (req: Request, res: Response) => {
+  try {
+    const result = tddExecutor.syncAllInconsistentStates();
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 清理孤立的 TDD 循环
+ * 孤立循环：TDD 循环存在但没有对应的 Worker 在执行
+ */
+router.post('/tdd/cleanup-orphaned', (req: Request, res: Response) => {
+  try {
+    const result = agentCoordinator.cleanupOrphanedTDDLoops();
+    res.json({
+      success: true,
+      data: result,
+      message: result.removedCount > 0
+        ? `已清理 ${result.removedCount} 个孤立的 TDD 循环`
+        : '没有孤立的 TDD 循环需要清理',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---- 以下是参数路由，必须放在固定路径之后 ----
 
 /**
  * 获取 TDD 循环状态
@@ -2033,18 +2125,6 @@ router.get('/tdd/:taskId/report', (req: Request, res: Response) => {
   try {
     const report = tddExecutor.generateReport(req.params.taskId);
     res.json({ success: true, data: report });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取活跃的 TDD 循环
- */
-router.get('/tdd', (req: Request, res: Response) => {
-  try {
-    const loops = tddExecutor.getActiveLoops();
-    res.json({ success: true, data: loops });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -2096,6 +2176,80 @@ router.post('/tdd/:taskId/revert-phase', (req: Request, res: Response) => {
     const { taskId } = req.params;
     const state = tddExecutor.revertPhase(taskId);
     res.json({ success: true, data: state });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 同步单个任务的 TDD 状态到任务树
+ */
+router.post('/tdd/:taskId/sync', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const result = tddExecutor.syncLoopStateToTaskTree(taskId);
+    res.json({
+      success: result.success,
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 重启 TDD 循环（用于测试修正后）
+ */
+router.post('/tdd/:taskId/restart', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const { resetIteration, resetErrorCount } = req.body;
+
+    const state = tddExecutor.restartLoop(taskId, {
+      resetIteration: resetIteration !== false,
+      resetErrorCount: resetErrorCount !== false,
+    });
+
+    if (!state) {
+      return res.status(404).json({ success: false, error: 'TDD loop not found' });
+    }
+
+    res.json({
+      success: true,
+      data: state,
+      message: 'TDD 循环已重启',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取测试修正历史
+ */
+router.get('/tdd/:taskId/fix-history', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const state = tddExecutor.getLoopState(taskId);
+
+    if (!state) {
+      return res.status(404).json({ success: false, error: 'TDD loop not found' });
+    }
+
+    // 返回重复错误检测信息
+    res.json({
+      success: true,
+      data: {
+        taskId,
+        iteration: state.iteration,
+        consecutiveSameErrorCount: state.consecutiveSameErrorCount,
+        lastErrorSignature: state.lastErrorSignature,
+        lastError: state.lastError,
+        hasAcceptanceTests: state.hasAcceptanceTests,
+        acceptanceTestCount: state.acceptanceTests.length,
+        phaseHistory: state.phaseHistory,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

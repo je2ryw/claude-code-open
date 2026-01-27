@@ -121,6 +121,20 @@ export function setupWebSocket(
     });
   });
 
+  // Worker 状态更新（TDD 各阶段状态变化）
+  agentCoordinator.on('worker:status-updated', ({ worker }: { worker: WorkerAgent }) => {
+    const queen = agentCoordinator.getQueen();
+    if (!queen) return;
+
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: worker.id,
+        updates: serializeWorker(worker),
+      },
+    });
+  });
+
   // Worker 任务完成
   agentCoordinator.on('worker:task-completed', ({ workerId, taskId }: { workerId: string; taskId: string }) => {
     console.log(`[Swarm] Worker ${workerId} completed task ${taskId}`);
@@ -228,6 +242,52 @@ export function setupWebSocket(
       type: 'swarm:timeline_event',
       payload: serializeTimelineEvent(event),
     });
+  });
+
+  // ============================================================================
+  // 监听 TaskTreeManager 事件 - 任务状态实时更新
+  // ============================================================================
+
+  // 任务状态变更 - 这是关键！确保中间状态（coding、testing等）也能实时推送到前端
+  taskTreeManager.on('task:status-changed', (data: {
+    treeId: string;
+    taskId: string;
+    previousStatus: string;
+    newStatus: string;
+    task: TaskNode;
+  }) => {
+    console.log(`[Swarm] Task status changed: ${data.taskId} ${data.previousStatus} -> ${data.newStatus}`);
+
+    const queen = agentCoordinator.getQueen();
+    if (!queen || queen.taskTreeId !== data.treeId) return;
+
+    // 发送任务更新
+    broadcastToSubscribers(queen.blueprintId, {
+      type: 'swarm:task_update',
+      payload: {
+        taskId: data.taskId,
+        updates: serializeTaskNode(data.task),
+      },
+    });
+
+    // 同时更新统计信息
+    const taskTree = taskTreeManager.getTaskTree(data.treeId);
+    if (taskTree) {
+      broadcastToSubscribers(queen.blueprintId, {
+        type: 'swarm:stats_update',
+        payload: {
+          stats: {
+            totalTasks: taskTree.stats.totalTasks,
+            pendingTasks: taskTree.stats.pendingTasks,
+            runningTasks: taskTree.stats.runningTasks,
+            passedTasks: taskTree.stats.passedTasks,
+            failedTasks: taskTree.stats.failedTasks,
+            blockedTasks: taskTree.stats.blockedTasks || 0,
+            progressPercentage: taskTree.stats.progressPercentage,
+          },
+        },
+      });
+    }
   });
 
   // 执行完成
@@ -3448,18 +3508,28 @@ function mapTaskStatus(status: string): 'pending' | 'running' | 'passed' | 'fail
   switch (status) {
     case 'pending':
       return 'pending';
+    // 运行中的状态
     case 'running':
     case 'test_writing':
-    case 'test_failed':
+    case 'coding':
+    case 'testing':
     case 'implementing':
+    case 'review':
       return 'running';
+    // 成功状态
     case 'passed':
+    case 'approved':
       return 'passed';
+    // 失败状态
     case 'failed':
+    case 'test_failed':
+    case 'rejected':
+    case 'cancelled':
       return 'failed';
     case 'blocked':
       return 'blocked';
     default:
+      console.warn(`[WebSocket] Unknown task status: ${status}, defaulting to 'pending'`);
       return 'pending';
   }
 }
@@ -3514,6 +3584,15 @@ function serializeWorker(worker: WorkerAgent): any {
   // 计算进度
   const progress = calculateWorkerProgress(worker);
 
+  // 序列化 TDD 循环状态
+  const tddCycle = worker.tddCycle ? {
+    phase: mapTDDPhase(worker.tddCycle.phase),
+    iteration: worker.tddCycle.iteration,
+    testWritten: worker.tddCycle.testWritten,
+    codeWritten: worker.tddCycle.codeWritten,
+    testPassed: worker.tddCycle.testPassed,
+  } : null;
+
   return {
     id: worker.id,
     blueprintId: queen?.blueprintId || '',
@@ -3522,10 +3601,28 @@ function serializeWorker(worker: WorkerAgent): any {
     currentTaskId: worker.taskId || null,
     currentTaskTitle: taskTitle,
     progress,
+    tddCycle,
     logs: worker.history.map(h => `[${h.type}] ${h.description}`),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * 映射 TDD 阶段到前端格式
+ */
+function mapTDDPhase(phase: string): string {
+  // 统一映射 TDD 阶段名称
+  const phaseMap: Record<string, string> = {
+    'write_test': 'write_test',
+    'run_test_red': 'run_test_red',
+    'implement': 'write_code',      // 后端使用 implement，前端使用 write_code
+    'write_code': 'write_code',
+    'run_test_green': 'run_test_green',
+    'refactor': 'refactor',
+    'done': 'done',
+  };
+  return phaseMap[phase] || 'write_test';
 }
 
 /**

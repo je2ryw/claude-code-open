@@ -29,7 +29,6 @@
 }
 
 .loadingIndicator {
-  margin-left: auto;
   font-size: 12px;
   color: #9ca3af;
   animation: pulse 1.5s infinite;
@@ -51,20 +50,19 @@
   font-size: 16px;
 }
 
-/* 内容区域 */
+/* 内容区域 - 垂直布局 */
 .content {
   display: flex;
+  flex-direction: column;
   flex: 1;
   overflow: hidden;
+  min-width: 0;
 }
 
-/* 侧边栏 */
+/* 侧边栏 - 用于 SplitPanes 可拖动分栏 */
 .sidebar {
-  width: 280px;
-  min-width: 280px;
-  max-width: 280px;
-  flex-shrink: 0;
-  border-right: 1px solid #3d3d3d;
+  width: 100%;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   background-color: #252525;
@@ -99,6 +97,99 @@
   flex-direction: column;
   overflow-y: auto;
   padding: 16px;
+}
+
+/* 水平循环列表 - 紧凑顶部栏 */
+.loopsHorizontal {
+  flex-shrink: 0;
+  background-color: #252525;
+  border-bottom: 1px solid #3d3d3d;
+  padding: 8px 12px;
+}
+
+.loopsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.loopsTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.loopsScroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.loopsScroll::-webkit-scrollbar {
+  height: 3px;
+}
+
+.loopsScroll::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 2px;
+}
+
+.loopChip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background-color: #2d2d2d;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.loopChip:hover {
+  background-color: #353535;
+  border-color: #4a4a4a;
+}
+
+.loopChip.selected {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.loopChipIcon {
+  font-size: 12px;
+}
+
+.loopChipText {
+  font-size: 11px;
+  color: #e5e7eb;
+  font-family: monospace;
+}
+
+.startButtonSmall {
+  padding: 3px 8px;
+  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.startButtonSmall:hover:not(:disabled) {
+  transform: scale(1.02);
+}
+
+.startButtonSmall:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .main::-webkit-scrollbar {
@@ -225,7 +316,7 @@
   cursor: not-allowed;
 }
 
-/* 循环列表 */
+/* 循环列表 - 垂直布局 */
 .loopsList {
   padding: 12px;
 }
@@ -254,7 +345,8 @@
 }
 
 .loopIcon {
-  font-size: 20px;
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .loopInfo {
@@ -263,10 +355,11 @@
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
+  min-width: 0;
 }
 
 .loopTaskId {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: #ffffff;
   white-space: nowrap;
@@ -275,16 +368,17 @@
 }
 
 .loopPhase {
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
 }
 
 .loopIteration {
-  font-size: 11px;
+  font-size: 10px;
   color: #6b7280;
   background-color: rgba(255, 255, 255, 0.05);
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 10px;
+  flex-shrink: 0;
 }
 
 /* 章节标题 */
@@ -301,26 +395,36 @@
   padding: 0 12px;
 }
 
-/* 阶段指示器 */
+/* 阶段指示器 - 紧凑水平滚动布局 */
 .phaseIndicator {
-  margin-bottom: 24px;
-  padding: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
   background-color: #252525;
   border-radius: 8px;
 }
 
 .phaseTitle {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #ffffff;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .phaseTimeline {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  position: relative;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.phaseTimeline::-webkit-scrollbar {
+  height: 3px;
+}
+
+.phaseTimeline::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 2px;
 }
 
 .phaseItem {
@@ -328,27 +432,27 @@
   flex-direction: column;
   align-items: center;
   position: relative;
-  flex: 1;
-  min-width: 0;
+  flex-shrink: 0;
+  min-width: 52px;
 }
 
 .phaseNode {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  border: 3px solid #4a4a4a;
+  border: 2px solid #4a4a4a;
   background-color: #2d2d2d;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 14px;
   transition: all 0.3s ease;
   z-index: 1;
 }
 
 .phaseItem.active .phaseNode {
   background-color: rgba(33, 150, 243, 0.2);
-  box-shadow: 0 0 20px rgba(33, 150, 243, 0.5);
+  box-shadow: 0 0 12px rgba(33, 150, 243, 0.5);
   animation: pulseNode 2s infinite;
 }
 
@@ -359,20 +463,23 @@
 
 .checkIcon {
   color: #4caf50;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: bold;
 }
 
 .phaseIcon {
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .phaseLabel {
-  margin-top: 8px;
-  font-size: 11px;
+  margin-top: 4px;
+  font-size: 9px;
   color: #6b7280;
   text-align: center;
   white-space: nowrap;
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .phaseItem.active .phaseLabel {
@@ -386,10 +493,10 @@
 
 .phaseLine {
   position: absolute;
-  top: 20px;
-  left: calc(50% + 20px);
-  right: calc(-50% + 20px);
-  height: 3px;
+  top: 16px;
+  left: calc(50% + 16px);
+  width: 20px;
+  height: 2px;
   background-color: #4a4a4a;
   z-index: 0;
 }
@@ -405,7 +512,7 @@
 
 .phaseItem.clickable:hover .phaseNode {
   transform: scale(1.1);
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
 }
 
 .phaseItem.clickable:hover .phaseLabel {
@@ -413,76 +520,89 @@
 }
 
 @keyframes pulseNode {
-
-  0%,
-  100% {
-    box-shadow: 0 0 20px rgba(33, 150, 243, 0.5);
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(33, 150, 243, 0.5);
   }
-
   50% {
-    box-shadow: 0 0 30px rgba(33, 150, 243, 0.8);
+    box-shadow: 0 0 20px rgba(33, 150, 243, 0.8);
   }
 }
 
-/* 统计信息 */
+/* 统计信息 - 自适应网格 */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* 窄屏时改为2x2网格 */
+@media (max-width: 500px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .statItem {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px;
+  padding: 10px 8px;
   background-color: #252525;
-  border-radius: 8px;
+  border-radius: 6px;
   text-align: center;
+  min-width: 0;
 }
 
 .statValue {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
   color: #ffffff;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .statLabel {
-  font-size: 12px;
+  font-size: 10px;
   color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-/* 当前状态卡片 */
+/* 当前状态卡片 - 紧凑版 */
 .currentState {
-  padding: 16px;
+  padding: 12px;
   background-color: #252525;
   border-radius: 8px;
-  border-left: 4px solid #3b82f6;
-  margin-bottom: 24px;
+  border-left: 3px solid #3b82f6;
+  margin-bottom: 16px;
 }
 
 .stateHeader {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .stateIcon {
-  font-size: 28px;
+  font-size: 22px;
+  flex-shrink: 0;
 }
 
 .statePhase {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stateDescription {
-  font-size: 14px;
+  font-size: 12px;
   color: #9ca3af;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .stateError {
@@ -506,6 +626,60 @@
   color: #f44336;
   line-height: 1.4;
   word-break: break-word;
+}
+
+/* 重复错误检测警告 */
+.repeatedErrorWarning {
+  margin-top: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 87, 34, 0.15) 100%);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  border-radius: 8px;
+  animation: warningPulse 2s ease-in-out infinite;
+}
+
+@keyframes warningPulse {
+  0%, 100% {
+    border-color: rgba(255, 152, 0, 0.4);
+    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0);
+  }
+  50% {
+    border-color: rgba(255, 152, 0, 0.7);
+    box-shadow: 0 0 8px 2px rgba(255, 152, 0, 0.2);
+  }
+}
+
+.warningHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.warningIcon {
+  font-size: 18px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.warningTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ff9800;
+}
+
+.warningDescription {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.5;
+}
+
+.warningDescription strong {
+  color: #ff9800;
 }
 
 /* 阶段控制按钮 */
@@ -809,36 +983,79 @@
   }
 }
 
-/* 响应式 */
-@media (max-width: 768px) {
-  .content {
-    flex-direction: column;
+/* 响应式 - 紧凑布局已内置响应式，这里做极窄屏幕适配 */
+@media (max-width: 400px) {
+  .header {
+    padding: 10px 12px;
   }
 
-  .sidebar {
-    width: 100%;
-    max-height: 200px;
-    border-right: none;
-    border-bottom: 1px solid #3d3d3d;
+  .headerTitle {
+    font-size: 14px;
+  }
+
+  .main {
+    padding: 10px;
   }
 
   .stats {
     grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
   }
 
-  .phaseTimeline {
-    flex-wrap: wrap;
-    gap: 16px;
+  .statItem {
+    padding: 8px 4px;
+  }
+
+  .statValue {
+    font-size: 14px;
+  }
+
+  .statLabel {
+    font-size: 9px;
+  }
+
+  .phaseIndicator {
+    padding: 8px;
+  }
+
+  .phaseNode {
+    width: 28px;
+    height: 28px;
+  }
+
+  .phaseIcon {
+    font-size: 11px;
+  }
+
+  .phaseLabel {
+    font-size: 8px;
+  }
+
+  .currentState {
+    padding: 10px;
+  }
+
+  .stateIcon {
+    font-size: 18px;
+  }
+
+  .statePhase {
+    font-size: 14px;
+  }
+
+  .stateDescription {
+    font-size: 11px;
+  }
+
+  .phaseControls {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .revertButton,
+  .completeButton {
+    width: 100%;
     justify-content: center;
-  }
-
-  .phaseItem {
-    flex: 0 0 auto;
-    min-width: 60px;
-  }
-
-  .phaseLine {
-    display: none;
   }
 }
 
@@ -851,4 +1068,188 @@
   padding: 40px 20px;
   text-align: center;
   height: 100%;
+}
+
+/* ============================================================================
+   状态一致性检查样式
+   ============================================================================ */
+
+/* 一致性检查按钮 */
+.consistencyButton {
+  margin-left: auto;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid #4d4d6f;
+  border-radius: 4px;
+  color: #9ca3af;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.consistencyButton:hover:not(:disabled) {
+  background: rgba(156, 163, 175, 0.1);
+  border-color: #6d6d8f;
+  color: #e5e7eb;
+}
+
+.consistencyButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 一致性检查内容 */
+.consistencyContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 一致性统计 */
+.consistencySummary {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: rgba(45, 45, 79, 0.5);
+  border-radius: 8px;
+  justify-content: center;
+}
+
+.consistencyStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.consistencyStat .statLabel {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.consistencyStat .statValue {
+  font-size: 24px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* 操作按钮区 */
+.consistencyActions {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.syncAllButton {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.syncAllButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.syncAllButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 不一致列表 */
+.inconsistentList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.listHeader {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e5e7eb;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #3d3d5f;
+}
+
+.inconsistentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 6px;
+}
+
+.itemInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.itemTaskId {
+  font-size: 12px;
+  font-family: monospace;
+  color: #ff9800;
+}
+
+.itemStatus {
+  font-size: 13px;
+  color: #e5e7eb;
+}
+
+.itemActual {
+  font-size: 12px;
+  color: #f44336;
+}
+
+.syncButton {
+  padding: 6px 12px;
+  background: #2196f3;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.syncButton:hover:not(:disabled) {
+  background: #1976d2;
+}
+
+.syncButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 全部一致提示 */
+.allConsistent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: #4caf50;
+  font-size: 16px;
+}
+
+.allConsistent .checkIcon {
+  font-size: 24px;
+}
+
+/* 加载文本 */
+.loadingText {
+  text-align: center;
+  padding: 24px;
+  color: #9ca3af;
 }

@@ -710,12 +710,12 @@ export class BlueprintManager extends EventEmitter {
       return {
         ...data,
         projectPath: blueprintProjectPath, // 确保始终有 projectPath
-        createdAt: new Date(data.createdAt),
-        updatedAt: new Date(data.updatedAt),
+        createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+        updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
         approvedAt: data.approvedAt ? new Date(data.approvedAt) : undefined,
-        changeHistory: data.changeHistory.map((c: any) => ({
+        changeHistory: (data.changeHistory || []).map((c: any) => ({
           ...c,
-          timestamp: new Date(c.timestamp),
+          timestamp: c.timestamp ? new Date(c.timestamp) : new Date(),
         })),
       };
     } catch (error) {
@@ -738,6 +738,9 @@ export class BlueprintManager extends EventEmitter {
 
       for (const file of files) {
         if (file.endsWith('.json')) {
+          // 跳过以 . 开头的文件（如 .project-context.json），这些不是蓝图文件
+          if (file.startsWith('.')) continue;
+
           const id = file.replace('.json', '');
           // 如果已经加载过，跳过
           if (this.blueprints.has(id)) continue;

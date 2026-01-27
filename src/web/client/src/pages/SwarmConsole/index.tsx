@@ -86,10 +86,18 @@ function mapWorkerStatus(apiStatus: string): ComponentWorkerAgent['status'] {
 }
 
 /**
- * 映射 TDD 阶段(从 logs 或其他字段推断，暂时使用默认值)
+ * 获取 TDD 阶段（优先使用服务端数据，否则推断）
  */
-function inferTDDPhase(worker: any): ComponentWorkerAgent['tddPhase'] {
-  // 简单推断逻辑：根据状态推断阶段
+function getTDDPhase(worker: any): ComponentWorkerAgent['tddPhase'] {
+  // 优先使用服务端发送的真实 TDD 循环状态
+  if (worker.tddCycle && worker.tddCycle.phase) {
+    const validPhases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor', 'done'];
+    if (validPhases.includes(worker.tddCycle.phase)) {
+      return worker.tddCycle.phase as ComponentWorkerAgent['tddPhase'];
+    }
+  }
+
+  // 如果没有 TDD 循环数据，根据 Worker 状态推断
   if (worker.status === 'idle' || worker.status === 'completed') return 'done';
   if (worker.status === 'working') return 'write_code';
   return 'write_test';
@@ -105,10 +113,10 @@ function convertWorker(apiWorker: any): ComponentWorkerAgent {
     taskId: apiWorker.currentTaskId || undefined,
     taskName: apiWorker.currentTaskTitle || undefined,
     progress: apiWorker.progress || 0,
-    tddPhase: inferTDDPhase(apiWorker),
-    retryCount: 0, // API 暂无此字段
+    tddPhase: getTDDPhase(apiWorker),
+    retryCount: apiWorker.tddCycle?.iteration || 0,
     maxRetries: 3,
-    duration: undefined, // API 暂无此字段
+    duration: undefined,
   };
 }
 
@@ -256,6 +264,8 @@ type RightPanelView = 'workers' | 'tdd' | 'timetravel';
 
 export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) {
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
+  const [timelineHeight, setTimelineHeight] = useState(160);
+  const [isResizingTimeline, setIsResizingTimeline] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   // 使用 initialBlueprintId 作为初始值
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(initialBlueprintId || null);
@@ -322,6 +332,28 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   }, [state.taskTree?.id, fetchTaskTreeStats]);
 
+  // 时间线高度拖拽调整
+  useEffect(() => {
+    if (!isResizingTimeline) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newHeight = window.innerHeight - e.clientY;
+      setTimelineHeight(Math.max(80, Math.min(400, newHeight)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingTimeline(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingTimeline]);
+
   // 定时刷新协调器数据
   useEffect(() => {
     fetchCoordinatorData();
@@ -369,9 +401,10 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     return convertQueen(state.queen);
   }, [state.queen]);
 
+  // 使用 REST API 数据源（coordinatorWorkers），保持与协调器一致
   const workers: ComponentWorkerAgent[] = useMemo(() => {
-    return state.workers.map(convertWorker);
-  }, [state.workers]);
+    return coordinatorWorkers.map(convertWorker);
+  }, [coordinatorWorkers]);
 
   const timeline: TimelineEvent[] = useMemo(() => {
     return state.timeline.map(convertTimelineEvent);
@@ -433,117 +466,33 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
 
 
-  const handleStartExecution = async () => {
-    if (!selectedBlueprintId) {
-      alert('请先选择一个蓝图');
-      return;
-    }
-
-    try {
-      // 确保 Queen 已初始化
-      if (!state.queen) {
-        await coordinatorApi.initializeQueen(selectedBlueprintId);
-      }
-
-      await coordinatorApi.start();
-      alert('执行已启动');
-      refresh();
-      fetchCoordinatorData();
-    } catch (err: any) {
-      console.error('启动执行失败:', err);
-      alert(`启动执行失败: ${err.message || '未知错误'}`);
-    }
-  };
-
-  const handleStopExecution = async () => {
-    try {
-      await coordinatorApi.stop();
-      alert('执行已停止');
-      refresh();
-      fetchCoordinatorData();
-    } catch (err) {
-      console.error('停止执行失败:', err);
-      alert('停止执行失败');
-    }
-  };
-
-  // 暂停执行
-  const handlePauseExecution = async () => {
-    try {
-      await coordinatorApi.pause();
-      alert('执行已暂停');
-      refresh();
-      fetchCoordinatorData();
-    } catch (err) {
-      console.error('暂停执行失败:', err);
-      alert('暂停执行失败');
-    }
-  };
-
-  // 恢复执行
-  const handleResumeExecution = async () => {
+  // 开始/恢复执行（合并功能：会自动初始化Queen、重置中断和失败的任务）
+  const handleStartOrResumeExecution = async () => {
     if (!selectedBlueprintId) {
       alert('请先选择一个蓝图');
       return;
     }
     try {
       await coordinatorApi.resume(selectedBlueprintId);
-      alert('执行已恢复');
+      alert('执行已启动');
       refresh();
       fetchCoordinatorData();
     } catch (err) {
-      console.error('恢复执行失败:', err);
-      alert('恢复执行失败: ' + (err instanceof Error ? err.message : String(err)));
+      console.error('启动执行失败:', err);
+      alert('启动执行失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  // 重置失败任务
-  const handleResetFailedTasks = async () => {
-    if (!selectedBlueprintId) {
-      alert('请先选择一个蓝图');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      '确定要重置所有失败的任务吗？\n这将把所有失败的任务状态重置为待执行，以便重新开始执行。'
-    );
-
-    if (!confirmed) return;
-
+  // 暂停执行
+  const handlePauseExecution = async () => {
     try {
-      const { blueprintApi } = await import('../../api/blueprint');
-      const result = await blueprintApi.resetFailedTasks(selectedBlueprintId);
-      alert(`成功重置 ${result.resetCount} 个失败任务`);
+      await coordinatorApi.stop();
+      alert('执行已暂停');
       refresh();
       fetchCoordinatorData();
-    } catch (err: any) {
-      console.error('重置失败任务失败:', err);
-      alert(`重置失败任务失败: ${err.message || '未知错误'}`);
-    }
-  };
-
-  // 重置中断任务（服务重启后恢复）
-  const handleResetInterruptedTasks = async () => {
-    if (!selectedBlueprintId) {
-      alert('请先选择一个蓝图');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      '确定要重置所有中断的任务吗？\n这将把所有"执行中"状态（coding、testing等）的任务重置为待执行，用于服务重启后恢复。'
-    );
-
-    if (!confirmed) return;
-
-    try {
-      const { blueprintApi } = await import('../../api/blueprint');
-      const result = await blueprintApi.resetInterruptedTasks(selectedBlueprintId);
-      alert(`成功重置 ${result.resetCount} 个中断任务`);
-      refresh();
-      fetchCoordinatorData();
-    } catch (err: any) {
-      console.error('重置中断任务失败:', err);
-      alert(`重置中断任务失败: ${err.message || '未知错误'}`);
+    } catch (err) {
+      console.error('暂停执行失败:', err);
+      alert('暂停执行失败');
     }
   };
 
@@ -676,12 +625,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
             )}
             <div className={styles.headerActions}>
               <button className={styles.iconButton} title="刷新" onClick={() => { refresh(); fetchCoordinatorData(); }}>🔄</button>
-              <button className={styles.iconButton} title="开始执行" onClick={handleStartExecution}>▶️</button>
+              <button className={styles.iconButton} title="开始/恢复执行" onClick={handleStartOrResumeExecution}>▶️</button>
               <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
-              <button className={styles.iconButton} title="恢复执行" onClick={handleResumeExecution}>▶️</button>
-              <button className={styles.iconButton} title="停止执行" onClick={handleStopExecution}>⏹️</button>
-              <button className={styles.iconButton} title="重置失败任务" onClick={handleResetFailedTasks}>🔁</button>
-              <button className={styles.iconButton} title="重置中断任务(重启恢复)" onClick={handleResetInterruptedTasks}>🔄</button>
             </div>
           </div>
           <div className={styles.panelContent}>
@@ -750,34 +695,17 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
             {loadingCoordinator && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {/* Workers 视图 */}
+            {/* Workers 视图 - 统一使用 REST API 数据源 */}
             {rightPanelView === 'workers' && (
               <>
-                {/* 从协调器 API 获取的 Workers */}
-                {coordinatorWorkers.length > 0 && (
-                  <div className={styles.coordinatorWorkers}>
-                    <div className={styles.workerListHeader}>协调器 Workers</div>
-                    {coordinatorWorkers.map((worker, idx) => (
-                      <div key={worker.id || idx} className={styles.workerItem}>
-                        <span className={styles.workerName}>{worker.name || worker.id}</span>
-                        <span className={`${styles.workerStatus} ${styles[worker.status]}`}>
-                          {worker.status}
-                        </span>
-                        {worker.currentTaskTitle && (
-                          <span className={styles.workerTask}>{worker.currentTaskTitle}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {!queen && coordinatorWorkers.length === 0 ? (
+                {!queen && workers.length === 0 ? (
                   <div className={styles.emptyState}>
                     <div className={styles.emptyStateIcon}>👑</div>
                     <div className={styles.emptyStateText}>
                       {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
                     </div>
                   </div>
-                ) : queen && (
+                ) : (
                   <FadeIn>
                     <WorkerPanel queen={queen} workers={workers} />
                   </FadeIn>
@@ -823,27 +751,30 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       </PanelGroup>
 
       {/* 底部：时间线区域（可折叠） - 增强版 */}
-      <div className={`${styles.timelineArea} ${timelineCollapsed ? styles.collapsed : ''}`}>
+      {!timelineCollapsed && (
+        <div
+          className={styles.timelineResizeHandle}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsResizingTimeline(true);
+          }}
+        />
+      )}
+      <div
+        className={`${styles.timelineArea} ${timelineCollapsed ? styles.collapsed : ''}`}
+        style={timelineCollapsed ? undefined : { height: timelineHeight }}
+      >
         <div className={styles.timelineHeader} onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
           <h3>⏱ 时间线</h3>
           <span className={styles.eventCount}>
-            {filteredTimeline.length}/{timeline.length} 事件
+            {filteredTimeline.length}/{timeline.length}
           </span>
-          <button className={styles.collapseButton}>
-            {timelineCollapsed ? '▲' : '▼'}
-          </button>
-        </div>
-        {!timelineCollapsed && (
-          <div className={styles.timelineContent}>
-            {/* 时间线过滤器和搜索 */}
-            <div className={styles.timelineFilters}>
-              {/* 左滚动按钮 */}
+          {/* 过滤器和搜索（内联在标题栏） */}
+          {!timelineCollapsed && (
+            <div className={styles.timelineFilters} onClick={(e) => e.stopPropagation()}>
               <button
                 className={styles.timelineNavButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  scrollTimeline('left');
-                }}
+                onClick={() => scrollTimeline('left')}
                 title="向左滚动"
               >
                 ◀
@@ -852,7 +783,6 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 className={styles.timelineFilterSelect}
                 value={timelineFilter}
                 onChange={(e) => setTimelineFilter(e.target.value as TimelineFilterType)}
-                onClick={(e) => e.stopPropagation()}
               >
                 <option value="all">全部</option>
                 <option value="task">任务</option>
@@ -863,37 +793,43 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               <input
                 type="text"
                 className={styles.timelineSearchInput}
-                placeholder="搜索事件..."
+                placeholder="搜索..."
                 value={timelineSearchTerm}
                 onChange={(e) => setTimelineSearchTerm(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
               />
               {(timelineFilter !== 'all' || timelineSearchTerm) && (
                 <button
                   className={styles.timelineClearFilter}
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     setTimelineFilter('all');
                     setTimelineSearchTerm('');
                   }}
-                  title="清除过滤"
+                  title="清除"
                 >
                   ✕
                 </button>
               )}
-              {/* 右滚动按钮 */}
               <button
                 className={styles.timelineNavButton}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  scrollTimeline('right');
-                }}
+                onClick={() => scrollTimeline('right')}
                 title="向右滚动"
               >
                 ▶
               </button>
             </div>
-
+          )}
+          <button
+            className={styles.collapseButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTimelineCollapsed(!timelineCollapsed);
+            }}
+          >
+            {timelineCollapsed ? '▲' : '▼'}
+          </button>
+        </div>
+        {!timelineCollapsed && (
+          <div className={styles.timelineContent}>
             {filteredTimeline.length === 0 ? (
               <div className={styles.emptyState}>
                 <div className={styles.emptyStateText}>

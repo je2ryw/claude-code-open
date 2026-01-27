@@ -130,29 +130,21 @@ export const BlueprintCard: React.FC<BlueprintCardProps> = ({
           break;
 
         case 'pause':
-          // 暂停执行：调用协调器的暂停接口
-          await coordinatorApi.pause();
+        case 'stop':
+          // 暂停/停止执行
+          if (action === 'stop' && !confirm('确定要停止执行吗？')) {
+            break;
+          }
+          await coordinatorApi.stop();
           console.log('[BlueprintCard] 蓝图执行已暂停');
-          // 刷新列表以更新状态显示
           onRefresh?.();
           break;
 
         case 'resume':
           // 恢复执行：调用协调器的恢复接口
-          await coordinatorApi.resume();
+          await coordinatorApi.resume(blueprint.id);
           console.log('[BlueprintCard] 蓝图执行已恢复');
-          // 刷新列表以更新状态显示
           onRefresh?.();
-          break;
-
-        case 'stop':
-          if (confirm('确定要停止执行吗？')) {
-            // 停止执行：调用协调器的停止接口
-            await coordinatorApi.stop();
-            console.log('[BlueprintCard] 蓝图执行已停止');
-            // 刷新列表以更新状态显示
-            onRefresh?.();
-          }
           break;
 
         case 'view-swarm':

@@ -8,7 +8,14 @@
  */
 
 import { ClaudeClient, createClientWithModel } from '../core/client.js';
-import type { TaskNode, TestResult, AcceptanceTest, Blueprint } from './types.js';
+import type {
+  TaskNode,
+  TestResult,
+  AcceptanceTest,
+  Blueprint,
+  ProjectContext,
+  DependencyRequest,
+} from './types.js';
 import { BoundaryChecker, createBoundaryChecker } from './boundary-checker.js';
 import type { TDDPhase } from './tdd-executor.js';
 import { checkFileOperation } from './blueprint-context.js';
@@ -98,6 +105,15 @@ export class WorkerExecutor {
   private currentTaskModuleId: string | undefined;
   private workerId: string | undefined;
 
+  // ========== 项目上下文（由蜂王提供）==========
+  private projectContext: ProjectContext | null = null;
+  private dependencyRequestCallback?: (
+    packageName: string,
+    version?: string,
+    reason?: string,
+    isDev?: boolean
+  ) => Promise<DependencyRequest>;
+
   constructor(config?: Partial<WorkerExecutorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.workerId = this.config.workerId;
@@ -127,6 +143,185 @@ export class WorkerExecutor {
    */
   setWorkerId(workerId: string | undefined): void {
     this.workerId = workerId;
+  }
+
+  // --------------------------------------------------------------------------
+  // 项目上下文管理（由蜂王提供）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 设置项目上下文
+   * 这是 Worker 获取"项目感知"的关键：
+   * - 知道已有哪些依赖
+   * - 知道项目约定和规范
+   * - 知道共享资源位置
+   */
+  setProjectContext(context: ProjectContext | null): void {
+    this.projectContext = context;
+    if (context) {
+      this.log(`[Worker] 已获取项目上下文: ${context.dependencies.length} 个依赖, ${context.devDependencies.length} 个开发依赖`);
+    }
+  }
+
+  /**
+   * 获取项目上下文
+   */
+  getProjectContext(): ProjectContext | null {
+    return this.projectContext;
+  }
+
+  /**
+   * 设置依赖请求回调
+   * Worker 需要新依赖时，通过这个回调请求蜂王处理
+   */
+  setDependencyRequestCallback(
+    callback: (packageName: string, version?: string, reason?: string, isDev?: boolean) => Promise<DependencyRequest>
+  ): void {
+    this.dependencyRequestCallback = callback;
+  }
+
+  /**
+   * 请求添加依赖
+   * Worker 发现需要新的依赖时调用
+   */
+  async requestDependency(
+    packageName: string,
+    version?: string,
+    reason?: string,
+    isDev: boolean = false
+  ): Promise<DependencyRequest | null> {
+    if (!this.dependencyRequestCallback) {
+      this.log(`[Worker] 无法请求依赖 ${packageName}: 未配置依赖请求回调`);
+      return null;
+    }
+
+    this.log(`[Worker] 请求依赖: ${packageName}${version ? `@${version}` : ''} (${isDev ? '开发依赖' : '运行时依赖'})`);
+    return this.dependencyRequestCallback(packageName, version, reason, isDev);
+  }
+
+  /**
+   * 检查依赖是否已安装
+   */
+  hasDependency(packageName: string, checkDevDeps: boolean = true): boolean {
+    if (!this.projectContext) return false;
+
+    const inDeps = this.projectContext.dependencies.some(d => d.name === packageName && d.installed);
+    if (inDeps) return true;
+
+    if (checkDevDeps) {
+      return this.projectContext.devDependencies.some(d => d.name === packageName && d.installed);
+    }
+
+    return false;
+  }
+
+  /**
+   * 获取已安装的依赖列表（格式化为字符串）
+   */
+  getInstalledDependenciesInfo(): string {
+    if (!this.projectContext) return '项目上下文未初始化';
+
+    const deps = this.projectContext.dependencies.filter(d => d.installed);
+    const devDeps = this.projectContext.devDependencies.filter(d => d.installed);
+
+    const lines: string[] = [];
+    lines.push('## 已安装的依赖');
+    lines.push('');
+
+    if (deps.length > 0) {
+      lines.push('### 运行时依赖');
+      for (const dep of deps) {
+        lines.push(`- ${dep.name}@${dep.version}`);
+      }
+      lines.push('');
+    }
+
+    if (devDeps.length > 0) {
+      lines.push('### 开发依赖');
+      for (const dep of devDeps) {
+        lines.push(`- ${dep.name}@${dep.version}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 获取项目规范信息（格式化为字符串）
+   */
+  getProjectConventionsInfo(): string {
+    if (!this.projectContext) return '';
+
+    const conventions = this.projectContext.techStackConventions;
+    if (conventions.length === 0) return '';
+
+    const lines: string[] = [];
+    lines.push('## 项目规范（必须遵守）');
+    lines.push('');
+
+    for (const convention of conventions) {
+      lines.push(`### ${convention.name}`);
+      lines.push(convention.description);
+      if (convention.example) {
+        lines.push('```');
+        lines.push(convention.example);
+        lines.push('```');
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建项目上下文提示（包含在每个 TDD 阶段）
+   */
+  buildProjectContextPrompt(): string {
+    if (!this.projectContext) return '';
+
+    const lines: string[] = [];
+    lines.push('# 项目上下文（由蜂王提供，你必须遵守）');
+    lines.push('');
+
+    // 项目基本信息
+    lines.push(`## 项目信息`);
+    lines.push(`- 项目路径: ${this.projectContext.projectPath}`);
+    lines.push(`- 包管理器: ${this.projectContext.packageManager}`);
+    if (this.projectContext.projectConfig.testFramework) {
+      lines.push(`- 测试框架: ${this.projectContext.projectConfig.testFramework}`);
+    }
+    if (this.projectContext.projectConfig.testCommand) {
+      lines.push(`- 测试命令: ${this.projectContext.projectConfig.testCommand}`);
+    }
+    lines.push('');
+
+    // 已安装依赖
+    lines.push(this.getInstalledDependenciesInfo());
+    lines.push('');
+
+    // 项目规范
+    const conventions = this.getProjectConventionsInfo();
+    if (conventions) {
+      lines.push(conventions);
+    }
+
+    // 共享资源
+    if (this.projectContext.sharedResources.length > 0) {
+      lines.push('## 共享资源（可以导入使用）');
+      for (const resource of this.projectContext.sharedResources) {
+        lines.push(`- ${resource.filePath}: ${resource.description} (类型: ${resource.type})`);
+      }
+      lines.push('');
+    }
+
+    // 重要提示
+    lines.push('## 重要提示');
+    lines.push('- **不要**直接修改 package.json 添加依赖，如需新依赖请通过蜂王请求');
+    lines.push('- **必须**遵守项目规范');
+    lines.push('- **可以**使用已有的共享资源');
+    lines.push('- **可以**使用已安装的依赖');
+
+    return lines.join('\n');
   }
 
   // --------------------------------------------------------------------------
@@ -291,6 +486,15 @@ export class WorkerExecutor {
 
     // 生成实现代码
     const codeArtifacts = await this.generateCode(task, testCode || '', lastError);
+
+    // 检查是否生成了代码
+    if (codeArtifacts.length === 0) {
+      return {
+        success: false,
+        error: 'Claude 响应中未找到代码块，请确保响应包含 ```typescript 或 ```javascript 代码块',
+        artifacts: [],
+      };
+    }
 
     // 保存代码文件
     for (const artifact of codeArtifacts) {

@@ -93,11 +93,8 @@ const status = await codebaseApi.getAnalyzeStatus();
 ```typescript
 import { coordinatorApi } from './api/blueprint';
 
-// 初始化蜂王
-await coordinatorApi.initializeQueen(blueprintId);
-
-// 启动主循环
-await coordinatorApi.start();
+// 启动/恢复执行（会自动初始化蜂王并重置中断任务）
+await coordinatorApi.resume(blueprintId);
 
 // 获取仪表板数据
 const dashboard = await coordinatorApi.getDashboard();
@@ -105,7 +102,7 @@ const dashboard = await coordinatorApi.getDashboard();
 // 获取所有 Worker
 const workers = await coordinatorApi.getWorkers();
 
-// 停止执行
+// 暂停/停止执行
 await coordinatorApi.stop();
 ```
 
@@ -204,7 +201,8 @@ import type {
 | `blueprintApi.approveBlueprint(id)` | `/api/blueprint/blueprints/:id/approve` | POST |
 | `blueprintApi.rejectBlueprint(id, reason)` | `/api/blueprint/blueprints/:id/reject` | POST |
 | `taskTreeApi.getTaskTree(id)` | `/api/blueprint/task-trees/:id` | GET |
-| `coordinatorApi.start()` | `/api/blueprint/coordinator/start` | POST |
+| `coordinatorApi.resume(blueprintId)` | `/api/blueprint/coordinator/start` | POST |
+| `coordinatorApi.stop()` | `/api/blueprint/coordinator/stop` | POST |
 | `timeTravelApi.rollback(treeId, checkpointId)` | `/api/blueprint/time-travel/:treeId/rollback/:checkpointId` | POST |
 
 ## 注意事项

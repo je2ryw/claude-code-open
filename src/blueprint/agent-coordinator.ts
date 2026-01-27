@@ -9,7 +9,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -26,6 +26,20 @@ import type {
   TimelineEvent,
   AcceptanceTest,
   CodeArtifact,
+  ProjectContext,
+  ProjectDependency,
+  DependencyRequest,
+  SharedResource,
+  ProjectConfig,
+  TechStackConvention,
+  ProjectLanguage,
+  PackageManagerType,
+  TestFrameworkType,
+  ContextManagementConfig,
+  ContextSummary,
+  HierarchicalContext,
+  ContextCompressionResult,
+  ContextHealthStatus,
 } from './types.js';
 import { blueprintManager } from './blueprint-manager.js';
 import { taskTreeManager } from './task-tree-manager.js';
@@ -44,6 +58,18 @@ import {
   type TestReviewContext,
   type ReviewResult,
 } from './test-reviewer.js';
+import {
+  AcceptanceTestFixer,
+  createAcceptanceTestFixer,
+  type TestFixRequest,
+  type TestFixResult,
+} from './acceptance-test-fixer.js';
+import {
+  QueenExecutor,
+  getQueenExecutor,
+  type QueenInterventionRequest,
+} from './queen-executor.js';
+import { createClientWithModel } from '../core/client.js';
 
 // ============================================================================
 // 协调器配置
@@ -68,6 +94,12 @@ export interface CoordinatorConfig {
   testFramework?: string;
   /** 测试目录 */
   testDirectory?: string;
+  /** 僵局处理策略 */
+  stalemateStrategy: 'manual' | 'auto_retry' | 'skip_failed';
+  /** 自动重试失败任务的最大次数（仅在 stalemateStrategy 为 auto_retry 时有效） */
+  stalemateAutoRetryLimit: number;
+  /** 上下文管理配置 */
+  contextManagement: ContextManagementConfig;
 }
 
 const DEFAULT_CONFIG: CoordinatorConfig = {
@@ -80,6 +112,18 @@ const DEFAULT_CONFIG: CoordinatorConfig = {
   projectRoot: process.cwd(),
   testFramework: 'vitest',
   testDirectory: '__tests__',
+  stalemateStrategy: 'auto_retry', // 默认自动重试
+  stalemateAutoRetryLimit: 3, // 僵局自动重试最多 3 次
+  contextManagement: {
+    maxContextTokens: 100000,        // 10 万 token 触发压缩
+    targetContextTokens: 60000,       // 压缩到 6 万 token
+    recentDecisionsCount: 20,         // 保留最近 20 条决策
+    recentTimelineCount: 50,          // 保留最近 50 条时间线
+    recentWorkerOutputsCount: 5,      // 每个 Worker 保留最近 5 次输出
+    summaryCompressionRatio: 0.2,     // 旧内容压缩到 20%
+    autoCompression: true,            // 启用自动压缩
+    compressionCheckInterval: 60000,  // 每分钟检查一次
+  },
 };
 
 interface GitBaseline {
@@ -115,7 +159,24 @@ export class AgentCoordinator extends EventEmitter {
   private isRunning: boolean = false;
   private acceptanceTestGenerator: AcceptanceTestGenerator | null = null;
   private testReviewer: TestReviewer;
+  private testFixer: AcceptanceTestFixer;  // 验收测试修正器
+  private queenExecutor: QueenExecutor;    // 蜂王智能体执行器
   private submissionValidator?: (submission: WorkerSubmission) => Promise<GateResult>;
+
+  // ========== 项目上下文管理（蜂王作为项目管理者）==========
+  private projectContext: ProjectContext | null = null;
+  private dependencyInstallTimer: NodeJS.Timeout | null = null;
+  private contextSyncTimer: NodeJS.Timeout | null = null;  // 上下文同步定时器
+  private lastContextSyncTime: Date | null = null;  // 上次同步时间
+  private readonly DEPENDENCY_INSTALL_DELAY = 3000; // 依赖安装批量处理延迟（毫秒）
+  private readonly CONTEXT_SYNC_INTERVAL = 30000;   // 上下文同步间隔（30秒）
+  private readonly CONTEXT_FILE_NAME = '.project-context.json';  // 上下文持久化文件名
+
+  // ========== 蜂王上下文管理（防止上下文腐烂/膨胀）==========
+  private hierarchicalContext: HierarchicalContext | null = null;  // 分层上下文
+  private contextSummaries: ContextSummary[] = [];                  // 历史摘要
+  private contextCompressionTimer: NodeJS.Timeout | null = null;   // 压缩检查定时器
+  private readonly CHARS_PER_TOKEN = 4;                             // 估算：平均每 4 个字符约 1 个 token
 
   constructor(config?: Partial<CoordinatorConfig>) {
     super();
@@ -128,13 +189,281 @@ export class AgentCoordinator extends EventEmitter {
       testDirectory: this.config.testDirectory,
     });
 
-    // 初始化测试验收员
+    // 初始化测试验收员（使用智能体模式）
     this.testReviewer = createTestReviewer({
-      minTestsPerBranch: 1,
-      requiredEdgeCases: ['null', 'empty', 'boundary'],
-      minAssertionDensity: 1.5,
-      requireErrorTests: true,
+      standards: {
+        minTestsPerBranch: 1,
+        requiredEdgeCases: ['null', 'empty', 'boundary'],
+        minAssertionDensity: 1.5,
+        requireErrorTests: true,
+      },
+      useAgentMode: true,  // 启用 LLM 智能体审查
+      client: createClientWithModel(this.config.defaultWorkerModel || 'sonnet'),
     });
+
+    // 初始化验收测试修正器
+    this.testFixer = createAcceptanceTestFixer({
+      maxFixAttempts: 3,
+      enableAutoFix: true,
+      confidenceThreshold: 0.7,
+    });
+
+    // 初始化蜂王智能体执行器
+    this.queenExecutor = getQueenExecutor();
+    this.setupQueenExecutorEventListeners();
+
+    // 监听 TDD 执行器的重复错误事件
+    this.setupTDDEventListeners();
+  }
+
+  /**
+   * 设置蜂王执行器事件监听器
+   */
+  private setupQueenExecutorEventListeners(): void {
+    // 监听蜂王的人工通知事件
+    this.queenExecutor.on('human:notification', (event) => {
+      this.addTimelineEvent('task_review', `蜂王请求人工介入: ${event.message}`, {
+        taskId: event.taskId,
+        priority: event.priority,
+      });
+      this.emit('queen:human-notification', event);
+    });
+
+    // 监听蜂王的测试修改事件
+    this.queenExecutor.on('test:modified', (event) => {
+      this.addTimelineEvent('task_review', `蜂王修正了验收测试`, {
+        originalTestId: event.originalTest.id,
+        fixedTestId: event.fixedTest.id,
+      });
+    });
+
+    // 监听蜂王的任务修改事件
+    this.queenExecutor.on('task:modified', (event) => {
+      this.addTimelineEvent('task_review', `蜂王修改了任务定义`, {
+        taskId: event.task.id,
+        taskName: event.task.name,
+      });
+    });
+
+    // 监听蜂王的介入完成事件
+    this.queenExecutor.on('intervention:completed', (event) => {
+      this.addTimelineEvent('task_review', `蜂王介入完成`, {
+        requestId: event.requestId,
+        success: event.result.success,
+        decisionType: event.result.decision.decisionType,
+      });
+    });
+  }
+
+  /**
+   * 设置 TDD 事件监听器
+   */
+  private setupTDDEventListeners(): void {
+    // 监听重复错误事件
+    tddExecutor.on('loop:repeated-error-detected', async (event) => {
+      await this.handleRepeatedError(event);
+    });
+
+    // 监听测试修正完成事件
+    this.testFixer.on('test:fixed', (event) => {
+      this.addTimelineEvent('task_review', `验收测试已修正`, {
+        testId: event.testId,
+        fixType: event.result.fixType,
+        success: event.result.success,
+      });
+    });
+  }
+
+  /**
+   * 处理重复错误（测试可能有 bug）
+   *
+   * 当 Worker 连续多次遇到相同错误时，蜂王会：
+   * 1. 分析错误原因
+   * 2. 判断是测试问题还是实现问题
+   * 3. 如果是测试问题，尝试修正测试
+   * 4. 如果修正成功，重启该任务的 TDD 循环
+   * 5. 如果无法修正，标记需要人工介入
+   */
+  private async handleRepeatedError(event: {
+    taskId: string;
+    iteration: number;
+    errorSignature: string;
+    consecutiveCount: number;
+    lastError: string;
+    failedTests?: Array<{ id: string; error: string }>;
+    suggestion: string;
+  }): Promise<void> {
+    const { taskId, errorSignature, consecutiveCount, lastError, failedTests } = event;
+
+    console.log(`[AgentCoordinator] 检测到重复错误: 任务 ${taskId}, 连续 ${consecutiveCount} 次`);
+
+    // 获取任务和循环状态
+    const loopState = tddExecutor.getLoopState(taskId);
+    if (!loopState) {
+      console.error(`[AgentCoordinator] 无法获取任务 ${taskId} 的循环状态`);
+      return;
+    }
+
+    const tree = taskTreeManager.getTaskTree(loopState.treeId);
+    if (!tree) {
+      console.error(`[AgentCoordinator] 无法找到任务树 ${loopState.treeId}`);
+      return;
+    }
+
+    const task = taskTreeManager.findTask(tree.root, taskId);
+    if (!task) {
+      console.error(`[AgentCoordinator] 无法找到任务 ${taskId}`);
+      return;
+    }
+
+    // 添加时间线事件
+    this.addTimelineEvent('task_review', `检测到重复错误，蜂王介入分析`, {
+      taskId,
+      consecutiveCount,
+      errorSignature,
+    });
+
+    // 获取需要修正的测试
+    let testsToFix: AcceptanceTest[] = [];
+
+    if (failedTests && failedTests.length > 0 && loopState.hasAcceptanceTests) {
+      // 验收测试失败
+      testsToFix = loopState.acceptanceTests.filter(t =>
+        failedTests.some(ft => ft.id === t.id)
+      );
+    } else if (loopState.hasAcceptanceTests && loopState.acceptanceTests.length > 0) {
+      // 默认尝试修正所有验收测试
+      testsToFix = loopState.acceptanceTests;
+    }
+
+    if (testsToFix.length === 0) {
+      console.log(`[AgentCoordinator] 任务 ${taskId} 没有可修正的验收测试`);
+      this.emit('repeated-error:no-fixable-tests', { taskId, reason: '没有验收测试' });
+      return;
+    }
+
+    // 尝试修正每个失败的测试
+    let anyFixed = false;
+    const fixedTests: AcceptanceTest[] = [];
+
+    for (const test of testsToFix) {
+      const fixRequest: TestFixRequest = {
+        id: uuidv4(),
+        taskId,
+        testId: test.id,
+        consecutiveErrorCount: consecutiveCount,
+        errorSignature,
+        errorMessage: lastError,
+        requestedAt: new Date(),
+      };
+
+      const result = await this.testFixer.handleFixRequest(fixRequest, test, task);
+
+      if (result.success && result.fixedTest) {
+        anyFixed = true;
+        fixedTests.push(result.fixedTest);
+
+        console.log(`[AgentCoordinator] 测试 ${test.id} 已修正: ${result.fixDescription}`);
+
+        // 发出测试修正事件
+        this.emit('test:fixed', {
+          taskId,
+          originalTestId: test.id,
+          fixedTest: result.fixedTest,
+          analysis: result.analysis,
+        });
+      } else {
+        console.log(`[AgentCoordinator] 测试 ${test.id} 无法自动修正: ${result.humanInterventionReason}`);
+
+        // 发出需要人工介入事件
+        this.emit('test:needs-human-intervention', {
+          taskId,
+          testId: test.id,
+          analysis: result.analysis,
+          reason: result.humanInterventionReason,
+        });
+      }
+    }
+
+    // 如果有测试被修正，更新任务并重启 TDD 循环
+    if (anyFixed && fixedTests.length > 0) {
+      await this.restartTDDWithFixedTests(taskId, loopState, task, fixedTests);
+    } else {
+      // 所有测试都无法修正，标记任务需要人工介入
+      this.addTimelineEvent('task_review', `任务需要人工介入: 测试用例可能有问题`, {
+        taskId,
+        reason: '无法自动修正测试用例',
+      });
+
+      this.emit('task:needs-human-intervention', {
+        taskId,
+        reason: '连续多次相同错误，无法自动修正测试用例',
+        suggestion: event.suggestion,
+      });
+    }
+  }
+
+  /**
+   * 用修正后的测试重启 TDD 循环
+   */
+  private async restartTDDWithFixedTests(
+    taskId: string,
+    loopState: TDDLoopState,
+    task: TaskNode,
+    fixedTests: AcceptanceTest[]
+  ): Promise<void> {
+    console.log(`[AgentCoordinator] 用修正后的测试重启任务 ${taskId}`);
+
+    // 更新任务的验收测试
+    const updatedAcceptanceTests = loopState.acceptanceTests.map(originalTest => {
+      const fixed = fixedTests.find(ft => ft.taskId === originalTest.taskId);
+      return fixed || originalTest;
+    });
+
+    // 更新任务节点
+    task.acceptanceTests = updatedAcceptanceTests;
+
+    // 重置任务状态
+    taskTreeManager.updateTaskStatus(loopState.treeId, taskId, 'testing');
+
+    // 重新启动 TDD 循环
+    tddExecutor.restartLoop(taskId, {
+      acceptanceTests: updatedAcceptanceTests,
+      resetIteration: true,
+      resetErrorCount: true,
+    });
+
+    // 添加时间线事件
+    this.addTimelineEvent('task_start', `TDD 循环已重启（使用修正后的测试）`, {
+      taskId,
+      fixedTestCount: fixedTests.length,
+    });
+
+    this.emit('tdd:restarted-with-fixed-tests', {
+      taskId,
+      fixedTestCount: fixedTests.length,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // 配置更新
+  // --------------------------------------------------------------------------
+
+  /**
+   * 设置项目根目录
+   * 用于确保 Worker 在正确的目录下运行测试
+   *
+   * 调用时机：
+   * - 恢复执行时（即使蜂王已存在）
+   * - 切换项目时
+   */
+  setProjectRoot(projectRoot: string): void {
+    this.config.projectRoot = projectRoot;
+    console.log(`[AgentCoordinator] 项目路径已更新: ${projectRoot}`);
+
+    // 清除所有缓存的 WorkerExecutor，确保新任务使用正确的 projectRoot
+    this.workerExecutors.clear();
+    console.log(`[AgentCoordinator] 已清除缓存的 WorkerExecutor 实例`);
   }
 
   // --------------------------------------------------------------------------
@@ -165,10 +494,12 @@ export class AgentCoordinator extends EventEmitter {
 
     // 生成任务树（如果还没有）
     let taskTree: TaskTree;
+    let isResumingExistingTree = false;
     if (blueprint.taskTreeId) {
       const existingTree = taskTreeManager.getTaskTree(blueprint.taskTreeId);
       if (existingTree) {
         taskTree = existingTree;
+        isResumingExistingTree = true;
       } else {
         taskTree = taskTreeManager.generateFromBlueprint(blueprint);
       }
@@ -178,8 +509,46 @@ export class AgentCoordinator extends EventEmitter {
       blueprintManager.startExecution(blueprintId, taskTree.id);
     }
 
+    // 恢复现有任务树时，需要重置两类任务：
+    // 1. 中断的任务（coding、testing 等状态）- 服务重启后没有 Worker 继续执行
+    // 2. 失败的任务（test_failed、rejected）- 需要重新尝试
+    if (isResumingExistingTree) {
+      // 清理该任务树遗留的 TDD 循环
+      // 重要：服务重启后，Worker 状态丢失，但 TDD 循环可能残留在内存中
+      // 这会导致 TDD 面板显示"活跃循环"但 Worker 空闲的状态不一致问题
+      const removedLoopCount = tddExecutor.removeLoopsByTreeId(taskTree.id);
+      if (removedLoopCount > 0) {
+        console.log(`[AgentCoordinator] 清理了 ${removedLoopCount} 个遗留的 TDD 循环`);
+        this.addTimelineEvent('task_start', `恢复执行：清理了 ${removedLoopCount} 个遗留的 TDD 循环`, { removedLoopCount });
+      }
+
+      // 重置中断的任务
+      const interruptedCount = taskTreeManager.resetInterruptedTasks(taskTree.id);
+      if (interruptedCount > 0) {
+        console.log(`[AgentCoordinator] 重置了 ${interruptedCount} 个中断的任务`);
+        this.addTimelineEvent('task_start', `恢复执行：重置了 ${interruptedCount} 个中断的任务`, { interruptedCount });
+      }
+
+      // 重置失败的任务，让它们可以重新执行
+      // 这是恢复执行的核心：失败的任务需要重新尝试
+      const failedCount = taskTreeManager.resetFailedTasks(taskTree.id, false); // 不重置重试计数，保留历史
+      if (failedCount > 0) {
+        console.log(`[AgentCoordinator] 重置了 ${failedCount} 个失败的任务`);
+        this.addTimelineEvent('task_start', `恢复执行：重置了 ${failedCount} 个失败的任务以重新执行`, { failedCount });
+      }
+    }
+
     // 设置蓝图上下文（用于边界检查）
     setBlueprint(blueprint);
+
+    // ========== 初始化项目上下文（蜂王作为项目管理者）==========
+    // 如果是恢复执行，尝试加载已有的项目上下文
+    // 如果是新项目，创建新的项目上下文
+    this.projectContext = await this.initializeProjectContext(
+      blueprint.projectPath || this.config.projectRoot || process.cwd(),
+      blueprint,
+      isResumingExistingTree
+    );
 
     // 创建蜂王
     this.queen = {
@@ -189,13 +558,1586 @@ export class AgentCoordinator extends EventEmitter {
       status: 'idle',
       workerAgents: [],
       globalContext: this.buildGlobalContext(blueprint, taskTree),
+      projectContext: this.projectContext,  // 关联项目上下文
       decisions: [],
     };
 
     this.addTimelineEvent('task_start', '蜂王初始化完成', { queenId: this.queen.id });
     this.emit('queen:initialized', this.queen);
 
+    // 同步蜂王执行器的状态
+    this.queenExecutor.setBlueprint(blueprint);
+    this.queenExecutor.setProjectContext(this.projectContext);
+    this.queenExecutor.setQueenAgent(this.queen);
+
+    // 设置 testFixer 的任务树 ID（用于蜂王介入）
+    this.testFixer.setTreeId(taskTree.id);
+
+    // 如果项目未初始化，添加事件通知
+    if (!this.projectContext.initialized) {
+      this.addTimelineEvent('task_start', '项目需要初始化（package.json 等）', {
+        projectPath: this.projectContext.projectPath,
+      });
+      this.emit('project:needs-initialization', {
+        projectPath: this.projectContext.projectPath,
+        projectContext: this.projectContext,
+      });
+    }
+
     return this.queen;
+  }
+
+  // --------------------------------------------------------------------------
+  // 项目上下文管理（蜂王作为项目管理者的核心能力）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 初始化项目上下文
+   * 分析项目目录，确定项目是否已初始化，读取现有配置
+   * 支持多语言项目：JavaScript/TypeScript、Python、Go、Rust、Java
+   */
+  private async initializeProjectContext(
+    projectPath: string,
+    blueprint: Blueprint,
+    isResuming: boolean
+  ): Promise<ProjectContext> {
+    console.log(`[AgentCoordinator] 初始化项目上下文: ${projectPath}`);
+
+    // 恢复模式下，优先尝试加载已保存的项目上下文
+    if (isResuming) {
+      const savedContext = this.loadProjectContextFromFile(projectPath);
+      if (savedContext) {
+        console.log(`[AgentCoordinator] 已从文件加载项目上下文（恢复模式）`);
+        this.projectContext = savedContext;
+
+        // 执行一次同步，确保上下文与实际文件一致
+        this.syncProjectContext();
+
+        return savedContext;
+      }
+      console.log(`[AgentCoordinator] 未找到已保存的项目上下文，将重新初始化`);
+    }
+
+    // 检测项目语言
+    const language = this.detectProjectLanguage(projectPath, blueprint);
+    console.log(`[AgentCoordinator] 检测到项目语言: ${language}`);
+
+    // 检测包管理器（基于语言）
+    const packageManager = this.detectPackageManager(projectPath, language);
+    console.log(`[AgentCoordinator] 检测到包管理器: ${packageManager}`);
+
+    // 检查项目是否已初始化（根据语言检测不同的配置文件）
+    const hasProjectConfig = this.hasProjectConfigFile(projectPath, language);
+
+    let projectConfig: ProjectConfig = {
+      scripts: {},
+    };
+    let dependencies: ProjectDependency[] = [];
+    let devDependencies: ProjectDependency[] = [];
+
+    // 根据语言读取配置
+    if (hasProjectConfig) {
+      const configResult = this.readProjectConfig(projectPath, language);
+      projectConfig = configResult.config;
+      dependencies = configResult.dependencies;
+      devDependencies = configResult.devDependencies;
+      console.log(`[AgentCoordinator] 已读取项目配置: ${dependencies.length} 个依赖, ${devDependencies.length} 个开发依赖`);
+    }
+
+    // 检测测试框架（基于语言和依赖）
+    const testFramework = this.detectTestFramework(language, devDependencies);
+    if (testFramework) {
+      projectConfig.testFramework = testFramework;
+    }
+
+    // 设置默认测试命令（基于语言）
+    if (!projectConfig.testCommand) {
+      projectConfig.testCommand = this.getDefaultTestCommand(language, testFramework);
+    }
+
+    // 检测 TypeScript 配置（仅 JS/TS 项目）
+    if (language === 'javascript' || language === 'typescript') {
+      const tsConfigPath = this.detectTsConfig(projectPath);
+      if (tsConfigPath) {
+        projectConfig.tsConfigPath = tsConfigPath;
+      }
+    }
+
+    // 检测 Python 虚拟环境
+    if (language === 'python') {
+      const venvPath = this.detectPythonVenv(projectPath);
+      if (venvPath) {
+        projectConfig.pythonVenvPath = venvPath;
+      }
+    }
+
+    // 从蓝图提取技术栈规范
+    const techStackConventions = this.extractTechStackConventions(blueprint, language);
+
+    // 创建项目上下文
+    const projectContext: ProjectContext = {
+      projectPath,
+      initialized: hasProjectConfig,
+      initializedAt: hasProjectConfig ? new Date() : undefined,
+      language,
+      packageManager,
+      dependencies,
+      devDependencies,
+      sharedResources: [],
+      projectConfig,
+      techStackConventions,
+      pendingDependencyRequests: [],
+    };
+
+    this.projectContext = projectContext;
+
+    // 保存上下文到文件（供后续恢复使用）
+    this.saveProjectContext();
+
+    return projectContext;
+  }
+
+  // --------------------------------------------------------------------------
+  // 多语言项目检测
+  // --------------------------------------------------------------------------
+
+  /**
+   * 检测项目语言
+   * 优先级：蓝图指定 > 配置文件检测 > 文件扩展名统计
+   */
+  private detectProjectLanguage(projectPath: string, blueprint: Blueprint): ProjectLanguage {
+    // 1. 从蓝图技术栈推断
+    const techStacks = new Set<string>();
+    for (const module of blueprint.modules) {
+      for (const tech of module.techStack || []) {
+        techStacks.add(tech.toLowerCase());
+      }
+    }
+
+    if (techStacks.has('typescript')) return 'typescript';
+    if (techStacks.has('javascript') || techStacks.has('node') || techStacks.has('react')) return 'javascript';
+    if (techStacks.has('python') || techStacks.has('django') || techStacks.has('flask') || techStacks.has('fastapi')) return 'python';
+    if (techStacks.has('go') || techStacks.has('golang')) return 'go';
+    if (techStacks.has('rust')) return 'rust';
+    if (techStacks.has('java') || techStacks.has('spring')) return 'java';
+
+    // 2. 从配置文件检测
+    if (fs.existsSync(path.join(projectPath, 'tsconfig.json'))) return 'typescript';
+    if (fs.existsSync(path.join(projectPath, 'package.json'))) return 'javascript';
+    if (fs.existsSync(path.join(projectPath, 'pyproject.toml')) ||
+        fs.existsSync(path.join(projectPath, 'requirements.txt')) ||
+        fs.existsSync(path.join(projectPath, 'setup.py'))) return 'python';
+    if (fs.existsSync(path.join(projectPath, 'go.mod'))) return 'go';
+    if (fs.existsSync(path.join(projectPath, 'Cargo.toml'))) return 'rust';
+    if (fs.existsSync(path.join(projectPath, 'pom.xml')) ||
+        fs.existsSync(path.join(projectPath, 'build.gradle'))) return 'java';
+
+    return 'unknown';
+  }
+
+  /**
+   * 检查项目配置文件是否存在
+   */
+  private hasProjectConfigFile(projectPath: string, language: ProjectLanguage): boolean {
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        return fs.existsSync(path.join(projectPath, 'package.json'));
+      case 'python':
+        return fs.existsSync(path.join(projectPath, 'pyproject.toml')) ||
+               fs.existsSync(path.join(projectPath, 'requirements.txt')) ||
+               fs.existsSync(path.join(projectPath, 'setup.py'));
+      case 'go':
+        return fs.existsSync(path.join(projectPath, 'go.mod'));
+      case 'rust':
+        return fs.existsSync(path.join(projectPath, 'Cargo.toml'));
+      case 'java':
+        return fs.existsSync(path.join(projectPath, 'pom.xml')) ||
+               fs.existsSync(path.join(projectPath, 'build.gradle'));
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * 读取项目配置（支持多语言）
+   */
+  private readProjectConfig(projectPath: string, language: ProjectLanguage): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        return this.readJsProjectConfig(projectPath);
+      case 'python':
+        return this.readPythonProjectConfig(projectPath);
+      case 'go':
+        return this.readGoProjectConfig(projectPath);
+      case 'rust':
+        return this.readRustProjectConfig(projectPath);
+      case 'java':
+        return this.readJavaProjectConfig(projectPath);
+      default:
+        return { config: { scripts: {} }, dependencies: [], devDependencies: [] };
+    }
+  }
+
+  /**
+   * 读取 JS/TS 项目配置
+   */
+  private readJsProjectConfig(projectPath: string): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    const packageJsonPath = path.join(projectPath, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return { config: { scripts: {} }, dependencies: [], devDependencies: [] };
+    }
+
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      const config: ProjectConfig = {
+        name: packageJson.name,
+        description: packageJson.description,
+        main: packageJson.main,
+        types: packageJson.types,
+        scripts: packageJson.scripts || {},
+        testCommand: packageJson.scripts?.test,
+        buildCommand: packageJson.scripts?.build,
+      };
+
+      const dependencies: ProjectDependency[] = [];
+      const devDependencies: ProjectDependency[] = [];
+
+      if (packageJson.dependencies) {
+        for (const [name, version] of Object.entries(packageJson.dependencies)) {
+          dependencies.push({ name, version: version as string, installed: true });
+        }
+      }
+
+      if (packageJson.devDependencies) {
+        for (const [name, version] of Object.entries(packageJson.devDependencies)) {
+          devDependencies.push({ name, version: version as string, installed: true });
+        }
+      }
+
+      return { config, dependencies, devDependencies };
+    } catch (error) {
+      console.warn('[AgentCoordinator] 读取 package.json 失败:', error);
+      return { config: { scripts: {} }, dependencies: [], devDependencies: [] };
+    }
+  }
+
+  /**
+   * 读取 Python 项目配置
+   */
+  private readPythonProjectConfig(projectPath: string): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    const config: ProjectConfig = { scripts: {} };
+    const dependencies: ProjectDependency[] = [];
+    const devDependencies: ProjectDependency[] = [];
+
+    // 尝试读取 pyproject.toml (Poetry/PEP 517)
+    const pyprojectPath = path.join(projectPath, 'pyproject.toml');
+    if (fs.existsSync(pyprojectPath)) {
+      try {
+        const content = fs.readFileSync(pyprojectPath, 'utf-8');
+        // 简单解析 TOML（基本字段）
+        const nameMatch = content.match(/name\s*=\s*"([^"]+)"/);
+        const descMatch = content.match(/description\s*=\s*"([^"]+)"/);
+        if (nameMatch) config.name = nameMatch[1];
+        if (descMatch) config.description = descMatch[1];
+
+        // 解析依赖（简化版，不支持复杂 TOML）
+        const depsMatch = content.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?:\[|$)/);
+        if (depsMatch) {
+          const depsSection = depsMatch[1];
+          const depRegex = /^(\S+)\s*=\s*["']?([^"'\n]+)["']?/gm;
+          let match;
+          while ((match = depRegex.exec(depsSection)) !== null) {
+            if (match[1] !== 'python') {
+              dependencies.push({ name: match[1], version: match[2], installed: true });
+            }
+          }
+        }
+
+        // 解析开发依赖
+        const devDepsMatch = content.match(/\[tool\.poetry\.dev-dependencies\]([\s\S]*?)(?:\[|$)/);
+        if (devDepsMatch) {
+          const devDepsSection = devDepsMatch[1];
+          const depRegex = /^(\S+)\s*=\s*["']?([^"'\n]+)["']?/gm;
+          let match;
+          while ((match = depRegex.exec(devDepsSection)) !== null) {
+            devDependencies.push({ name: match[1], version: match[2], installed: true });
+          }
+        }
+
+        config.testCommand = 'pytest';
+        config.scripts['test'] = 'pytest';
+      } catch (error) {
+        console.warn('[AgentCoordinator] 读取 pyproject.toml 失败:', error);
+      }
+    }
+
+    // 尝试读取 requirements.txt
+    const requirementsPath = path.join(projectPath, 'requirements.txt');
+    if (fs.existsSync(requirementsPath)) {
+      try {
+        const content = fs.readFileSync(requirementsPath, 'utf-8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            const match = trimmed.match(/^([a-zA-Z0-9_-]+)(?:([=<>!~]+)(.+))?/);
+            if (match) {
+              dependencies.push({
+                name: match[1],
+                version: match[3] || 'latest',
+                installed: true,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[AgentCoordinator] 读取 requirements.txt 失败:', error);
+      }
+    }
+
+    return { config, dependencies, devDependencies };
+  }
+
+  /**
+   * 读取 Go 项目配置
+   */
+  private readGoProjectConfig(projectPath: string): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    const config: ProjectConfig = {
+      scripts: {},
+      testCommand: 'go test ./...',
+      buildCommand: 'go build ./...',
+    };
+    const dependencies: ProjectDependency[] = [];
+
+    const goModPath = path.join(projectPath, 'go.mod');
+    if (fs.existsSync(goModPath)) {
+      try {
+        const content = fs.readFileSync(goModPath, 'utf-8');
+        const moduleMatch = content.match(/module\s+(\S+)/);
+        if (moduleMatch) config.name = moduleMatch[1];
+
+        // 解析依赖
+        const requireMatch = content.match(/require\s*\(([\s\S]*?)\)/);
+        if (requireMatch) {
+          const depRegex = /^\s*(\S+)\s+v?([\d.]+)/gm;
+          let match;
+          while ((match = depRegex.exec(requireMatch[1])) !== null) {
+            dependencies.push({ name: match[1], version: match[2], installed: true });
+          }
+        }
+      } catch (error) {
+        console.warn('[AgentCoordinator] 读取 go.mod 失败:', error);
+      }
+    }
+
+    return { config, dependencies, devDependencies: [] };
+  }
+
+  /**
+   * 读取 Rust 项目配置
+   */
+  private readRustProjectConfig(projectPath: string): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    const config: ProjectConfig = {
+      scripts: {},
+      testCommand: 'cargo test',
+      buildCommand: 'cargo build',
+    };
+    const dependencies: ProjectDependency[] = [];
+    const devDependencies: ProjectDependency[] = [];
+
+    const cargoPath = path.join(projectPath, 'Cargo.toml');
+    if (fs.existsSync(cargoPath)) {
+      try {
+        const content = fs.readFileSync(cargoPath, 'utf-8');
+        const nameMatch = content.match(/name\s*=\s*"([^"]+)"/);
+        const descMatch = content.match(/description\s*=\s*"([^"]+)"/);
+        if (nameMatch) config.name = nameMatch[1];
+        if (descMatch) config.description = descMatch[1];
+
+        // 解析依赖
+        const depsMatch = content.match(/\[dependencies\]([\s\S]*?)(?:\[|$)/);
+        if (depsMatch) {
+          const depRegex = /^(\S+)\s*=\s*["']?([^"'\n{]+)["']?/gm;
+          let match;
+          while ((match = depRegex.exec(depsMatch[1])) !== null) {
+            dependencies.push({ name: match[1], version: match[2].trim(), installed: true });
+          }
+        }
+
+        // 解析开发依赖
+        const devDepsMatch = content.match(/\[dev-dependencies\]([\s\S]*?)(?:\[|$)/);
+        if (devDepsMatch) {
+          const depRegex = /^(\S+)\s*=\s*["']?([^"'\n{]+)["']?/gm;
+          let match;
+          while ((match = depRegex.exec(devDepsMatch[1])) !== null) {
+            devDependencies.push({ name: match[1], version: match[2].trim(), installed: true });
+          }
+        }
+      } catch (error) {
+        console.warn('[AgentCoordinator] 读取 Cargo.toml 失败:', error);
+      }
+    }
+
+    return { config, dependencies, devDependencies };
+  }
+
+  /**
+   * 读取 Java 项目配置（简化版）
+   */
+  private readJavaProjectConfig(projectPath: string): {
+    config: ProjectConfig;
+    dependencies: ProjectDependency[];
+    devDependencies: ProjectDependency[];
+  } {
+    const config: ProjectConfig = {
+      scripts: {},
+      testCommand: fs.existsSync(path.join(projectPath, 'gradlew'))
+        ? './gradlew test'
+        : 'mvn test',
+      buildCommand: fs.existsSync(path.join(projectPath, 'gradlew'))
+        ? './gradlew build'
+        : 'mvn package',
+    };
+
+    // Java 依赖解析比较复杂，这里简化处理
+    return { config, dependencies: [], devDependencies: [] };
+  }
+
+  /**
+   * 检测包管理器类型（支持多语言）
+   */
+  private detectPackageManager(projectPath: string, language: ProjectLanguage): PackageManagerType {
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        if (fs.existsSync(path.join(projectPath, 'bun.lockb'))) return 'bun';
+        if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return 'pnpm';
+        if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn';
+        return 'npm';
+
+      case 'python':
+        if (fs.existsSync(path.join(projectPath, 'poetry.lock'))) return 'poetry';
+        if (fs.existsSync(path.join(projectPath, 'Pipfile.lock'))) return 'pipenv';
+        if (fs.existsSync(path.join(projectPath, 'uv.lock'))) return 'uv';
+        if (fs.existsSync(path.join(projectPath, 'environment.yml'))) return 'conda';
+        return 'pip';
+
+      case 'go':
+        return 'go_mod';
+
+      case 'rust':
+        return 'cargo';
+
+      case 'java':
+        if (fs.existsSync(path.join(projectPath, 'build.gradle')) ||
+            fs.existsSync(path.join(projectPath, 'build.gradle.kts'))) return 'gradle';
+        return 'maven';
+
+      default:
+        return 'npm';
+    }
+  }
+
+  /**
+   * 检测测试框架（支持多语言）
+   */
+  private detectTestFramework(language: ProjectLanguage, devDeps: ProjectDependency[]): TestFrameworkType | undefined {
+    const depNames = devDeps.map(d => d.name.toLowerCase());
+
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        if (depNames.includes('vitest')) return 'vitest';
+        if (depNames.includes('jest')) return 'jest';
+        if (depNames.includes('mocha')) return 'mocha';
+        return 'vitest';  // 默认
+
+      case 'python':
+        if (depNames.includes('pytest')) return 'pytest';
+        return 'pytest';  // 默认
+
+      case 'go':
+        return 'go_test';
+
+      case 'rust':
+        return 'cargo_test';
+
+      case 'java':
+        if (depNames.includes('testng')) return 'testng';
+        return 'junit';
+
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * 获取默认测试命令
+   */
+  private getDefaultTestCommand(language: ProjectLanguage, testFramework?: TestFrameworkType): string {
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        return testFramework === 'jest' ? 'npx jest' :
+               testFramework === 'mocha' ? 'npx mocha' : 'npx vitest run';
+
+      case 'python':
+        return 'pytest';
+
+      case 'go':
+        return 'go test ./...';
+
+      case 'rust':
+        return 'cargo test';
+
+      case 'java':
+        return 'mvn test';
+
+      default:
+        return 'npm test';
+    }
+  }
+
+  /**
+   * 检测 TypeScript 配置
+   */
+  private detectTsConfig(projectPath: string): string | undefined {
+    const candidates = ['tsconfig.json', 'tsconfig.build.json'];
+    for (const candidate of candidates) {
+      const fullPath = path.join(projectPath, candidate);
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 检测 Python 虚拟环境
+   */
+  private detectPythonVenv(projectPath: string): string | undefined {
+    const candidates = ['.venv', 'venv', '.env', 'env'];
+    for (const candidate of candidates) {
+      const venvPath = path.join(projectPath, candidate);
+      if (fs.existsSync(venvPath) && fs.existsSync(path.join(venvPath, 'bin', 'python'))) {
+        return venvPath;
+      }
+      // Windows
+      if (fs.existsSync(venvPath) && fs.existsSync(path.join(venvPath, 'Scripts', 'python.exe'))) {
+        return venvPath;
+      }
+    }
+    return undefined;
+  }
+
+  // --------------------------------------------------------------------------
+  // 上下文同步机制（防止上下文腐烂）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 获取项目上下文持久化文件路径
+   */
+  private getContextFilePath(): string {
+    const projectPath = this.projectContext?.projectPath || this.config.projectRoot || process.cwd();
+    return path.join(projectPath, '.blueprint', this.CONTEXT_FILE_NAME);
+  }
+
+  /**
+   * 保存项目上下文到文件（持久化）
+   * 解决问题：服务重启后上下文丢失
+   */
+  saveProjectContext(): void {
+    if (!this.projectContext) return;
+
+    const filePath = this.getContextFilePath();
+    const dir = path.dirname(filePath);
+
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // 转换 Date 对象为 ISO 字符串
+      const serializable = {
+        ...this.projectContext,
+        initializedAt: this.projectContext.initializedAt?.toISOString(),
+        dependencies: this.projectContext.dependencies.map(d => ({
+          ...d,
+          requestedAt: d.requestedAt?.toISOString(),
+        })),
+        devDependencies: this.projectContext.devDependencies.map(d => ({
+          ...d,
+          requestedAt: d.requestedAt?.toISOString(),
+        })),
+        sharedResources: this.projectContext.sharedResources.map(r => ({
+          ...r,
+          createdAt: r.createdAt.toISOString(),
+        })),
+        pendingDependencyRequests: this.projectContext.pendingDependencyRequests.map(r => ({
+          ...r,
+          requestedAt: r.requestedAt.toISOString(),
+          processedAt: r.processedAt?.toISOString(),
+        })),
+        _savedAt: new Date().toISOString(),
+        _version: '1.0',
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(serializable, null, 2));
+      console.log(`[AgentCoordinator] 项目上下文已保存: ${filePath}`);
+    } catch (error) {
+      console.error('[AgentCoordinator] 保存项目上下文失败:', error);
+    }
+  }
+
+  /**
+   * 从文件加载项目上下文
+   * 解决问题：服务重启后恢复上下文
+   */
+  private loadProjectContextFromFile(projectPath: string): ProjectContext | null {
+    const filePath = path.join(projectPath, '.blueprint', this.CONTEXT_FILE_NAME);
+
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const data = JSON.parse(content);
+
+      // 反序列化 Date 对象
+      const context: ProjectContext = {
+        ...data,
+        initializedAt: data.initializedAt ? new Date(data.initializedAt) : undefined,
+        dependencies: (data.dependencies || []).map((d: any) => ({
+          ...d,
+          requestedAt: d.requestedAt ? new Date(d.requestedAt) : undefined,
+        })),
+        devDependencies: (data.devDependencies || []).map((d: any) => ({
+          ...d,
+          requestedAt: d.requestedAt ? new Date(d.requestedAt) : undefined,
+        })),
+        sharedResources: (data.sharedResources || []).map((r: any) => ({
+          ...r,
+          createdAt: new Date(r.createdAt),
+        })),
+        pendingDependencyRequests: (data.pendingDependencyRequests || []).map((r: any) => ({
+          ...r,
+          requestedAt: new Date(r.requestedAt),
+          processedAt: r.processedAt ? new Date(r.processedAt) : undefined,
+        })),
+      };
+
+      console.log(`[AgentCoordinator] 已从文件加载项目上下文: ${filePath}`);
+      return context;
+    } catch (error) {
+      console.error('[AgentCoordinator] 加载项目上下文失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 同步项目上下文（与实际文件对比）
+   * 解决问题：手动修改了 package.json 等文件，蜂王不知道
+   *
+   * 同步策略：
+   * 1. 重新读取配置文件
+   * 2. 对比依赖变化
+   * 3. 检测共享资源是否仍存在
+   * 4. 合并变化（保留蜂王的额外信息，如 requestedBy）
+   */
+  async syncProjectContext(): Promise<{
+    changed: boolean;
+    addedDeps: string[];
+    removedDeps: string[];
+    invalidResources: string[];
+  }> {
+    if (!this.projectContext) {
+      return { changed: false, addedDeps: [], removedDeps: [], invalidResources: [] };
+    }
+
+    console.log('[AgentCoordinator] 开始同步项目上下文...');
+
+    const result = {
+      changed: false,
+      addedDeps: [] as string[],
+      removedDeps: [] as string[],
+      invalidResources: [] as string[],
+    };
+
+    const projectPath = this.projectContext.projectPath;
+    const language = this.projectContext.language;
+
+    // 1. 重新读取配置文件
+    const freshConfig = this.readProjectConfig(projectPath, language);
+    const freshDeps = new Map(freshConfig.dependencies.map(d => [d.name, d]));
+    const freshDevDeps = new Map(freshConfig.devDependencies.map(d => [d.name, d]));
+
+    // 2. 对比运行时依赖变化
+    const currentDeps = new Map(this.projectContext.dependencies.map(d => [d.name, d]));
+
+    // 检测新增的依赖（在文件中有，但上下文中没有）
+    for (const [name, dep] of freshDeps) {
+      if (!currentDeps.has(name)) {
+        result.addedDeps.push(name);
+        this.projectContext.dependencies.push({
+          ...dep,
+          installed: true,
+          // 标记为外部添加（不是通过蜂王请求的）
+          requestedBy: 'external',
+        });
+        result.changed = true;
+      }
+    }
+
+    // 检测移除的依赖（在上下文中有，但文件中没有）
+    this.projectContext.dependencies = this.projectContext.dependencies.filter(d => {
+      if (!freshDeps.has(d.name)) {
+        result.removedDeps.push(d.name);
+        result.changed = true;
+        return false;
+      }
+      return true;
+    });
+
+    // 3. 对比开发依赖变化（同样的逻辑）
+    const currentDevDeps = new Map(this.projectContext.devDependencies.map(d => [d.name, d]));
+
+    for (const [name, dep] of freshDevDeps) {
+      if (!currentDevDeps.has(name)) {
+        result.addedDeps.push(`${name} (dev)`);
+        this.projectContext.devDependencies.push({
+          ...dep,
+          installed: true,
+          requestedBy: 'external',
+        });
+        result.changed = true;
+      }
+    }
+
+    this.projectContext.devDependencies = this.projectContext.devDependencies.filter(d => {
+      if (!freshDevDeps.has(d.name)) {
+        result.removedDeps.push(`${d.name} (dev)`);
+        result.changed = true;
+        return false;
+      }
+      return true;
+    });
+
+    // 4. 检测共享资源是否仍存在
+    this.projectContext.sharedResources = this.projectContext.sharedResources.filter(r => {
+      const fullPath = path.join(projectPath, r.filePath);
+      if (!fs.existsSync(fullPath)) {
+        result.invalidResources.push(r.filePath);
+        result.changed = true;
+        return false;
+      }
+      return true;
+    });
+
+    // 5. 更新项目配置
+    this.projectContext.projectConfig = {
+      ...this.projectContext.projectConfig,
+      ...freshConfig.config,
+    };
+
+    // 6. 记录同步时间
+    this.lastContextSyncTime = new Date();
+
+    // 7. 保存更新后的上下文
+    if (result.changed) {
+      this.saveProjectContext();
+
+      // 发出事件通知
+      this.emit('context:synced', result);
+      this.addTimelineEvent('task_complete', `项目上下文已同步`, {
+        addedDeps: result.addedDeps,
+        removedDeps: result.removedDeps,
+        invalidResources: result.invalidResources,
+      });
+
+      console.log(`[AgentCoordinator] 上下文同步完成: +${result.addedDeps.length} 依赖, -${result.removedDeps.length} 依赖, ${result.invalidResources.length} 无效资源`);
+    } else {
+      console.log('[AgentCoordinator] 上下文同步完成: 无变化');
+    }
+
+    // 8. 更新蜂王的项目上下文
+    if (this.queen) {
+      this.queen.projectContext = this.projectContext;
+    }
+
+    return result;
+  }
+
+  /**
+   * 启动上下文同步定时器
+   * 定期检查项目状态，防止上下文腐烂
+   */
+  startContextSyncLoop(): void {
+    if (this.contextSyncTimer) {
+      return;  // 已经在运行
+    }
+
+    console.log(`[AgentCoordinator] 启动上下文同步循环，间隔: ${this.CONTEXT_SYNC_INTERVAL}ms`);
+
+    this.contextSyncTimer = setInterval(async () => {
+      try {
+        await this.syncProjectContext();
+      } catch (error) {
+        console.error('[AgentCoordinator] 上下文同步失败:', error);
+      }
+    }, this.CONTEXT_SYNC_INTERVAL);
+  }
+
+  /**
+   * 停止上下文同步定时器
+   */
+  stopContextSyncLoop(): void {
+    if (this.contextSyncTimer) {
+      clearInterval(this.contextSyncTimer);
+      this.contextSyncTimer = null;
+      console.log('[AgentCoordinator] 上下文同步循环已停止');
+    }
+  }
+
+  /**
+   * 强制刷新项目上下文
+   * 用于用户手动触发刷新
+   */
+  async forceRefreshContext(): Promise<void> {
+    if (!this.projectContext) {
+      console.log('[AgentCoordinator] 无项目上下文可刷新');
+      return;
+    }
+
+    console.log('[AgentCoordinator] 强制刷新项目上下文...');
+
+    // 重新初始化上下文（完整重读）
+    const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+    if (blueprint) {
+      this.projectContext = await this.initializeProjectContext(
+        this.projectContext.projectPath,
+        blueprint,
+        true
+      );
+
+      // 保存刷新后的上下文
+      this.saveProjectContext();
+
+      // 更新蜂王
+      if (this.queen) {
+        this.queen.projectContext = this.projectContext;
+      }
+
+      this.emit('context:refreshed', { projectContext: this.projectContext });
+      console.log('[AgentCoordinator] 项目上下文已强制刷新');
+    }
+  }
+
+  /**
+   * 从蓝图提取技术栈规范（支持多语言）
+   */
+  private extractTechStackConventions(blueprint: Blueprint, language: ProjectLanguage): TechStackConvention[] {
+    const conventions: TechStackConvention[] = [];
+
+    // 从模块技术栈提取规范
+    const techStacks = new Set<string>();
+    for (const module of blueprint.modules) {
+      for (const tech of module.techStack || []) {
+        techStacks.add(tech.toLowerCase());
+      }
+    }
+
+    // ========== JavaScript/TypeScript 规范 ==========
+    if (language === 'typescript' || techStacks.has('typescript')) {
+      conventions.push({
+        category: 'naming',
+        name: 'TypeScript 类型命名',
+        description: '接口使用 I 前缀或无前缀，类型使用 T 前缀或直接描述性名称',
+        example: 'interface IUser {} or interface User {}\ntype TCallback = () => void',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'import',
+        name: 'TypeScript 导入规范',
+        description: '使用 ES Module 导入，类型使用 import type',
+        example: "import type { User } from './types';\nimport { createUser } from './utils';",
+        enforced: true,
+      });
+    }
+
+    // React 规范
+    if (techStacks.has('react')) {
+      conventions.push({
+        category: 'naming',
+        name: 'React 组件命名',
+        description: '组件使用 PascalCase，hooks 使用 use 前缀',
+        example: 'const UserProfile = () => {}\nconst useAuth = () => {}',
+        enforced: true,
+      });
+    }
+
+    // ========== Python 规范 ==========
+    if (language === 'python') {
+      conventions.push({
+        category: 'naming',
+        name: 'Python 命名规范 (PEP 8)',
+        description: '变量和函数用 snake_case，类用 PascalCase，常量用 UPPER_SNAKE_CASE',
+        example: 'def calculate_total():\nclass UserService:\nMAX_RETRIES = 3',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'import',
+        name: 'Python 导入规范',
+        description: '标准库 -> 第三方库 -> 本地模块，每组之间空行分隔',
+        example: 'import os\nimport sys\n\nimport requests\n\nfrom .models import User',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'structure',
+        name: 'Python 项目结构',
+        description: '使用 __init__.py 标记包，测试文件以 test_ 开头或 _test 结尾',
+        example: 'src/\n  __init__.py\n  models.py\ntests/\n  test_models.py',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'testing',
+        name: 'Python 测试规范',
+        description: '使用 pytest，测试函数以 test_ 开头，使用 fixtures 管理测试数据',
+        example: '@pytest.fixture\ndef user():\n    return User("test")\n\ndef test_user_name(user):\n    assert user.name == "test"',
+        enforced: true,
+      });
+
+      // Django 规范
+      if (techStacks.has('django')) {
+        conventions.push({
+          category: 'structure',
+          name: 'Django 应用结构',
+          description: '每个应用包含 models.py, views.py, urls.py, tests.py',
+          enforced: true,
+        });
+      }
+
+      // FastAPI 规范
+      if (techStacks.has('fastapi')) {
+        conventions.push({
+          category: 'structure',
+          name: 'FastAPI 路由规范',
+          description: '使用 APIRouter 组织路由，Pydantic 模型定义请求/响应',
+          example: 'from fastapi import APIRouter\nrouter = APIRouter(prefix="/users")',
+          enforced: true,
+        });
+      }
+    }
+
+    // ========== Go 规范 ==========
+    if (language === 'go') {
+      conventions.push({
+        category: 'naming',
+        name: 'Go 命名规范',
+        description: '导出用 PascalCase，私有用 camelCase，缩写保持一致大小写',
+        example: 'func CreateUser() // 导出\nfunc parseJSON() // 私有\ntype HTTPClient struct{} // 缩写全大写',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'error_handling',
+        name: 'Go 错误处理',
+        description: '总是检查错误，使用 errors.Is/As 比较错误，避免 panic',
+        example: 'if err != nil {\n    return fmt.Errorf("failed to create user: %w", err)\n}',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'testing',
+        name: 'Go 测试规范',
+        description: '测试文件以 _test.go 结尾，测试函数以 Test 开头',
+        example: 'func TestCreateUser(t *testing.T) {\n    t.Run("success", func(t *testing.T) {...})\n}',
+        enforced: true,
+      });
+    }
+
+    // ========== Rust 规范 ==========
+    if (language === 'rust') {
+      conventions.push({
+        category: 'naming',
+        name: 'Rust 命名规范',
+        description: '变量/函数用 snake_case，类型/traits 用 PascalCase，常量用 SCREAMING_SNAKE_CASE',
+        example: 'fn create_user() -> User\nstruct UserService\nconst MAX_RETRIES: u32 = 3;',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'error_handling',
+        name: 'Rust 错误处理',
+        description: '使用 Result<T, E>，避免 unwrap()，使用 ? 运算符传播错误',
+        example: 'fn read_file() -> Result<String, io::Error> {\n    let content = fs::read_to_string("file.txt")?;\n    Ok(content)\n}',
+        enforced: true,
+      });
+    }
+
+    // ========== Java 规范 ==========
+    if (language === 'java') {
+      conventions.push({
+        category: 'naming',
+        name: 'Java 命名规范',
+        description: '类用 PascalCase，方法/变量用 camelCase，常量用 UPPER_SNAKE_CASE',
+        example: 'public class UserService {\n    private static final int MAX_RETRIES = 3;\n    public User createUser() {...}\n}',
+        enforced: true,
+      });
+      conventions.push({
+        category: 'structure',
+        name: 'Java 包结构',
+        description: '按功能分包：controller, service, repository, model, dto',
+        example: 'com.example.app/\n  controller/\n  service/\n  repository/\n  model/',
+        enforced: true,
+      });
+    }
+
+    return conventions;
+  }
+
+  /**
+   * 执行项目初始化
+   * 创建 package.json、安装基础依赖、搭建目录结构
+   */
+  async executeProjectInitialization(): Promise<boolean> {
+    if (!this.projectContext) {
+      throw new Error('项目上下文未初始化');
+    }
+
+    if (this.projectContext.initialized) {
+      console.log('[AgentCoordinator] 项目已初始化，跳过');
+      return true;
+    }
+
+    const projectPath = this.projectContext.projectPath;
+    console.log(`[AgentCoordinator] 开始项目初始化: ${projectPath}`);
+
+    if (this.queen) {
+      this.queen.status = 'initializing';
+    }
+
+    this.addTimelineEvent('task_start', '开始项目初始化', { projectPath });
+    this.emit('project:initializing', { projectPath });
+
+    try {
+      // 1. 创建 package.json
+      const packageJsonPath = path.join(projectPath, 'package.json');
+      if (!fs.existsSync(packageJsonPath)) {
+        const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+        const packageJson = this.generatePackageJson(blueprint);
+        fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+        console.log('[AgentCoordinator] 已创建 package.json');
+      }
+
+      // 2. 创建 tsconfig.json（如果是 TypeScript 项目）
+      const tsConfigPath = path.join(projectPath, 'tsconfig.json');
+      if (!fs.existsSync(tsConfigPath)) {
+        const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+        const hasTypeScript = blueprint?.modules.some(m => m.techStack?.includes('TypeScript'));
+        if (hasTypeScript) {
+          const tsConfig = this.generateTsConfig();
+          fs.writeFileSync(tsConfigPath, JSON.stringify(tsConfig, null, 2));
+          console.log('[AgentCoordinator] 已创建 tsconfig.json');
+        }
+      }
+
+      // 3. 创建目录结构
+      await this.createProjectStructure(projectPath);
+
+      // 4. 安装基础依赖
+      await this.installBaseDependencies();
+
+      // 更新项目上下文状态
+      this.projectContext.initialized = true;
+      this.projectContext.initializedAt = new Date();
+
+      // 重新读取 package.json 更新配置
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      this.projectContext.projectConfig.name = packageJson.name;
+      this.projectContext.projectConfig.scripts = packageJson.scripts || {};
+
+      this.addTimelineEvent('task_complete', '项目初始化完成', { projectPath });
+      this.emit('project:initialized', {
+        projectPath,
+        projectContext: this.projectContext,
+      });
+
+      if (this.queen) {
+        this.queen.status = 'coordinating';
+        this.queen.projectContext = this.projectContext;
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error('[AgentCoordinator] 项目初始化失败:', error);
+      this.addTimelineEvent('test_fail', `项目初始化失败: ${error.message}`, { projectPath });
+      this.emit('project:initialization-failed', { projectPath, error: error.message });
+
+      if (this.queen) {
+        this.queen.status = 'paused';
+      }
+
+      return false;
+    }
+  }
+
+  /**
+   * 生成 package.json 内容
+   */
+  private generatePackageJson(blueprint: Blueprint | null): Record<string, any> {
+    const projectName = blueprint?.name?.toLowerCase().replace(/\s+/g, '-') || 'my-project';
+
+    // 检测技术栈
+    const techStacks = new Set<string>();
+    for (const module of blueprint?.modules || []) {
+      for (const tech of module.techStack || []) {
+        techStacks.add(tech);
+      }
+    }
+
+    const hasTypeScript = techStacks.has('TypeScript');
+    const hasReact = techStacks.has('React');
+
+    const packageJson: Record<string, any> = {
+      name: projectName,
+      version: '0.1.0',
+      description: blueprint?.description || '',
+      type: 'module',
+      scripts: {
+        test: 'vitest run',
+        'test:watch': 'vitest',
+        build: hasTypeScript ? 'tsc' : 'echo "No build step"',
+      },
+      dependencies: {},
+      devDependencies: {
+        vitest: '^1.0.0',
+      },
+    };
+
+    if (hasTypeScript) {
+      packageJson.devDependencies['typescript'] = '^5.0.0';
+      packageJson.devDependencies['@types/node'] = '^20.0.0';
+    }
+
+    if (hasReact) {
+      packageJson.dependencies['react'] = '^18.0.0';
+      packageJson.dependencies['react-dom'] = '^18.0.0';
+      if (hasTypeScript) {
+        packageJson.devDependencies['@types/react'] = '^18.0.0';
+        packageJson.devDependencies['@types/react-dom'] = '^18.0.0';
+      }
+    }
+
+    return packageJson;
+  }
+
+  /**
+   * 生成 tsconfig.json 内容
+   */
+  private generateTsConfig(): Record<string, any> {
+    return {
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        esModuleInterop: true,
+        strict: true,
+        skipLibCheck: true,
+        outDir: './dist',
+        rootDir: './src',
+        declaration: true,
+        declarationMap: true,
+        sourceMap: true,
+      },
+      include: ['src/**/*'],
+      exclude: ['node_modules', 'dist', '**/*.test.ts', '**/*.spec.ts'],
+    };
+  }
+
+  /**
+   * 创建项目目录结构
+   */
+  private async createProjectStructure(projectPath: string): Promise<void> {
+    const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+
+    // 基础目录
+    const dirs = ['src', '__tests__'];
+
+    // 从蓝图模块创建目录
+    for (const module of blueprint?.modules || []) {
+      const modulePath = module.rootPath || `src/${module.name.toLowerCase().replace(/\s+/g, '-')}`;
+      dirs.push(modulePath);
+    }
+
+    // 共享目录
+    dirs.push('src/types', 'src/utils', 'src/shared');
+
+    for (const dir of dirs) {
+      const fullPath = path.join(projectPath, dir);
+      if (!fs.existsSync(fullPath)) {
+        fs.mkdirSync(fullPath, { recursive: true });
+        console.log(`[AgentCoordinator] 已创建目录: ${dir}`);
+      }
+    }
+  }
+
+  /**
+   * 安装基础依赖
+   */
+  private async installBaseDependencies(): Promise<void> {
+    if (!this.projectContext) return;
+
+    const projectPath = this.projectContext.projectPath;
+    const pm = this.projectContext.packageManager;
+
+    const installCmd = pm === 'yarn' ? 'yarn install' :
+      pm === 'pnpm' ? 'pnpm install' :
+        pm === 'bun' ? 'bun install' : 'npm install';
+
+    console.log(`[AgentCoordinator] 执行依赖安装: ${installCmd}`);
+
+    try {
+      await this.runCommandAsync(installCmd, projectPath, 3000000); // 5 分钟超时
+      console.log('[AgentCoordinator] 依赖安装完成');
+    } catch (error: any) {
+      console.error('[AgentCoordinator] 依赖安装失败:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 异步执行命令，避免 execSync 在 Windows 上的阻塞问题
+   */
+  private runCommandAsync(command: string, cwd: string, timeout: number = 300000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const isWindows = process.platform === 'win32';
+      const shell = isWindows ? true : '/bin/sh';
+      const args = isWindows ? [] : ['-c', command];
+      const cmd = isWindows ? command : '/bin/sh';
+
+      const child = spawn(cmd, args, {
+        cwd,
+        shell,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout?.on('data', (data) => {
+        const text = data.toString();
+        stdout += text;
+        // 实时输出进度
+        if (text.includes('added') || text.includes('packages') || text.includes('up to date')) {
+          console.log(`[npm] ${text.trim()}`);
+        }
+      });
+
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      const timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new Error(`命令执行超时 (${timeout}ms): ${command}`));
+      }, timeout);
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`命令执行失败 (exit code ${code}): ${stderr || stdout}`));
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Worker 依赖请求处理
+  // --------------------------------------------------------------------------
+
+  /**
+   * Worker 请求添加依赖
+   * 统一由蜂王处理，避免多个 Worker 同时修改 package.json 导致冲突
+   */
+  async requestDependency(
+    workerId: string,
+    taskId: string,
+    packageName: string,
+    version?: string,
+    reason?: string,
+    isDev: boolean = false
+  ): Promise<DependencyRequest> {
+    if (!this.projectContext) {
+      throw new Error('项目上下文未初始化');
+    }
+
+    // 检查是否已有此依赖
+    const existing = isDev
+      ? this.projectContext.devDependencies.find(d => d.name === packageName)
+      : this.projectContext.dependencies.find(d => d.name === packageName);
+
+    if (existing && existing.installed) {
+      console.log(`[AgentCoordinator] 依赖 ${packageName} 已存在，跳过请求`);
+      return {
+        id: uuidv4(),
+        workerId,
+        taskId,
+        packageName,
+        version: existing.version,
+        reason: reason || '',
+        isDev,
+        status: 'installed',
+        requestedAt: new Date(),
+        processedAt: new Date(),
+      };
+    }
+
+    // 创建依赖请求
+    const request: DependencyRequest = {
+      id: uuidv4(),
+      workerId,
+      taskId,
+      packageName,
+      version,
+      reason: reason || '',
+      isDev,
+      status: 'pending',
+      requestedAt: new Date(),
+    };
+
+    // 添加到待处理队列
+    this.projectContext.pendingDependencyRequests.push(request);
+
+    this.addTimelineEvent('task_start', `Worker 请求依赖: ${packageName}`, {
+      workerId,
+      taskId,
+      packageName,
+      version,
+      isDev,
+    });
+
+    this.emit('dependency:requested', request);
+
+    // 调度批量安装（延迟执行，合并多个请求）
+    this.scheduleDependencyInstall();
+
+    return request;
+  }
+
+  /**
+   * 调度依赖安装（批量处理）
+   */
+  private scheduleDependencyInstall(): void {
+    // 如果已有定时器在运行，不重复创建
+    if (this.dependencyInstallTimer) {
+      return;
+    }
+
+    this.dependencyInstallTimer = setTimeout(async () => {
+      this.dependencyInstallTimer = null;
+      await this.processPendingDependencies();
+    }, this.DEPENDENCY_INSTALL_DELAY);
+  }
+
+  /**
+   * 处理待安装的依赖
+   */
+  private async processPendingDependencies(): Promise<void> {
+    if (!this.projectContext) return;
+
+    const pending = this.projectContext.pendingDependencyRequests.filter(r => r.status === 'pending');
+    if (pending.length === 0) return;
+
+    console.log(`[AgentCoordinator] 批量处理 ${pending.length} 个依赖请求`);
+
+    // 分组：运行时依赖 vs 开发依赖
+    const prodDeps = pending.filter(r => !r.isDev);
+    const devDeps = pending.filter(r => r.isDev);
+
+    const pm = this.projectContext.packageManager;
+    const projectPath = this.projectContext.projectPath;
+
+    // 安装运行时依赖
+    if (prodDeps.length > 0) {
+      const packages = prodDeps.map(r => r.version ? `${r.packageName}@${r.version}` : r.packageName);
+      const installCmd = this.buildInstallCommand(pm, packages, false);
+
+      try {
+        console.log(`[AgentCoordinator] 安装运行时依赖: ${packages.join(', ')}`);
+        execSync(installCmd, { cwd: projectPath, stdio: 'pipe', timeout: 120000 });
+
+        // 更新状态
+        for (const req of prodDeps) {
+          req.status = 'installed';
+          req.processedAt = new Date();
+          this.projectContext.dependencies.push({
+            name: req.packageName,
+            version: req.version || 'latest',
+            requestedBy: req.workerId,
+            requestedAt: req.requestedAt,
+            installed: true,
+          });
+        }
+      } catch (error: any) {
+        console.error(`[AgentCoordinator] 安装运行时依赖失败:`, error.message);
+        for (const req of prodDeps) {
+          req.status = 'rejected';
+          req.rejectionReason = error.message;
+          req.processedAt = new Date();
+        }
+      }
+    }
+
+    // 安装开发依赖
+    if (devDeps.length > 0) {
+      const packages = devDeps.map(r => r.version ? `${r.packageName}@${r.version}` : r.packageName);
+      const installCmd = this.buildInstallCommand(pm, packages, true);
+
+      try {
+        console.log(`[AgentCoordinator] 安装开发依赖: ${packages.join(', ')}`);
+        execSync(installCmd, { cwd: projectPath, stdio: 'pipe', timeout: 120000 });
+
+        // 更新状态
+        for (const req of devDeps) {
+          req.status = 'installed';
+          req.processedAt = new Date();
+          this.projectContext.devDependencies.push({
+            name: req.packageName,
+            version: req.version || 'latest',
+            requestedBy: req.workerId,
+            requestedAt: req.requestedAt,
+            installed: true,
+          });
+        }
+      } catch (error: any) {
+        console.error(`[AgentCoordinator] 安装开发依赖失败:`, error.message);
+        for (const req of devDeps) {
+          req.status = 'rejected';
+          req.rejectionReason = error.message;
+          req.processedAt = new Date();
+        }
+      }
+    }
+
+    // 清理已处理的请求
+    this.projectContext.pendingDependencyRequests =
+      this.projectContext.pendingDependencyRequests.filter(r => r.status === 'pending');
+
+    // 发出事件
+    this.emit('dependencies:installed', {
+      installed: pending.filter(r => r.status === 'installed').length,
+      failed: pending.filter(r => r.status === 'rejected').length,
+    });
+
+    // 更新蜂王的项目上下文
+    if (this.queen) {
+      this.queen.projectContext = this.projectContext;
+    }
+  }
+
+  /**
+   * 构建安装命令
+   */
+  private buildInstallCommand(pm: string, packages: string[], isDev: boolean): string {
+    const pkgList = packages.join(' ');
+    switch (pm) {
+      case 'yarn':
+        return isDev ? `yarn add -D ${pkgList}` : `yarn add ${pkgList}`;
+      case 'pnpm':
+        return isDev ? `pnpm add -D ${pkgList}` : `pnpm add ${pkgList}`;
+      case 'bun':
+        return isDev ? `bun add -d ${pkgList}` : `bun add ${pkgList}`;
+      default:
+        return isDev ? `npm install -D ${pkgList}` : `npm install ${pkgList}`;
+    }
+  }
+
+  /**
+   * 获取项目上下文（供 Worker 使用）
+   */
+  getProjectContext(): ProjectContext | null {
+    return this.projectContext;
+  }
+
+  /**
+   * 获取已安装的依赖列表
+   */
+  getInstalledDependencies(): { dependencies: ProjectDependency[]; devDependencies: ProjectDependency[] } {
+    if (!this.projectContext) {
+      return { dependencies: [], devDependencies: [] };
+    }
+    return {
+      dependencies: this.projectContext.dependencies.filter(d => d.installed),
+      devDependencies: this.projectContext.devDependencies.filter(d => d.installed),
+    };
+  }
+
+  /**
+   * 注册共享资源（供 Worker 使用）
+   */
+  registerSharedResource(resource: Omit<SharedResource, 'id' | 'createdAt'>): SharedResource {
+    if (!this.projectContext) {
+      throw new Error('项目上下文未初始化');
+    }
+
+    const newResource: SharedResource = {
+      ...resource,
+      id: uuidv4(),
+      createdAt: new Date(),
+    };
+
+    this.projectContext.sharedResources.push(newResource);
+
+    this.addTimelineEvent('task_complete', `注册共享资源: ${resource.filePath}`, {
+      resourceType: resource.type,
+      createdBy: resource.createdBy,
+    });
+
+    this.emit('shared-resource:registered', newResource);
+
+    return newResource;
+  }
+
+  /**
+   * 获取共享资源列表
+   */
+  getSharedResources(type?: SharedResource['type']): SharedResource[] {
+    if (!this.projectContext) {
+      return [];
+    }
+
+    if (type) {
+      return this.projectContext.sharedResources.filter(r => r.type === type);
+    }
+
+    return this.projectContext.sharedResources;
   }
 
   // --------------------------------------------------------------------------
@@ -221,6 +2163,12 @@ export class AgentCoordinator extends EventEmitter {
     this.emit('queen:loop-started', { queenId: this.queen.id });
     this.addTimelineEvent('task_start', '蜂王主循环启动');
 
+    // 启动上下文同步循环（防止上下文腐烂）
+    this.startContextSyncLoop();
+
+    // 启动上下文压缩检查循环（防止上下文膨胀）
+    this.startContextCompressionLoop();
+
     // 开始主循环
     this.runMainLoop();
   }
@@ -245,21 +2193,31 @@ export class AgentCoordinator extends EventEmitter {
         return;
       }
 
-      // 3. 收集 Worker 状态
+      // 3. 检查并执行项目初始化任务（蜂王亲自执行，不分配给 Worker）
+      const projectInitHandled = await this.handleProjectInitTask(tree);
+      if (projectInitHandled) {
+        // 项目初始化正在进行或刚完成，下一轮再处理其他任务
+        if (this.isRunning) {
+          this.mainLoopTimer = setTimeout(() => this.runMainLoop(), this.config.mainLoopInterval);
+        }
+        return;
+      }
+
+      // 4. 收集 Worker 状态
       this.collectWorkerStatus();
 
-      // 4. 自动分配任务
+      // 5. 自动分配任务
       if (this.config.autoAssignTasks) {
         await this.assignPendingTasks();
       }
 
-      // 5. 检查超时 Worker
+      // 6. 检查超时 Worker
       this.checkWorkerTimeouts();
 
-      // 6. 更新全局上下文
+      // 7. 更新全局上下文
       this.updateGlobalContext();
 
-      // 7. 检查是否有僵局（没有执行中和待执行的任务，但有失败的任务）
+      // 8. 检查是否有僵局（没有执行中和待执行的任务，但有失败的任务）
       this.checkForStalemate(tree);
 
     } catch (error) {
@@ -274,7 +2232,90 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   /**
+   * 处理项目初始化任务
+   * 返回 true 表示正在处理初始化任务，主循环应该等待
+   */
+  private async handleProjectInitTask(tree: TaskTree): Promise<boolean> {
+    // 查找项目初始化任务
+    const initTask = tree.root.children.find(
+      child => child.taskType === 'project_init' || child.metadata?.autoExecuteByQueen
+    );
+
+    if (!initTask) {
+      return false;  // 没有初始化任务
+    }
+
+    // 检查初始化任务状态
+    if (initTask.status === 'passed' || initTask.status === 'approved') {
+      return false;  // 已完成，继续正常流程
+    }
+
+    if (initTask.status === 'coding' || initTask.status === 'testing') {
+      return true;  // 正在执行中，等待
+    }
+
+    if (initTask.status === 'test_failed') {
+      // 重试项目初始化
+      console.log('[AgentCoordinator] 项目初始化失败，重试中...');
+      if (initTask.retryCount < initTask.maxRetries) {
+        initTask.retryCount++;
+        initTask.status = 'pending';
+      } else {
+        // 达到最大重试次数
+        this.addTimelineEvent('test_fail', '项目初始化失败，达到最大重试次数', {
+          taskId: initTask.id,
+          retryCount: initTask.retryCount,
+        });
+        this.emit('project:initialization-failed', {
+          error: '项目初始化多次失败，需要人工干预',
+        });
+        return false;
+      }
+    }
+
+    // 执行项目初始化
+    if (initTask.status === 'pending') {
+      console.log('[AgentCoordinator] 开始执行项目初始化任务');
+      initTask.status = 'coding';
+      initTask.startedAt = new Date();
+
+      try {
+        const success = await this.executeProjectInitialization();
+
+        if (success) {
+          // 标记任务完成
+          initTask.status = 'passed';
+          initTask.completedAt = new Date();
+          taskTreeManager.updateTaskStatus(tree.id, initTask.id, 'passed');
+
+          this.addTimelineEvent('task_complete', '项目初始化完成', {
+            taskId: initTask.id,
+          });
+
+          this.recordDecision(
+            'task_assignment',
+            '项目初始化任务完成',
+            '蜂王亲自执行项目初始化，确保基础设施就绪'
+          );
+        } else {
+          initTask.status = 'test_failed';
+          taskTreeManager.updateTaskStatus(tree.id, initTask.id, 'test_failed');
+        }
+      } catch (error: any) {
+        console.error('[AgentCoordinator] 项目初始化执行异常:', error);
+        initTask.status = 'test_failed';
+        taskTreeManager.updateTaskStatus(tree.id, initTask.id, 'test_failed');
+      }
+
+      return true;  // 刚执行完，等待下一轮
+    }
+
+    return false;
+  }
+
+  /**
    * 检查僵局状态（没有任务可执行，但有失败任务）
+   * 根据配置策略自动处理僵局
    */
   private checkForStalemate(tree: TaskTree): void {
     const { pendingTasks, runningTasks, failedTasks, totalTasks, passedTasks } = tree.stats;
@@ -283,36 +2324,213 @@ export class AgentCoordinator extends EventEmitter {
     const executableTasks = taskTreeManager.getExecutableTasks(tree.id);
     const activeWorkers = Array.from(this.workers.values()).filter(w => w.status !== 'idle');
 
-    // 如果没有可执行任务、没有活跃 Worker、但有失败任务
+    // 如果没有可执行任务、没有活跃 Worker、但有失败任务 => 僵局
     if (executableTasks.length === 0 && activeWorkers.length === 0 && failedTasks > 0) {
-      // 发出僵局事件，通知前端
-      this.emit('queen:stalemate', {
-        message: `检测到僵局：${failedTasks} 个任务失败，无法继续执行`,
-        stats: {
-          totalTasks,
-          passedTasks,
-          failedTasks,
-          pendingTasks,
-          runningTasks,
-        },
-        suggestion: '请重置失败任务或手动干预',
-      });
+      // 根据策略处理僵局
+      switch (this.config.stalemateStrategy) {
+        case 'auto_retry':
+          this.handleStalemateAutoRetry(tree, failedTasks);
+          break;
 
-      // 只发出一次僵局事件（避免重复）
-      if (!this._stalemateReported) {
-        this._stalemateReported = true;
-        this.addTimelineEvent('task_start', `检测到僵局：${failedTasks} 个任务失败，等待人工干预`, {
-          failedTasks,
-          pendingTasks,
-        });
+        case 'skip_failed':
+          this.handleStalemateSkipFailed(tree);
+          break;
+
+        case 'manual':
+        default:
+          this.handleStalemateManual(tree, failedTasks, pendingTasks, totalTasks, passedTasks, runningTasks);
+          break;
       }
     } else {
       // 重置僵局标记
       this._stalemateReported = false;
+      this._stalemateRetryCount = 0;
     }
   }
 
+  /**
+   * 僵局处理：自动重试失败任务
+   */
+  private handleStalemateAutoRetry(tree: TaskTree, failedTasks: number): void {
+    if (this._stalemateRetryCount >= this.config.stalemateAutoRetryLimit) {
+      // 达到自动重试上限，转为手动模式
+      if (!this._stalemateReported) {
+        this._stalemateReported = true;
+        this.addTimelineEvent('test_fail', `僵局自动重试已达上限 (${this._stalemateRetryCount}/${this.config.stalemateAutoRetryLimit})，需要人工干预`, {
+          failedTasks,
+          retryCount: this._stalemateRetryCount,
+        });
+        this.emit('queen:stalemate', {
+          message: `僵局自动重试已达上限，${failedTasks} 个任务仍然失败`,
+          stats: tree.stats,
+          suggestion: '自动重试无效，请手动检查失败原因或调整任务',
+          autoRetryExhausted: true,
+        });
+      }
+      return;
+    }
+
+    // 自动重试：重置所有失败任务
+    this._stalemateRetryCount++;
+    const resetCount = this.resetFailedTasks(tree);
+
+    this.addTimelineEvent('task_start', `僵局自动重试 (${this._stalemateRetryCount}/${this.config.stalemateAutoRetryLimit})：已重置 ${resetCount} 个失败任务`, {
+      failedTasks,
+      resetCount,
+      retryCount: this._stalemateRetryCount,
+    });
+
+    this.emit('queen:stalemate-recovering', {
+      message: `正在自动重试失败任务 (${this._stalemateRetryCount}/${this.config.stalemateAutoRetryLimit})`,
+      resetCount,
+      retryCount: this._stalemateRetryCount,
+    });
+
+    this.recordDecision('retry', `僵局自动恢复：重置 ${resetCount} 个失败任务`, `自动重试第 ${this._stalemateRetryCount} 次`);
+  }
+
+  /**
+   * 僵局处理：跳过失败任务，继续执行不依赖它们的任务
+   */
+  private handleStalemateSkipFailed(tree: TaskTree): void {
+    if (!this._stalemateReported) {
+      // 找出所有失败的任务
+      const failedTaskIds = this.getFailedTaskIds(tree.root);
+
+      // 找出被阻塞但不依赖失败任务的任务
+      const unblockedCount = this.unblockIndependentTasks(tree, failedTaskIds);
+
+      if (unblockedCount > 0) {
+        this.addTimelineEvent('task_start', `僵局处理：跳过 ${failedTaskIds.length} 个失败任务，解除 ${unblockedCount} 个任务的阻塞`, {
+          skippedTasks: failedTaskIds.length,
+          unblockedTasks: unblockedCount,
+        });
+
+        this.emit('queen:stalemate-recovering', {
+          message: `已跳过失败任务，解除 ${unblockedCount} 个任务的阻塞`,
+          skippedTasks: failedTaskIds.length,
+          unblockedTasks: unblockedCount,
+        });
+
+        this.recordDecision('skip', `跳过 ${failedTaskIds.length} 个失败任务`, '继续执行独立任务');
+      } else {
+        // 所有待执行任务都依赖失败任务，无法跳过
+        this._stalemateReported = true;
+        this.emit('queen:stalemate', {
+          message: `所有待执行任务都依赖失败任务，无法继续`,
+          stats: tree.stats,
+          suggestion: '请重置失败任务或手动干预',
+        });
+      }
+    }
+  }
+
+  /**
+   * 僵局处理：手动模式，只发出通知
+   */
+  private handleStalemateManual(
+    tree: TaskTree,
+    failedTasks: number,
+    pendingTasks: number,
+    totalTasks: number,
+    passedTasks: number,
+    runningTasks: number
+  ): void {
+    // 发出僵局事件，通知前端
+    this.emit('queen:stalemate', {
+      message: `检测到僵局：${failedTasks} 个任务失败，无法继续执行`,
+      stats: {
+        totalTasks,
+        passedTasks,
+        failedTasks,
+        pendingTasks,
+        runningTasks,
+      },
+      suggestion: '请重置失败任务或手动干预',
+    });
+
+    // 只发出一次僵局事件（避免重复）
+    if (!this._stalemateReported) {
+      this._stalemateReported = true;
+      this.addTimelineEvent('task_start', `检测到僵局：${failedTasks} 个任务失败，等待人工干预`, {
+        failedTasks,
+        pendingTasks,
+      });
+    }
+  }
+
+  /**
+   * 重置所有失败任务（重置重试计数）
+   */
+  private resetFailedTasks(tree: TaskTree): number {
+    const failedTaskIds = this.getFailedTaskIds(tree.root);
+    let resetCount = 0;
+
+    for (const taskId of failedTaskIds) {
+      try {
+        taskTreeManager.updateTaskStatus(tree.id, taskId, 'pending', {
+          retryCount: 0, // 重置重试计数
+        });
+        resetCount++;
+      } catch (error) {
+        console.error(`重置失败任务 ${taskId} 时出错:`, error);
+      }
+    }
+
+    return resetCount;
+  }
+
+  /**
+   * 获取所有失败任务的 ID
+   */
+  private getFailedTaskIds(node: TaskNode): string[] {
+    const failedIds: string[] = [];
+
+    if (node.status === 'test_failed' || node.status === 'blocked') {
+      failedIds.push(node.id);
+    }
+
+    for (const child of node.children) {
+      failedIds.push(...this.getFailedTaskIds(child));
+    }
+
+    return failedIds;
+  }
+
+  /**
+   * 解除不依赖失败任务的任务的阻塞
+   */
+  private unblockIndependentTasks(tree: TaskTree, failedTaskIds: string[]): number {
+    const failedSet = new Set(failedTaskIds);
+    let unblockedCount = 0;
+
+    const processNode = (node: TaskNode) => {
+      // 如果任务是 pending 状态，检查其依赖是否都完成或被跳过
+      if (node.status === 'pending') {
+        const dependencies = node.dependencies || [];
+        const allDepsResolved = dependencies.every(depId => {
+          const depTask = taskTreeManager.findTask(tree.root, depId);
+          if (!depTask) return true; // 依赖不存在，视为已完成
+          return depTask.status === 'passed' || failedSet.has(depId);
+        });
+
+        if (allDepsResolved && dependencies.some(depId => failedSet.has(depId))) {
+          // 标记为可以执行（跳过失败的依赖）
+          unblockedCount++;
+        }
+      }
+
+      for (const child of node.children) {
+        processNode(child);
+      }
+    };
+
+    processNode(tree.root);
+    return unblockedCount;
+  }
+
   private _stalemateReported: boolean = false;
+  private _stalemateRetryCount: number = 0;
 
   /**
    * 停止主循环
@@ -323,6 +2541,12 @@ export class AgentCoordinator extends EventEmitter {
       clearTimeout(this.mainLoopTimer);
       this.mainLoopTimer = null;
     }
+
+    // 停止上下文同步循环
+    this.stopContextSyncLoop();
+
+    // 停止上下文压缩检查循环
+    this.stopContextCompressionLoop();
 
     if (this.queen) {
       this.queen.status = 'paused';
@@ -443,7 +2667,7 @@ export class AgentCoordinator extends EventEmitter {
 
     // 更新 Worker 状态
     worker.taskId = taskId;
-    worker.status = 'test_writing';
+    this.updateWorkerStatus(worker, 'test_writing');
 
     const baseline = this.captureGitBaseline(this.config.projectRoot || process.cwd());
     if (baseline) {
@@ -463,6 +2687,9 @@ export class AgentCoordinator extends EventEmitter {
 
     // 启动 TDD 循环
     const loopState = tddExecutor.startLoop(this.queen.taskTreeId, taskId);
+
+    // 立即同步 Worker 的 TDD 循环状态
+    this.syncWorkerCycle(worker, loopState);
 
     // 记录决策
     this.recordDecision('task_assignment', `分配任务 ${taskId} 给 Worker ${workerId}`, '根据优先级和依赖关系选择');
@@ -512,7 +2739,7 @@ export class AgentCoordinator extends EventEmitter {
 
         switch (loopState.phase) {
           case 'write_test': {
-            worker.status = 'test_writing';
+            this.updateWorkerStatus(worker, 'test_writing');
             this.recordWorkerAction(worker, 'test', '编写测试用例', { phase: loopState.phase });
 
             const testResult = await executor.executePhase('write_test', { task: currentTask });
@@ -534,7 +2761,7 @@ export class AgentCoordinator extends EventEmitter {
             break;
           }
           case 'run_test_red': {
-            worker.status = 'testing';
+            this.updateWorkerStatus(worker, 'testing');
             this.recordWorkerAction(worker, 'test', '运行红灯测试', { phase: loopState.phase });
 
             const redResult = await executor.executePhase('run_test_red', {
@@ -553,7 +2780,7 @@ export class AgentCoordinator extends EventEmitter {
             break;
           }
           case 'write_code': {
-            worker.status = 'coding';
+            this.updateWorkerStatus(worker, 'coding');
             this.recordWorkerAction(worker, 'write', '编写实现代码', { phase: loopState.phase });
 
             const codeResult = await executor.executePhase('write_code', {
@@ -570,7 +2797,7 @@ export class AgentCoordinator extends EventEmitter {
             break;
           }
           case 'run_test_green': {
-            worker.status = 'testing';
+            this.updateWorkerStatus(worker, 'testing');
             this.recordWorkerAction(worker, 'test', '运行绿灯测试', { phase: loopState.phase });
 
             const greenResult = await executor.executePhase('run_test_green', {
@@ -589,7 +2816,7 @@ export class AgentCoordinator extends EventEmitter {
             break;
           }
           case 'refactor': {
-            worker.status = 'coding';
+            this.updateWorkerStatus(worker, 'coding');
             this.recordWorkerAction(worker, 'write', '重构代码', { phase: loopState.phase });
 
             const refactorResult = await executor.executePhase('refactor', { task: currentTask });
@@ -643,6 +2870,8 @@ export class AgentCoordinator extends EventEmitter {
       this.archiveTaskCodeArtifacts(worker, task.id);
       this.workerCompleteTask(worker.id);
     } catch (error: any) {
+      // 确保 TDD 循环被清理（无论是抛出异常还是调用 workerFailTask）
+      // 这里不删除循环，由外层 catch 调用 workerFailTask 统一处理
       taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, task.id, 'test_failed');
       throw error;
     }
@@ -652,6 +2881,8 @@ export class AgentCoordinator extends EventEmitter {
     const existing = this.workerExecutors.get(workerId);
     if (existing) {
       existing.setWorkerId(workerId);
+      // 更新项目上下文（可能已经变化）
+      existing.setProjectContext(this.projectContext);
       return existing;
     }
 
@@ -661,6 +2892,15 @@ export class AgentCoordinator extends EventEmitter {
       testFramework: (this.config.testFramework || 'vitest') as 'vitest' | 'jest' | 'mocha',
     });
     executor.setWorkerId(workerId);
+
+    // ========== 设置项目上下文（蜂王项目管理能力的传递）==========
+    executor.setProjectContext(this.projectContext);
+
+    // 设置依赖请求回调（Worker 需要新依赖时，通过蜂王统一处理）
+    const taskId = this.workers.get(workerId)?.taskId;
+    executor.setDependencyRequestCallback(async (packageName, version, reason, isDev) => {
+      return this.requestDependency(workerId, taskId || '', packageName, version, reason, isDev);
+    });
 
     this.workerExecutors.set(workerId, executor);
     return executor;
@@ -719,6 +2959,26 @@ export class AgentCoordinator extends EventEmitter {
     worker.tddCycle.testWritten = !!loopState.testSpec;
     worker.tddCycle.codeWritten = loopState.codeWritten;
     worker.tddCycle.testPassed = loopState.phase === 'done';
+    // 同步时也通知前端
+    this.emitWorkerUpdate(worker);
+  }
+
+  /**
+   * 更新 Worker 状态并通知前端
+   */
+  private updateWorkerStatus(worker: WorkerAgent, status: WorkerAgent['status']): void {
+    const oldStatus = worker.status;
+    worker.status = status;
+    if (oldStatus !== status) {
+      this.emitWorkerUpdate(worker);
+    }
+  }
+
+  /**
+   * 发送 Worker 更新事件到前端
+   */
+  private emitWorkerUpdate(worker: WorkerAgent): void {
+    this.emit('worker:status-updated', { worker });
   }
 
   // --------------------------------------------------------------------------
@@ -742,6 +3002,53 @@ export class AgentCoordinator extends EventEmitter {
 
     // 构建审查上下文
     const reviewContext = this.buildReviewContext(task, loopState);
+
+    // ===== 前置有效性检查 =====
+    // 检查测试代码是否存在
+    if (!reviewContext.submission.testCode || reviewContext.submission.testCode.trim().length === 0) {
+      console.warn(`[TestReview] 任务 ${task.id} 测试代码为空，跳过严格审查`);
+      return {
+        passed: true,  // 宽松模式：允许通过，但记录警告
+        status: 'warning',
+        score: 60,
+        issues: [{
+          severity: 'warning',
+          type: 'missing_test' as const,
+          message: '测试代码为空或无法解析，建议补充测试',
+          suggestion: '请确保测试代码正确生成',
+        }],
+        suggestions: ['建议添加完整的测试用例'],
+        report: {
+          codeAnalysisSummary: '无法分析（测试代码为空）',
+          testAnalysisSummary: '无测试代码',
+          coverageAnalysis: { functionCoverage: 0, branchCoverage: 0, edgeCaseCoverage: 0 },
+          conclusion: '⚠️ 测试代码为空，已跳过严格审查（评分: 60/100）',
+        },
+      };
+    }
+
+    // 检查实现代码是否存在
+    if (!reviewContext.submission.implFiles || reviewContext.submission.implFiles.length === 0) {
+      console.warn(`[TestReview] 任务 ${task.id} 实现代码为空，跳过严格审查`);
+      return {
+        passed: true,
+        status: 'warning',
+        score: 70,
+        issues: [{
+          severity: 'warning',
+          type: 'low_coverage' as const,
+          message: '实现代码为空或无法解析',
+          suggestion: '请确保实现代码正确生成',
+        }],
+        suggestions: ['建议添加实现代码'],
+        report: {
+          codeAnalysisSummary: '无实现代码',
+          testAnalysisSummary: `发现 ${reviewContext.submission.testCode.length} 字符的测试代码`,
+          coverageAnalysis: { functionCoverage: 0, branchCoverage: 0, edgeCaseCoverage: 0 },
+          conclusion: '⚠️ 实现代码为空，已跳过严格审查（评分: 70/100）',
+        },
+      };
+    }
 
     // 执行审查
     const result = await this.testReviewer.review(reviewContext);
@@ -1375,35 +3682,44 @@ export class AgentCoordinator extends EventEmitter {
     // 获取可执行任务
     const executableTasks = taskTreeManager.getExecutableTasks(this.queen.taskTreeId);
 
-    // 获取空闲 Worker
-    const idleWorkers = Array.from(this.workers.values()).filter(w => w.status === 'idle');
+    // 分配计数器
+    let assignedCount = 0;
+    let idleWorkerIndex = 0;
 
-    // 计算可以创建的新 Worker 数量
-    const activeCount = this.workers.size - idleWorkers.length;
-    const canCreate = this.config.maxConcurrentWorkers - activeCount;
-
-    // 分配任务
-    for (let i = 0; i < Math.min(executableTasks.length, idleWorkers.length + canCreate); i++) {
-      const task = executableTasks[i];
-
+    for (const task of executableTasks) {
       // 检查任务是否已被分配
       const alreadyAssigned = Array.from(this.workers.values()).some(w => w.taskId === task.id);
       if (alreadyAssigned) continue;
 
+      // 实时获取空闲 Worker 列表（每次循环重新获取，确保状态最新）
+      const idleWorkers = Array.from(this.workers.values()).filter(w => w.status === 'idle');
+      const activeWorkers = Array.from(this.workers.values()).filter(w => w.status !== 'idle');
+
       try {
         let worker: WorkerAgent;
 
-        if (i < idleWorkers.length) {
+        if (idleWorkerIndex < idleWorkers.length) {
           // 复用空闲 Worker
-          worker = idleWorkers[i];
+          worker = idleWorkers[idleWorkerIndex];
+          idleWorkerIndex++;
         } else {
+          // 检查是否已达到最大并发数（在创建前实时检查）
+          if (activeWorkers.length >= this.config.maxConcurrentWorkers) {
+            // 已达到最大并发数，停止分配
+            break;
+          }
           // 创建新 Worker
           worker = this.createWorker(task.id);
         }
 
         await this.assignTask(worker.id, task.id);
+        assignedCount++;
       } catch (error) {
         console.error(`分配任务 ${task.id} 失败:`, error);
+        // 如果是并发限制错误，停止继续分配
+        if (error instanceof Error && error.message.includes('最大并发 Worker 数量')) {
+          break;
+        }
       }
     }
   }
@@ -1415,21 +3731,41 @@ export class AgentCoordinator extends EventEmitter {
     const worker = this.workers.get(workerId);
     if (!worker) return;
 
+    const completedTaskId = worker.taskId;
+
     // 清除活跃任务上下文
     clearActiveTask(workerId);
     this.workerExecutors.delete(workerId);
     this.workerGitBaselines.delete(workerId);
 
-    worker.status = 'idle';
-    worker.tddCycle.testPassed = true;
-
+    // 记录完成动作（在清除任务信息之前）
     this.recordWorkerAction(worker, 'report', '任务完成', {
-      taskId: worker.taskId,
+      taskId: completedTaskId,
       iterations: worker.tddCycle.iteration,
     });
 
-    this.addTimelineEvent('task_complete', `Worker 完成任务: ${worker.taskId}`, { workerId });
-    this.emit('worker:task-completed', { workerId, taskId: worker.taskId });
+    // 清理 TDD 循环状态（任务完成，循环结束）
+    // 注意：虽然循环的 phase 应该已经是 'done'，但仍然需要从 loopStates 中移除
+    // 以避免内存泄漏和状态不一致
+    if (completedTaskId) {
+      tddExecutor.removeLoop(completedTaskId);
+    }
+
+    // 重置 Worker 状态为完全空闲（清除任务关联）
+    worker.taskId = '';
+    // 保持 TDD 循环的最终状态为 done，表示已完成
+    worker.tddCycle = {
+      phase: 'done',
+      iteration: worker.tddCycle.iteration,
+      maxIterations: worker.tddCycle.maxIterations,
+      testWritten: true,
+      testPassed: true,
+      codeWritten: true,
+    };
+    this.updateWorkerStatus(worker, 'idle');
+
+    this.addTimelineEvent('task_complete', `Worker 完成任务: ${completedTaskId}`, { workerId });
+    this.emit('worker:task-completed', { workerId, taskId: completedTaskId });
   }
 
   /**
@@ -1446,9 +3782,26 @@ export class AgentCoordinator extends EventEmitter {
     this.workerExecutors.delete(workerId);
     this.workerGitBaselines.delete(workerId);
 
-    worker.status = 'idle';
+    // 记录失败动作（在清除任务信息之前）
+    this.recordWorkerAction(worker, 'report', '任务失败', { taskId: failedTaskId, error });
 
-    this.recordWorkerAction(worker, 'report', '任务失败', { error });
+    // 清理 TDD 循环状态（任务失败，循环被终止）
+    if (failedTaskId) {
+      tddExecutor.removeLoop(failedTaskId);
+    }
+
+    // 重置 Worker 状态为完全空闲（清除任务关联）
+    worker.taskId = '';
+    // 保持 TDD 循环的最终状态，表示失败
+    worker.tddCycle = {
+      phase: 'done',
+      iteration: worker.tddCycle.iteration,
+      maxIterations: worker.tddCycle.maxIterations,
+      testWritten: worker.tddCycle.testWritten,
+      testPassed: false,
+      codeWritten: worker.tddCycle.codeWritten,
+    };
+    this.updateWorkerStatus(worker, 'idle');
 
     // 记录决策并执行重试
     const tree = this.queen ? taskTreeManager.getTaskTree(this.queen.taskTreeId) : null;
@@ -1754,6 +4107,56 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   /**
+   * 清理孤立的 TDD 循环
+   *
+   * 孤立循环是指：TDD 循环存在但没有对应的 Worker 在执行
+   * 这可能发生在：
+   * 1. Worker 异常退出后 TDD 循环没有被清理
+   * 2. 服务重启后状态不一致
+   *
+   * @returns 清理的循环数量和详情
+   */
+  cleanupOrphanedTDDLoops(): {
+    removedCount: number;
+    removedTasks: string[];
+  } {
+    const activeLoops = tddExecutor.getActiveLoops();
+    const activeWorkerTaskIds = new Set<string>();
+
+    // 收集所有正在执行任务的 Worker 的 taskId
+    for (const worker of this.workers.values()) {
+      if (worker.status !== 'idle' && worker.taskId) {
+        activeWorkerTaskIds.add(worker.taskId);
+      }
+    }
+
+    // 找出没有对应 Worker 执行的 TDD 循环
+    const orphanedTaskIds: string[] = [];
+    for (const loop of activeLoops) {
+      if (!activeWorkerTaskIds.has(loop.taskId)) {
+        orphanedTaskIds.push(loop.taskId);
+      }
+    }
+
+    // 清理孤立循环
+    for (const taskId of orphanedTaskIds) {
+      tddExecutor.removeLoop(taskId);
+      console.log(`[AgentCoordinator] 清理孤立 TDD 循环: ${taskId}`);
+    }
+
+    if (orphanedTaskIds.length > 0) {
+      this.addTimelineEvent('task_review', `清理了 ${orphanedTaskIds.length} 个孤立的 TDD 循环`, {
+        removedTasks: orphanedTaskIds,
+      });
+    }
+
+    return {
+      removedCount: orphanedTaskIds.length,
+      removedTasks: orphanedTaskIds,
+    };
+  }
+
+  /**
    * 获取仪表板数据
    */
   getDashboardData(): any {
@@ -1772,6 +4175,541 @@ export class AgentCoordinator extends EventEmitter {
       timeline: this.timeline.slice(-50), // 最近 50 条
       stats: tree?.stats,
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // 蜂王上下文管理（防止上下文腐烂/膨胀）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 估算文本的 Token 数量
+   * 使用简单的字符数估算，中文约 2 字符/token，英文约 4 字符/token
+   */
+  private estimateTokens(text: string): number {
+    if (!text) return 0;
+    // 统计中文字符数量
+    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const otherChars = text.length - chineseChars;
+    // 中文约 2 字符/token，其他约 4 字符/token
+    return Math.ceil(chineseChars / 2 + otherChars / this.CHARS_PER_TOKEN);
+  }
+
+  /**
+   * 构建分层上下文
+   * 将蜂王的全部信息组织成分层结构，便于管理和压缩
+   */
+  private buildHierarchicalContext(): HierarchicalContext {
+    const blueprint = this.queen ? blueprintManager.getBlueprint(this.queen.blueprintId) : null;
+    const tree = this.queen ? taskTreeManager.getTaskTree(this.queen.taskTreeId) : null;
+    const cmConfig = this.config.contextManagement;
+
+    // ===== 核心层（始终保留）=====
+    const core = {
+      blueprintSummary: this.buildBlueprintSummary(blueprint),
+      moduleBoundaries: this.buildModuleBoundariesSummary(blueprint),
+      criticalNFRs: this.buildCriticalNFRsSummary(blueprint),
+      queenResponsibilities: this.buildQueenResponsibilities(),
+    };
+
+    // ===== 工作层（当前任务相关）=====
+    const working = {
+      currentTasks: this.buildCurrentTasksSummary(tree),
+      activeWorkers: this.buildActiveWorkersSummary(),
+      recentDependencyRequests: this.buildRecentDependencyRequestsSummary(),
+    };
+
+    // ===== 历史层（可压缩）=====
+    const recentDecisions = this.queen?.decisions.slice(-cmConfig.recentDecisionsCount) || [];
+    const recentTimeline = this.timeline.slice(-cmConfig.recentTimelineCount);
+
+    // 查找对应类型的摘要
+    const decisionsSummary = this.contextSummaries.find(s => s.type === 'decisions') || null;
+    const timelineSummary = this.contextSummaries.find(s => s.type === 'timeline') || null;
+
+    const history = {
+      decisionsSummary,
+      recentDecisions,
+      timelineSummary,
+      recentTimeline,
+    };
+
+    // ===== 估算总 Token 数 =====
+    const coreTokens =
+      this.estimateTokens(core.blueprintSummary) +
+      this.estimateTokens(core.moduleBoundaries) +
+      this.estimateTokens(core.criticalNFRs) +
+      this.estimateTokens(core.queenResponsibilities);
+
+    const workingTokens =
+      this.estimateTokens(working.currentTasks) +
+      this.estimateTokens(working.activeWorkers) +
+      this.estimateTokens(working.recentDependencyRequests);
+
+    const historyTokens =
+      (decisionsSummary?.tokenCount || 0) +
+      (timelineSummary?.tokenCount || 0) +
+      this.estimateTokens(JSON.stringify(recentDecisions)) +
+      this.estimateTokens(JSON.stringify(recentTimeline));
+
+    const estimatedTokens = coreTokens + workingTokens + historyTokens;
+
+    this.hierarchicalContext = {
+      core,
+      working,
+      history,
+      meta: {
+        estimatedTokens,
+        lastCompressionAt: this.hierarchicalContext?.meta.lastCompressionAt || null,
+        compressionCount: this.hierarchicalContext?.meta.compressionCount || 0,
+      },
+    };
+
+    return this.hierarchicalContext;
+  }
+
+  /**
+   * 构建蓝图摘要（核心层）
+   */
+  private buildBlueprintSummary(blueprint: Blueprint | null): string {
+    if (!blueprint) return '';
+    return `项目: ${blueprint.name} v${blueprint.version}\n${blueprint.description}\n模块数: ${blueprint.modules.length}`;
+  }
+
+  /**
+   * 构建模块边界摘要（核心层，精简版）
+   */
+  private buildModuleBoundariesSummary(blueprint: Blueprint | null): string {
+    if (!blueprint) return '';
+    const lines: string[] = ['## 模块边界'];
+    for (const module of blueprint.modules) {
+      // 只保留最关键的信息
+      lines.push(`- ${module.name}: ${module.type}, 路径=${module.rootPath || 'src/' + module.name.toLowerCase()}`);
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建关键 NFR 摘要（核心层，仅 Must 级别）
+   */
+  private buildCriticalNFRsSummary(blueprint: Blueprint | null): string {
+    if (!blueprint || !blueprint.nfrs) return '';
+    const mustNfrs = blueprint.nfrs.filter(n => n.priority === 'must');
+    if (mustNfrs.length === 0) return '';
+    const lines: string[] = ['## 关键 NFR'];
+    for (const nfr of mustNfrs) {
+      lines.push(`- [${nfr.category}] ${nfr.name}: ${nfr.metric}`);
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建蜂王职责说明
+   */
+  private buildQueenResponsibilities(): string {
+    return `## 蜂王职责
+1. 任务调度：按优先级分配任务给 Worker
+2. 项目管理：维护依赖、配置、共享资源
+3. 质量把控：审核 Worker 输出，确保符合蓝图约束
+4. 边界守护：拒绝任何违反模块边界的操作`;
+  }
+
+  /**
+   * 构建当前任务摘要（工作层）
+   */
+  private buildCurrentTasksSummary(tree: TaskTree | null): string {
+    if (!tree) return '';
+    const lines: string[] = ['## 当前任务'];
+    lines.push(`进度: ${tree.stats.passedTasks}/${tree.stats.totalTasks} (${tree.stats.progressPercentage.toFixed(1)}%)`);
+
+    // 只显示进行中和待执行的前几个任务
+    const runningTasks = this.findTasksByStatus(tree.root, ['coding', 'testing', 'reviewing']);
+    const pendingTasks = this.findTasksByStatus(tree.root, ['pending', 'ready']).slice(0, 5);
+
+    if (runningTasks.length > 0) {
+      lines.push('执行中:');
+      for (const task of runningTasks) {
+        lines.push(`  - ${task.name} (${task.status})`);
+      }
+    }
+    if (pendingTasks.length > 0) {
+      lines.push(`待执行 (前${pendingTasks.length}个):`);
+      for (const task of pendingTasks) {
+        lines.push(`  - ${task.name}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 按状态查找任务
+   */
+  private findTasksByStatus(node: TaskNode, statuses: string[]): TaskNode[] {
+    const result: TaskNode[] = [];
+    if (statuses.includes(node.status)) {
+      result.push(node);
+    }
+    for (const child of node.children) {
+      result.push(...this.findTasksByStatus(child, statuses));
+    }
+    return result;
+  }
+
+  /**
+   * 构建活跃 Worker 摘要（工作层）
+   */
+  private buildActiveWorkersSummary(): string {
+    // 活跃 Worker：正在编码、测试或写测试的 Worker
+    const activeWorkers = Array.from(this.workers.values()).filter(
+      w => w.status === 'coding' || w.status === 'testing' || w.status === 'test_writing'
+    );
+    if (activeWorkers.length === 0) return '';
+
+    const lines: string[] = ['## 活跃 Worker'];
+    for (const worker of activeWorkers) {
+      lines.push(`- ${worker.id.slice(0, 8)}: ${worker.status}, 任务=${worker.taskId || '无'}`);
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 构建最近依赖请求摘要（工作层）
+   */
+  private buildRecentDependencyRequestsSummary(): string {
+    const pending = this.projectContext?.pendingDependencyRequests.filter(r => r.status === 'pending') || [];
+    if (pending.length === 0) return '';
+
+    const lines: string[] = ['## 待处理依赖请求'];
+    for (const req of pending.slice(0, 5)) {
+      lines.push(`- ${req.packageName}${req.version ? '@' + req.version : ''} (by ${req.workerId.slice(0, 8)})`);
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * 检查上下文健康状态
+   */
+  getContextHealthStatus(): ContextHealthStatus {
+    const ctx = this.buildHierarchicalContext();
+    const maxTokens = this.config.contextManagement.maxContextTokens;
+    const currentTokens = ctx.meta.estimatedTokens;
+    const usagePercent = (currentTokens / maxTokens) * 100;
+
+    let level: 'healthy' | 'warning' | 'critical';
+    let recommendation: string | null = null;
+
+    if (usagePercent < 60) {
+      level = 'healthy';
+    } else if (usagePercent < 85) {
+      level = 'warning';
+      recommendation = '上下文使用率较高，建议在下一个空闲周期执行压缩';
+    } else {
+      level = 'critical';
+      recommendation = '上下文即将超限，需要立即执行压缩';
+    }
+
+    return {
+      level,
+      tokenUsagePercent: usagePercent,
+      currentTokens,
+      maxTokens,
+      recommendation,
+      nextCompressionEstimate: level === 'healthy' ? null : new Date(),
+    };
+  }
+
+  /**
+   * 执行上下文压缩
+   * 将旧的决策和时间线压缩为摘要
+   */
+  async compressContext(): Promise<ContextCompressionResult> {
+    const cmConfig = this.config.contextManagement;
+    const ctx = this.buildHierarchicalContext();
+    const beforeTokens = ctx.meta.estimatedTokens;
+
+    if (beforeTokens < cmConfig.maxContextTokens) {
+      return {
+        compressed: false,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        compressedTypes: [],
+        summaries: [],
+      };
+    }
+
+    console.log(`[ContextManager] 上下文 Token 数 ${beforeTokens} 超过阈值 ${cmConfig.maxContextTokens}，执行压缩...`);
+
+    const compressedTypes: ('decisions' | 'timeline' | 'worker_outputs')[] = [];
+    const newSummaries: ContextSummary[] = [];
+
+    // 1. 压缩决策历史
+    if (this.queen && this.queen.decisions.length > cmConfig.recentDecisionsCount) {
+      const oldDecisions = this.queen.decisions.slice(0, -cmConfig.recentDecisionsCount);
+      if (oldDecisions.length > 0) {
+        const summary = this.compressDecisions(oldDecisions);
+        newSummaries.push(summary);
+        compressedTypes.push('decisions');
+
+        // 只保留最近的决策
+        this.queen.decisions = this.queen.decisions.slice(-cmConfig.recentDecisionsCount);
+      }
+    }
+
+    // 2. 压缩时间线
+    if (this.timeline.length > cmConfig.recentTimelineCount) {
+      const oldTimeline = this.timeline.slice(0, -cmConfig.recentTimelineCount);
+      if (oldTimeline.length > 0) {
+        const summary = this.compressTimeline(oldTimeline);
+        newSummaries.push(summary);
+        compressedTypes.push('timeline');
+
+        // 只保留最近的时间线
+        this.timeline = this.timeline.slice(-cmConfig.recentTimelineCount);
+      }
+    }
+
+    // 3. 压缩 Worker 历史记录（清理空闲 Worker 的详细历史）
+    for (const worker of this.workers.values()) {
+      if (worker.status === 'idle' || worker.status === 'waiting') {
+        // 只保留最近的几个 action
+        if (worker.history.length > cmConfig.recentWorkerOutputsCount) {
+          worker.history = worker.history.slice(-cmConfig.recentWorkerOutputsCount);
+          if (!compressedTypes.includes('worker_outputs')) {
+            compressedTypes.push('worker_outputs');
+          }
+        }
+      }
+    }
+
+    // 更新摘要列表（合并同类型摘要）
+    for (const newSummary of newSummaries) {
+      const existingIndex = this.contextSummaries.findIndex(s => s.type === newSummary.type);
+      if (existingIndex >= 0) {
+        // 合并摘要
+        const existing = this.contextSummaries[existingIndex];
+        this.contextSummaries[existingIndex] = {
+          ...newSummary,
+          content: existing.content + '\n---\n' + newSummary.content,
+          originalCount: existing.originalCount + newSummary.originalCount,
+          tokenCount: existing.tokenCount + newSummary.tokenCount,
+          timeRange: {
+            start: existing.timeRange.start,
+            end: newSummary.timeRange.end,
+          },
+        };
+      } else {
+        this.contextSummaries.push(newSummary);
+      }
+    }
+
+    // 重新计算 Token 数
+    const afterCtx = this.buildHierarchicalContext();
+    const afterTokens = afterCtx.meta.estimatedTokens;
+
+    // 更新元信息
+    if (this.hierarchicalContext) {
+      this.hierarchicalContext.meta.lastCompressionAt = new Date();
+      this.hierarchicalContext.meta.compressionCount++;
+    }
+
+    console.log(`[ContextManager] 压缩完成: ${beforeTokens} -> ${afterTokens} tokens (节省 ${beforeTokens - afterTokens})`);
+
+    this.emit('context:compressed', { beforeTokens, afterTokens, compressedTypes });
+
+    return {
+      compressed: true,
+      beforeTokens,
+      afterTokens,
+      compressedTypes,
+      summaries: newSummaries,
+    };
+  }
+
+  /**
+   * 压缩决策历史为摘要
+   */
+  private compressDecisions(decisions: AgentDecision[]): ContextSummary {
+    // 按类型分组统计
+    const typeStats: Record<string, number> = {};
+    for (const d of decisions) {
+      typeStats[d.type] = (typeStats[d.type] || 0) + 1;
+    }
+
+    const lines: string[] = [
+      `决策历史摘要 (${decisions.length} 条)`,
+      `时间范围: ${decisions[0].timestamp.toISOString()} ~ ${decisions[decisions.length - 1].timestamp.toISOString()}`,
+      '按类型统计:',
+    ];
+    for (const [type, count] of Object.entries(typeStats)) {
+      lines.push(`  - ${type}: ${count} 次`);
+    }
+
+    // 保留关键决策的简要描述（回滚、升级、跳过等）
+    const keyDecisions = decisions.filter(d =>
+      d.type === 'rollback' || d.type === 'escalate' || d.type === 'skip'
+    );
+    if (keyDecisions.length > 0) {
+      lines.push('关键决策:');
+      for (const d of keyDecisions.slice(-5)) {
+        lines.push(`  - [${d.type}] ${d.description.slice(0, 50)}...`);
+      }
+    }
+
+    const content = lines.join('\n');
+    return {
+      id: uuidv4(),
+      type: 'decisions',
+      timeRange: {
+        start: decisions[0].timestamp,
+        end: decisions[decisions.length - 1].timestamp,
+      },
+      content,
+      originalCount: decisions.length,
+      tokenCount: this.estimateTokens(content),
+      createdAt: new Date(),
+    };
+  }
+
+  /**
+   * 压缩时间线为摘要
+   */
+  private compressTimeline(events: TimelineEvent[]): ContextSummary {
+    // 按类型分组统计
+    const typeStats: Record<string, number> = {};
+    for (const e of events) {
+      typeStats[e.type] = (typeStats[e.type] || 0) + 1;
+    }
+
+    const lines: string[] = [
+      `时间线摘要 (${events.length} 条)`,
+      `时间范围: ${events[0].timestamp.toISOString()} ~ ${events[events.length - 1].timestamp.toISOString()}`,
+      '按类型统计:',
+    ];
+    for (const [type, count] of Object.entries(typeStats)) {
+      lines.push(`  - ${type}: ${count} 次`);
+    }
+
+    // 保留重要事件（回滚、检查点、测试失败）
+    const importantEvents = events.filter(e =>
+      e.type === 'rollback' || e.type === 'checkpoint' || e.type === 'test_fail'
+    );
+    if (importantEvents.length > 0) {
+      lines.push('重要事件:');
+      for (const e of importantEvents.slice(-5)) {
+        lines.push(`  - [${e.type}] ${e.description.slice(0, 50)}...`);
+      }
+    }
+
+    const content = lines.join('\n');
+    return {
+      id: uuidv4(),
+      type: 'timeline',
+      timeRange: {
+        start: events[0].timestamp,
+        end: events[events.length - 1].timestamp,
+      },
+      content,
+      originalCount: events.length,
+      tokenCount: this.estimateTokens(content),
+      createdAt: new Date(),
+    };
+  }
+
+  /**
+   * 启动上下文压缩检查循环
+   */
+  startContextCompressionLoop(): void {
+    if (!this.config.contextManagement.autoCompression) {
+      return;
+    }
+
+    if (this.contextCompressionTimer) {
+      clearInterval(this.contextCompressionTimer);
+    }
+
+    this.contextCompressionTimer = setInterval(async () => {
+      const health = this.getContextHealthStatus();
+      if (health.level === 'critical') {
+        await this.compressContext();
+      } else if (health.level === 'warning') {
+        console.log(`[ContextManager] 上下文使用率 ${health.tokenUsagePercent.toFixed(1)}%，接近阈值`);
+      }
+    }, this.config.contextManagement.compressionCheckInterval);
+
+    console.log(`[ContextManager] 上下文压缩检查循环已启动，间隔 ${this.config.contextManagement.compressionCheckInterval}ms`);
+  }
+
+  /**
+   * 停止上下文压缩检查循环
+   */
+  stopContextCompressionLoop(): void {
+    if (this.contextCompressionTimer) {
+      clearInterval(this.contextCompressionTimer);
+      this.contextCompressionTimer = null;
+      console.log('[ContextManager] 上下文压缩检查循环已停止');
+    }
+  }
+
+  /**
+   * 构建用于 AI 调用的精简上下文
+   * 这是蜂王发送给模型的实际上下文
+   */
+  buildCompactContextForAI(): string {
+    const ctx = this.buildHierarchicalContext();
+    const lines: string[] = [];
+
+    // 核心层（始终包含）
+    lines.push(ctx.core.blueprintSummary);
+    lines.push('');
+    lines.push(ctx.core.moduleBoundaries);
+    lines.push('');
+    lines.push(ctx.core.criticalNFRs);
+    lines.push('');
+    lines.push(ctx.core.queenResponsibilities);
+    lines.push('');
+
+    // 工作层（当前任务相关）
+    if (ctx.working.currentTasks) {
+      lines.push(ctx.working.currentTasks);
+      lines.push('');
+    }
+    if (ctx.working.activeWorkers) {
+      lines.push(ctx.working.activeWorkers);
+      lines.push('');
+    }
+    if (ctx.working.recentDependencyRequests) {
+      lines.push(ctx.working.recentDependencyRequests);
+      lines.push('');
+    }
+
+    // 历史层（摘要 + 最近条目）
+    if (ctx.history.decisionsSummary) {
+      lines.push('## 历史决策摘要');
+      lines.push(ctx.history.decisionsSummary.content);
+      lines.push('');
+    }
+    if (ctx.history.recentDecisions.length > 0) {
+      lines.push('## 最近决策');
+      for (const d of ctx.history.recentDecisions.slice(-5)) {
+        lines.push(`- [${d.type}] ${d.description}`);
+      }
+      lines.push('');
+    }
+
+    // 元信息
+    lines.push(`---`);
+    lines.push(`上下文 Token 估算: ${ctx.meta.estimatedTokens}`);
+    if (ctx.meta.lastCompressionAt) {
+      lines.push(`最后压缩: ${ctx.meta.lastCompressionAt.toISOString()}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * 获取分层上下文（用于调试和监控）
+   */
+  getHierarchicalContext(): HierarchicalContext | null {
+    return this.hierarchicalContext;
   }
 }
 

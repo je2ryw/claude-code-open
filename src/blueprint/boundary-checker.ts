@@ -151,6 +151,14 @@ export class BoundaryChecker {
       };
     }
 
+    // 项目配置文件不受模块边界限制（如 vitest.config.ts, tsconfig.json 等）
+    if (this.isProjectConfigFile(normalizedPath)) {
+      return {
+        allowed: true,
+        warnings: ['项目配置文件不受模块边界限制'],
+      };
+    }
+
     // 共享路径不受模块边界限制
     if (this.isSharedPath(normalizedPath)) {
       return {
@@ -159,11 +167,11 @@ export class BoundaryChecker {
       };
     }
 
-    // 检查是否在模块内
+    // 检查是否在模块内 - 跨模块修改改为警告而非硬错误
     if (!normalizedPath.includes(modulePath)) {
       return {
-        allowed: false,
-        reason: `文件 ${normalizedPath} 不在模块 ${taskModule.name} (${modulePath}) 范围内。如需跨模块修改，请向蜂王报告。`,
+        allowed: true,  // 允许跨模块修改，但记录警告
+        warnings: [`跨模块修改: 文件 ${normalizedPath} 不在模块 ${taskModule.name} (${modulePath}) 范围内`],
         moduleName: taskModule.name,
         modulePath,
       };
@@ -221,6 +229,45 @@ export class BoundaryChecker {
       /_spec\.[jt]sx?$/,
     ];
     return testPatterns.some(p => p.test(filePath));
+  }
+
+  /**
+   * 检查是否是项目配置文件（不受模块边界限制）
+   */
+  private isProjectConfigFile(filePath: string): boolean {
+    const configPatterns = [
+      // 测试框架配置
+      /vitest\.config\.[jt]s$/,
+      /vite\.config\.[jt]s$/,
+      /jest\.config\.[jt]s$/,
+      /jest\.config\.json$/,
+      /karma\.conf\.[jt]s$/,
+      /cypress\.config\.[jt]s$/,
+      /playwright\.config\.[jt]s$/,
+      // TypeScript 配置
+      /tsconfig\.json$/,
+      /tsconfig\..+\.json$/,
+      // 包管理配置
+      /package\.json$/,
+      /package-lock\.json$/,
+      /yarn\.lock$/,
+      /pnpm-lock\.yaml$/,
+      // 构建配置
+      /webpack\.config\.[jt]s$/,
+      /rollup\.config\.[jt]s$/,
+      /esbuild\.config\.[jt]s$/,
+      // 代码质量配置
+      /\.eslintrc(\.[jt]s|\.json|\.ya?ml)?$/,
+      /\.prettierrc(\.[jt]s|\.json|\.ya?ml)?$/,
+      /\.stylelintrc(\.[jt]s|\.json|\.ya?ml)?$/,
+      // 环境配置
+      /\.env(\..+)?$/,
+      // 其他配置
+      /\.editorconfig$/,
+      /\.gitignore$/,
+      /\.npmrc$/,
+    ];
+    return configPatterns.some(p => p.test(filePath));
   }
 
   /**

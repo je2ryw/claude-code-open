@@ -279,6 +279,9 @@ export interface TaskNode {
   priority: number;            // 优先级（越大越高）
   depth: number;               // 在树中的深度（根节点为 0）
 
+  // 任务类型（新增：用于区分项目初始化等特殊任务）
+  taskType?: TaskType;
+
   // 状态
   status: TaskStatus;
 
@@ -449,6 +452,7 @@ export interface FileChange {
 
 /**
  * 主 Agent（蜂王）
+ * 升级为"项目管理者"角色：除了任务调度，还负责项目上下文管理
  */
 export interface QueenAgent {
   id: string;
@@ -456,13 +460,16 @@ export interface QueenAgent {
   taskTreeId: string;
 
   // 状态
-  status: 'idle' | 'planning' | 'coordinating' | 'reviewing' | 'paused';
+  status: 'idle' | 'planning' | 'coordinating' | 'reviewing' | 'paused' | 'initializing';
 
   // 管理的子 Agent
   workerAgents: WorkerAgent[];
 
   // 全局视野
   globalContext: string;       // 汇总的上下文信息
+
+  // 项目上下文（新增：蜂王作为项目管理者维护的全局项目信息）
+  projectContext?: ProjectContext;
 
   // 决策历史
   decisions: AgentDecision[];
@@ -504,7 +511,7 @@ export interface TDDCycleState {
 export interface AgentDecision {
   id: string;
   timestamp: Date;
-  type: 'task_assignment' | 'retry' | 'escalate' | 'modify_plan' | 'checkpoint' | 'rollback';
+  type: 'task_assignment' | 'retry' | 'escalate' | 'modify_plan' | 'checkpoint' | 'rollback' | 'skip';
   description: string;
   reasoning: string;
   result?: string;
@@ -521,6 +528,375 @@ export interface AgentAction {
   input?: any;
   output?: any;
   duration: number;
+}
+
+// ============================================================================
+// 项目上下文管理相关类型（蜂王项目管理能力）
+// ============================================================================
+
+/**
+ * 项目语言/生态类型
+ */
+export type ProjectLanguage = 'javascript' | 'typescript' | 'python' | 'go' | 'rust' | 'java' | 'unknown';
+
+/**
+ * 包管理器类型（支持多语言生态）
+ */
+export type PackageManagerType =
+  // JavaScript/TypeScript
+  | 'npm' | 'yarn' | 'pnpm' | 'bun'
+  // Python
+  | 'pip' | 'poetry' | 'pipenv' | 'conda' | 'uv'
+  // Go
+  | 'go_mod'
+  // Rust
+  | 'cargo'
+  // Java
+  | 'maven' | 'gradle';
+
+/**
+ * 测试框架类型（支持多语言）
+ */
+export type TestFrameworkType =
+  // JavaScript/TypeScript
+  | 'vitest' | 'jest' | 'mocha'
+  // Python
+  | 'pytest' | 'unittest'
+  // Go
+  | 'go_test'
+  // Rust
+  | 'cargo_test'
+  // Java
+  | 'junit' | 'testng';
+
+/**
+ * 项目上下文
+ * Queen 作为"项目经理"维护的全局项目信息
+ * 解决的核心问题：Worker 只关注自己的任务，缺乏"项目感知"
+ */
+export interface ProjectContext {
+  /** 项目路径 */
+  projectPath: string;
+
+  /** 项目是否已初始化 */
+  initialized: boolean;
+
+  /** 初始化时间 */
+  initializedAt?: Date;
+
+  /** 项目语言/生态（新增：支持多语言项目） */
+  language: ProjectLanguage;
+
+  /** 包管理器类型（扩展：支持多语言） */
+  packageManager: PackageManagerType;
+
+  /** 项目依赖 */
+  dependencies: ProjectDependency[];
+
+  /** 开发依赖 */
+  devDependencies: ProjectDependency[];
+
+  /** 共享资源文件 */
+  sharedResources: SharedResource[];
+
+  /** 项目配置 */
+  projectConfig: ProjectConfig;
+
+  /** 技术栈规范 */
+  techStackConventions: TechStackConvention[];
+
+  /** 待处理的依赖请求 */
+  pendingDependencyRequests: DependencyRequest[];
+}
+
+/**
+ * 项目依赖
+ */
+export interface ProjectDependency {
+  /** 包名 */
+  name: string;
+  /** 版本 */
+  version: string;
+  /** 请求来源（哪个 Worker/任务请求的） */
+  requestedBy?: string;
+  /** 请求时间 */
+  requestedAt?: Date;
+  /** 是否已安装 */
+  installed: boolean;
+}
+
+/**
+ * 共享资源
+ * 不属于任何模块但被多个模块使用的文件
+ */
+export interface SharedResource {
+  /** 资源 ID */
+  id: string;
+  /** 文件路径 */
+  filePath: string;
+  /** 资源类型 */
+  type: 'type' | 'util' | 'constant' | 'config' | 'component';
+  /** 描述 */
+  description: string;
+  /** 创建者（Worker ID） */
+  createdBy?: string;
+  /** 创建时间 */
+  createdAt: Date;
+  /** 被依赖的模块 */
+  usedByModules: string[];
+}
+
+/**
+ * 项目配置信息
+ * Queen 分析项目后提取的配置（支持多语言）
+ */
+export interface ProjectConfig {
+  /** 项目名称 */
+  name?: string;
+  /** 项目描述 */
+  description?: string;
+  /** 主入口文件 */
+  main?: string;
+  /** 类型入口（TypeScript/Python stubs） */
+  types?: string;
+  /** 脚本命令 */
+  scripts: Record<string, string>;
+  /** TypeScript 配置路径 */
+  tsConfigPath?: string;
+  /** Python 虚拟环境路径 */
+  pythonVenvPath?: string;
+  /** 测试框架（扩展支持多语言） */
+  testFramework?: TestFrameworkType;
+  /** 测试命令 */
+  testCommand?: string;
+  /** 构建命令 */
+  buildCommand?: string;
+  /** 格式化命令 */
+  formatCommand?: string;
+  /** 检查命令（lint） */
+  lintCommand?: string;
+}
+
+/**
+ * 技术栈规范
+ * 项目级别的代码规范，所有 Worker 必须遵守
+ */
+export interface TechStackConvention {
+  /** 规范类别 */
+  category: 'naming' | 'structure' | 'import' | 'testing' | 'error_handling' | 'other';
+  /** 规范名称 */
+  name: string;
+  /** 规范描述 */
+  description: string;
+  /** 示例代码 */
+  example?: string;
+  /** 是否强制 */
+  enforced: boolean;
+}
+
+/**
+ * 依赖请求
+ * Worker 向 Queen 请求添加新依赖
+ */
+export interface DependencyRequest {
+  /** 请求 ID */
+  id: string;
+  /** 请求的 Worker ID */
+  workerId: string;
+  /** 请求的任务 ID */
+  taskId: string;
+  /** 包名 */
+  packageName: string;
+  /** 期望版本（可选） */
+  version?: string;
+  /** 请求原因 */
+  reason: string;
+  /** 是否是开发依赖 */
+  isDev: boolean;
+  /** 请求状态 */
+  status: 'pending' | 'approved' | 'rejected' | 'installed';
+  /** 请求时间 */
+  requestedAt: Date;
+  /** 处理时间 */
+  processedAt?: Date;
+  /** 拒绝原因（如果被拒绝） */
+  rejectionReason?: string;
+}
+
+/**
+ * 项目初始化结果
+ */
+export interface ProjectInitResult {
+  /** 是否成功 */
+  success: boolean;
+  /** 错误信息 */
+  error?: string;
+  /** 创建的文件列表 */
+  createdFiles: string[];
+  /** 安装的依赖 */
+  installedDependencies: string[];
+  /** 项目配置 */
+  projectConfig: ProjectConfig;
+}
+
+/**
+ * 任务类型（扩展：添加项目初始化类型）
+ */
+export type TaskType =
+  | 'project_init'     // 项目初始化（创建 package.json 等）
+  | 'module_impl'      // 模块实现
+  | 'feature'          // 功能实现
+  | 'bugfix'           // Bug 修复
+  | 'refactor'         // 重构
+  | 'test'             // 测试
+  | 'docs';            // 文档
+
+// ============================================================================
+// 蜂王上下文管理相关类型
+// ============================================================================
+
+/**
+ * 上下文管理配置
+ * 控制蜂王的上下文窗口大小和压缩策略
+ */
+export interface ContextManagementConfig {
+  /** 最大上下文 Token 数（触发压缩的阈值） */
+  maxContextTokens: number;
+
+  /** 压缩后目标 Token 数 */
+  targetContextTokens: number;
+
+  /** 保留的最近决策数量 */
+  recentDecisionsCount: number;
+
+  /** 保留的最近时间线事件数量 */
+  recentTimelineCount: number;
+
+  /** 保留的最近 Worker 输出数量（每个 Worker） */
+  recentWorkerOutputsCount: number;
+
+  /** 摘要压缩比例（旧内容压缩为多少比例） */
+  summaryCompressionRatio: number;
+
+  /** 是否启用自动压缩 */
+  autoCompression: boolean;
+
+  /** 压缩检查间隔（毫秒） */
+  compressionCheckInterval: number;
+}
+
+/**
+ * 上下文摘要
+ * 将旧的详细信息压缩为摘要
+ */
+export interface ContextSummary {
+  /** 摘要 ID */
+  id: string;
+
+  /** 摘要类型 */
+  type: 'decisions' | 'timeline' | 'worker_outputs' | 'full';
+
+  /** 覆盖的时间范围 */
+  timeRange: {
+    start: Date;
+    end: Date;
+  };
+
+  /** 摘要内容 */
+  content: string;
+
+  /** 原始条目数量 */
+  originalCount: number;
+
+  /** 压缩后的估算 Token 数 */
+  tokenCount: number;
+
+  /** 创建时间 */
+  createdAt: Date;
+}
+
+/**
+ * 分层上下文结构
+ * 核心信息常驻，详细信息按需加载/压缩
+ */
+export interface HierarchicalContext {
+  /** 核心层：始终保留的关键信息 */
+  core: {
+    /** 蓝图基本信息 */
+    blueprintSummary: string;
+    /** 模块边界（精简版） */
+    moduleBoundaries: string;
+    /** NFR 要求（Must 级别） */
+    criticalNFRs: string;
+    /** 蜂王职责 */
+    queenResponsibilities: string;
+  };
+
+  /** 工作层：当前任务相关的详细信息 */
+  working: {
+    /** 当前任务详情 */
+    currentTasks: string;
+    /** 活跃 Worker 状态 */
+    activeWorkers: string;
+    /** 最近的依赖请求 */
+    recentDependencyRequests: string;
+  };
+
+  /** 历史层：压缩的历史信息 */
+  history: {
+    /** 决策摘要 */
+    decisionsSummary: ContextSummary | null;
+    /** 最近的决策（未压缩） */
+    recentDecisions: AgentDecision[];
+    /** 时间线摘要 */
+    timelineSummary: ContextSummary | null;
+    /** 最近的时间线（未压缩） */
+    recentTimeline: TimelineEvent[];
+  };
+
+  /** 元信息 */
+  meta: {
+    /** 总估算 Token 数 */
+    estimatedTokens: number;
+    /** 最后压缩时间 */
+    lastCompressionAt: Date | null;
+    /** 压缩次数 */
+    compressionCount: number;
+  };
+}
+
+/**
+ * 上下文压缩结果
+ */
+export interface ContextCompressionResult {
+  /** 是否执行了压缩 */
+  compressed: boolean;
+  /** 压缩前 Token 数 */
+  beforeTokens: number;
+  /** 压缩后 Token 数 */
+  afterTokens: number;
+  /** 压缩的内容类型 */
+  compressedTypes: ('decisions' | 'timeline' | 'worker_outputs')[];
+  /** 生成的摘要 */
+  summaries: ContextSummary[];
+}
+
+/**
+ * 上下文健康状态
+ */
+export interface ContextHealthStatus {
+  /** 健康等级 */
+  level: 'healthy' | 'warning' | 'critical';
+  /** 当前 Token 使用率 */
+  tokenUsagePercent: number;
+  /** 当前估算 Token 数 */
+  currentTokens: number;
+  /** 最大 Token 数 */
+  maxTokens: number;
+  /** 建议操作 */
+  recommendation: string | null;
+  /** 下次压缩预估时间 */
+  nextCompressionEstimate: Date | null;
 }
 
 // ============================================================================

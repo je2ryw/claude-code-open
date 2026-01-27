@@ -1070,17 +1070,7 @@ export const coordinatorApi = {
   },
 
   /**
-   * 启动主循环
-   */
-  start: async (): Promise<void> => {
-    const response = await fetch('/api/blueprint/coordinator/start', {
-      method: 'POST',
-    });
-    await handleResponse(response);
-  },
-
-  /**
-   * 停止主循环
+   * 停止/暂停主循环
    */
   stop: async (): Promise<void> => {
     const response = await fetch('/api/blueprint/coordinator/stop', {
@@ -1090,20 +1080,11 @@ export const coordinatorApi = {
   },
 
   /**
-   * 暂停主循环（与 stop 相同，但语义上表示暂停）
+   * 启动/恢复主循环
+   * 会自动初始化Queen（如果需要）并重置中断和失败的任务
+   * @param blueprintId 蓝图 ID
    */
-  pause: async (): Promise<void> => {
-    const response = await fetch('/api/blueprint/coordinator/stop', {
-      method: 'POST',
-    });
-    await handleResponse(response);
-  },
-
-  /**
-   * 恢复主循环
-   * @param blueprintId 蓝图 ID，用于在蜂王未初始化时重新初始化
-   */
-  resume: async (blueprintId?: string): Promise<void> => {
+  resume: async (blueprintId: string): Promise<void> => {
     const response = await fetch('/api/blueprint/coordinator/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1769,6 +1750,9 @@ export interface TDDLoopState {
   hasAcceptanceTests: boolean;
   acceptanceTests: AcceptanceTest[];
   acceptanceTestResults: Map<string, TestResult>;
+  // 重复错误检测相关字段
+  consecutiveSameErrorCount?: number;
+  lastErrorSignature?: string;
 }
 
 /**
@@ -1846,6 +1830,70 @@ export const tddApi = {
    */
   revertPhase: async (taskId: string): Promise<TDDLoopState> => {
     const response = await fetch(`/api/blueprint/tdd/${taskId}/revert-phase`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 检查 TDD 循环与任务树的状态一致性
+   */
+  checkConsistency: async (): Promise<{
+    total: number;
+    consistent: number;
+    inconsistent: number;
+    details: Array<{
+      taskId: string;
+      treeId: string;
+      tddPhase: TDDPhase;
+      expectedTaskStatus: string;
+      actualTaskStatus: string | null;
+      isConsistent: boolean;
+    }>;
+  }> => {
+    const response = await fetch('/api/blueprint/tdd/consistency-check');
+    return handleResponse(response);
+  },
+
+  /**
+   * 同步单个任务的 TDD 状态到任务树
+   */
+  syncState: async (taskId: string): Promise<{
+    success: boolean;
+    message: string;
+    tddPhase?: TDDPhase;
+    taskStatus?: string;
+  }> => {
+    const response = await fetch(`/api/blueprint/tdd/${taskId}/sync`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 批量同步所有不一致的状态
+   */
+  syncAllStates: async (): Promise<{
+    total: number;
+    synced: number;
+    failed: number;
+    details: Array<{ taskId: string; success: boolean; message: string }>;
+  }> => {
+    const response = await fetch('/api/blueprint/tdd/sync-all', {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 清理孤立的 TDD 循环
+   * 孤立循环：TDD 循环存在但没有对应的 Worker 在执行
+   */
+  cleanupOrphaned: async (): Promise<{
+    removedCount: number;
+    removedTasks: string[];
+  }> => {
+    const response = await fetch('/api/blueprint/tdd/cleanup-orphaned', {
       method: 'POST',
     });
     return handleResponse(response);

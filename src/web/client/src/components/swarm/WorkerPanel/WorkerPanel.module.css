@@ -209,6 +209,12 @@
   gap: 4px;
 }
 
+.noTask {
+  color: #666;
+  font-style: italic;
+  font-weight: 400;
+}
+
 /* TDD 阶段指示器 */
 .tddPhases {
   padding: 12px;
