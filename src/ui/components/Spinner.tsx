@@ -58,6 +58,12 @@ export interface SpinnerProps {
   dimLabel?: boolean;
   /** v2.1.0 改进：等待首个 token 的特殊状态 */
   waitingForFirstToken?: boolean;
+  /** v2.1.20 新增：thinking 状态的 shimmer 动画效果 */
+  shimmer?: boolean;
+  /** shimmer 的主色调 */
+  shimmerColor?: string;
+  /** shimmer 的高亮色调 */
+  shimmerHighlightColor?: string;
 }
 
 export const Spinner: React.FC<SpinnerProps> = React.memo(({
@@ -70,11 +76,16 @@ export const Spinner: React.FC<SpinnerProps> = React.memo(({
   startTime = Date.now(),
   dimLabel = false,
   waitingForFirstToken = false,
+  shimmer = false,
+  shimmerColor = 'cyan',
+  shimmerHighlightColor = 'white',
 }) => {
   const [frame, setFrame] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   // v2.1.0 改进：等待首个 token 时使用脉冲效果
   const [pulsePhase, setPulsePhase] = useState(0);
+  // v2.1.20 新增：shimmer 动画相位
+  const [shimmerPhase, setShimmerPhase] = useState(0);
 
   const frames = SPINNER_TYPES[type] || SPINNER_TYPES.dots;
   const displayColor = color || STATUS_COLORS[status];
@@ -112,6 +123,17 @@ export const Spinner: React.FC<SpinnerProps> = React.memo(({
     return () => clearInterval(timer);
   }, [waitingForFirstToken]);
 
+  // v2.1.20 新增：shimmer 动画效果
+  useEffect(() => {
+    if (!shimmer || status !== 'loading') return;
+
+    const timer = setInterval(() => {
+      setShimmerPhase((prev) => (prev + 1) % 20);
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [shimmer, status]);
+
   const formatElapsed = (ms: number): string => {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -135,12 +157,51 @@ export const Spinner: React.FC<SpinnerProps> = React.memo(({
     ? `Waiting for response${'.'.repeat(pulsePhase + 1)}`
     : label;
 
+  // v2.1.20 新增：计算 shimmer 效果的颜色
+  const getShimmerTextColor = (): string => {
+    if (!shimmer || status !== 'loading') return displayColor;
+    // 使用正弦波创建平滑的闪烁效果
+    const intensity = Math.sin(shimmerPhase * Math.PI / 10);
+    return intensity > 0.5 ? shimmerHighlightColor : shimmerColor;
+  };
+
+  // v2.1.20 新增：渲染带 shimmer 效果的标签
+  const renderShimmerLabel = () => {
+    if (!shimmer || !waitingLabel) {
+      return waitingLabel ? (
+        <Text dimColor={dimLabel || waitingForFirstToken}> {waitingLabel}</Text>
+      ) : null;
+    }
+
+    // 创建字符级别的 shimmer 效果
+    const chars = waitingLabel.split('');
+    const shimmerWidth = 5; // shimmer 高亮宽度
+    const shimmerPos = shimmerPhase % (chars.length + shimmerWidth);
+
+    return (
+      <Text>
+        {' '}
+        {chars.map((char, i) => {
+          const distanceFromShimmer = Math.abs(i - shimmerPos);
+          const isHighlighted = distanceFromShimmer < shimmerWidth / 2;
+          return (
+            <Text
+              key={i}
+              color={isHighlighted ? shimmerHighlightColor : shimmerColor}
+              dimColor={!isHighlighted}
+            >
+              {char}
+            </Text>
+          );
+        })}
+      </Text>
+    );
+  };
+
   return (
     <Box>
-      <Text color={displayColor}>{icon}</Text>
-      {waitingLabel && (
-        <Text dimColor={dimLabel || waitingForFirstToken}> {waitingLabel}</Text>
-      )}
+      <Text color={shimmer ? getShimmerTextColor() : displayColor}>{icon}</Text>
+      {renderShimmerLabel()}
       {progress !== undefined && (
         <Text dimColor> ({Math.round(progress)}%)</Text>
       )}

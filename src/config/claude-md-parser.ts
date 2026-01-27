@@ -60,6 +60,8 @@ export interface ClaudeMdInfo {
   includedPaths?: string[];
   /** 跳过的二进制文件 (v2.1.2+) */
   skippedBinaryFiles?: string[];
+  /** 额外目录的 CLAUDE.md 文件 (v2.1.20+) */
+  additionalClaudeMdPaths?: string[];
 }
 
 export class ClaudeMdParser {
@@ -67,10 +69,61 @@ export class ClaudeMdParser {
   private workingDir: string;
   private watcher?: fs.FSWatcher;
   private changeCallbacks: Array<(content: string) => void> = [];
+  /** 额外目录列表 (v2.1.20+) */
+  private additionalDirectories: string[] = [];
 
-  constructor(workingDir?: string) {
+  constructor(workingDir?: string, additionalDirectories?: string[]) {
     this.workingDir = workingDir || process.cwd();
     this.claudeMdPath = path.join(this.workingDir, 'CLAUDE.md');
+    this.additionalDirectories = additionalDirectories || [];
+  }
+
+  /**
+   * 设置额外目录 (v2.1.20+)
+   *
+   * 用于从 --add-dir 参数加载额外目录
+   * 需要设置 CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 才能生效
+   */
+  setAdditionalDirectories(directories: string[]): void {
+    this.additionalDirectories = directories;
+  }
+
+  /**
+   * 检查是否启用额外目录 CLAUDE.md 加载 (v2.1.20+)
+   */
+  private isAdditionalClaudeMdEnabled(): boolean {
+    const envValue = process.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD;
+    return envValue === '1' || envValue === 'true';
+  }
+
+  /**
+   * 从额外目录加载 CLAUDE.md 文件 (v2.1.20+)
+   */
+  private loadAdditionalClaudeMdFiles(): { content: string; paths: string[] } {
+    if (!this.isAdditionalClaudeMdEnabled() || this.additionalDirectories.length === 0) {
+      return { content: '', paths: [] };
+    }
+
+    const loadedPaths: string[] = [];
+    let combinedContent = '';
+
+    for (const dir of this.additionalDirectories) {
+      const claudeMdPath = path.join(dir, 'CLAUDE.md');
+
+      if (fs.existsSync(claudeMdPath) && fs.statSync(claudeMdPath).isFile()) {
+        try {
+          const content = fs.readFileSync(claudeMdPath, 'utf-8');
+          if (content.trim()) {
+            loadedPaths.push(claudeMdPath);
+            combinedContent += `\n\n<!-- CLAUDE.md from ${claudeMdPath} -->\n${content}`;
+          }
+        } catch (error) {
+          console.warn(`[CLAUDE.md] Failed to read additional file: ${claudeMdPath}`, error);
+        }
+      }
+    }
+
+    return { content: combinedContent, paths: loadedPaths };
   }
 
   /**
@@ -240,7 +293,19 @@ export class ClaudeMdParser {
    * v2.1.2+: 支持 @include 指令和二进制文件过滤
    */
   parse(): ClaudeMdInfo {
+    // v2.1.20+: 加载额外目录的 CLAUDE.md 文件
+    const { content: additionalContent, paths: additionalPaths } = this.loadAdditionalClaudeMdFiles();
+
     if (!fs.existsSync(this.claudeMdPath)) {
+      // 即使主目录没有 CLAUDE.md，也可能有额外目录的
+      if (additionalContent) {
+        return {
+          content: additionalContent,
+          path: this.claudeMdPath,
+          exists: false,
+          additionalClaudeMdPaths: additionalPaths.length > 0 ? additionalPaths : undefined,
+        };
+      }
       return {
         content: '',
         path: this.claudeMdPath,
@@ -256,20 +321,27 @@ export class ClaudeMdParser {
       const { content: processedContent, includedPaths, skippedBinaryFiles } =
         this.processIncludes(content);
 
+      // v2.1.20+: 合并额外目录的 CLAUDE.md 内容
+      const finalContent = additionalContent
+        ? processedContent + additionalContent
+        : processedContent;
+
       return {
-        content: processedContent,
+        content: finalContent,
         path: this.claudeMdPath,
         exists: true,
         lastModified: stats.mtime,
         includedPaths: includedPaths.length > 0 ? includedPaths : undefined,
         skippedBinaryFiles: skippedBinaryFiles.length > 0 ? skippedBinaryFiles : undefined,
+        additionalClaudeMdPaths: additionalPaths.length > 0 ? additionalPaths : undefined,
       };
     } catch (error) {
       console.warn(`读取 CLAUDE.md 失败: ${error}`);
       return {
-        content: '',
+        content: additionalContent || '',
         path: this.claudeMdPath,
         exists: false,
+        additionalClaudeMdPaths: additionalPaths.length > 0 ? additionalPaths : undefined,
       };
     }
   }
