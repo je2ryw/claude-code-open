@@ -554,6 +554,47 @@ export const Input: React.FC<InputProps> = ({
           return;
         }
 
+        // 箭头键历史导航 (官方 2.1.20)
+        // 当光标无法继续移动时，使用箭头键进行历史导航
+        if (key.upArrow && !showCompletionList) {
+          // 上箭头：当光标在行首或无法向上时，进行历史向上导航
+          if (cursor === 0 || !value.includes('\n')) {
+            if (history.length > 0 && historyIndex < history.length - 1) {
+              const newIndex = historyIndex + 1;
+              setHistoryIndex(newIndex);
+              setValue(history[newIndex]);
+              setCursor(Math.min(cursor, history[newIndex].length));
+            }
+            return;
+          }
+        }
+        if (key.downArrow && !showCompletionList) {
+          // 下箭头：当光标在行尾或无法向下时，进行历史向下导航
+          if (cursor >= value.length - 1 || !value.includes('\n')) {
+            if (historyIndex > 0) {
+              const newIndex = historyIndex - 1;
+              setHistoryIndex(newIndex);
+              setValue(history[newIndex]);
+              setCursor(Math.min(cursor, history[newIndex].length));
+            } else if (historyIndex === 0) {
+              setHistoryIndex(-1);
+              setValue('');
+              setCursor(0);
+            }
+            return;
+          }
+        }
+        if (key.leftArrow) {
+          // 左箭头：移动光标，同 h 键
+          setCursor(prev => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.rightArrow) {
+          // 右箭头：移动光标，同 l 键
+          setCursor(prev => Math.min(value.length - 1, prev + 1));
+          return;
+        }
+
         // 处理多键命令（如 dd, yy, diw, ci", 等）
         if (pendingCommand === 'd') {
           if (input === 'd') {

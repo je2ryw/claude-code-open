@@ -28,6 +28,7 @@ const SHORTCUTS: Shortcut[] = [
   { key: 'Enter', description: 'Submit message', category: 'Input' },
   { key: '↑/↓', description: 'Navigate history', category: 'Input' },
   { key: 'Tab', description: 'Autocomplete command', category: 'Input' },
+  { key: 'Ctrl+G', description: 'Open in external editor', category: 'Input' },
 
   // 模型
   { key: 'Alt+P', description: 'Switch model (opus → sonnet → haiku)', category: 'Model' },

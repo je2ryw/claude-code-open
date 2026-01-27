@@ -8,6 +8,21 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
+/**
+ * PR 审核状态类型
+ * 官方 2.1.20 新增
+ */
+export type PRReviewState = 'approved' | 'changes_requested' | 'pending' | 'draft' | null;
+
+/**
+ * PR 状态信息
+ */
+export interface PRStatusInfo {
+  number: number | null;
+  url: string | null;
+  reviewState: PRReviewState;
+}
+
 interface StatusBarProps {
   // 基础信息
   messageCount: number;
@@ -39,6 +54,9 @@ interface StatusBarProps {
 
   // 工作目录
   cwd?: string;
+
+  // PR 审核状态 (官方 2.1.20 新增)
+  prStatus?: PRStatusInfo;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -59,6 +77,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   permissionMode,
   gitBranch,
   cwd,
+  prStatus,
 }) => {
   // 格式化时长
   const formatDuration = (ms: number): string => {
@@ -129,6 +148,22 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   };
 
   const networkIndicator = getNetworkIndicator();
+
+  // 获取 PR 审核状态颜色 (官方 2.1.20)
+  const getPRStatusColor = (state: PRReviewState): string => {
+    switch (state) {
+      case 'approved':
+        return 'green';
+      case 'changes_requested':
+        return 'red';
+      case 'pending':
+        return 'yellow';
+      case 'draft':
+        return 'gray';
+      default:
+        return 'gray';
+    }
+  };
 
   return (
     <Box flexDirection="column">
@@ -219,12 +254,20 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       </Box>
 
       {/* 第二行：环境信息（可选） */}
-      {(gitBranch || cwd) && (
+      {(gitBranch || cwd || prStatus?.reviewState) && (
         <Box paddingX={1} gap={2}>
           {/* Git 分支 */}
           {gitBranch && (
             <Text color="gray">
               <Text color="blue">⎇</Text> {gitBranch}
+            </Text>
+          )}
+
+          {/* PR 审核状态 (官方 2.1.20) */}
+          {prStatus?.reviewState && (
+            <Text color="gray">
+              <Text color={getPRStatusColor(prStatus.reviewState)}>●</Text>
+              {' PR #'}{prStatus.number}
             </Text>
           )}
 

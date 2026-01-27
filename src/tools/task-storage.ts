@@ -18,8 +18,9 @@ import { homedir } from 'os';
 
 /**
  * Task v2 状态
+ * 官方 2.1.20 新增 'deleted' 状态
  */
-export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted';
 
 /**
  * Task v2 数据结构（官方 Sm3 schema）
@@ -221,7 +222,7 @@ function validateTask(data: unknown): TaskV2 | null {
   if (typeof task.id !== 'string') return null;
   if (typeof task.subject !== 'string') return null;
   if (typeof task.description !== 'string') return null;
-  if (!['pending', 'in_progress', 'completed'].includes(task.status as string)) return null;
+  if (!['pending', 'in_progress', 'completed', 'deleted'].includes(task.status as string)) return null;
   if (!Array.isArray(task.blocks)) return null;
   if (!Array.isArray(task.blockedBy)) return null;
 
@@ -451,5 +452,6 @@ export function isTasksEnabled(): boolean {
 
 /**
  * 有效的状态列表
+ * 官方 2.1.20 新增 'deleted' 状态，用于删除任务
  */
-export const VALID_STATUSES: TaskStatus[] = ['pending', 'in_progress', 'completed'];
+export const VALID_STATUSES: TaskStatus[] = ['pending', 'in_progress', 'completed', 'deleted'];
