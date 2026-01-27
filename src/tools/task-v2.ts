@@ -227,7 +227,7 @@ Can update:
 - subject: New title
 - description: New description
 - activeForm: New spinner text
-- status: New status (pending/in_progress/completed)
+- status: New status (pending/in_progress/completed/deleted)
 - addBlocks: Task IDs that this task blocks (dependency tracking)
 - addBlockedBy: Task IDs that block this task (dependency tracking)
 - owner: Assign task to an owner (for multi-agent scenarios)
@@ -235,13 +235,16 @@ Can update:
 
 Dependency tracking:
 - addBlocks: "This task must complete before tasks X, Y, Z can start"
-- addBlockedBy: "This task cannot start until tasks A, B, C complete"`;
+- addBlockedBy: "This task cannot start until tasks A, B, C complete"
+
+To delete a task, set status to "deleted".`;
 
 const TASK_UPDATE_PROMPT = `Use TaskUpdate to:
 
 1. Change task status as you work:
    - Start work: status="in_progress"
    - Finish work: status="completed"
+   - Delete task: status="deleted"
 
 2. Add dependencies:
    - TaskUpdate taskId="2" addBlockedBy=["1"] → Task 2 waits for task 1
@@ -249,7 +252,10 @@ const TASK_UPDATE_PROMPT = `Use TaskUpdate to:
 
 3. Update task details:
    - Refine description as you learn more
-   - Update activeForm for better progress display`;
+   - Update activeForm for better progress display
+
+4. Delete a task:
+   - TaskUpdate taskId="1" status="deleted" → Marks task 1 as deleted`;
 
 export class TaskUpdateTool extends BaseTool<TaskUpdateInput, ToolResult> {
   name = 'TaskUpdate';
@@ -277,8 +283,8 @@ export class TaskUpdateTool extends BaseTool<TaskUpdateInput, ToolResult> {
         },
         status: {
           type: 'string',
-          enum: ['pending', 'in_progress', 'completed'],
-          description: 'New status for the task',
+          enum: ['pending', 'in_progress', 'completed', 'deleted'],
+          description: 'New status for the task. Set to "deleted" to delete the task.',
         },
         addBlocks: {
           type: 'array',
