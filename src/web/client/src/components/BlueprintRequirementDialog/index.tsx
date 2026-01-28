@@ -131,17 +131,67 @@ export function BlueprintRequirementDialog({
     }
   }, [visible, loading, dialogState?.phase]);
 
-  // 启动对话
+  // 映射后端 phase 到前端 phase
+  const mapPhase = (backendPhase: string): DialogPhase => {
+    const phaseMap: Record<string, DialogPhase> = {
+      'greeting': 'welcome',
+      'requirements': 'project_background',
+      'clarification': 'business_process',
+      'tech_choice': 'system_module',
+      'confirmation': 'summary',
+      'done': 'complete',
+    };
+    return phaseMap[backendPhase] || 'welcome';
+  };
+
+  // 从后端数据构建前端 DialogState
+  const buildDialogState = (
+    sessionId: string,
+    phase: DialogPhase,
+    apiData: {
+      collectedRequirements?: string[];
+      collectedConstraints?: string[];
+      techStack?: Record<string, unknown>;
+      projectPath?: string;
+    },
+    prevState?: DialogState | null
+  ): DialogState => {
+    const requirements = apiData.collectedRequirements || [];
+    const constraints = apiData.collectedConstraints || [];
+
+    // 从 collectedRequirements 提取项目名称和描述
+    // 第一条通常是项目目标，后续是功能点
+    const projectName = prevState?.projectName ||
+      (apiData.projectPath ? apiData.projectPath.split(/[/\\]/).pop() || '新项目' : '新项目');
+    const projectDescription = requirements.length > 0 ? requirements[0] : prevState?.projectDescription || '';
+
+    // 将剩余的需求作为要解决的问题
+    const problemsToSolve = requirements.slice(1);
+
+    return {
+      id: sessionId,
+      phase,
+      projectName,
+      projectDescription,
+      targetUsers: prevState?.targetUsers || [],
+      problemsToSolve,
+      businessProcesses: prevState?.businessProcesses || [],
+      modules: prevState?.modules || [],
+      nfrs: prevState?.nfrs || [],
+    };
+  };
+
+  // 启动对话（使用新的 dialog API）
   const startDialog = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const res = await fetch('/api/blueprint/requirement/start', {
+      const res = await fetch('/api/blueprint/dialog/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectPath: currentProjectPath, // 传递当前项目路径
+          projectPath: currentProjectPath,
         }),
       });
 
@@ -151,19 +201,42 @@ export function BlueprintRequirementDialog({
         throw new Error(data.error || '启动对话失败');
       }
 
-      setSessionId(data.sessionId);
-      setDialogState(data.dialogState);
-      setProgress(data.progress);
+      setSessionId(data.data.sessionId);
+
+      const mappedPhase = mapPhase(data.data.phase);
+
+      // 使用 buildDialogState 构建完整的 dialogState
+      const newDialogState = buildDialogState(
+        data.data.sessionId,
+        mappedPhase,
+        {
+          collectedRequirements: data.data.collectedRequirements,
+          collectedConstraints: data.data.collectedConstraints,
+          techStack: data.data.techStack,
+          projectPath: data.data.projectPath,
+        }
+      );
+      setDialogState(newDialogState);
+
+      // 计算进度
+      const phaseOrder = ['welcome', 'project_background', 'business_process', 'system_module', 'nfr', 'summary', 'complete'];
+      const currentIndex = phaseOrder.indexOf(mappedPhase) + 1;
+      setProgress({
+        current: currentIndex,
+        total: 7,
+        label: getPhaseLabel(mappedPhase),
+      });
 
       // 添加欢迎消息
-      if (data.message) {
+      if (data.data.messages && data.data.messages.length > 0) {
+        const welcomeMsg = data.data.messages[data.data.messages.length - 1];
         setMessages([
           {
             id: `welcome-${Date.now()}`,
             role: 'assistant',
-            content: data.message,
+            content: welcomeMsg.content,
             timestamp: new Date().toISOString(),
-            phase: 'welcome',
+            phase: mappedPhase,
           },
         ]);
       }
@@ -174,6 +247,20 @@ export function BlueprintRequirementDialog({
     }
   }, [currentProjectPath]);
 
+  // 获取阶段标签
+  const getPhaseLabel = (phase: DialogPhase): string => {
+    const labels: Record<DialogPhase, string> = {
+      'welcome': '欢迎',
+      'project_background': '背景',
+      'business_process': '流程',
+      'system_module': '模块',
+      'nfr': '要求',
+      'summary': '汇总',
+      'complete': '完成',
+    };
+    return labels[phase] || '对话';
+  };
+
   // 组件挂载时启动对话
   useEffect(() => {
     if (visible && !sessionId) {
@@ -181,7 +268,7 @@ export function BlueprintRequirementDialog({
     }
   }, [visible, sessionId, startDialog]);
 
-  // 发送消息
+  // 发送消息（使用新的 dialog API）
   const sendMessage = useCallback(async () => {
     if (!sessionId || !inputValue.trim() || loading) return;
 
@@ -202,10 +289,10 @@ export function BlueprintRequirementDialog({
       setLoading(true);
       setError(null);
 
-      const res = await fetch('/api/blueprint/requirement/message', {
+      const res = await fetch(`/api/blueprint/dialog/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message: userMessage }),
+        body: JSON.stringify({ input: userMessage }),
       });
 
       const data = await res.json();
@@ -214,27 +301,69 @@ export function BlueprintRequirementDialog({
         throw new Error(data.error || '发送消息失败');
       }
 
-      // 更新状态
-      setDialogState(data.dialogState);
-      setProgress(data.progress);
+      // 映射新API的phase
+      const mappedPhase = mapPhase(data.data.phase);
 
-      // 添加助手回复
-      if (data.assistantMessage) {
-        setMessages((prev) => [
-          ...prev,
+      // 更新对话状态（使用完整的数据构建）
+      setDialogState((prev) => {
+        if (!prev) return null;
+        return buildDialogState(
+          sessionId,
+          mappedPhase,
           {
-            ...data.assistantMessage,
-            timestamp: data.assistantMessage.timestamp,
+            collectedRequirements: data.data.collectedRequirements,
+            collectedConstraints: data.data.collectedConstraints,
+            techStack: data.data.techStack,
           },
-        ]);
+          prev
+        );
+      });
+
+      // 计算进度
+      const phaseOrder = ['welcome', 'project_background', 'business_process', 'system_module', 'nfr', 'summary', 'complete'];
+      const currentIndex = phaseOrder.indexOf(mappedPhase) + 1;
+      setProgress({
+        current: currentIndex,
+        total: 7,
+        label: getPhaseLabel(mappedPhase),
+      });
+
+      // 添加助手回复（从messages数组获取最后一条assistant消息）
+      if (data.data.messages && data.data.messages.length > 0) {
+        const assistantMsgs = data.data.messages.filter((m: any) => m.role === 'assistant');
+        if (assistantMsgs.length > 0) {
+          const lastAssistantMsg = assistantMsgs[assistantMsgs.length - 1];
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: lastAssistantMsg.content,
+              timestamp: new Date().toISOString(),
+              phase: mappedPhase,
+            },
+          ]);
+        }
       }
 
-      // 检查是否完成 - 直接跳转到蓝图详情页
-      if (data.isComplete && onComplete) {
-        const completedBlueprintId = data.dialogState?.id || data.blueprintId || '';
-        setBlueprintId(completedBlueprintId);
-        // 直接跳转到蓝图详情
-        onComplete(completedBlueprintId);
+      // 检查是否完成
+      if (data.data.isComplete) {
+        // 如果用户输入"确认"，生成蓝图
+        if (userMessage.toLowerCase() === '确认' || userMessage.toLowerCase() === 'confirm') {
+          try {
+            const confirmRes = await fetch(`/api/blueprint/dialog/${sessionId}/confirm`, {
+              method: 'POST',
+            });
+            const confirmData = await confirmRes.json();
+
+            if (confirmData.success && confirmData.data && onComplete) {
+              setBlueprintId(confirmData.data.id);
+              onComplete(confirmData.data.id);
+            }
+          } catch (confirmErr) {
+            console.error('确认蓝图失败:', confirmErr);
+          }
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '发送消息失败');
@@ -254,11 +383,11 @@ export function BlueprintRequirementDialog({
     [sendMessage]
   );
 
-  // 关闭对话
+  // 关闭对话（使用新的 dialog API）
   const handleClose = useCallback(async () => {
     if (sessionId) {
       try {
-        await fetch(`/api/blueprint/requirement/${sessionId}`, {
+        await fetch(`/api/blueprint/dialog/${sessionId}`, {
           method: 'DELETE',
         });
       } catch (err) {

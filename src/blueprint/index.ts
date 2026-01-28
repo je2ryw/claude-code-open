@@ -1,256 +1,92 @@
 /**
- * 蓝图系统 - 索引文件
+ * 蜂群架构 v2.0 - 极简版
  *
- * 项目蓝图（Blueprint）系统提供：
- * 1. 蓝图设计和管理
- * 2. 任务树生成和执行
- * 3. TDD 驱动的开发循环
- * 4. 主/子 Agent 协调
- * 5. 检查点和时光倒流
+ * 核心理念：需求即代码
+ * - Blueprint（蓝图）：需求锚点，所有Worker参照执行
+ * - SmartPlanner：智能规划器，快速需求对话+任务分解
+ * - AutonomousWorker：自治Worker，自主决策无需逐步批准
+ * - GitConcurrency：Git并发，分支代替文件锁
+ * - RealtimeCoordinator：轻量级协调器，只做调度
+ *
+ * 使用流程：
+ * 1. 用户提需求 → SmartPlanner 对话收集
+ * 2. 生成蓝图 → 作为需求锚点
+ * 3. 创建执行计划 → 智能分解任务
+ * 4. RealtimeCoordinator 调度执行
+ * 5. AutonomousWorker 自治完成任务
  */
 
+// ============================================================================
 // 类型导出
+// ============================================================================
+
 export * from './types.js';
 
-// 蓝图管理
-export {
-  BlueprintManager,
-  blueprintManager,
-  generateBlueprintSummary,
-} from './blueprint-manager.js';
-
-// 任务树管理
-export {
-  TaskTreeManager,
-  taskTreeManager,
-} from './task-tree-manager.js';
-
-// TDD 执行器
-export {
-  TDDExecutor,
-  tddExecutor,
-  TDD_PROMPTS,
-  type TDDPhase,
-  type TDDExecutorConfig,
-  type TDDLoopState,
-  type PhaseTransition,
-} from './tdd-executor.js';
-
-// Agent 协调器
-export {
-  AgentCoordinator,
-  agentCoordinator,
-  type CoordinatorConfig,
-} from './agent-coordinator.js';
-
-// 时光倒流
-export {
-  TimeTravelManager,
-  timeTravelManager,
-  type CheckpointInfo,
-  type TimelineView,
-  type BranchInfo,
-  type DiffInfo,
-  type CompareResult,
-  type TaskChange,
-} from './time-travel.js';
-
-// 代码库分析器
-export {
-  CodebaseAnalyzer,
-  codebaseAnalyzer,
-  quickAnalyze,
-  type AnalyzerConfig,
-  type CodebaseInfo,
-  type DetectedModule,
-  type DirectoryNode,
-  type CodebaseStats,
-} from './codebase-analyzer.js';
-
-// 分析缓存管理
-export {
-  AnalysisCache,
-  analysisCache,
-  type CacheEntry,
-  type CacheStats,
-} from './analysis-cache.js';
-
-// 需求对话流程
-export {
-  RequirementDialogManager,
-  requirementDialogManager,
-  type DialogPhase,
-  type DialogState,
-  type DialogMessage,
-  type BusinessProcessDraft,
-  type SystemModuleDraft,
-  type NFRDraft,
-} from './requirement-dialog.js';
-
-// 验收测试生成器
-export {
-  AcceptanceTestGenerator,
-  createAcceptanceTestGenerator,
-  type AcceptanceTestGeneratorConfig,
-  type AcceptanceTestContext,
-  type AcceptanceTestResult,
-} from './acceptance-test-generator.js';
-
-// Worker 执行器
-export {
-  WorkerExecutor,
-  workerExecutor,
-  type WorkerExecutorConfig,
-  type ExecutionContext,
-  type PhaseResult,
-} from './worker-executor.js';
-
-// Worker 沙箱隔离
-export {
-  WorkerSandbox,
-  FileLockManager,
-  createWorkerSandbox,
-  getGlobalLockManager,
-  type SandboxConfig,
-  type SyncResult,
-  type LockInfo,
-} from './worker-sandbox.js';
-
-// 任务粒度控制
-export {
-  TaskGranularityController,
-  createTaskGranularityController,
-  defaultGranularityController,
-  DEFAULT_GRANULARITY_CONFIG,
-  type GranularityConfig,
-  type ComplexityScore,
-  type SplitSuggestion,
-  type MergeSuggestion,
-  type AdjustmentResult,
-} from './task-granularity.js';
-
-// 边界检查器
-export {
-  BoundaryChecker,
-  createBoundaryChecker,
-  type BoundaryCheckResult,
-} from './boundary-checker.js';
-
-// 蓝图上下文（工具层面的边界检查桥梁）
-export {
-  blueprintContext,
-  setBlueprint,
-  clearBlueprint,
-  setSafetyBoundary,
-  clearSafetyBoundary,
-  setActiveTask,
-  clearActiveTask,
-  checkFileOperation,
-  enforceFileOperation,
-  type ActiveTaskContext,
-} from './blueprint-context.js';
-
-// 验收测试运行器（验证层）
-export {
-  AcceptanceTestRunner,
-  acceptanceTestRunner,
-  createAcceptanceTestRunner,
-  type AcceptanceTestRunResult,
-  type AcceptanceTestRunnerConfig,
-} from './acceptance-test-runner.js';
-
-// 测试验收员（审查层）
-export {
-  TestReviewer,
-  testReviewer,
-  createTestReviewer,
-  type TaskIntent,
-  type WorkerSubmission as TestWorkerSubmission,
-  type CodeAnalysis,
-  type FunctionInfo,
-  type ParameterInfo,
-  type BoundaryCondition,
-  type EdgeCase,
-  type TestAnalysis,
-  type TestCaseInfo,
-  type ReviewStandards,
-  type ReviewResult as TestReviewResult,
-  type ReviewIssue,
-  type ReviewReport,
-  type TestReviewContext,
-} from './test-reviewer.js';
-
 // ============================================================================
-// 持续开发组件（融入 Cursor 经验）
+// 智能规划器（需求对话、蓝图生成、任务分解）
 // ============================================================================
 
-// 影响分析器
 export {
-  ImpactAnalyzer,
-  createImpactAnalyzer,
-  type ImpactAnalyzerConfig,
-  type ImpactAnalysisReport,
-  type SafetyBoundary,
-  type FileImpact,
-  type ModuleImpact,
-  type InterfaceChange,
-  type RegressionScope,
-  type RiskLevel,
-  type ChangeType,
-} from './impact-analyzer.js';
+  SmartPlanner,
+  smartPlanner,
+  createSmartPlanner,
+  type SmartPlannerConfig,
+} from './smart-planner.js';
 
-// 回归测试门禁
-export {
-  RegressionGate,
-  createRegressionGate,
-  type RegressionGateConfig,
-  type GateResult,
-  type WorkerSubmission,
-  type TestSummary,
-  type TestFailure,
-} from './regression-gate.js';
+// ============================================================================
+// 自治 Worker（自主决策，可选测试，自动重试）
+// ============================================================================
 
-// 周期重置管理器（Cursor 核心经验：对抗漂移、周期性评审）
 export {
-  CycleResetManager,
-  createCycleResetManager,
-  type CycleResetConfig,
-  type CycleStats,
-  type CycleIssue,
-  type ReviewResult,
-} from './cycle-reset-manager.js';
+  AutonomousWorkerExecutor,
+  createAutonomousWorker,
+  type WorkerContext,
+  type ExecutionStrategy,
+  type TestRunResult,
+  type WorkerEventType,
+} from './autonomous-worker.js';
 
-// 持续开发编排器（主入口）
-export {
-  ContinuousDevOrchestrator,
-  createContinuousDevOrchestrator,
-  type ContinuousDevConfig,
-  type DevFlowPhase,
-  type DevFlowState,
-} from './continuous-dev-orchestrator.js';
+// ============================================================================
+// Git 并发控制（分支代替文件锁）
+// ============================================================================
 
-// 验收测试修正器（AI 测试自愈机制）
 export {
-  AcceptanceTestFixer,
-  createAcceptanceTestFixer,
-  getAcceptanceTestFixer,
-  type TestFixRequest,
-  type TestFixResult,
-  type TestProblemAnalysis,
-  type TestProblemLocation,
-  type TestFixHistory,
-  type TestFixerConfig,
-} from './acceptance-test-fixer.js';
+  GitConcurrency,
+} from './git-concurrency.js';
 
-// 蜂王智能体执行器（真正的蜂王介入机制）
+// ============================================================================
+// 实时协调器（轻量级调度，只做调度不做决策）
+// ============================================================================
+
 export {
-  QueenExecutor,
-  createQueenExecutor,
-  getQueenExecutor,
-  type InterventionType,
-  type QueenInterventionRequest,
-  type QueenDecision,
-  type QueenAction,
-  type QueenInterventionResult,
-  type QueenExecutorConfig,
-} from './queen-executor.js';
+  RealtimeCoordinator,
+  createRealtimeCoordinator,
+  createMockTaskExecutor,
+  type ExecutionResult,
+  type TaskExecutor,
+} from './realtime-coordinator.js';
+
+// ============================================================================
+// 模型选择器（成本优化，智能选择模型）
+// ============================================================================
+
+export {
+  ModelSelector,
+  modelSelector,
+  MODEL_PRICING,
+  type CostEstimate,
+} from './model-selector.js';
+
+// ============================================================================
+// 错误处理器（Worker 自愈能力）
+// ============================================================================
+
+export {
+  ErrorHandler,
+  errorHandler,
+  analyzeError,
+  decideErrorAction,
+  createErrorHandler,
+  type ErrorContext,
+  type AutoFixResult,
+} from './error-handler.js';

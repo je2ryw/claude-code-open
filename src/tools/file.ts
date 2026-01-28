@@ -24,7 +24,8 @@ import {
   isPdfSupported,
   isSvgRenderEnabled,
 } from '../media/index.js';
-import { blueprintContext } from '../blueprint/index.js';
+// 注意：旧的 blueprintContext 已被移除，新架构使用 SmartPlanner
+// 边界检查由 SmartPlanner 在任务规划阶段处理，工具层不再需要
 import { persistLargeOutputSync } from './output-persistence.js';
 import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
 
@@ -629,14 +630,8 @@ Usage:
         return { success: false, error: hookResult.message || 'Blocked by hook' };
       }
 
-      // 蓝图边界检查（如果在蓝图执行上下文中）
-      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
-      if (!boundaryCheck.allowed) {
-        return {
-          success: false,
-          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
-        };
-      }
+      // 注意：蓝图边界检查已移除
+      // 新架构中，边界检查由 SmartPlanner 在任务规划阶段处理
 
       // 确保目录存在
       const dir = path.dirname(file_path);
@@ -924,16 +919,8 @@ Usage:
         };
       }
 
-
-      // 1.5 蓝图边界检查（如果在蓝图执行上下文中）
-      const boundaryCheck = blueprintContext.checkFileOperation(file_path, 'write');
-      if (!boundaryCheck.allowed) {
-        return {
-          success: false,
-          error: `[蓝图边界检查] ${boundaryCheck.reason}`,
-          errorCode: EditErrorCode.INVALID_PATH,
-        };
-      }
+      // 注意：蓝图边界检查已移除
+      // 新架构中，边界检查由 SmartPlanner 在任务规划阶段处理
 
       const hookResult = await runPreToolUseHooks('Edit', input);
       if (!hookResult.allowed) {

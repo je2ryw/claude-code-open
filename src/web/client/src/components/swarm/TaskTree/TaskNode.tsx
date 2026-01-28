@@ -1,12 +1,30 @@
 import React, { useState } from 'react';
 import styles from './TaskTree.module.css';
 
+/**
+ * TaskNode 类型定义 - v2.0 简化版
+ *
+ * v2.0 变化：
+ * - status 使用后端一致的状态名
+ * - 新增 skipped 状态
+ */
 export interface TaskNode {
   id: string;
   name: string;
-  status: 'pending' | 'test_writing' | 'coding' | 'testing' | 'test_failed' | 'passed';
+  // v2.0: 与后端一致的状态
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   progress?: number; // 0-100
   children: TaskNode[];
+
+  // v2.0 新增字段
+  type?: 'code' | 'config' | 'test' | 'refactor' | 'docs' | 'integrate';
+  complexity?: 'trivial' | 'simple' | 'moderate' | 'complex';
+  needsTest?: boolean;
+  workerId?: string;
+  estimatedMinutes?: number;
+
+  // 失败原因（当 status === 'failed' 时）
+  error?: string;
 }
 
 interface TaskNodeProps {
@@ -23,13 +41,31 @@ interface StatusConfigItem {
   animated?: string;
 }
 
+// v2.0: 与后端一致的状态配置
 const STATUS_CONFIG: Record<TaskNode['status'], StatusConfigItem> = {
   pending: { icon: '⏳', label: '等待', color: '#999' },
-  test_writing: { icon: '📝', label: '编写测试', color: '#3b82f6', animated: 'pulse' },
-  coding: { icon: '💻', label: '编码中', color: '#3b82f6', animated: 'pulse' },
-  testing: { icon: '🧪', label: '测试中', color: '#eab308', animated: 'spin' },
-  test_failed: { icon: '❌', label: '测试失败', color: '#ef4444' },
-  passed: { icon: '✅', label: '完成', color: '#10b981' },
+  running: { icon: '💻', label: '执行中', color: '#3b82f6', animated: 'pulse' },
+  completed: { icon: '✅', label: '完成', color: '#10b981' },
+  failed: { icon: '❌', label: '失败', color: '#ef4444' },
+  skipped: { icon: '⏭️', label: '跳过', color: '#6b7280' },
+};
+
+// v2.0: 任务类型配置
+const TYPE_CONFIG: Record<string, { icon: string; label: string }> = {
+  code: { icon: '💻', label: '代码' },
+  config: { icon: '⚙️', label: '配置' },
+  test: { icon: '🧪', label: '测试' },
+  refactor: { icon: '♻️', label: '重构' },
+  docs: { icon: '📚', label: '文档' },
+  integrate: { icon: '🔗', label: '集成' },
+};
+
+// v2.0: 复杂度配置
+const COMPLEXITY_CONFIG: Record<string, { label: string; color: string }> = {
+  trivial: { label: '简单', color: '#4ade80' },
+  simple: { label: '普通', color: '#60a5fa' },
+  moderate: { label: '中等', color: '#fbbf24' },
+  complex: { label: '复杂', color: '#f87171' },
 };
 
 export const TaskNodeComponent: React.FC<TaskNodeProps> = ({
@@ -43,14 +79,14 @@ export const TaskNodeComponent: React.FC<TaskNodeProps> = ({
   const statusConfig = STATUS_CONFIG[node.status];
   const isSelected = node.id === selectedTaskId;
 
-  // 计算子任务统计
+  // 计算子任务统计 - v2.0 使用 'completed' 状态
   const getChildStats = (node: TaskNode): { total: number; completed: number } => {
     if (!node.children || node.children.length === 0) {
       return { total: 0, completed: 0 };
     }
 
     let total = node.children.length;
-    let completed = node.children.filter(child => child.status === 'passed').length;
+    let completed = node.children.filter(child => child.status === 'completed').length;
 
     return { total, completed };
   };
@@ -114,6 +150,40 @@ export const TaskNodeComponent: React.FC<TaskNodeProps> = ({
         {/* 任务名称 */}
         <span className={styles.taskName}>{node.name}</span>
 
+        {/* v2.0: 任务类型标签 */}
+        {node.type && TYPE_CONFIG[node.type] && (
+          <span className={styles.typeTag} title={TYPE_CONFIG[node.type].label}>
+            {TYPE_CONFIG[node.type].icon}
+          </span>
+        )}
+
+        {/* v2.0: 复杂度标签 */}
+        {node.complexity && COMPLEXITY_CONFIG[node.complexity] && (
+          <span
+            className={styles.complexityTag}
+            style={{ color: COMPLEXITY_CONFIG[node.complexity].color }}
+            title={`复杂度: ${COMPLEXITY_CONFIG[node.complexity].label}`}
+          >
+            {node.complexity === 'complex' ? '◆' :
+             node.complexity === 'moderate' ? '◇' :
+             node.complexity === 'simple' ? '○' : '·'}
+          </span>
+        )}
+
+        {/* v2.0: 需要测试标记 */}
+        {node.needsTest && (
+          <span className={styles.needsTestTag} title="需要测试">
+            🧪
+          </span>
+        )}
+
+        {/* v2.0: Worker 分配 */}
+        {node.workerId && (
+          <span className={styles.workerTag} title={`Worker: ${node.workerId}`}>
+            🐝
+          </span>
+        )}
+
         {/* 子任务统计 */}
         {childStats && (
           <span
@@ -132,6 +202,24 @@ export const TaskNodeComponent: React.FC<TaskNodeProps> = ({
           <span className={styles.statusIcon}>{statusConfig.icon}</span>
           <span className={styles.statusLabel}>{statusConfig.label}</span>
         </span>
+
+        {/* 失败原因显示 */}
+        {node.status === 'failed' && node.error && (
+          <span
+            className={styles.errorReason}
+            title={node.error}
+            style={{ color: '#ef4444', marginLeft: '8px', fontSize: '0.85em' }}
+          >
+            ⚠️ {node.error.length > 30 ? node.error.substring(0, 30) + '...' : node.error}
+          </span>
+        )}
+
+        {/* v2.0: 预估时间 */}
+        {node.estimatedMinutes !== undefined && node.estimatedMinutes > 0 && (
+          <span className={styles.estimatedTime} title="预估时间">
+            ⏱️ {node.estimatedMinutes}m
+          </span>
+        )}
 
         {/* 进度条 */}
         {node.progress !== undefined && renderProgressBar()}

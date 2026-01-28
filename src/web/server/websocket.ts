@@ -12,11 +12,108 @@ import { authManager } from './auth-manager.js';
 import { oauthManager } from './oauth-manager.js';
 import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
-import { agentCoordinator } from '../../blueprint/agent-coordinator.js';
-import { blueprintManager } from '../../blueprint/blueprint-manager.js';
-import { taskTreeManager } from '../../blueprint/task-tree-manager.js';
-import type { WorkerAgent, QueenAgent, TimelineEvent, TaskNode } from '../../blueprint/types.js';
-import { createContinuousDevOrchestrator, ContinuousDevOrchestrator } from '../../blueprint/continuous-dev-orchestrator.js';
+// 导入蓝图存储和执行管理器（用于 WebSocket 订阅）
+import { blueprintStore, executionEventEmitter, executionManager } from './routes/blueprint-api.js';
+
+// ============================================================================
+// 旧蓝图系统已被移除，以下是类型占位符和空函数
+// 新架构使用 SmartPlanner，蜂群相关功能将在 /api/blueprint/planning 中实现
+// ============================================================================
+
+// 类型占位符（用于保持代码兼容性）
+interface WorkerAgent {
+  id: string;
+  taskId?: string;
+  status: string;
+  queenId?: string;
+  tddCycle?: any;
+  history?: any[];
+}
+
+interface QueenAgent {
+  id: string;
+  blueprintId: string;
+  taskTreeId: string;
+  status: string;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  timestamp: Date;
+  message: string;
+  description?: string;
+  data?: any;
+}
+
+interface TaskNode {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  dependencies: string[];
+  children?: TaskNode[];
+  agentId?: string;
+  codeArtifacts?: any[];
+  createdAt?: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+}
+
+// 空的事件发射器占位符
+const createEmptyEventEmitter = () => ({
+  on: (_event: string, _handler: (...args: any[]) => void) => {},
+  emit: (_event: string, ..._args: any[]) => {},
+  off: (_event: string, _handler: (...args: any[]) => void) => {},
+});
+
+// 空的管理器占位符（旧蓝图系统已移除）
+const agentCoordinator = {
+  ...createEmptyEventEmitter(),
+  getQueen: (): QueenAgent | null => null,
+  getWorkers: (): WorkerAgent[] => [],
+  getWorker: (_id: string): WorkerAgent | null => null,
+  getTimeline: (): TimelineEvent[] => [],
+  startMainLoop: () => {},
+  stopMainLoop: () => {},
+  workerFailTask: (_workerId: string, _reason: string) => {},
+};
+
+const blueprintManager = {
+  ...createEmptyEventEmitter(),
+  // 使用真正的 blueprintStore 获取蓝图
+  getBlueprint: (id: string): any => blueprintStore.get(id),
+  saveBlueprint: (blueprint: any) => blueprintStore.save(blueprint),
+};
+
+const taskTreeManager = {
+  ...createEmptyEventEmitter(),
+  getTaskTree: (_id: string): any => null,
+  findTask: (_root: any, _taskId: string): TaskNode | null => null,
+  generateFromBlueprint: (_blueprint: any): any => null,
+  markAllTasksAsPassed: (_taskTree: any) => {},
+};
+
+// 持续开发编排器占位符（旧系统已移除）
+interface ContinuousDevOrchestrator {
+  on: (event: string, handler: (...args: any[]) => void) => void;
+  getState: () => { phase: string; message?: string };
+  getProgress: () => any;
+  pause: () => void;
+  resume: () => void;
+  processRequirement: (requirement: string) => Promise<{ success: boolean; error?: string }>;
+  approveAndExecute: () => Promise<void>;
+}
+
+const createContinuousDevOrchestrator = (_config: any): ContinuousDevOrchestrator => ({
+  on: () => {},
+  getState: () => ({ phase: 'idle', message: '持续开发功能已迁移到新架构' }),
+  getProgress: () => ({ percentage: 0 }),
+  pause: () => {},
+  resume: () => {},
+  processRequirement: async () => ({ success: false, error: '功能已迁移到新的 SmartPlanner 架构' }),
+  approveAndExecute: async () => {},
+});
 
 // 持续开发编排器实例管理：sessionId -> Orchestrator
 const orchestrators = new Map<string, ContinuousDevOrchestrator>();
@@ -497,6 +594,204 @@ export function setupWebSocket(
     });
   });
 
+  // ============================================================================
+  // 监听 RealtimeCoordinator 执行事件 (v2.0 新架构)
+  // ============================================================================
+
+  // Worker 状态更新
+  executionEventEmitter.on('worker:update', (data: { blueprintId: string; workerId: string; updates: any }) => {
+    console.log(`[Swarm v2.0] Worker update: ${data.workerId} for blueprint ${data.blueprintId}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: data.workerId,
+        updates: data.updates,
+      },
+    });
+  });
+
+  // 任务状态更新
+  executionEventEmitter.on('task:update', (data: { blueprintId: string; taskId: string; updates: any }) => {
+    const errorInfo = data.updates.error ? ` error="${data.updates.error}"` : '';
+    console.log(`[Swarm v2.0] Task update: ${data.taskId} status=${data.updates.status}${errorInfo}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:task_update',
+      payload: {
+        taskId: data.taskId,
+        updates: data.updates,
+      },
+    });
+  });
+
+  // 统计信息更新
+  executionEventEmitter.on('stats:update', (data: { blueprintId: string; stats: any }) => {
+    console.log(`[Swarm v2.0] Stats update: ${data.stats.completedTasks}/${data.stats.totalTasks} completed`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:stats_update',
+      payload: {
+        stats: data.stats,
+      },
+    });
+  });
+
+  // 执行失败
+  executionEventEmitter.on('execution:failed', (data: { blueprintId: string; error: string; groupIndex?: number; failedCount?: number }) => {
+    console.error(`[Swarm v2.0] Execution failed: ${data.error}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:error',
+      payload: {
+        error: data.error,
+        groupIndex: data.groupIndex,
+        failedCount: data.failedCount,
+      },
+    });
+  });
+
+  // 通用蜂群事件
+  executionEventEmitter.on('swarm:event', (data: { blueprintId: string; event: any }) => {
+    console.log(`[Swarm v2.0] Event: ${data.event.type}`);
+    // 根据事件类型转发
+    if (data.event.type === 'plan:started') {
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:state',
+        payload: {
+          blueprint: blueprintManager.getBlueprint(data.blueprintId),
+          workers: [],
+          stats: {
+            totalTasks: data.event.data.totalTasks || 0,
+            pendingTasks: data.event.data.totalTasks || 0,
+            runningTasks: 0,
+            completedTasks: 0,
+            failedTasks: 0,
+            progressPercentage: 0,
+          },
+        },
+      });
+    } else if (data.event.type === 'plan:completed') {
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:completed',
+        payload: {
+          success: data.event.data.success,
+          totalCost: data.event.data.totalCost,
+        },
+      });
+    }
+  });
+
+  // ============================================================================
+  // v2.0 新增：Planner 探索事件（Agent 模式探索代码库）
+  // ============================================================================
+
+  // 规划器开始探索代码库
+  executionEventEmitter.on('planner:exploring', (data: { blueprintId: string; requirements: string[] }) => {
+    console.log(`[Swarm v2.0] Planner exploring codebase for blueprint ${data.blueprintId}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:planner_update',
+      payload: {
+        phase: 'exploring',
+        message: '正在探索代码库结构...',
+        requirements: data.requirements,
+      },
+    });
+  });
+
+  // 规划器探索完成
+  executionEventEmitter.on('planner:explored', (data: { blueprintId: string; exploration: any }) => {
+    // CodebaseExploration 类型使用 discoveredModules，不是 relevantFiles
+    const moduleCount = data.exploration?.discoveredModules?.length || 0;
+    console.log(`[Swarm v2.0] Planner explored codebase: found ${moduleCount} modules`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:planner_update',
+      payload: {
+        phase: 'explored',
+        message: `代码库探索完成，发现 ${moduleCount} 个模块`,
+        exploration: data.exploration,
+      },
+    });
+  });
+
+  // 规划器开始分解任务
+  executionEventEmitter.on('planner:decomposing', (data: { blueprintId: string }) => {
+    console.log(`[Swarm v2.0] Planner decomposing tasks for blueprint ${data.blueprintId}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:planner_update',
+      payload: {
+        phase: 'decomposing',
+        message: '正在分解任务...',
+      },
+    });
+  });
+
+  // ============================================================================
+  // v2.0 新增：Worker 分析事件（策略决策前的 Agent 模式分析）
+  // ============================================================================
+
+  // Worker 开始分析目标文件
+  executionEventEmitter.on('worker:analyzing', (data: { blueprintId: string; workerId: string; task: any }) => {
+    console.log(`[Swarm v2.0] Worker ${data.workerId} analyzing files for task ${data.task?.name || data.task?.id}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: data.workerId,
+        updates: {
+          currentAction: {
+            type: 'analyze',
+            description: `分析目标文件: ${data.task?.files?.slice(0, 2).join(', ') || '未知'}${data.task?.files?.length > 2 ? '...' : ''}`,
+            startedAt: new Date().toISOString(),
+          },
+        },
+      },
+    });
+  });
+
+  // Worker 分析完成
+  executionEventEmitter.on('worker:analyzed', (data: { blueprintId: string; workerId: string; task: any; analysis: any }) => {
+    // FileAnalysis 接口: targetFiles, fileSummaries, dependencies, suggestions, observations
+    const filesAnalyzed = data.analysis?.fileSummaries?.length || data.analysis?.targetFiles?.length || 0;
+    console.log(`[Swarm v2.0] Worker ${data.workerId} analyzed ${filesAnalyzed} files`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: data.workerId,
+        updates: {
+          currentAction: {
+            type: 'think',
+            description: '基于分析结果决策执行策略...',
+            startedAt: new Date().toISOString(),
+          },
+          // 分析结果摘要
+          lastAnalysis: {
+            filesAnalyzed,
+            suggestions: data.analysis?.suggestions || [],
+            observations: data.analysis?.observations || [],
+          },
+        },
+      },
+    });
+  });
+
+  // Worker 策略决策完成
+  executionEventEmitter.on('worker:strategy_decided', (data: { blueprintId: string; workerId: string; strategy: any }) => {
+    // ExecutionStrategy 接口: shouldWriteTests, testReason, steps, estimatedMinutes, model
+    const shouldWriteTests = data.strategy?.shouldWriteTests ?? false;
+    const testReason = data.strategy?.testReason || '未指定';
+    const steps = data.strategy?.steps || [];
+    console.log(`[Swarm v2.0] Worker ${data.workerId} decided strategy: shouldWriteTests=${shouldWriteTests}, steps=${steps.length}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_update',
+      payload: {
+        workerId: data.workerId,
+        updates: {
+          decisions: [{
+            type: 'strategy',
+            description: `测试: ${shouldWriteTests ? '需要' : '跳过'} (${testReason}), 步骤数: ${steps.length}`,
+            timestamp: new Date().toISOString(),
+          }],
+        },
+      },
+    });
+  });
+
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
   });
@@ -864,6 +1159,11 @@ async function handleClientMessage(
 
     case 'worker:terminate':
       await handleWorkerTerminate(client, (message.payload as any).workerId, swarmSubscriptions);
+      break;
+
+    // v2.1: 任务重试
+    case 'task:retry':
+      await handleTaskRetry(client, (message.payload as any).blueprintId, (message.payload as any).taskId, swarmSubscriptions);
       break;
 
     // ========== 持续开发相关消息 ==========
@@ -3311,68 +3611,124 @@ async function handleSwarmSubscribe(
       return;
     }
 
-    const queen = agentCoordinator.getQueen();
-    const workers = agentCoordinator.getWorkers();
-    const timeline = agentCoordinator.getTimeline();
+    // v2.0: 不再使用任务树和蜂王，改用 ExecutionPlan 和自治 Worker
+    // 获取当前活跃的 Workers（如果有）
+    const workers = agentCoordinator.getWorkers?.() || [];
+    const activeWorkers = workers.filter((w: any) => w.blueprintId === blueprintId);
 
-    let taskTree = null;
-    if (blueprint.taskTreeId) {
-      taskTree = taskTreeManager.getTaskTree(blueprint.taskTreeId);
-      if (taskTree) {
-        // 任务树存在，检查是否需要修复状态
-        // 如果是从代码库生成的蓝图，但任务树状态不是 completed，则修复
-        if (blueprint.source === 'codebase' && taskTree.status !== 'completed') {
-          console.log(`[Swarm] 蓝图来源为 codebase，但任务树状态为 ${taskTree.status}，修复为 passed`);
-          taskTreeManager.markAllTasksAsPassed(taskTree);
-        }
-      } else if (blueprint.modules && blueprint.modules.length > 0) {
-        // 任务树 ID 存在但加载失败（文件不存在），则需要重新生成
-        console.log(`[Swarm] 蓝图 ${blueprintId} 的任务树 ${blueprint.taskTreeId} 不存在，重新生成...`);
-        try {
-          taskTree = taskTreeManager.generateFromBlueprint(blueprint);
-          // 如果是从代码库生成的蓝图，标记所有任务为 passed
-          if (blueprint.source === 'codebase') {
-            console.log(`[Swarm] 蓝图来源为 codebase，标记所有任务为 passed`);
-            taskTreeManager.markAllTasksAsPassed(taskTree);
-          }
-          // 更新蓝图的任务树 ID
-          blueprint.taskTreeId = taskTree.id;
-          blueprintManager.saveBlueprint(blueprint);
-          console.log(`[Swarm] 任务树已重新生成并关联：${taskTree.id}`);
-        } catch (genError) {
-          console.error(`[Swarm] 重新生成任务树失败:`, genError);
-        }
+    // v2.0: 获取执行计划和实时状态
+    let executionPlanData = null;
+    let statsData = null;
+    let costEstimateData = null;
+
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+    if (session) {
+      // 活跃 session：从 coordinator 获取实时数据
+      const plan = session.plan;
+      const status = session.coordinator.getStatus() as any;
+      const tasksWithStatus = session.coordinator.getTasksWithStatus();
+
+      // 序列化任务
+      const serializedTasks = tasksWithStatus.map((task: any) => ({
+        ...task,
+        startedAt: task.startedAt instanceof Date ? task.startedAt.toISOString() : task.startedAt,
+        completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+        result: task.result ? {
+          success: task.result.success,
+          testsRan: task.result.testsRan,
+          testsPassed: task.result.testsPassed,
+          error: task.result.error,
+        } : undefined,
+      }));
+
+      // 推断计划状态
+      const inferredStatus = status
+        ? (status.completedTasks === status.totalTasks && status.totalTasks > 0 ? 'completed' :
+           status.failedTasks > 0 ? 'failed' :
+           status.runningTasks > 0 ? 'executing' : 'ready')
+        : 'ready';
+
+      executionPlanData = {
+        id: plan.id,
+        blueprintId: plan.blueprintId,
+        tasks: serializedTasks,
+        parallelGroups: plan.parallelGroups || [],
+        estimatedCost: plan.estimatedCost || 0,
+        estimatedMinutes: plan.estimatedMinutes || 0,
+        autoDecisions: plan.autoDecisions || [],
+        status: inferredStatus,
+        createdAt: session.startedAt.toISOString(),
+        startedAt: session.startedAt.toISOString(),
+        completedAt: session.completedAt?.toISOString(),
+      };
+
+      // 计算统计数据
+      if (status) {
+        statsData = {
+          totalTasks: status.totalTasks,
+          pendingTasks: status.totalTasks - status.completedTasks - status.failedTasks - status.runningTasks,
+          runningTasks: status.runningTasks,
+          completedTasks: status.completedTasks,
+          failedTasks: status.failedTasks,
+          skippedTasks: 0,
+          progressPercentage: status.totalTasks > 0
+            ? Math.round((status.completedTasks / status.totalTasks) * 100)
+            : 0,
+        };
+
+        costEstimateData = {
+          totalEstimated: status.estimatedTotalCost || plan.estimatedCost || 0,
+          currentSpent: status.currentCost || 0,
+          remainingEstimated: (status.estimatedTotalCost || 0) - (status.currentCost || 0),
+          breakdown: [],
+        };
       }
-    } else if (blueprint.modules && blueprint.modules.length > 0) {
-      // 如果蓝图有模块但还没有任务树，自动生成任务树（支持所有状态）
-      console.log(`[Swarm] 蓝图 ${blueprintId} (状态: ${blueprint.status}) 缺少任务树，自动生成...`);
-      try {
-        taskTree = taskTreeManager.generateFromBlueprint(blueprint);
-        // 如果是从代码库生成的蓝图，标记所有任务为 passed
-        if (blueprint.source === 'codebase') {
-          console.log(`[Swarm] 蓝图来源为 codebase，标记所有任务为 passed`);
-          taskTreeManager.markAllTasksAsPassed(taskTree);
-        }
-        // 关联任务树到蓝图
-        blueprint.taskTreeId = taskTree.id;
-        blueprintManager.saveBlueprint(blueprint);
-        console.log(`[Swarm] 任务树已生成并关联：${taskTree.id}`);
-      } catch (genError) {
-        console.error(`[Swarm] 生成任务树失败:`, genError);
+    } else {
+      // v2.1: 无活跃 session 时，从蓝图的 lastExecutionPlan 读取历史数据
+      if (blueprint.lastExecutionPlan) {
+        executionPlanData = blueprint.lastExecutionPlan;
+        // 从历史计划中计算统计数据
+        const tasks = blueprint.lastExecutionPlan.tasks || [];
+        const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
+        const failedTasks = tasks.filter((t: any) => t.status === 'failed').length;
+        const runningTasks = tasks.filter((t: any) => t.status === 'running').length;
+        statsData = {
+          totalTasks: tasks.length,
+          pendingTasks: tasks.length - completedTasks - failedTasks - runningTasks,
+          runningTasks,
+          completedTasks,
+          failedTasks,
+          skippedTasks: tasks.filter((t: any) => t.status === 'skipped').length,
+          progressPercentage: tasks.length > 0
+            ? Math.round((completedTasks / tasks.length) * 100)
+            : 0,
+        };
+        costEstimateData = {
+          totalEstimated: blueprint.lastExecutionPlan.estimatedCost || 0,
+          currentSpent: 0,
+          remainingEstimated: 0,
+          breakdown: [],
+        };
       }
     }
 
+    // v2.0: 构建完整的响应
     sendMessage(ws, {
       type: 'swarm:state',
       payload: {
         blueprint: serializeBlueprint(blueprint),
-        taskTree: taskTree ? serializeTaskTree(taskTree) : null,
-        queen: queen && queen.blueprintId === blueprintId ? serializeQueen(queen) : null,
-        workers: workers
-          .filter(w => queen && w.queenId === queen.id)
-          .map(serializeWorker),
-        timeline: timeline.map(serializeTimelineEvent),
-        stats: taskTree?.stats || null,
+        // v2.0: 任务树已废弃，改用 ExecutionPlan
+        taskTree: null,
+        // v2.0: 蜂王已废弃，Worker 自治
+        queen: null,
+        // v2.0: 自治 Worker 列表
+        workers: activeWorkers.map(serializeWorker),
+        // v2.0: 统计数据
+        stats: statsData,
+        // v2.0 核心字段：执行计划（现在包含实时状态）
+        executionPlan: executionPlanData,
+        gitBranches: [],     // 将在执行时由 GitConcurrency 填充
+        costEstimate: costEstimateData,
       },
     });
   } catch (error) {
@@ -3422,16 +3778,24 @@ async function handleSwarmUnsubscribe(
 // ============================================================================
 
 /**
- * 序列化 Blueprint
+ * 序列化 Blueprint（V2.0）
+ * 处理 createdAt/updatedAt 可能是 Date 或 string 的情况
  */
 function serializeBlueprint(blueprint: any): any {
+  const toISOString = (value: Date | string | undefined): string => {
+    if (!value) return new Date().toISOString();
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string') return value;
+    return new Date().toISOString();
+  };
+
   return {
     id: blueprint.id,
     name: blueprint.name,
     description: blueprint.description,
     requirement: blueprint.requirement,
-    createdAt: blueprint.createdAt.toISOString(),
-    updatedAt: blueprint.updatedAt.toISOString(),
+    createdAt: toISOString(blueprint.createdAt),
+    updatedAt: toISOString(blueprint.updatedAt),
     status: mapBlueprintStatus(blueprint.status),
   };
 }
@@ -4068,6 +4432,72 @@ async function handleWorkerTerminate(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : 'Worker 终止失败',
+      },
+    });
+  }
+}
+
+/**
+ * v2.1: 处理任务重试请求
+ */
+async function handleTaskRetry(
+  client: ClientConnection,
+  blueprintId: string,
+  taskId: string,
+  _swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId' },
+      });
+      return;
+    }
+
+    if (!taskId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 taskId' },
+      });
+      return;
+    }
+
+    console.log(`[Swarm] 重试任务: ${taskId} (blueprint: ${blueprintId})`);
+
+    // 调用 executionManager 的重试方法
+    const result = await executionManager.retryTask(blueprintId, taskId);
+
+    if (result.success) {
+      sendMessage(ws, {
+        type: 'task:retry_success',
+        payload: {
+          blueprintId,
+          taskId,
+          success: true,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } else {
+      sendMessage(ws, {
+        type: 'task:retry_failed',
+        payload: {
+          blueprintId,
+          taskId,
+          success: false,
+          error: result.error || '重试失败',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Swarm] 任务重试失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '任务重试失败',
       },
     });
   }

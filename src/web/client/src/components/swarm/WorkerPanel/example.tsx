@@ -1,14 +1,18 @@
 /**
- * WorkerPanel 组件使用示例
+ * WorkerPanel 组件使用示例 - v2.0
  *
- * 这个文件展示了如何使用 WorkerPanel 组件显示蜂群系统的状态
+ * v2.0 变化：
+ * - Worker 状态简化为 idle/working/waiting/error
+ * - 移除 tddPhase，Worker 自主决策
+ * - 新增 currentAction 和 decisions 展示
+ * - 新增 Git 分支信息
  */
 
 import React, { useState, useEffect } from 'react';
 import { WorkerPanel, QueenAgent, WorkerAgent } from './index';
 
 /**
- * 示例 1: 基础静态数据
+ * 示例 1: 基础静态数据 - v2.0
  */
 export function StaticExample() {
   const queen: QueenAgent = {
@@ -19,32 +23,52 @@ export function StaticExample() {
   const workers: WorkerAgent[] = [
     {
       id: 'Worker-1',
-      status: 'coding',
+      status: 'working',
       taskId: 'task-001',
       taskName: '更新订单状态',
       progress: 45,
-      tddPhase: 'write_code',
       retryCount: 1,
       maxRetries: 3,
-      duration: 155 // 2分35秒
+      duration: 155,
+      // v2.0 新增字段
+      branchName: 'worker-1/task-001',
+      branchStatus: 'active',
+      modelUsed: 'sonnet',
+      currentAction: {
+        type: 'write',
+        description: '写入文件 src/orders/update.ts',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        { type: 'strategy', description: '采用增量更新策略', timestamp: new Date().toISOString() }
+      ]
     },
     {
       id: 'Worker-2',
-      status: 'testing',
+      status: 'working',
       taskId: 'task-002',
       taskName: '用户认证功能',
       progress: 80,
-      tddPhase: 'run_test_green',
       retryCount: 0,
       maxRetries: 3,
-      duration: 320 // 5分20秒
+      duration: 320,
+      branchName: 'worker-2/task-002',
+      branchStatus: 'active',
+      modelUsed: 'opus',
+      currentAction: {
+        type: 'run_test',
+        description: '运行认证模块测试',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        { type: 'add_test', description: '添加边界条件测试', timestamp: new Date().toISOString() }
+      ]
     },
     {
       id: 'Worker-3',
       status: 'idle',
       taskName: undefined,
       progress: 0,
-      tddPhase: 'write_test',
       retryCount: 0,
       maxRetries: 3
     }
@@ -54,7 +78,7 @@ export function StaticExample() {
 }
 
 /**
- * 示例 2: 模拟动态更新（定时器）
+ * 示例 2: 模拟动态更新 - v2.0
  */
 export function DynamicExample() {
   const [queen, setQueen] = useState<QueenAgent>({
@@ -67,7 +91,6 @@ export function DynamicExample() {
       id: 'Worker-1',
       status: 'waiting',
       progress: 0,
-      tddPhase: 'write_test',
       retryCount: 0,
       maxRetries: 3
     }
@@ -82,31 +105,49 @@ export function DynamicExample() {
       });
     }, 2000);
 
-    // 模拟 Worker 状态变化
+    // 模拟 Worker 开始工作
     const workerTimer = setTimeout(() => {
       setWorkers([
         {
           id: 'Worker-1',
-          status: 'test_writing',
+          status: 'working',
           taskId: 'task-001',
           taskName: '实现用户注册功能',
           progress: 20,
-          tddPhase: 'write_test',
           retryCount: 0,
           maxRetries: 3,
-          duration: 30
+          duration: 30,
+          branchName: 'worker-1/task-001',
+          branchStatus: 'active',
+          modelUsed: 'sonnet',
+          currentAction: {
+            type: 'read',
+            description: '读取现有代码结构',
+            startedAt: new Date().toISOString(),
+          }
         }
       ]);
     }, 3000);
 
-    // 模拟进度更新
+    // 模拟进度和动作更新
     const progressTimer = setInterval(() => {
       setWorkers(prev =>
-        prev.map(worker => ({
-          ...worker,
-          progress: Math.min(100, worker.progress + 5),
-          duration: (worker.duration || 0) + 5
-        }))
+        prev.map(worker => {
+          const newProgress = Math.min(100, worker.progress + 5);
+          const actionTypes = ['read', 'write', 'edit', 'think', 'run_test'] as const;
+          const randomAction = actionTypes[Math.floor(Math.random() * actionTypes.length)];
+
+          return {
+            ...worker,
+            progress: newProgress,
+            duration: (worker.duration || 0) + 5,
+            currentAction: worker.status === 'working' ? {
+              type: randomAction,
+              description: `正在执行 ${randomAction} 操作...`,
+              startedAt: new Date().toISOString(),
+            } : undefined,
+          };
+        })
       );
     }, 1000);
 
@@ -121,14 +162,13 @@ export function DynamicExample() {
 }
 
 /**
- * 示例 3: WebSocket 实时更新
+ * 示例 3: WebSocket 实时更新 - v2.0
  */
 export function WebSocketExample() {
   const [queen, setQueen] = useState<QueenAgent>({ status: 'idle' });
   const [workers, setWorkers] = useState<WorkerAgent[]>([]);
 
   useEffect(() => {
-    // 连接 WebSocket
     const ws = new WebSocket('ws://localhost:3000/swarm');
 
     ws.onopen = () => {
@@ -138,7 +178,6 @@ export function WebSocketExample() {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      // 处理不同类型的消息
       switch (data.type) {
         case 'queen_update':
           setQueen(data.queen);
@@ -172,7 +211,6 @@ export function WebSocketExample() {
       console.log('WebSocket 连接已关闭');
     };
 
-    // 清理连接
     return () => {
       ws.close();
     };
@@ -182,63 +220,83 @@ export function WebSocketExample() {
 }
 
 /**
- * 示例 4: 完整的 TDD 流程演示
+ * 示例 4: 自主决策流程演示 - v2.0
+ * (替代旧的 TDD 流程演示)
  */
-export function TDDFlowExample() {
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
+export function AutonomousDecisionExample() {
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
-  const phases: Array<{
-    phase: WorkerAgent['tddPhase'];
+  // v2.0: Worker 自主决策的步骤
+  const steps: Array<{
     status: WorkerAgent['status'];
+    actionType: 'read' | 'write' | 'edit' | 'run_test' | 'think' | 'git';
+    actionDesc: string;
+    decision?: { type: string; description: string };
     progress: number;
   }> = [
-    { phase: 'write_test', status: 'test_writing', progress: 20 },
-    { phase: 'run_test_red', status: 'testing', progress: 35 },
-    { phase: 'write_code', status: 'coding', progress: 60 },
-    { phase: 'run_test_green', status: 'testing', progress: 80 },
-    { phase: 'refactor', status: 'coding', progress: 95 },
-    { phase: 'done', status: 'idle', progress: 100 }
+    { status: 'working', actionType: 'read', actionDesc: '分析任务需求', progress: 10 },
+    { status: 'working', actionType: 'think', actionDesc: '规划实现策略', decision: { type: 'strategy', description: '采用 TDD 方式开发' }, progress: 20 },
+    { status: 'working', actionType: 'write', actionDesc: '编写测试用例', decision: { type: 'add_test', description: '添加单元测试' }, progress: 35 },
+    { status: 'working', actionType: 'run_test', actionDesc: '运行测试（预期失败）', progress: 45 },
+    { status: 'working', actionType: 'write', actionDesc: '编写功能代码', progress: 65 },
+    { status: 'working', actionType: 'run_test', actionDesc: '运行测试（预期通过）', progress: 80 },
+    { status: 'working', actionType: 'git', actionDesc: '提交代码到分支', progress: 95 },
+    { status: 'idle', actionType: 'think', actionDesc: '任务完成', progress: 100 }
   ];
 
+  const currentStep = steps[currentStepIndex];
+  const decisions = steps
+    .slice(0, currentStepIndex + 1)
+    .filter(s => s.decision)
+    .map(s => ({ ...s.decision!, timestamp: new Date().toISOString() }));
+
   const queen: QueenAgent = {
-    status: currentPhaseIndex < phases.length - 1 ? 'coordinating' : 'reviewing',
-    decision: currentPhaseIndex < phases.length - 1
-      ? '监控 Worker-1 执行 TDD 流程'
+    status: currentStepIndex < steps.length - 1 ? 'coordinating' : 'reviewing',
+    decision: currentStepIndex < steps.length - 1
+      ? '监控 Worker-1 自主执行任务'
       : '审查完成的代码'
   };
 
-  const currentPhase = phases[currentPhaseIndex];
   const workers: WorkerAgent[] = [
     {
       id: 'Worker-1',
-      status: currentPhase.status,
-      taskId: 'task-tdd-demo',
-      taskName: 'TDD 流程演示',
-      progress: currentPhase.progress,
-      tddPhase: currentPhase.phase,
+      status: currentStep.status,
+      taskId: 'task-demo',
+      taskName: '自主决策演示',
+      progress: currentStep.progress,
       retryCount: 0,
       maxRetries: 3,
-      duration: currentPhaseIndex * 30
+      duration: currentStepIndex * 30,
+      branchName: 'worker-1/task-demo',
+      branchStatus: currentStepIndex < steps.length - 1 ? 'active' : 'merged',
+      modelUsed: 'sonnet',
+      currentAction: currentStep.status === 'working' ? {
+        type: currentStep.actionType,
+        description: currentStep.actionDesc,
+        startedAt: new Date().toISOString(),
+      } : undefined,
+      decisions: decisions as any,
     }
   ];
 
   useEffect(() => {
-    if (currentPhaseIndex < phases.length - 1) {
+    if (currentStepIndex < steps.length - 1) {
       const timer = setTimeout(() => {
-        setCurrentPhaseIndex(prev => prev + 1);
-      }, 3000);
+        setCurrentStepIndex(prev => prev + 1);
+      }, 2000);
 
       return () => clearTimeout(timer);
     }
-  }, [currentPhaseIndex]);
+  }, [currentStepIndex, steps.length]);
 
   return (
     <div>
       <WorkerPanel queen={queen} workers={workers} />
       <div style={{ padding: '16px', color: '#fff' }}>
-        <p>当前阶段: {currentPhaseIndex + 1} / {phases.length}</p>
+        <p>当前步骤: {currentStepIndex + 1} / {steps.length}</p>
+        <p>当前操作: {currentStep.actionDesc}</p>
         <button
-          onClick={() => setCurrentPhaseIndex(0)}
+          onClick={() => setCurrentStepIndex(0)}
           style={{ padding: '8px 16px', marginTop: '8px' }}
         >
           重新开始演示
@@ -249,58 +307,90 @@ export function TDDFlowExample() {
 }
 
 /**
- * 示例 5: 多个 Workers 并行工作
+ * 示例 5: 多个 Workers 并行工作 - v2.0
  */
 export function MultiWorkerExample() {
   const queen: QueenAgent = {
     status: 'coordinating',
-    decision: '协调 3 个 Worker 并行开发不同模块'
+    decision: '协调 4 个 Worker 并行开发不同模块'
   };
 
   const workers: WorkerAgent[] = [
     {
       id: 'Worker-1',
-      status: 'coding',
+      status: 'working',
       taskId: 'task-001',
       taskName: '用户模块',
       progress: 65,
-      tddPhase: 'write_code',
       retryCount: 0,
       maxRetries: 3,
-      duration: 240
+      duration: 240,
+      branchName: 'worker-1/user-module',
+      branchStatus: 'active',
+      modelUsed: 'opus',
+      currentAction: {
+        type: 'write',
+        description: '实现用户认证逻辑',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        { type: 'strategy', description: 'JWT 认证方案', timestamp: new Date().toISOString() }
+      ]
     },
     {
       id: 'Worker-2',
-      status: 'testing',
+      status: 'working',
       taskId: 'task-002',
       taskName: '订单模块',
       progress: 85,
-      tddPhase: 'run_test_green',
       retryCount: 1,
       maxRetries: 3,
-      duration: 180
+      duration: 180,
+      branchName: 'worker-2/order-module',
+      branchStatus: 'active',
+      modelUsed: 'sonnet',
+      currentAction: {
+        type: 'run_test',
+        description: '运行订单流程测试',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        { type: 'retry', description: '测试失败，重试中', timestamp: new Date().toISOString() }
+      ]
     },
     {
       id: 'Worker-3',
-      status: 'test_writing',
+      status: 'working',
       taskId: 'task-003',
       taskName: '支付模块',
       progress: 30,
-      tddPhase: 'write_test',
       retryCount: 2,
       maxRetries: 3,
-      duration: 420
+      duration: 420,
+      branchName: 'worker-3/payment-module',
+      branchStatus: 'conflict',
+      modelUsed: 'haiku',
+      currentAction: {
+        type: 'git',
+        description: '解决代码合并冲突',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        { type: 'install_dep', description: '安装 stripe SDK', timestamp: new Date().toISOString() }
+      ]
     },
     {
       id: 'Worker-4',
-      status: 'waiting',
+      status: 'error',
       taskId: 'task-004',
-      taskName: '等待依赖完成',
-      progress: 0,
-      tddPhase: 'write_test',
-      retryCount: 0,
+      taskName: '通知模块',
+      progress: 45,
+      retryCount: 3,
       maxRetries: 3,
-      duration: 60
+      duration: 60,
+      branchName: 'worker-4/notification-module',
+      branchStatus: 'active',
+      modelUsed: 'sonnet',
     }
   ];
 
@@ -317,7 +407,7 @@ export default function WorkerPanelExamples() {
     static: { component: <StaticExample />, label: '静态数据' },
     dynamic: { component: <DynamicExample />, label: '动态更新' },
     websocket: { component: <WebSocketExample />, label: 'WebSocket' },
-    tdd: { component: <TDDFlowExample />, label: 'TDD 流程' },
+    autonomous: { component: <AutonomousDecisionExample />, label: '自主决策' },
     multi: { component: <MultiWorkerExample />, label: '多 Worker' }
   };
 
@@ -330,7 +420,7 @@ export default function WorkerPanelExamples() {
         borderRight: '1px solid #3d3d3d',
         backgroundColor: '#2d2d2d'
       }}>
-        <h3 style={{ color: '#fff', marginBottom: '16px' }}>示例选择</h3>
+        <h3 style={{ color: '#fff', marginBottom: '16px' }}>示例选择 (v2.0)</h3>
         {Object.entries(examples).map(([key, { label }]) => (
           <button
             key={key}

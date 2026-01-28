@@ -1,6 +1,11 @@
 /**
- * useSwarmState Hook
+ * useSwarmState Hook - v2.0 完整版
  * 管理蜂群系统的状态，监听 WebSocket 消息并更新状态
+ *
+ * v2.0 变化：
+ * - 移除 Queen 相关代码，使用 RealtimeCoordinator 直接调度
+ * - 简化 Worker 状态管理
+ * - 新增 ExecutionPlan、GitBranches、CostEstimate 支持
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -11,27 +16,36 @@ import type {
   UseSwarmStateReturn,
   TaskNode,
   WorkerAgent,
-  TimelineEvent,
+  ExecutionPlan,
+  GitBranchStatus,
+  CostEstimate,
+  PlannerUpdatePayload,
 } from '../types';
 
 const initialState: SwarmState = {
   blueprint: null,
   taskTree: null,
-  queen: null,
   workers: [],
-  timeline: [],
   stats: null,
   status: 'disconnected',
   error: null,
+  // v2.0 新增
+  executionPlan: null,
+  gitBranches: [],
+  costEstimate: null,
+  // v2.0: Planner 状态
+  plannerState: {
+    phase: 'idle',
+    message: '',
+  },
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
   blueprintId?: string;
-  maxTimelineEvents?: number;
 }
 
 export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateReturn {
-  const { blueprintId, maxTimelineEvents = 100, ...wsOptions } = options;
+  const { blueprintId, ...wsOptions } = options;
 
   const [state, setState] = useState<SwarmState>(initialState);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,11 +60,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
           ...prev,
           blueprint: message.payload.blueprint,
           taskTree: message.payload.taskTree,
-          queen: message.payload.queen,
           workers: message.payload.workers,
-          timeline: message.payload.timeline.slice(-maxTimelineEvents),
           stats: message.payload.stats,
           error: null,
+          // v2.0 新增字段
+          executionPlan: message.payload.executionPlan || null,
+          gitBranches: message.payload.gitBranches || [],
+          costEstimate: message.payload.costEstimate || null,
         }));
         setIsLoading(false);
         break;
@@ -84,13 +100,12 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         break;
 
       case 'swarm:worker_update':
-        // Worker 更新（如果 Worker 不存在则添加）
+        // Worker 更新
         setState(prev => {
           const workerId = message.payload.workerId;
           const existingWorker = prev.workers.find(w => w.id === workerId);
 
           if (existingWorker) {
-            // 更新现有 Worker
             return {
               ...prev,
               workers: prev.workers.map(worker =>
@@ -100,18 +115,17 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
               ),
             };
           } else {
-            // 添加新的 Worker
+            // 添加新的 Worker（v2.0 简化版）
             const newWorker: WorkerAgent = {
               id: workerId,
-              blueprintId: prev.blueprint?.id || '',
-              name: `Worker ${workerId.substring(0, 8)}`,
               status: 'idle',
-              currentTaskId: null,
-              currentTaskTitle: null,
+              currentTaskId: undefined,
+              currentTaskName: undefined,
+              branchName: undefined,
               progress: 0,
-              logs: [],
+              errorCount: 0,
               createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              lastActiveAt: new Date().toISOString(),
               ...message.payload.updates,
             };
             return {
@@ -120,101 +134,6 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             };
           }
         });
-        break;
-
-      case 'swarm:task_completed':
-        // 单个任务完成通知
-        setState(prev => {
-          if (!prev.taskTree) return prev;
-
-          const { taskId, status, result, error } = message.payload;
-
-          // 递归更新任务节点
-          const updateTaskNode = (node: TaskNode): TaskNode => {
-            if (node.id === taskId) {
-              return {
-                ...node,
-                status,
-                result,
-                error,
-                updatedAt: new Date().toISOString(),
-              };
-            }
-            if (node.children && node.children.length > 0) {
-              return {
-                ...node,
-                children: node.children.map(updateTaskNode),
-              };
-            }
-            return node;
-          };
-
-          // 重新计算统计信息
-          const countTaskStats = (node: TaskNode): { total: number; pending: number; running: number; passed: number; failed: number; blocked: number } => {
-            let stats = {
-              total: 1,
-              pending: node.status === 'pending' ? 1 : 0,
-              running: node.status === 'running' ? 1 : 0,
-              passed: node.status === 'passed' ? 1 : 0,
-              failed: node.status === 'failed' ? 1 : 0,
-              blocked: node.status === 'blocked' ? 1 : 0,
-            };
-            if (node.children) {
-              for (const child of node.children) {
-                const childStats = countTaskStats(child);
-                stats.total += childStats.total;
-                stats.pending += childStats.pending;
-                stats.running += childStats.running;
-                stats.passed += childStats.passed;
-                stats.failed += childStats.failed;
-                stats.blocked += childStats.blocked;
-              }
-            }
-            return stats;
-          };
-
-          const updatedRoot = updateTaskNode(prev.taskTree.root);
-          const taskStats = countTaskStats(updatedRoot);
-          const progressPercentage = taskStats.total > 0
-            ? Math.round(((taskStats.passed + taskStats.failed) / taskStats.total) * 100)
-            : 0;
-
-          return {
-            ...prev,
-            taskTree: {
-              ...prev.taskTree,
-              root: updatedRoot,
-              stats: {
-                totalTasks: taskStats.total,
-                pendingTasks: taskStats.pending,
-                runningTasks: taskStats.running,
-                passedTasks: taskStats.passed,
-                failedTasks: taskStats.failed,
-                blockedTasks: taskStats.blocked,
-                progressPercentage,
-              },
-            },
-          };
-        });
-        console.log('[SwarmState] Task completed:', message.payload.taskId, message.payload.status);
-        break;
-
-      case 'swarm:queen_update':
-        // Queen 更新
-        setState(prev => ({
-          ...prev,
-          queen: prev.queen
-            ? { ...prev.queen, ...message.payload.updates }
-            : null,
-        }));
-        break;
-
-      case 'swarm:timeline_event':
-        // 时间线事件
-        setState(prev => ({
-          ...prev,
-          timeline: [...prev.timeline, message.payload].slice(-maxTimelineEvents),
-        }));
         break;
 
       case 'swarm:completed':
@@ -231,7 +150,7 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
       case 'swarm:error':
         // 蜂群错误
         setError(message.payload.error);
-        setIsLoading(false); // 修复：出错时也要结束加载状态
+        setIsLoading(false);
         setState(prev => ({
           ...prev,
           error: message.payload.error,
@@ -257,62 +176,10 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         setState(prev => ({
           ...prev,
           blueprint: prev.blueprint
-            ? { ...prev.blueprint, status: 'running' }
+            ? { ...prev.blueprint, status: 'executing' }
             : null,
         }));
         console.log('[SwarmState] Swarm resumed');
-        break;
-
-      case 'swarm:stopped':
-        // 蜂群已停止
-        setState(prev => ({
-          ...prev,
-          blueprint: prev.blueprint
-            ? { ...prev.blueprint, status: 'pending' }
-            : null,
-          // 停止后清空 workers
-          workers: [],
-          queen: null,
-        }));
-        console.log('[SwarmState] Swarm stopped');
-        break;
-
-      case 'worker:paused':
-        // Worker 已暂停
-        setState(prev => ({
-          ...prev,
-          workers: prev.workers.map(worker =>
-            worker.id === message.payload.workerId
-              ? { ...worker, status: 'paused' }
-              : worker
-          ),
-        }));
-        console.log('[SwarmState] Worker paused:', message.payload.workerId);
-        break;
-
-      case 'worker:resumed':
-        // Worker 已恢复
-        setState(prev => ({
-          ...prev,
-          workers: prev.workers.map(worker =>
-            worker.id === message.payload.workerId
-              ? { ...worker, status: 'working' }
-              : worker
-          ),
-        }));
-        console.log('[SwarmState] Worker resumed:', message.payload.workerId);
-        break;
-
-      case 'worker:terminated':
-      case 'worker:removed':
-        // Worker 已终止或移除
-        setState(prev => ({
-          ...prev,
-          workers: prev.workers.filter(worker =>
-            worker.id !== (message.payload as any).workerId
-          ),
-        }));
-        console.log('[SwarmState] Worker removed:', (message.payload as any).workerId);
         break;
 
       case 'swarm:stats_update':
@@ -323,19 +190,25 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         }));
         break;
 
-      case 'connected':
-        // 服务端连接确认消息，清除之前的错误状态
-        console.log('[SwarmState] Server connection confirmed:', (message as any).payload);
-        setError(null);
-        setState(prev => ({ ...prev, error: null }));
+      case 'swarm:planner_update':
+        // v2.0: Planner 状态更新（探索/分解）
+        setState(prev => ({
+          ...prev,
+          plannerState: {
+            phase: message.payload.phase,
+            message: message.payload.message,
+            exploration: message.payload.exploration,
+          },
+        }));
+        console.log(`[SwarmState] Planner phase: ${message.payload.phase} - ${message.payload.message}`);
         break;
 
       default:
-        // 未知消息类型，记录日志但不中断
+        // 未知消息类型
         console.warn('[SwarmState] Unknown message type:', (message as any).type);
         break;
     }
-  }, [maxTimelineEvents]);
+  }, []);
 
   // 处理 WebSocket 错误
   const handleError = useCallback((err: string) => {
@@ -343,10 +216,9 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     setState(prev => ({ ...prev, error: err }));
   }, []);
 
-  // 创建 WebSocket 连接（只在有 blueprintId 时才连接）
+  // 创建 WebSocket 连接
   const ws = useSwarmWebSocket({
     ...wsOptions,
-    // 只在有蓝图时才传递有效的 URL，否则传递空字符串跳过连接
     url: blueprintId ? wsOptions.url : '',
     onMessage: handleMessage,
     onError: handleError,
@@ -375,7 +247,6 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     if (blueprintId) {
       setIsLoading(true);
       setError(null);
-      // 重新订阅会触发服务端发送完整状态
       ws.unsubscribe(blueprintId);
       setTimeout(() => {
         ws.subscribe(blueprintId);
@@ -388,6 +259,8 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     isLoading,
     error,
     refresh,
+    // v2.1: 任务重试
+    retryTask: ws.retryTask,
   };
 }
 
@@ -424,22 +297,11 @@ export function useTaskNode(state: SwarmState, taskId: string | null): TaskNode 
 }
 
 /**
- * 获取最近的时间线事件
- */
-export function useRecentTimelineEvents(state: SwarmState, limit = 10): TimelineEvent[] {
-  return useMemo(() => {
-    return state.timeline.slice(-limit);
-  }, [state.timeline, limit]);
-}
-
-/**
- * 获取活跃的 Workers（正在工作或暂停的）
+ * 获取活跃的 Workers
  */
 export function useActiveWorkers(state: SwarmState): WorkerAgent[] {
   return useMemo(() => {
-    return state.workers.filter(w =>
-      w.status === 'working' || w.status === 'paused'
-    );
+    return state.workers.filter(w => w.status === 'working');
   }, [state.workers]);
 }
 

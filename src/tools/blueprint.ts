@@ -1,153 +1,251 @@
 /**
- * Blueprint 工具
+ * Blueprint 工具 - 蜂群架构 v2.0
  *
- * 提供蓝图系统的对话式接口：
- * 1. 创建新蓝图
- * 2. 添加业务流程和系统模块
- * 3. 提交审核和批准
- * 4. 启动执行
- * 5. 查看状态和检查点
- * 6. 时光倒流
+ * 简化的蓝图管理接口：
+ * - plan: 开始需求对话并生成蓝图
+ * - execute: 执行蓝图
+ * - status: 查看执行状态
+ * - pause: 暂停执行
+ * - resume: 恢复执行
+ * - cancel: 取消执行
+ *
+ * 核心组件：
+ * - SmartPlanner: 需求对话、蓝图生成、任务分解
+ * - RealtimeCoordinator: 执行协调
+ * - AutonomousWorkerExecutor: Worker执行
+ * - GitConcurrency: Git并发
  */
 
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition } from '../types/index.js';
 import {
-  blueprintManager,
-  taskTreeManager,
-  agentCoordinator,
-  tddExecutor,
-  timeTravelManager,
-  generateBlueprintSummary,
-  codebaseAnalyzer,
-  quickAnalyze,
+  SmartPlanner,
+  smartPlanner,
+  RealtimeCoordinator,
+  createRealtimeCoordinator,
+  AutonomousWorkerExecutor,
+  createAutonomousWorker,
+  GitConcurrency,
   type Blueprint,
-  type SystemModule,
-  type BusinessProcess,
-  type NonFunctionalRequirement,
+  type ExecutionPlan,
+  type ExecutionStatus,
+  type DialogState,
+  type SmartTask,
+  type TaskResult,
+  type SwarmConfig,
+  type TechStack,
+  DEFAULT_SWARM_CONFIG,
 } from '../blueprint/index.js';
 
 // ============================================================================
 // 输入类型定义
 // ============================================================================
 
+/**
+ * Blueprint 工具输入参数
+ */
 export interface BlueprintToolInput {
+  /** 操作类型 */
   action:
-    | 'create'           // 创建蓝图
-    | 'analyze'          // 分析现有代码库
-    | 'add_module'       // 添加系统模块
-    | 'add_process'      // 添加业务流程
-    | 'add_nfr'          // 添加非功能性要求
-    | 'submit'           // 提交审核
-    | 'approve'          // 批准蓝图
-    | 'reject'           // 拒绝蓝图
-    | 'start'            // 开始执行
-    | 'pause'            // 暂停执行
-    | 'resume'           // 恢复执行
-    | 'status'           // 查看状态
-    | 'list'             // 列出所有蓝图
-    | 'get_tree'         // 获取任务树
-    | 'create_checkpoint'// 创建检查点
-    | 'rollback'         // 回滚到检查点
-    | 'list_checkpoints' // 列出检查点
-    | 'get_executable'   // 获取可执行任务
-    | 'get_workers';     // 获取 Worker 状态
+    | 'plan'      // 开始需求对话并生成蓝图
+    | 'execute'   // 执行蓝图
+    | 'status'    // 查看执行状态
+    | 'pause'     // 暂停执行
+    | 'resume'    // 恢复执行
+    | 'cancel';   // 取消执行
 
-  // 创建蓝图
-  name?: string;
-  description?: string;
+  // ---- plan 阶段参数 ----
 
-  // 添加模块
-  module?: {
-    name: string;
-    description: string;
-    type: 'frontend' | 'backend' | 'database' | 'service' | 'infrastructure' | 'other';
-    responsibilities: string[];
-    dependencies?: string[];
-    interfaces?: Array<{
-      name: string;
-      type: 'api' | 'event' | 'message' | 'file' | 'other';
-      direction: 'in' | 'out' | 'both';
-      description: string;
-    }>;
-    techStack?: string[];
-  };
+  /** 项目路径（plan时使用，默认为当前目录） */
+  projectPath?: string;
 
-  // 添加业务流程
-  process?: {
-    name: string;
-    description: string;
-    type: 'as-is' | 'to-be';
-    steps: Array<{
-      name: string;
-      description: string;
-      actor: string;
-    }>;
-    actors: string[];
-  };
+  /** 用户输入（plan对话时使用） */
+  userInput?: string;
 
-  // 添加非功能性要求
-  nfr?: {
-    category: 'performance' | 'security' | 'scalability' | 'availability' | 'maintainability' | 'usability' | 'other';
-    name: string;
-    description: string;
-    metric?: string;
-    priority: 'must' | 'should' | 'could' | 'wont';
-  };
+  /** 会话ID（继续已有对话时使用） */
+  sessionId?: string;
 
-  // 蓝图/任务树 ID
+  // ---- execute 阶段参数 ----
+
+  /** 蓝图ID（execute时使用） */
   blueprintId?: string;
-  treeId?: string;
-  checkpointId?: string;
 
-  // 审批
-  approvedBy?: string;
-  reason?: string;
+  /** 执行计划ID（execute时使用，如果已有计划） */
+  planId?: string;
 
-  // 检查点
-  checkpointName?: string;
-  taskId?: string;
-
-  // 分析现有代码库
-  rootDir?: string;
-  granularity?: 'coarse' | 'medium' | 'fine';
+  /** 蜂群配置（可选，覆盖默认配置） */
+  config?: Partial<SwarmConfig>;
 }
 
 // ============================================================================
-// Blueprint 工具
+// 执行状态管理器（单例）
+// ============================================================================
+
+/**
+ * 执行状态管理器
+ * 管理当前执行的协调器、蓝图和计划
+ */
+class ExecutionStateManager {
+  // 当前协调器
+  private coordinator: RealtimeCoordinator | null = null;
+  // 当前蓝图
+  private currentBlueprint: Blueprint | null = null;
+  // 当前执行计划
+  private currentPlan: ExecutionPlan | null = null;
+  // 当前对话状态
+  private currentDialogState: DialogState | null = null;
+  // 当前会话ID
+  private currentSessionId: string | null = null;
+
+  // 规划器实例
+  private planner: SmartPlanner = smartPlanner;
+
+  /**
+   * 获取或创建协调器
+   */
+  getOrCreateCoordinator(config?: Partial<SwarmConfig>): RealtimeCoordinator {
+    if (!this.coordinator) {
+      this.coordinator = createRealtimeCoordinator(config);
+
+      // 设置任务执行器
+      const worker = createAutonomousWorker(config);
+      this.coordinator.setTaskExecutor({
+        async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
+          // 获取当前蓝图的上下文
+          const blueprint = executionState.getCurrentBlueprint();
+          if (!blueprint) {
+            throw new Error('没有活跃的蓝图');
+          }
+
+          // 构建 Worker 上下文
+          // 确保 config 是完整的 SwarmConfig 类型
+          const fullConfig: SwarmConfig = { ...DEFAULT_SWARM_CONFIG, ...config };
+          const context: import('../blueprint/index.js').WorkerContext = {
+            projectPath: blueprint.projectPath,
+            techStack: blueprint.techStack,
+            config: fullConfig,
+            constraints: blueprint.constraints,
+          };
+
+          // 执行任务
+          return worker.execute(task, context);
+        },
+      });
+    }
+    return this.coordinator;
+  }
+
+  /**
+   * 获取规划器
+   */
+  getPlanner(): SmartPlanner {
+    return this.planner;
+  }
+
+  /**
+   * 设置当前蓝图
+   */
+  setCurrentBlueprint(blueprint: Blueprint): void {
+    this.currentBlueprint = blueprint;
+  }
+
+  /**
+   * 获取当前蓝图
+   */
+  getCurrentBlueprint(): Blueprint | null {
+    return this.currentBlueprint;
+  }
+
+  /**
+   * 设置当前执行计划
+   */
+  setCurrentPlan(plan: ExecutionPlan): void {
+    this.currentPlan = plan;
+  }
+
+  /**
+   * 获取当前执行计划
+   */
+  getCurrentPlan(): ExecutionPlan | null {
+    return this.currentPlan;
+  }
+
+  /**
+   * 设置对话状态
+   */
+  setDialogState(sessionId: string, state: DialogState): void {
+    this.currentSessionId = sessionId;
+    this.currentDialogState = state;
+  }
+
+  /**
+   * 获取对话状态
+   */
+  getDialogState(): { sessionId: string; state: DialogState } | null {
+    if (this.currentSessionId && this.currentDialogState) {
+      return {
+        sessionId: this.currentSessionId,
+        state: this.currentDialogState,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * 获取协调器（如果存在）
+   */
+  getCoordinator(): RealtimeCoordinator | null {
+    return this.coordinator;
+  }
+
+  /**
+   * 重置执行状态
+   */
+  reset(): void {
+    this.coordinator = null;
+    this.currentPlan = null;
+  }
+
+  /**
+   * 清除对话状态
+   */
+  clearDialogState(): void {
+    this.currentSessionId = null;
+    this.currentDialogState = null;
+  }
+}
+
+// 全局执行状态管理器
+const executionState = new ExecutionStateManager();
+
+// ============================================================================
+// Blueprint 工具实现
 // ============================================================================
 
 export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
   name = 'Blueprint';
-  description = `项目蓝图管理工具。
+  description = `蜂群架构 v2.0 - 智能项目规划与执行工具
 
-用于创建和管理项目蓝图，执行任务树，以及进行时光倒流操作。
+核心功能：
+1. plan - 开始需求对话，智能生成蓝图和执行计划
+2. execute - 启动自治 Worker 并行执行任务
+3. status - 实时查看执行状态和进度
+4. pause - 暂停执行（可随时恢复）
+5. resume - 恢复暂停的执行
+6. cancel - 取消执行
 
-蓝图系统的核心理念：
-1. 一个项目 = 一棵任务树
-2. 主 Agent（蜂王）负责全局协调
-3. 子 Agent（蜜蜂）执行具体任务
-4. 每个任务都遵循 TDD 循环：编写测试 → 红灯 → 编写代码 → 绿灯
-5. 只有测试通过才能完成任务
-6. 支持检查点和时光倒流
+使用流程：
+1. 调用 plan 开始需求对话
+2. 回答几个关键问题（约2-3轮对话）
+3. 确认后自动生成蓝图和任务分解
+4. 调用 execute 开始执行
+5. 使用 status 监控进度
 
-常用操作流程：
-方式一 - 从头创建蓝图：
-1. create - 创建蓝图草稿
-2. add_module - 添加系统模块
-3. add_process - 添加业务流程
-4. submit - 提交审核
-5. approve - 用户批准（签字确认）
-6. start - 开始执行
-
-方式二 - 一键分析现有项目：
-1. analyze - 分析现有代码库，自动生成蓝图和任务树
-   （会自动提交审核、批准并开始执行）
-
-通用操作：
-- status - 查看执行状态
-- create_checkpoint - 创建检查点
-- rollback - 回滚到检查点`;
+蜂群特性：
+- 自治 Worker：无需逐步批准，自主决策
+- 智能测试：AI 判断是否需要测试
+- Git 并发：分支代替文件锁
+- 自动重试：失败任务自动修复重试`;
 
   getInputSchema(): ToolDefinition['inputSchema'] {
     return {
@@ -155,72 +253,38 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
       properties: {
         action: {
           type: 'string',
-          enum: [
-            'create', 'analyze', 'add_module', 'add_process', 'add_nfr',
-            'submit', 'approve', 'reject',
-            'start', 'pause', 'resume',
-            'status', 'list', 'get_tree',
-            'create_checkpoint', 'rollback', 'list_checkpoints',
-            'get_executable', 'get_workers',
-          ],
+          enum: ['plan', 'execute', 'status', 'pause', 'resume', 'cancel'],
           description: '要执行的操作',
         },
-        name: {
+        projectPath: {
           type: 'string',
-          description: '蓝图名称（create 时使用）',
+          description: '项目路径（plan时使用，默认为当前目录）',
         },
-        description: {
+        userInput: {
           type: 'string',
-          description: '蓝图描述（create 时使用）',
+          description: '用户输入（plan对话时使用）',
         },
-        module: {
-          type: 'object',
-          description: '系统模块定义（add_module 时使用）',
-        },
-        process: {
-          type: 'object',
-          description: '业务流程定义（add_process 时使用）',
-        },
-        nfr: {
-          type: 'object',
-          description: '非功能性要求（add_nfr 时使用）',
+        sessionId: {
+          type: 'string',
+          description: '会话ID（继续已有对话时使用）',
         },
         blueprintId: {
           type: 'string',
-          description: '蓝图 ID',
+          description: '蓝图ID（execute时使用）',
         },
-        treeId: {
+        planId: {
           type: 'string',
-          description: '任务树 ID',
+          description: '执行计划ID（execute时使用）',
         },
-        checkpointId: {
-          type: 'string',
-          description: '检查点 ID（rollback 时使用）',
-        },
-        approvedBy: {
-          type: 'string',
-          description: '批准人（approve 时使用）',
-        },
-        reason: {
-          type: 'string',
-          description: '拒绝原因（reject 时使用）',
-        },
-        checkpointName: {
-          type: 'string',
-          description: '检查点名称（create_checkpoint 时使用）',
-        },
-        taskId: {
-          type: 'string',
-          description: '任务 ID（用于任务级检查点）',
-        },
-        rootDir: {
-          type: 'string',
-          description: '要分析的项目根目录（analyze 时使用，默认为当前目录）',
-        },
-        granularity: {
-          type: 'string',
-          enum: ['coarse', 'medium', 'fine'],
-          description: '分析粒度：coarse（粗）、medium（中）、fine（细），默认 medium',
+        config: {
+          type: 'object',
+          description: '蜂群配置（可选）',
+          properties: {
+            maxWorkers: { type: 'number', description: '最大并发Worker数' },
+            maxRetries: { type: 'number', description: '最大重试次数' },
+            autoTest: { type: 'boolean', description: '是否自动判断测试需求' },
+            maxCost: { type: 'number', description: '最大成本限制（美元）' },
+          },
         },
       },
       required: ['action'],
@@ -230,44 +294,18 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
   async execute(input: BlueprintToolInput): Promise<ToolResult> {
     try {
       switch (input.action) {
-        case 'create':
-          return this.createBlueprint(input);
-        case 'analyze':
-          return this.analyzeCodebase(input);
-        case 'add_module':
-          return this.addModule(input);
-        case 'add_process':
-          return this.addProcess(input);
-        case 'add_nfr':
-          return this.addNFR(input);
-        case 'submit':
-          return this.submitForReview(input);
-        case 'approve':
-          return this.approveBlueprint(input);
-        case 'reject':
-          return this.rejectBlueprint(input);
-        case 'start':
-          return this.startExecution(input);
-        case 'pause':
-          return this.pauseExecution(input);
-        case 'resume':
-          return this.resumeExecution(input);
+        case 'plan':
+          return await this.handlePlan(input);
+        case 'execute':
+          return await this.handleExecute(input);
         case 'status':
-          return this.getStatus(input);
-        case 'list':
-          return this.listBlueprints();
-        case 'get_tree':
-          return this.getTaskTree(input);
-        case 'create_checkpoint':
-          return this.createCheckpoint(input);
-        case 'rollback':
-          return this.rollback(input);
-        case 'list_checkpoints':
-          return this.listCheckpoints(input);
-        case 'get_executable':
-          return this.getExecutableTasks(input);
-        case 'get_workers':
-          return this.getWorkers();
+          return this.handleStatus();
+        case 'pause':
+          return this.handlePause();
+        case 'resume':
+          return this.handleResume();
+        case 'cancel':
+          return this.handleCancel();
         default:
           return { success: false, error: `未知操作: ${input.action}` };
       }
@@ -277,93 +315,140 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
   }
 
   // --------------------------------------------------------------------------
-  // 蓝图操作
+  // plan: 需求对话和蓝图生成
   // --------------------------------------------------------------------------
 
-  private createBlueprint(input: BlueprintToolInput): ToolResult {
-    if (!input.name || !input.description) {
-      return { success: false, error: '创建蓝图需要 name 和 description 参数' };
+  /**
+   * 处理 plan 操作
+   * 支持开始新对话或继续已有对话
+   */
+  private async handlePlan(input: BlueprintToolInput): Promise<ToolResult> {
+    const planner = executionState.getPlanner();
+    const projectPath = input.projectPath || process.cwd();
+
+    // 检查是否有进行中的对话
+    const existingDialog = executionState.getDialogState();
+
+    // 如果有用户输入，处理对话
+    if (input.userInput) {
+      // 如果有进行中的对话，继续对话
+      if (existingDialog) {
+        const updatedState = await planner.processUserInput(
+          input.userInput,
+          existingDialog.state
+        );
+        executionState.setDialogState(existingDialog.sessionId, updatedState);
+
+        // 检查对话是否完成
+        if (updatedState.isComplete) {
+          return await this.finalizeBlueprint(updatedState, projectPath);
+        }
+
+        // 返回最新的助手回复
+        const lastMessage = updatedState.messages[updatedState.messages.length - 1];
+        return {
+          success: true,
+          output: this.formatDialogResponse(updatedState, lastMessage.content),
+        };
+      }
+
+      // 没有进行中的对话，开始新对话
+      const newState = await planner.startDialog(projectPath);
+      const sessionId = this.generateSessionId();
+      executionState.setDialogState(sessionId, newState);
+
+      // 立即处理用户输入
+      const updatedState = await planner.processUserInput(input.userInput, newState);
+      executionState.setDialogState(sessionId, updatedState);
+
+      const lastMessage = updatedState.messages[updatedState.messages.length - 1];
+      return {
+        success: true,
+        output: this.formatDialogResponse(updatedState, lastMessage.content),
+      };
     }
 
-    const blueprint = blueprintManager.createBlueprint(input.name, input.description);
+    // 没有用户输入，开始新对话
+    const state = await planner.startDialog(projectPath);
+    const sessionId = this.generateSessionId();
+    executionState.setDialogState(sessionId, state);
 
+    // 返回问候语
+    const greetingMessage = state.messages[0];
     return {
       success: true,
-      output: `✅ 蓝图创建成功！
-
-蓝图 ID: ${blueprint.id}
-名称: ${blueprint.name}
-状态: ${blueprint.status}
-
-下一步：
-1. 使用 add_module 添加系统模块
-2. 使用 add_process 添加业务流程
-3. 使用 submit 提交审核`,
+      output: this.formatDialogResponse(state, greetingMessage.content),
     };
   }
 
-  private async analyzeCodebase(input: BlueprintToolInput): Promise<ToolResult> {
-    const rootDir = input.rootDir || process.cwd();
-    const granularity = input.granularity || 'medium';
+  /**
+   * 完成蓝图生成
+   */
+  private async finalizeBlueprint(
+    state: DialogState,
+    projectPath: string
+  ): Promise<ToolResult> {
+    const planner = executionState.getPlanner();
 
     try {
-      // 使用代码库分析器进行一键分析
-      const { codebase, blueprint, taskTree } = await codebaseAnalyzer.analyzeAndGenerate({
-        rootDir,
-        projectName: input.name,
-        projectDescription: input.description,
-      });
+      // 生成蓝图
+      const blueprint = await planner.generateBlueprint(state);
+      executionState.setCurrentBlueprint(blueprint);
 
-      // 生成详细报告
+      // 生成执行计划
+      const plan = await planner.createExecutionPlan(blueprint);
+      executionState.setCurrentPlan(plan);
+
+      // 清除对话状态
+      executionState.clearDialogState();
+
+      // 格式化输出
       const lines: string[] = [];
-      lines.push('🔍 代码库分析完成！');
+      lines.push('蓝图已生成！');
       lines.push('');
-      lines.push('📊 项目信息');
-      lines.push('============');
-      lines.push(`项目名称: ${codebase.name}`);
-      lines.push(`编程语言: ${codebase.language}`);
-      if (codebase.framework) {
-        lines.push(`框架: ${codebase.framework}`);
-      }
-      lines.push(`根目录: ${codebase.rootDir}`);
-      lines.push('');
-
-      lines.push('📁 代码统计');
-      lines.push('============');
-      lines.push(`总文件数: ${codebase.stats.totalFiles}`);
-      lines.push(`总目录数: ${codebase.stats.totalDirs}`);
-      lines.push(`总代码行数: ${codebase.stats.totalLines.toLocaleString()}`);
-      lines.push('');
-
-      lines.push('📦 检测到的模块');
-      lines.push('============');
-      for (const module of codebase.modules) {
-        lines.push(`  • ${module.name} (${module.type})`);
-        lines.push(`    文件数: ${module.files.length}`);
-        lines.push(`    职责: ${module.responsibilities.join('、')}`);
-      }
-      lines.push('');
-
-      lines.push('📋 生成的蓝图');
-      lines.push('============');
-      lines.push(`蓝图 ID: ${blueprint.id}`);
+      lines.push('========================================');
       lines.push(`蓝图名称: ${blueprint.name}`);
-      lines.push(`状态: ${blueprint.status}`);
-      lines.push(`系统模块: ${blueprint.modules.length} 个`);
-      lines.push(`业务流程: ${blueprint.businessProcesses.length} 个`);
+      lines.push(`蓝图 ID: ${blueprint.id}`);
+      lines.push(`项目路径: ${blueprint.projectPath}`);
       lines.push('');
-
-      lines.push('🌳 生成的任务树');
-      lines.push('============');
-      lines.push(`任务树 ID: ${taskTree.id}`);
-      lines.push(`总任务数: ${taskTree.stats.totalTasks}`);
+      lines.push('需求清单:');
+      blueprint.requirements.forEach((req, i) => {
+        lines.push(`  ${i + 1}. ${req}`);
+      });
       lines.push('');
-
-      lines.push('✅ 蓝图已自动批准并开始执行！');
+      lines.push('技术栈:');
+      lines.push(`  语言: ${blueprint.techStack.language}`);
+      if (blueprint.techStack.framework) {
+        lines.push(`  框架: ${blueprint.techStack.framework}`);
+      }
+      lines.push(`  包管理器: ${blueprint.techStack.packageManager}`);
+      if (blueprint.techStack.testFramework) {
+        lines.push(`  测试框架: ${blueprint.techStack.testFramework}`);
+      }
       lines.push('');
-      lines.push('使用 status 查看执行状态');
-      lines.push('使用 get_tree 查看任务树');
-      lines.push('使用 get_workers 查看 Worker 状态');
+      lines.push('模块划分:');
+      blueprint.modules.forEach((mod) => {
+        lines.push(`  - ${mod.name} (${mod.type}): ${mod.description}`);
+      });
+      lines.push('');
+      lines.push('========================================');
+      lines.push(`执行计划 ID: ${plan.id}`);
+      lines.push(`总任务数: ${plan.tasks.length}`);
+      lines.push(`并行组数: ${plan.parallelGroups.length}`);
+      lines.push(`预估时间: ${plan.estimatedMinutes} 分钟`);
+      lines.push(`预估成本: $${plan.estimatedCost.toFixed(3)}`);
+      lines.push('');
+      lines.push('AI 决策说明:');
+      plan.autoDecisions.forEach((decision) => {
+        lines.push(`  - ${decision.description}`);
+        if (decision.reasoning) {
+          lines.push(`    理由: ${decision.reasoning}`);
+        }
+      });
+      lines.push('');
+      lines.push('========================================');
+      lines.push('');
+      lines.push('下一步: 调用 execute 开始执行');
 
       return {
         success: true,
@@ -372,258 +457,204 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
     } catch (error: any) {
       return {
         success: false,
-        error: `代码库分析失败: ${error.message}`,
+        error: `蓝图生成失败: ${error.message}`,
       };
     }
   }
 
-  private addModule(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId 或先创建蓝图' };
+  /**
+   * 格式化对话响应
+   */
+  private formatDialogResponse(state: DialogState, message: string): string {
+    const lines: string[] = [];
+    lines.push(`[对话阶段: ${this.translatePhase(state.phase)}]`);
+    lines.push('');
+    lines.push(message);
+
+    // 如果已收集到需求，显示摘要
+    if (state.collectedRequirements.length > 0) {
+      lines.push('');
+      lines.push('--- 已收集的需求 ---');
+      state.collectedRequirements.forEach((req, i) => {
+        lines.push(`${i + 1}. ${req}`);
+      });
     }
 
-    if (!input.module) {
-      return { success: false, error: '请提供 module 参数' };
+    return lines.join('\n');
+  }
+
+  /**
+   * 翻译对话阶段
+   */
+  private translatePhase(phase: string): string {
+    const translations: Record<string, string> = {
+      greeting: '打招呼',
+      requirements: '收集需求',
+      clarification: '澄清细节',
+      tech_choice: '技术选择',
+      confirmation: '确认蓝图',
+      done: '完成',
+    };
+    return translations[phase] || phase;
+  }
+
+  /**
+   * 生成会话ID
+   */
+  private generateSessionId(): string {
+    return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // --------------------------------------------------------------------------
+  // execute: 执行蓝图
+  // --------------------------------------------------------------------------
+
+  /**
+   * 处理 execute 操作
+   */
+  private async handleExecute(input: BlueprintToolInput): Promise<ToolResult> {
+    // 获取执行计划
+    const plan = executionState.getCurrentPlan();
+    if (!plan) {
+      return {
+        success: false,
+        error: '没有可执行的计划。请先使用 plan 操作生成蓝图和执行计划。',
+      };
     }
 
-    const module = blueprintManager.addModule(blueprintId, {
-      name: input.module.name,
-      description: input.module.description,
-      type: input.module.type,
-      responsibilities: input.module.responsibilities,
-      dependencies: input.module.dependencies || [],
-      interfaces: (input.module.interfaces || []).map(iface => ({
-        id: '',
-        ...iface,
-      })),
-      techStack: input.module.techStack,
+    // 获取蓝图
+    const blueprint = executionState.getCurrentBlueprint();
+    if (!blueprint) {
+      return {
+        success: false,
+        error: '没有活跃的蓝图。请先使用 plan 操作生成蓝图。',
+      };
+    }
+
+    // 获取协调器
+    const coordinator = executionState.getOrCreateCoordinator(input.config);
+
+    // 启动执行（异步，不等待完成）
+    const lines: string[] = [];
+    lines.push('执行已启动！');
+    lines.push('');
+    lines.push(`蓝图: ${blueprint.name}`);
+    lines.push(`计划 ID: ${plan.id}`);
+    lines.push(`任务数: ${plan.tasks.length}`);
+    lines.push(`最大并发: ${input.config?.maxWorkers || DEFAULT_SWARM_CONFIG.maxWorkers} Worker`);
+    lines.push('');
+    lines.push('蜂群正在并行执行任务...');
+    lines.push('');
+    lines.push('使用以下命令监控执行:');
+    lines.push('  - status: 查看执行状态');
+    lines.push('  - pause: 暂停执行');
+    lines.push('  - cancel: 取消执行');
+
+    // 异步启动执行
+    coordinator.start(plan).then((result) => {
+      // 执行完成后的回调（可以添加日志或通知）
+      console.log(`[Blueprint] 执行完成: success=${result.success}, completed=${result.completedCount}, failed=${result.failedCount}`);
+    }).catch((error) => {
+      console.error(`[Blueprint] 执行出错: ${error.message}`);
     });
 
     return {
       success: true,
-      output: `✅ 系统模块添加成功！
-
-模块 ID: ${module.id}
-名称: ${module.name}
-类型: ${module.type}
-职责: ${module.responsibilities.length} 项
-接口: ${module.interfaces.length} 个`,
-    };
-  }
-
-  private addProcess(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId 或先创建蓝图' };
-    }
-
-    if (!input.process) {
-      return { success: false, error: '请提供 process 参数' };
-    }
-
-    const process = blueprintManager.addBusinessProcess(blueprintId, {
-      name: input.process.name,
-      description: input.process.description,
-      type: input.process.type,
-      steps: input.process.steps.map((step, index) => ({
-        id: '',
-        order: index + 1,
-        ...step,
-      })),
-      actors: input.process.actors,
-      inputs: [],
-      outputs: [],
-    });
-
-    return {
-      success: true,
-      output: `✅ 业务流程添加成功！
-
-流程 ID: ${process.id}
-名称: ${process.name}
-类型: ${process.type}
-步骤数: ${process.steps.length}`,
-    };
-  }
-
-  private addNFR(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId 或先创建蓝图' };
-    }
-
-    if (!input.nfr) {
-      return { success: false, error: '请提供 nfr 参数' };
-    }
-
-    const nfr = blueprintManager.addNFR(blueprintId, input.nfr);
-
-    return {
-      success: true,
-      output: `✅ 非功能性要求添加成功！
-
-NFR ID: ${nfr.id}
-名称: ${nfr.name}
-类别: ${nfr.category}
-优先级: ${nfr.priority}`,
-    };
-  }
-
-  private submitForReview(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId' };
-    }
-
-    const blueprint = blueprintManager.submitForReview(blueprintId);
-    const summary = generateBlueprintSummary(blueprint);
-
-    return {
-      success: true,
-      output: `✅ 蓝图已提交审核！
-
-${summary}
-
----
-请用户审核后调用 approve 或 reject 操作。`,
-    };
-  }
-
-  private approveBlueprint(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId' };
-    }
-
-    const blueprint = blueprintManager.approveBlueprint(blueprintId, input.approvedBy || 'user');
-
-    return {
-      success: true,
-      output: `✅ 蓝图已批准！
-
-蓝图 ID: ${blueprint.id}
-批准人: ${blueprint.approvedBy}
-批准时间: ${blueprint.approvedAt?.toISOString()}
-
-蓝图已准备好执行，使用 start 操作开始执行。`,
-    };
-  }
-
-  private rejectBlueprint(input: BlueprintToolInput): ToolResult {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId' };
-    }
-
-    const blueprint = blueprintManager.rejectBlueprint(blueprintId, input.reason || '未说明原因');
-
-    return {
-      success: true,
-      output: `❌ 蓝图已被拒绝
-
-蓝图 ID: ${blueprint.id}
-原因: ${input.reason || '未说明原因'}
-
-蓝图已返回草稿状态，请修改后重新提交。`,
+      output: lines.join('\n'),
     };
   }
 
   // --------------------------------------------------------------------------
-  // 执行控制
+  // status: 查看执行状态
   // --------------------------------------------------------------------------
 
-  private async startExecution(input: BlueprintToolInput): Promise<ToolResult> {
-    const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-    if (!blueprintId) {
-      return { success: false, error: '请指定 blueprintId' };
+  /**
+   * 处理 status 操作
+   */
+  private handleStatus(): ToolResult {
+    const coordinator = executionState.getCoordinator();
+    const blueprint = executionState.getCurrentBlueprint();
+    const plan = executionState.getCurrentPlan();
+    const dialogState = executionState.getDialogState();
+
+    const lines: string[] = [];
+    lines.push('========================================');
+    lines.push('蜂群状态');
+    lines.push('========================================');
+    lines.push('');
+
+    // 对话状态
+    if (dialogState) {
+      lines.push('[对话进行中]');
+      lines.push(`  阶段: ${this.translatePhase(dialogState.state.phase)}`);
+      lines.push(`  已收集需求: ${dialogState.state.collectedRequirements.length} 条`);
+      lines.push('');
     }
 
-    // 初始化蜂王
-    const queen = await agentCoordinator.initializeQueen(blueprintId);
+    // 蓝图信息
+    if (blueprint) {
+      lines.push('[当前蓝图]');
+      lines.push(`  名称: ${blueprint.name}`);
+      lines.push(`  ID: ${blueprint.id}`);
+      lines.push(`  状态: ${blueprint.status}`);
+      lines.push(`  模块数: ${blueprint.modules.length}`);
+      lines.push('');
+    } else {
+      lines.push('[当前蓝图] 无');
+      lines.push('');
+    }
 
-    // 启动主循环
-    agentCoordinator.startMainLoop();
+    // 执行计划信息
+    if (plan) {
+      lines.push('[执行计划]');
+      lines.push(`  ID: ${plan.id}`);
+      lines.push(`  总任务: ${plan.tasks.length}`);
+      lines.push(`  状态: ${plan.status}`);
+      lines.push('');
+    }
 
-    return {
-      success: true,
-      output: `🐝 执行已启动！
+    // 执行状态
+    if (coordinator) {
+      const status = coordinator.getStatus();
+      lines.push('[执行状态]');
+      lines.push(`  完成任务: ${status.completedTasks} / ${status.totalTasks}`);
+      lines.push(`  失败任务: ${status.failedTasks}`);
+      lines.push(`  执行中: ${status.runningTasks}`);
+      lines.push(`  活跃 Worker: ${status.activeWorkers}`);
+      lines.push('');
+      lines.push('[成本和时间]');
+      lines.push(`  当前成本: $${status.currentCost.toFixed(4)}`);
+      lines.push(`  预估总成本: $${status.estimatedTotalCost.toFixed(4)}`);
+      if (status.estimatedCompletion) {
+        lines.push(`  预计完成: ${status.estimatedCompletion.toLocaleString()}`);
+      }
 
-蜂王 ID: ${queen.id}
-任务树 ID: ${queen.taskTreeId}
-状态: ${queen.status}
+      // 进度条
+      const progress = status.totalTasks > 0
+        ? Math.round((status.completedTasks / status.totalTasks) * 100)
+        : 0;
+      const progressBar = this.renderProgressBar(progress);
+      lines.push('');
+      lines.push(`  进度: ${progressBar} ${progress}%`);
 
-蜂王正在协调蜜蜂们执行任务...
-使用 status 查看执行状态
-使用 get_workers 查看 Worker 状态`,
-    };
-  }
-
-  private pauseExecution(input: BlueprintToolInput): ToolResult {
-    agentCoordinator.stopMainLoop();
-
-    return {
-      success: true,
-      output: `⏸️ 执行已暂停
-
-使用 resume 恢复执行
-使用 create_checkpoint 创建检查点`,
-    };
-  }
-
-  private resumeExecution(input: BlueprintToolInput): ToolResult {
-    agentCoordinator.startMainLoop();
-
-    return {
-      success: true,
-      output: `▶️ 执行已恢复`,
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // 状态查询
-  // --------------------------------------------------------------------------
-
-  private getStatus(input: BlueprintToolInput): ToolResult {
-    const queen = agentCoordinator.getQueen();
-
-    if (!queen) {
-      // 如果没有活跃的执行，显示蓝图状态
-      const blueprintId = input.blueprintId || this.getCurrentBlueprintId();
-      if (blueprintId) {
-        const blueprint = blueprintManager.getBlueprint(blueprintId);
-        if (blueprint) {
-          return {
-            success: true,
-            output: generateBlueprintSummary(blueprint),
-          };
+      // 问题列表
+      if (status.issues.length > 0) {
+        lines.push('');
+        lines.push('[问题记录]');
+        status.issues.slice(0, 5).forEach((issue) => {
+          const icon = issue.resolved ? '[已解决]' : '[待处理]';
+          lines.push(`  ${icon} ${issue.type}: ${issue.description}`);
+        });
+        if (status.issues.length > 5) {
+          lines.push(`  ... 还有 ${status.issues.length - 5} 个问题`);
         }
       }
-      return { success: false, error: '没有活跃的蓝图或执行' };
+    } else {
+      lines.push('[执行状态] 未启动');
     }
 
-    const tree = taskTreeManager.getTaskTree(queen.taskTreeId);
-    const workers = agentCoordinator.getWorkers();
-
-    const lines: string[] = [];
-    lines.push('📊 执行状态');
-    lines.push('============');
     lines.push('');
-    lines.push(`蜂王状态: ${queen.status}`);
-    lines.push('');
-
-    if (tree) {
-      lines.push('📈 任务统计');
-      lines.push(`  总任务: ${tree.stats.totalTasks}`);
-      lines.push(`  待执行: ${tree.stats.pendingTasks}`);
-      lines.push(`  执行中: ${tree.stats.runningTasks}`);
-      lines.push(`  已通过: ${tree.stats.passedTasks}`);
-      lines.push(`  已失败: ${tree.stats.failedTasks}`);
-      lines.push(`  进度: ${tree.stats.progressPercentage.toFixed(1)}%`);
-      lines.push('');
-    }
-
-    lines.push(`🐝 活跃 Worker: ${workers.filter(w => w.status !== 'idle').length} / ${workers.length}`);
+    lines.push('========================================');
 
     return {
       success: true,
@@ -631,258 +662,104 @@ ${summary}
     };
   }
 
-  private listBlueprints(): ToolResult {
-    const blueprints = blueprintManager.getAllBlueprints();
+  /**
+   * 渲染进度条
+   */
+  private renderProgressBar(percent: number): string {
+    const width = 20;
+    const filled = Math.round((percent / 100) * width);
+    const empty = width - filled;
+    return '[' + '='.repeat(filled) + ' '.repeat(empty) + ']';
+  }
 
-    if (blueprints.length === 0) {
+  // --------------------------------------------------------------------------
+  // pause: 暂停执行
+  // --------------------------------------------------------------------------
+
+  /**
+   * 处理 pause 操作
+   */
+  private handlePause(): ToolResult {
+    const coordinator = executionState.getCoordinator();
+
+    if (!coordinator) {
       return {
-        success: true,
-        output: '暂无蓝图。使用 create 操作创建新蓝图。',
+        success: false,
+        error: '没有正在执行的任务。',
       };
     }
 
-    const lines = ['📋 蓝图列表', '============', ''];
-
-    for (const bp of blueprints) {
-      lines.push(`[${bp.status}] ${bp.name}`);
-      lines.push(`  ID: ${bp.id}`);
-      lines.push(`  版本: ${bp.version}`);
-      lines.push(`  模块: ${bp.modules.length} | 流程: ${bp.businessProcesses.length}`);
-      lines.push('');
-    }
+    coordinator.pause();
 
     return {
       success: true,
-      output: lines.join('\n'),
-    };
-  }
+      output: `执行已暂停。
 
-  private getTaskTree(input: BlueprintToolInput): ToolResult {
-    const treeId = input.treeId || agentCoordinator.getQueen()?.taskTreeId;
-    if (!treeId) {
-      return { success: false, error: '请指定 treeId 或先启动执行' };
-    }
+当前状态已保存，可以随时使用 resume 恢复执行。
 
-    const tree = taskTreeManager.getTaskTree(treeId);
-    if (!tree) {
-      return { success: false, error: `任务树 ${treeId} 不存在` };
-    }
-
-    const lines: string[] = [];
-    lines.push('🌳 任务树');
-    lines.push('============');
-    lines.push('');
-
-    this.renderTreeNode(tree.root, lines, 0);
-
-    return {
-      success: true,
-      output: lines.join('\n'),
-    };
-  }
-
-  private renderTreeNode(node: any, lines: string[], depth: number): void {
-    const indent = '  '.repeat(depth);
-    const statusIcon = this.getStatusIcon(node.status);
-    lines.push(`${indent}${statusIcon} ${node.name} [${node.status}]`);
-
-    for (const child of node.children || []) {
-      this.renderTreeNode(child, lines, depth + 1);
-    }
-  }
-
-  private getStatusIcon(status: string): string {
-    const icons: Record<string, string> = {
-      pending: '⏳',
-      blocked: '🚫',
-      test_writing: '✍️',
-      coding: '💻',
-      testing: '🧪',
-      test_failed: '❌',
-      passed: '✅',
-      review: '👀',
-      approved: '✅',
-      rejected: '❌',
-      cancelled: '🚫',
-    };
-    return icons[status] || '❓';
-  }
-
-  private getExecutableTasks(input: BlueprintToolInput): ToolResult {
-    const treeId = input.treeId || agentCoordinator.getQueen()?.taskTreeId;
-    if (!treeId) {
-      return { success: false, error: '请指定 treeId 或先启动执行' };
-    }
-
-    const tasks = taskTreeManager.getExecutableTasks(treeId);
-
-    if (tasks.length === 0) {
-      return {
-        success: true,
-        output: '当前没有可执行的任务（可能都在执行中或被依赖阻塞）',
-      };
-    }
-
-    const lines = ['📋 可执行任务', '============', ''];
-
-    for (const task of tasks.slice(0, 10)) {
-      lines.push(`[${task.priority}] ${task.name}`);
-      lines.push(`  ID: ${task.id}`);
-      lines.push(`  深度: ${task.depth}`);
-      lines.push('');
-    }
-
-    if (tasks.length > 10) {
-      lines.push(`... 还有 ${tasks.length - 10} 个任务`);
-    }
-
-    return {
-      success: true,
-      output: lines.join('\n'),
-    };
-  }
-
-  private getWorkers(): ToolResult {
-    const workers = agentCoordinator.getWorkers();
-
-    if (workers.length === 0) {
-      return {
-        success: true,
-        output: '暂无 Worker。启动执行后会自动创建 Worker。',
-      };
-    }
-
-    const lines = ['🐝 Worker 列表', '============', ''];
-
-    for (const worker of workers) {
-      lines.push(`Worker ${worker.id.substring(0, 8)}...`);
-      lines.push(`  状态: ${worker.status}`);
-      lines.push(`  任务: ${worker.taskId || '无'}`);
-      if (worker.tddCycle) {
-        lines.push(`  TDD 阶段: ${worker.tddCycle.phase}`);
-        lines.push(`  迭代: ${worker.tddCycle.iteration}/${worker.tddCycle.maxIterations}`);
-      }
-      lines.push('');
-    }
-
-    return {
-      success: true,
-      output: lines.join('\n'),
+注意：已启动的 Worker 会完成当前任务后暂停。`,
     };
   }
 
   // --------------------------------------------------------------------------
-  // 检查点操作
+  // resume: 恢复执行
   // --------------------------------------------------------------------------
 
-  private createCheckpoint(input: BlueprintToolInput): ToolResult {
-    const treeId = input.treeId || agentCoordinator.getQueen()?.taskTreeId;
-    if (!treeId) {
-      return { success: false, error: '请指定 treeId 或先启动执行' };
-    }
+  /**
+   * 处理 resume 操作
+   */
+  private handleResume(): ToolResult {
+    const coordinator = executionState.getCoordinator();
 
-    if (!input.checkpointName) {
-      return { success: false, error: '请提供 checkpointName 参数' };
-    }
-
-    const checkpoint = timeTravelManager.createManualCheckpoint(
-      treeId,
-      input.checkpointName,
-      undefined,
-      input.taskId
-    );
-
-    return {
-      success: true,
-      output: `📌 检查点创建成功！
-
-检查点 ID: ${checkpoint.id}
-名称: ${checkpoint.name}
-类型: ${checkpoint.type}
-时间: ${checkpoint.timestamp.toISOString()}
-
-可以使用 rollback 操作回滚到此检查点。`,
-    };
-  }
-
-  private rollback(input: BlueprintToolInput): ToolResult {
-    const treeId = input.treeId || agentCoordinator.getQueen()?.taskTreeId;
-    if (!treeId) {
-      return { success: false, error: '请指定 treeId 或先启动执行' };
-    }
-
-    if (!input.checkpointId) {
-      return { success: false, error: '请提供 checkpointId 参数' };
-    }
-
-    timeTravelManager.rollback(treeId, input.checkpointId);
-
-    return {
-      success: true,
-      output: `⏱️ 时光倒流成功！
-
-已回滚到检查点: ${input.checkpointId}
-
-任务树状态已恢复到检查点时的状态。`,
-    };
-  }
-
-  private listCheckpoints(input: BlueprintToolInput): ToolResult {
-    const treeId = input.treeId || agentCoordinator.getQueen()?.taskTreeId;
-    if (!treeId) {
-      return { success: false, error: '请指定 treeId 或先启动执行' };
-    }
-
-    const checkpoints = timeTravelManager.getAllCheckpoints(treeId);
-
-    if (checkpoints.length === 0) {
+    if (!coordinator) {
       return {
-        success: true,
-        output: '暂无检查点。使用 create_checkpoint 创建检查点。',
+        success: false,
+        error: '没有可恢复的执行。请先使用 execute 启动执行。',
       };
     }
 
-    const lines = ['📌 检查点列表', '============', ''];
-
-    for (const cp of checkpoints.slice(0, 20)) {
-      const icon = cp.type === 'global' ? '🌍' : '📌';
-      const restore = cp.canRestore ? '✅' : '⚠️';
-      lines.push(`${icon} ${cp.name} ${restore}`);
-      lines.push(`  ID: ${cp.id}`);
-      lines.push(`  时间: ${cp.timestamp.toISOString()}`);
-      if (cp.taskName) {
-        lines.push(`  任务: ${cp.taskName}`);
-      }
-      lines.push('');
-    }
+    coordinator.unpause();
 
     return {
       success: true,
-      output: lines.join('\n'),
+      output: `执行已恢复。
+
+蜂群继续并行执行任务...
+
+使用 status 查看执行进度。`,
     };
   }
 
   // --------------------------------------------------------------------------
-  // 辅助方法
+  // cancel: 取消执行
   // --------------------------------------------------------------------------
 
-  private getCurrentBlueprintId(): string | null {
-    // 先尝试从 coordinator 获取
-    const queen = agentCoordinator.getQueen();
-    if (queen) {
-      return queen.blueprintId;
+  /**
+   * 处理 cancel 操作
+   */
+  private handleCancel(): ToolResult {
+    const coordinator = executionState.getCoordinator();
+
+    if (!coordinator) {
+      return {
+        success: false,
+        error: '没有正在执行的任务。',
+      };
     }
 
-    // 否则获取最新的蓝图
-    const blueprints = blueprintManager.getAllBlueprints();
-    if (blueprints.length > 0) {
-      // 按更新时间排序，返回最新的
-      const sorted = blueprints.sort((a, b) =>
-        b.updatedAt.getTime() - a.updatedAt.getTime()
-      );
-      return sorted[0].id;
-    }
+    coordinator.cancel();
 
-    return null;
+    // 重置执行状态
+    executionState.reset();
+
+    return {
+      success: true,
+      output: `执行已取消。
+
+所有活跃的 Worker 将在当前任务完成后停止。
+已完成的任务不会回滚。
+
+使用 status 查看最终状态。`,
+    };
   }
 }

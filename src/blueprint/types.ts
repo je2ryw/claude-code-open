@@ -1,42 +1,97 @@
 /**
- * 项目蓝图系统 - 类型定义
+ * 蜂群架构 v2.0 - 完整类型定义
  *
- * 核心概念：
- * - Blueprint（蓝图）：需求调研后形成的目标业务流程、功能边界和系统架构草图
- * - TaskTree（任务树）：由蓝图推导出的层级化任务结构
- * - TDD Loop：每个 Agent 都在 任务→测试→编码→验证 的循环中
- * - Checkpoint（检查点）：支持时光倒流的快照系统
+ * 核心理念：
+ * - Blueprint（蓝图）：需求锚点，所有Worker参照执行
+ * - SmartTask：智能任务，Worker自主决策是否需要测试
+ * - AutonomousWorker：自治Worker，无需蜂王逐步批准
+ * - Git并发：用分支代替文件锁
  */
 
 // ============================================================================
-// 蓝图相关类型
+// 蓝图相关类型（完整版，支持业务流程、模块、NFR）
 // ============================================================================
 
 /**
  * 蓝图状态
  */
 export type BlueprintStatus =
-  | 'draft'        // 草稿：正在与用户对话完善中
-  | 'review'       // 审核：等待用户确认签字
-  | 'approved'     // 已批准：用户已签字确认，可以开始执行
-  | 'executing'    // 执行中：任务树正在执行
-  | 'completed'    // 已完成：所有任务都已完成
-  | 'paused'       // 已暂停：用户暂停了执行
-  | 'failed'       // 已失败：执行过程中发生错误
-  | 'modified';    // 已修改：执行中用户修改了蓝图，需要重新规划
+  | 'draft'        // 草稿：需求对话中
+  | 'confirmed'    // 已确认：用户确认，可执行
+  | 'executing'    // 执行中
+  | 'completed'    // 已完成
+  | 'paused'       // 已暂停
+  | 'failed';      // 已失败
 
 /**
- * 业务流程定义（As-Is/To-Be）
+ * 蓝图 - 需求锚点，所有Worker必须参照
+ */
+export interface Blueprint {
+  id: string;
+  name: string;
+  description: string;
+  version?: string;  // 版本号，如 "1.0.0"
+
+  // 项目信息
+  projectPath: string;
+
+  // 状态
+  status: BlueprintStatus;
+
+  // 业务流程（核心：定义系统要做什么）
+  businessProcesses?: BusinessProcess[];
+
+  // 模块划分（核心：定义系统如何组织）
+  modules?: BlueprintModule[] | SimpleModule[];
+
+  // 非功能需求（NFR）
+  nfrs?: NFR[];
+
+  // 核心需求（简化版使用）
+  requirements?: string[];
+
+  // 技术决策（简化版使用）
+  techStack?: TechStack;
+
+  // 约束（用户指定的限制）
+  constraints?: string[];
+
+  // 时间戳
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  confirmedAt?: Date | string;
+
+  // v2.1: 持久化的执行计划（用于服务重启后恢复显示）
+  lastExecutionPlan?: SerializableExecutionPlan;
+}
+
+// ============================================================================
+// 业务流程相关类型
+// ============================================================================
+
+/**
+ * 业务流程类型
+ */
+export type ProcessType = 'as-is' | 'to-be';
+
+/**
+ * 业务流程
  */
 export interface BusinessProcess {
   id: string;
   name: string;
   description: string;
-  type: 'as-is' | 'to-be';  // 现状 vs 目标
+  type: ProcessType;
+
+  // 流程步骤
   steps: ProcessStep[];
-  actors: string[];          // 参与角色
-  inputs: string[];          // 输入
-  outputs: string[];         // 输出
+
+  // 参与者
+  actors: string[];
+
+  // 输入输出
+  inputs: string[];
+  outputs: string[];
 }
 
 /**
@@ -47,398 +102,229 @@ export interface ProcessStep {
   order: number;
   name: string;
   description: string;
-  actor: string;             // 执行角色
-  systemAction?: string;     // 系统动作
-  userAction?: string;       // 用户动作
-  conditions?: string[];     // 前置条件
-  outcomes?: string[];       // 产出
+  actor: string;
+  inputs?: string[];
+  outputs?: string[];
 }
 
+// ============================================================================
+// 模块相关类型
+// ============================================================================
+
 /**
- * 系统模块定义
+ * 模块类型
  */
-export interface SystemModule {
+export type ModuleType = 'frontend' | 'backend' | 'database' | 'service' | 'shared' | 'other';
+
+/**
+ * 模块来源
+ */
+export type ModuleSource = 'requirement' | 'existing' | 'ai_generated';
+
+/**
+ * 蓝图模块（完整版）
+ */
+export interface BlueprintModule {
   id: string;
   name: string;
   description: string;
-  type: 'frontend' | 'backend' | 'database' | 'service' | 'infrastructure' | 'other';
-  responsibilities: string[];  // 职责
-  dependencies: string[];      // 依赖的其他模块 ID
-  interfaces: ModuleInterface[];  // 对外接口
-  techStack?: string[];        // 技术栈
-  rootPath?: string;           // 模块根目录路径
+  type: ModuleType;
 
-  // 模块来源（支持混合场景：codebase 蓝图上新增 requirement 模块）
-  // - 'codebase': 从现有代码逆向分析得到
-  // - 'requirement': 从需求新增，需要 TDD 开发
-  source?: 'codebase' | 'requirement';
+  // 职责
+  responsibilities: string[];
+
+  // 技术栈（字符串数组）
+  techStack: string[];
+
+  // 接口定义
+  interfaces: ModuleInterface[];
+
+  // 依赖（其他模块ID）
+  dependencies: string[];
+
+  // 根路径
+  rootPath: string;
+
+  // 来源
+  source: ModuleSource;
+
+  // 预计涉及的文件
+  files?: string[];
 }
 
 /**
  * 模块接口
  */
 export interface ModuleInterface {
-  id: string;
   name: string;
-  type: 'api' | 'event' | 'message' | 'file' | 'other';
-  direction: 'in' | 'out' | 'both';
+  type: 'api' | 'event' | 'function' | 'class';
   description: string;
-  schema?: Record<string, any>;  // 接口契约
+  signature?: string;
 }
 
 /**
- * 非功能性要求
+ * 简化的模块定义（兼容用）
  */
-export interface NonFunctionalRequirement {
-  id: string;
-  category: 'performance' | 'security' | 'scalability' | 'availability' | 'maintainability' | 'usability' | 'other';
+export interface SimpleModule {
+  id?: string;
   name: string;
   description: string;
-  metric?: string;           // 量化指标
-  priority: 'must' | 'should' | 'could' | 'wont';  // MoSCoW
-}
-
-/**
- * 项目边界定义
- * 定义项目级的文件访问边界，用于边界检查器
- */
-export interface ProjectBoundary {
-  // 共享代码路径（不属于任何模块但允许修改）
-  // 例如: ['src/utils', 'src/types', 'src/constants', 'src/shared']
-  sharedPaths: string[];
-
-  // 允许修改的配置文件模式（正则表达式字符串）
-  // 例如: ['vitest\\.config\\.[jt]s$', 'vite\\.config\\.[jt]s$']
-  allowedConfigPatterns: string[];
-
-  // 禁止访问的路径（即使在 projectPath 内也禁止）
-  // 例如: ['node_modules', '.git', 'dist', 'build']
-  forbiddenPaths: string[];
-
-  // 只读路径（可以读取但不能修改）
-  // 例如: ['vendor', 'third_party', 'generated']
-  readOnlyPaths: string[];
-
-  // 允许修改的根目录文件扩展名
-  // 例如: ['.md', '.txt', '.json'] - 允许修改根目录的这些文件
-  allowedRootExtensions: string[];
-}
-
-/**
- * 项目蓝图
- */
-export interface Blueprint {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  status: BlueprintStatus;
-
-  // 项目关联（蓝图与项目 1:1 绑定）
-  projectPath: string;                    // 关联的项目路径
-  projectBoundary?: ProjectBoundary;      // 项目边界定义
-
-  // 核心内容
-  businessProcesses: BusinessProcess[];   // 业务流程
-  modules: SystemModule[];                // 系统模块
-  nfrs: NonFunctionalRequirement[];       // 非功能性要求
-
-  // 元数据
-  createdAt: Date;
-  updatedAt: Date;
-  approvedAt?: Date;
-  approvedBy?: string;
-
-  // 变更历史
-  changeHistory: BlueprintChange[];
-
-  // 关联的任务树
-  taskTreeId?: string;
-
-  // 蓝图来源（新增）
-  source?: 'requirement' | 'codebase';    // 需求生成 or 代码逆向生成
-}
-
-/**
- * 蓝图变更记录
- */
-export interface BlueprintChange {
-  id: string;
-  timestamp: Date;
-  type: 'create' | 'update' | 'approve' | 'reject' | 'pause' | 'resume';
-  description: string;
-  previousVersion?: string;
-  changes?: Record<string, any>;  // diff
-  author: 'user' | 'agent';
+  type?: ModuleType;
+  path?: string;
+  files?: string[];
+  dependencies?: string[];
 }
 
 // ============================================================================
-// 任务树相关类型
+// 非功能需求（NFR）类型
 // ============================================================================
 
 /**
- * 任务状态
+ * NFR 类别
+ */
+export type NFRCategory =
+  | 'performance'    // 性能
+  | 'security'       // 安全
+  | 'reliability'    // 可靠性
+  | 'scalability'    // 可扩展性
+  | 'maintainability'// 可维护性
+  | 'usability'      // 可用性
+  | 'other';         // 其他
+
+/**
+ * 非功能需求
+ */
+export interface NFR {
+  id: string;
+  category: NFRCategory;
+  name: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  metrics?: string[];  // 可量化的指标
+}
+
+// ============================================================================
+// 技术栈类型
+// ============================================================================
+
+/**
+ * 技术栈（结构化）
+ */
+export interface TechStack {
+  language: ProjectLanguage;
+  framework?: string;
+  packageManager: PackageManagerType;
+  testFramework?: TestFrameworkType;
+  buildTool?: string;
+  additionalTools?: string[];
+}
+
+// ============================================================================
+// 项目语言和工具类型
+// ============================================================================
+
+export type ProjectLanguage =
+  | 'javascript'
+  | 'typescript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'unknown';
+
+export type PackageManagerType =
+  | 'npm' | 'yarn' | 'pnpm' | 'bun'  // JS/TS
+  | 'pip' | 'poetry' | 'uv'          // Python
+  | 'go_mod'                          // Go
+  | 'cargo'                           // Rust
+  | 'maven' | 'gradle';               // Java
+
+export type TestFrameworkType =
+  | 'vitest' | 'jest' | 'mocha'       // JS/TS
+  | 'pytest' | 'unittest'             // Python
+  | 'go_test'                         // Go
+  | 'cargo_test'                      // Rust
+  | 'junit' | 'testng';               // Java
+
+// ============================================================================
+// 智能任务相关类型
+// ============================================================================
+
+/**
+ * 任务类型
+ */
+export type TaskType =
+  | 'code'      // 写代码
+  | 'config'    // 配置文件
+  | 'test'      // 写测试
+  | 'refactor'  // 重构
+  | 'docs'      // 文档
+  | 'integrate';// 集成
+
+/**
+ * 任务复杂度
+ */
+export type TaskComplexity = 'trivial' | 'simple' | 'moderate' | 'complex';
+
+/**
+ * 任务状态（简化）
  */
 export type TaskStatus =
-  | 'pending'      // 等待中：还未开始
-  | 'blocked'      // 阻塞：等待依赖任务完成
-  | 'test_writing' // 编写测试：Agent 正在编写测试代码
-  | 'coding'       // 编码中：Agent 正在编写实现代码
-  | 'testing'      // 测试中：正在运行测试
-  | 'test_failed'  // 测试失败：需要修复
-  | 'passed'       // 已通过：测试通过
-  | 'review'       // 待审核：等待人类审核
-  | 'approved'     // 已批准：人类审核通过
-  | 'rejected'     // 被拒绝：人类审核不通过
-  | 'cancelled';   // 已取消
+  | 'pending'     // 等待
+  | 'running'     // 执行中
+  | 'completed'   // 完成
+  | 'failed'      // 失败
+  | 'skipped';    // 跳过
 
 /**
- * 测试规格
+ * 智能任务
+ * Worker自主决策如何执行
  */
-export interface TestSpec {
+export interface SmartTask {
   id: string;
-  taskId: string;
-  type: 'unit' | 'integration' | 'e2e' | 'manual';
-  description: string;
-
-  // 测试代码相关
-  testCode?: string;           // 测试代码内容
-  testFilePath?: string;       // 测试文件路径
-  testCommand?: string;        // 执行测试的命令
-
-  // 验收标准
-  acceptanceCriteria: string[];
-
-  // 执行结果
-  lastResult?: TestResult;
-  runHistory: TestResult[];
-}
-
-/**
- * 验收测试（由主 Agent 生成，子 Agent 不能修改）
- */
-export interface AcceptanceTest {
-  id: string;
-  taskId: string;
-
-  // 测试内容
-  name: string;                 // 测试名称
-  description: string;          // 测试描述
-  testCode: string;             // 测试代码
-  testFilePath: string;         // 测试文件路径
-  testCommand: string;          // 执行命令
-
-  // 验收标准（必须全部满足）
-  criteria: AcceptanceCriterion[];
-
-  // 生成信息
-  generatedBy: 'queen';         // 由主 Agent 生成
-  generatedAt: Date;
-
-  // 执行结果
-  lastResult?: TestResult;
-  runHistory: TestResult[];
-}
-
-/**
- * 验收标准项
- */
-export interface AcceptanceCriterion {
-  id: string;
-  description: string;          // 描述
-  checkType: 'output' | 'behavior' | 'performance' | 'error_handling';
-  expectedResult: string;       // 期望结果
-  passed?: boolean;             // 是否通过
-}
-
-/**
- * 测试结果
- */
-export interface TestResult {
-  id: string;
-  timestamp: Date;
-  passed: boolean;
-  duration: number;            // 执行时长（毫秒）
-  output: string;              // 测试输出
-  errorMessage?: string;       // 错误信息
-  coverage?: number;           // 代码覆盖率
-  details?: Record<string, any>;
-}
-
-/**
- * 任务节点
- */
-export interface TaskNode {
-  id: string;
-  parentId?: string;           // 父任务 ID（根任务没有）
-  blueprintModuleId?: string;  // 关联的蓝图模块 ID
 
   // 基本信息
   name: string;
   description: string;
-  priority: number;            // 优先级（越大越高）
-  depth: number;               // 在树中的深度（根节点为 0）
+  type: TaskType;
+  complexity: TaskComplexity;
 
-  // 任务类型（新增：用于区分项目初始化等特殊任务）
-  taskType?: TaskType;
+  // 关联
+  blueprintId: string;
+  moduleId?: string;
+
+  // 预计修改的文件
+  files: string[];
+
+  // 依赖（其他任务ID）
+  dependencies: string[];
+
+  // AI决策
+  needsTest: boolean;        // AI判断是否需要测试
+  estimatedMinutes: number;  // 预估时间
 
   // 状态
   status: TaskStatus;
 
-  // 子任务
-  children: TaskNode[];
-
-  // 依赖关系（同级任务间的依赖）
-  dependencies: string[];      // 依赖的任务 ID
-
-  // TDD 相关
-  testSpec?: TestSpec;         // 测试规格（Worker Agent 的单元测试）
-  acceptanceTests: AcceptanceTest[];  // 验收测试（由 Queen Agent 生成，Worker 不能修改）
-
   // 执行信息
-  agentId?: string;            // 执行该任务的 Agent ID
-  assignedModel?: string;      // 分配的模型
-
-  // 代码产出
-  codeArtifacts: CodeArtifact[];
-
-  // 时间线
-  createdAt: Date;
+  workerId?: string;
   startedAt?: Date;
   completedAt?: Date;
 
-  // 重试信息
-  retryCount: number;
-  maxRetries: number;
-
-  // 错误追踪（用于检测相同错误重复失败）
-  lastError?: string;           // 上次失败的错误信息
-  lastErrorHash?: string;       // 错误信息的哈希（用于快速比较）
-  consecutiveSameErrors: number; // 连续相同错误的次数
-
-  // 检查点（用于时光倒流）
-  checkpoints: Checkpoint[];
-
-  // 元数据
-  metadata?: Record<string, any>;
-
-  // 任务来源（用于判断是否需要 TDD）
-  // - 'codebase': 从现有代码逆向生成，不需要验收测试
-  // - 'requirement': 从需求新增，需要 TDD 验收测试
-  source?: 'codebase' | 'requirement';
+  // 结果
+  result?: TaskResult;
 }
 
 /**
- * 代码产出物
+ * 任务结果
  */
-export interface CodeArtifact {
-  id: string;
-  type: 'file' | 'patch' | 'command';
-  filePath?: string;
-  content?: string;
-  command?: string;
-  changeType?: 'create' | 'modify' | 'delete';
-  createdAt: Date;
-  checkpointId?: string;       // 关联的检查点
-}
-
-/**
- * 检查点（用于时光倒流）
- */
-export interface Checkpoint {
-  id: string;
-  taskId: string;
-  timestamp: Date;
-  name: string;
-  description?: string;
-
-  // 状态快照
-  taskStatus: TaskStatus;
-  testResult?: TestResult;
-
-  // 代码快照
-  codeSnapshot: CodeSnapshot[];
-
-  // 可以回滚到此检查点
-  canRestore: boolean;
-
-  // 元数据
-  metadata?: Record<string, any>;
-}
-
-/**
- * 代码快照
- */
-export interface CodeSnapshot {
-  filePath: string;
-  content: string;
-  hash: string;                // 内容哈希
-}
-
-/**
- * 任务树
- */
-export interface TaskTree {
-  id: string;
-  blueprintId: string;
-
-  // 根节点
-  root: TaskNode;
-
-  // 统计信息
-  stats: TaskTreeStats;
-
-  // 执行状态
-  status: 'pending' | 'executing' | 'paused' | 'completed' | 'failed';
-
-  // 时间线
-  createdAt: Date;
-  startedAt?: Date;
-  completedAt?: Date;
-
-  // 全局检查点（整棵树的快照）
-  globalCheckpoints: GlobalCheckpoint[];
-}
-
-/**
- * 任务树统计
- */
-export interface TaskTreeStats {
-  totalTasks: number;
-  pendingTasks: number;
-  runningTasks: number;
-  passedTasks: number;
-  failedTasks: number;
-  blockedTasks: number;
-
-  totalTests: number;
-  passedTests: number;
-  failedTests: number;
-
-  maxDepth: number;
-  avgDepth: number;
-
-  estimatedCompletion?: Date;
-  progressPercentage: number;
-}
-
-/**
- * 全局检查点
- */
-export interface GlobalCheckpoint {
-  id: string;
-  treeId: string;
-  timestamp: Date;
-  name: string;
-  description?: string;
-
-  // 整棵树的状态快照
-  treeSnapshot: string;        // JSON 序列化的 TaskTree
-
-  // 文件系统快照（差异形式）
-  fileChanges: FileChange[];
-
-  canRestore: boolean;
+export interface TaskResult {
+  success: boolean;
+  changes: FileChange[];
+  testsRan?: boolean;
+  testsPassed?: boolean;
+  error?: string;
+  decisions: WorkerDecision[];
 }
 
 /**
@@ -447,503 +333,600 @@ export interface GlobalCheckpoint {
 export interface FileChange {
   filePath: string;
   type: 'create' | 'modify' | 'delete';
-  previousContent?: string;
-  newContent?: string;
+  content?: string;
+  diff?: string;
+}
+
+/**
+ * Worker决策记录
+ */
+export interface WorkerDecision {
+  type: 'strategy' | 'skip_test' | 'add_test' | 'install_dep' | 'retry' | 'other';
+  description: string;
+  timestamp: Date;
 }
 
 // ============================================================================
-// Agent 协调相关类型
+// 执行计划相关类型
 // ============================================================================
 
 /**
- * 主 Agent（蜂王）
- * 升级为"项目管理者"角色：除了任务调度，还负责项目上下文管理
+ * 执行计划
+ * 由SmartPlanner生成
  */
-export interface QueenAgent {
+export interface ExecutionPlan {
   id: string;
   blueprintId: string;
-  taskTreeId: string;
+
+  // 任务列表
+  tasks: SmartTask[];
+
+  // 并行组（哪些任务可以同时执行）
+  parallelGroups: string[][];
+
+  // 预估
+  estimatedCost: number;      // 美元
+  estimatedMinutes: number;
+
+  // AI做的决策（透明给用户看）
+  autoDecisions: PlanDecision[];
 
   // 状态
-  status: 'idle' | 'planning' | 'coordinating' | 'reviewing' | 'paused' | 'initializing';
+  status: 'ready' | 'executing' | 'completed' | 'failed' | 'paused';
 
-  // 管理的子 Agent
-  workerAgents: WorkerAgent[];
-
-  // 全局视野
-  globalContext: string;       // 汇总的上下文信息
-
-  // 项目上下文（新增：蜂王作为项目管理者维护的全局项目信息）
-  projectContext?: ProjectContext;
-
-  // 决策历史
-  decisions: AgentDecision[];
+  // 时间戳
+  createdAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
 }
 
 /**
- * 子 Agent（蜜蜂）
+ * 规划决策
  */
-export interface WorkerAgent {
+export interface PlanDecision {
+  type: 'task_split' | 'parallel' | 'dependency' | 'tech_choice' | 'other';
+  description: string;
+  reasoning?: string;
+}
+
+// ============================================================================
+// Worker相关类型
+// ============================================================================
+
+/**
+ * 自治Worker
+ */
+export interface AutonomousWorker {
   id: string;
-  queenId: string;
-  taskId: string;              // 当前处理的任务
 
   // 状态
-  status: 'idle' | 'test_writing' | 'coding' | 'testing' | 'waiting';
+  status: 'idle' | 'working' | 'waiting' | 'error';
 
-  // TDD 循环状态
-  tddCycle: TDDCycleState;
+  // 当前任务
+  currentTaskId?: string;
+
+  // Git分支
+  branchName?: string;
 
   // 执行历史
-  history: AgentAction[];
+  history: WorkerAction[];
+
+  // 错误计数
+  errorCount: number;
+
+  // 时间戳
+  createdAt: Date;
+  lastActiveAt: Date;
 }
 
 /**
- * TDD 循环状态
+ * Worker动作类型
+ * v2.0 新增: explore（探索代码库）、analyze（分析文件）
  */
-export interface TDDCycleState {
-  phase: 'write_test' | 'run_test_red' | 'write_code' | 'run_test_green' | 'refactor' | 'done';
-  iteration: number;           // 当前迭代次数
-  maxIterations: number;       // 最大迭代次数
-  testWritten: boolean;
-  testPassed: boolean;
-  codeWritten: boolean;
-}
+export type WorkerActionType =
+  | 'read'         // 读取文件
+  | 'write'        // 写入文件
+  | 'edit'         // 编辑文件
+  | 'run_test'     // 运行测试
+  | 'install_dep'  // 安装依赖
+  | 'git'          // Git 操作
+  | 'think'        // 思考分析
+  | 'explore'      // 探索代码库结构（Agent 模式）
+  | 'analyze';     // 分析目标文件（策略决策前）
 
 /**
- * Agent 决策
+ * Worker动作
  */
-export interface AgentDecision {
+export interface WorkerAction {
   id: string;
-  timestamp: Date;
-  type: 'task_assignment' | 'retry' | 'escalate' | 'modify_plan' | 'checkpoint' | 'rollback' | 'skip';
+  type: WorkerActionType;
   description: string;
-  reasoning: string;
-  result?: string;
-}
-
-/**
- * Agent 动作
- */
-export interface AgentAction {
-  id: string;
   timestamp: Date;
-  type: 'read' | 'write' | 'edit' | 'test' | 'think' | 'ask' | 'report';
-  description: string;
-  input?: any;
-  output?: any;
   duration: number;
+  success: boolean;
+  output?: string;
 }
 
 // ============================================================================
-// 项目上下文管理相关类型（蜂王项目管理能力）
+// 协调器相关类型
 // ============================================================================
 
 /**
- * 项目语言/生态类型
+ * 执行状态
  */
-export type ProjectLanguage = 'javascript' | 'typescript' | 'python' | 'go' | 'rust' | 'java' | 'unknown';
+export interface ExecutionStatus {
+  planId: string;
+  blueprintId: string;
+
+  // 进度
+  totalTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  runningTasks: number;
+
+  // Worker状态
+  activeWorkers: number;
+
+  // 时间
+  startedAt: Date;
+  estimatedCompletion?: Date;
+
+  // 成本
+  currentCost: number;
+  estimatedTotalCost: number;
+
+  // 问题（不阻塞，但记录）
+  issues: ExecutionIssue[];
+}
 
 /**
- * 包管理器类型（支持多语言生态）
+ * 执行问题
  */
-export type PackageManagerType =
-  // JavaScript/TypeScript
-  | 'npm' | 'yarn' | 'pnpm' | 'bun'
-  // Python
-  | 'pip' | 'poetry' | 'pipenv' | 'conda' | 'uv'
-  // Go
-  | 'go_mod'
-  // Rust
-  | 'cargo'
-  // Java
-  | 'maven' | 'gradle';
+export interface ExecutionIssue {
+  id: string;
+  taskId: string;
+  type: 'error' | 'warning' | 'conflict' | 'timeout';
+  description: string;
+  timestamp: Date;
+  resolved: boolean;
+  resolution?: string;
+}
+
+// ============================================================================
+// Git并发相关类型
+// ============================================================================
 
 /**
- * 测试框架类型（支持多语言）
+ * 合并结果
  */
-export type TestFrameworkType =
-  // JavaScript/TypeScript
-  | 'vitest' | 'jest' | 'mocha'
-  // Python
-  | 'pytest' | 'unittest'
-  // Go
-  | 'go_test'
-  // Rust
-  | 'cargo_test'
-  // Java
-  | 'junit' | 'testng';
+export interface MergeResult {
+  success: boolean;
+  workerId: string;
+  branchName: string;
+  autoResolved: boolean;
+  conflict?: ConflictInfo;
+  needsHumanReview: boolean;
+}
 
 /**
- * 项目上下文
- * Queen 作为"项目经理"维护的全局项目信息
- * 解决的核心问题：Worker 只关注自己的任务，缺乏"项目感知"
+ * 冲突信息
  */
-export interface ProjectContext {
-  /** 项目路径 */
+export interface ConflictInfo {
+  files: string[];
+  description: string;
+  suggestedResolution?: string;
+}
+
+// ============================================================================
+// 模型选择相关类型
+// ============================================================================
+
+/**
+ * 模型类型
+ */
+export type ModelType = 'opus' | 'sonnet' | 'haiku';
+
+/**
+ * 模型选择结果
+ */
+export interface ModelSelection {
+  model: ModelType;
+  reason: string;
+  estimatedCost: number;
+}
+
+// ============================================================================
+// 错误处理相关类型
+// ============================================================================
+
+/**
+ * 错误类型
+ */
+export type ErrorType =
+  | 'syntax'      // 语法错误
+  | 'import'      // 导入错误
+  | 'type'        // 类型错误
+  | 'runtime'     // 运行时错误
+  | 'test_fail'   // 测试失败
+  | 'timeout'     // 超时
+  | 'unknown';    // 未知
+
+/**
+ * 错误分析结果
+ */
+export interface ErrorAnalysis {
+  type: ErrorType;
+  message: string;
+  file?: string;
+  line?: number;
+  suggestion: string;
+  canAutoFix: boolean;
+}
+
+/**
+ * 错误处理动作
+ */
+export interface ErrorAction {
+  action: 'retry' | 'skip' | 'fix' | 'escalate';
+  strategy?: string;
+  reason: string;
+}
+
+// ============================================================================
+// 需求对话相关类型
+// ============================================================================
+
+/**
+ * 对话阶段
+ */
+export type DialogPhase =
+  | 'greeting'      // 打招呼
+  | 'requirements'  // 收集需求
+  | 'clarification' // 澄清
+  | 'tech_choice'   // 技术选择
+  | 'confirmation'  // 确认
+  | 'done';         // 完成
+
+/**
+ * 对话状态
+ */
+export interface DialogState {
+  phase: DialogPhase;
+  messages: DialogMessage[];
+  collectedRequirements: string[];
+  collectedConstraints: string[];
+  techStack?: Partial<TechStack>;
+  isComplete: boolean;
+  /** 确认时生成的蓝图（避免重复生成） */
+  generatedBlueprint?: Blueprint;
+}
+
+/**
+ * 对话消息
+ */
+export interface DialogMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+// ============================================================================
+// 事件类型（用于UI更新）
+// ============================================================================
+
+/**
+ * 蜂群事件类型
+ * v2.0 新增: planner:exploring, planner:analyzed, worker:analyzing
+ */
+export type SwarmEventType =
+  | 'plan:created'
+  | 'plan:started'
+  | 'plan:completed'
+  | 'plan:failed'
+  | 'plan:paused'
+  | 'plan:resumed'
+  | 'plan:cancelled'
+  | 'plan:group_failed'
+  // v2.0 新增：SmartPlanner Agent 模式事件
+  | 'planner:exploring'      // 规划器正在探索代码库
+  | 'planner:explored'       // 规划器完成探索
+  | 'planner:decomposing'    // 规划器正在分解任务
+  // 任务事件
+  | 'task:started'
+  | 'task:completed'
+  | 'task:failed'
+  | 'task:modified'
+  | 'task:skipped'
+  // Worker 事件
+  | 'worker:created'
+  | 'worker:idle'
+  | 'worker:error'
+  // v2.0 新增：Worker Agent 模式事件
+  | 'worker:analyzing'       // Worker 正在分析代码（策略决策前）
+  | 'worker:analyzed'        // Worker 完成分析
+  | 'worker:strategy_decided'// Worker 完成策略决策
+  // Git 事件
+  | 'merge:success'
+  | 'merge:conflict'
+  // 进度事件
+  | 'progress:update';
+
+/**
+ * 蜂群事件
+ */
+export interface SwarmEvent {
+  type: SwarmEventType;
+  timestamp: Date;
+  data: Record<string, unknown>;
+}
+
+// ============================================================================
+// 配置类型
+// ============================================================================
+
+/**
+ * 蜂群配置
+ */
+export interface SwarmConfig {
+  // Worker配置
+  maxWorkers: number;           // 最大并发Worker数（默认5）
+  workerTimeout: number;        // Worker超时（毫秒，默认300000）
+
+  // 模型配置
+  defaultModel: ModelType;      // 默认模型（默认sonnet）
+  complexTaskModel: ModelType;  // 复杂任务模型（默认opus）
+  simpleTaskModel: ModelType;   // 简单任务模型（默认haiku）
+
+  // 测试配置
+  autoTest: boolean;            // 是否自动决定测试（默认true）
+  testTimeout: number;          // 测试超时（毫秒，默认60000）
+
+  // 错误配置
+  maxRetries: number;           // 最大重试次数（默认3）
+  skipOnFailure: boolean;       // 失败后跳过继续（默认true）
+  stopOnGroupFailure?: boolean; // 并行组全部失败时停止后续组（默认true）
+
+  // Git配置
+  useGitBranches: boolean;      // 使用Git分支（默认true）
+  autoMerge: boolean;           // 自动合并（默认true）
+
+  // 成本配置
+  maxCost: number;              // 最大成本限制（美元，默认10）
+  costWarningThreshold: number; // 成本警告阈值（默认0.8）
+
+  // ==========================================================================
+  // v2.0 新增：Agent 模式配置
+  // ==========================================================================
+
+  // SmartPlanner Agent 配置
+  plannerExploreEnabled?: boolean;  // 规划前是否先用 Agent 探索代码库（默认true）
+  plannerExploreMaxTurns?: number;  // 探索阶段最大轮次（默认5）
+
+  // Worker 策略决策 Agent 配置
+  workerAnalyzeEnabled?: boolean;   // 策略决策前是否先用 Agent 分析代码（默认true）
+  workerAnalyzeMaxTurns?: number;   // 分析阶段最大轮次（默认3）
+}
+
+/**
+ * 默认配置
+ */
+export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
+  maxWorkers: 5,
+  workerTimeout: 300000,
+  defaultModel: 'sonnet',
+  complexTaskModel: 'opus',
+  simpleTaskModel: 'haiku',
+  autoTest: true,
+  testTimeout: 60000,
+  maxRetries: 3,
+  skipOnFailure: true,
+  useGitBranches: true,
+  autoMerge: true,
+  maxCost: 10,
+  costWarningThreshold: 0.8,
+  // v2.0 新增：Agent 模式配置
+  plannerExploreEnabled: true,
+  plannerExploreMaxTurns: 5,
+  workerAnalyzeEnabled: true,
+  workerAnalyzeMaxTurns: 3,
+};
+
+// ============================================================================
+// v2.0 新增：探索结果类型
+// ============================================================================
+
+/**
+ * 代码库探索结果
+ * SmartPlanner Agent 探索后生成
+ */
+export interface CodebaseExploration {
+  // 目录结构概要
+  directoryStructure: string;
+
+  // 发现的模块/组件
+  discoveredModules: {
+    name: string;
+    path: string;
+    description: string;
+    files: string[];
+  }[];
+
+  // 技术栈检测结果
+  detectedTechStack: {
+    language: ProjectLanguage;
+    framework?: string;
+    testFramework?: string;
+    packageManager?: string;
+  };
+
+  // 代码风格/约定
+  codeConventions: {
+    namingStyle?: 'camelCase' | 'snake_case' | 'PascalCase';
+    hasTypescript?: boolean;
+    hasTests?: boolean;
+    testPattern?: string;  // 如 '*.test.ts', '*.spec.js'
+  };
+
+  // 关键文件
+  keyFiles: {
+    entryPoint?: string;
+    config?: string[];
+    tests?: string[];
+  };
+
+  // 探索过程中的观察
+  observations: string[];
+}
+
+/**
+ * 文件分析结果
+ * Worker Agent 策略决策前生成
+ */
+export interface FileAnalysis {
+  // 目标文件列表
+  targetFiles: string[];
+
+  // 文件内容摘要
+  fileSummaries: {
+    path: string;
+    exists: boolean;
+    summary?: string;
+    lineCount?: number;
+    hasTests?: boolean;
+    relatedTestFile?: string;
+  }[];
+
+  // 依赖分析
+  dependencies: {
+    imports: string[];
+    exports: string[];
+    relatedFiles: string[];
+  };
+
+  // 修改建议
+  suggestions: string[];
+
+  // 分析观察
+  observations: string[];
+}
+
+// ============================================================================
+// 执行状态持久化类型
+// ============================================================================
+
+/**
+ * 可序列化的任务结果（用于持久化）
+ */
+export interface SerializableTaskResult {
+  taskId: string;
+  success: boolean;
+  changes: FileChange[];
+  testsRan?: boolean;
+  testsPassed?: boolean;
+  error?: string;
+  decisions: {
+    type: string;
+    description: string;
+    timestamp: string;  // ISO 字符串
+  }[];
+}
+
+/**
+ * 可序列化的执行问题（用于持久化）
+ */
+export interface SerializableExecutionIssue {
+  id: string;
+  taskId: string;
+  type: 'error' | 'warning' | 'conflict' | 'timeout';
+  description: string;
+  timestamp: string;  // ISO 字符串
+  resolved: boolean;
+  resolution?: string;
+}
+
+/**
+ * 可序列化的执行计划（用于持久化）
+ * 将 Date 类型转换为 ISO 字符串
+ */
+export interface SerializableExecutionPlan {
+  id: string;
+  blueprintId: string;
+  tasks: SerializableSmartTask[];
+  parallelGroups: string[][];
+  estimatedCost: number;
+  estimatedMinutes: number;
+  autoDecisions: PlanDecision[];
+  status: 'ready' | 'executing' | 'completed' | 'failed' | 'paused';
+  createdAt: string;       // ISO 字符串
+  startedAt?: string;      // ISO 字符串
+  completedAt?: string;    // ISO 字符串
+}
+
+/**
+ * 可序列化的任务（用于持久化）
+ */
+export interface SerializableSmartTask {
+  id: string;
+  name: string;
+  description: string;
+  type: TaskType;
+  complexity: TaskComplexity;
+  blueprintId: string;
+  moduleId?: string;
+  files: string[];
+  dependencies: string[];
+  needsTest: boolean;
+  estimatedMinutes: number;
+  status: TaskStatus;
+  workerId?: string;
+  startedAt?: string;      // ISO 字符串
+  completedAt?: string;    // ISO 字符串
+}
+
+/**
+ * 执行状态（用于持久化和恢复）
+ * 保存执行的中间状态，支持重启后恢复
+ *
+ * 持久化位置：{projectPath}/.claude/execution-state.json
+ */
+export interface ExecutionState {
+  // 完整的执行计划（序列化格式）
+  plan: SerializableExecutionPlan;
+
+  // 项目路径
   projectPath: string;
 
-  /** 项目是否已初始化 */
-  initialized: boolean;
+  // 执行进度
+  currentGroupIndex: number;       // 当前执行到的并行组索引
+  completedTaskIds: string[];      // 已完成的任务 ID 列表
+  failedTaskIds: string[];         // 已失败的任务 ID 列表
+  skippedTaskIds: string[];        // 已跳过的任务 ID 列表
 
-  /** 初始化时间 */
-  initializedAt?: Date;
+  // 任务结果（序列化格式）
+  taskResults: SerializableTaskResult[];
 
-  /** 项目语言/生态（新增：支持多语言项目） */
-  language: ProjectLanguage;
+  // 问题列表（序列化格式）
+  issues: SerializableExecutionIssue[];
 
-  /** 包管理器类型（扩展：支持多语言） */
-  packageManager: PackageManagerType;
+  // 运行时修改
+  taskModifications: {
+    taskId: string;
+    newDescription?: string;
+    skip?: boolean;
+  }[];
 
-  /** 项目依赖 */
-  dependencies: ProjectDependency[];
+  // 成本统计
+  currentCost: number;
 
-  /** 开发依赖 */
-  devDependencies: ProjectDependency[];
+  // 时间信息
+  startedAt: string;               // ISO 字符串
+  lastUpdatedAt: string;           // ISO 字符串
+  pausedAt?: string;               // ISO 字符串（如果暂停）
 
-  /** 共享资源文件 */
-  sharedResources: SharedResource[];
+  // 控制状态
+  isPaused: boolean;
+  isCancelled: boolean;
 
-  /** 项目配置 */
-  projectConfig: ProjectConfig;
-
-  /** 技术栈规范 */
-  techStackConventions: TechStackConvention[];
-
-  /** 待处理的依赖请求 */
-  pendingDependencyRequests: DependencyRequest[];
-}
-
-/**
- * 项目依赖
- */
-export interface ProjectDependency {
-  /** 包名 */
-  name: string;
-  /** 版本 */
+  // 版本信息（用于兼容性检查）
   version: string;
-  /** 请求来源（哪个 Worker/任务请求的） */
-  requestedBy?: string;
-  /** 请求时间 */
-  requestedAt?: Date;
-  /** 是否已安装 */
-  installed: boolean;
-}
-
-/**
- * 共享资源
- * 不属于任何模块但被多个模块使用的文件
- */
-export interface SharedResource {
-  /** 资源 ID */
-  id: string;
-  /** 文件路径 */
-  filePath: string;
-  /** 资源类型 */
-  type: 'type' | 'util' | 'constant' | 'config' | 'component';
-  /** 描述 */
-  description: string;
-  /** 创建者（Worker ID） */
-  createdBy?: string;
-  /** 创建时间 */
-  createdAt: Date;
-  /** 被依赖的模块 */
-  usedByModules: string[];
-}
-
-/**
- * 项目配置信息
- * Queen 分析项目后提取的配置（支持多语言）
- */
-export interface ProjectConfig {
-  /** 项目名称 */
-  name?: string;
-  /** 项目描述 */
-  description?: string;
-  /** 主入口文件 */
-  main?: string;
-  /** 类型入口（TypeScript/Python stubs） */
-  types?: string;
-  /** 脚本命令 */
-  scripts: Record<string, string>;
-  /** TypeScript 配置路径 */
-  tsConfigPath?: string;
-  /** Python 虚拟环境路径 */
-  pythonVenvPath?: string;
-  /** 测试框架（扩展支持多语言） */
-  testFramework?: TestFrameworkType;
-  /** 测试命令 */
-  testCommand?: string;
-  /** 构建命令 */
-  buildCommand?: string;
-  /** 格式化命令 */
-  formatCommand?: string;
-  /** 检查命令（lint） */
-  lintCommand?: string;
-}
-
-/**
- * 技术栈规范
- * 项目级别的代码规范，所有 Worker 必须遵守
- */
-export interface TechStackConvention {
-  /** 规范类别 */
-  category: 'naming' | 'structure' | 'import' | 'testing' | 'error_handling' | 'other';
-  /** 规范名称 */
-  name: string;
-  /** 规范描述 */
-  description: string;
-  /** 示例代码 */
-  example?: string;
-  /** 是否强制 */
-  enforced: boolean;
-}
-
-/**
- * 依赖请求
- * Worker 向 Queen 请求添加新依赖
- */
-export interface DependencyRequest {
-  /** 请求 ID */
-  id: string;
-  /** 请求的 Worker ID */
-  workerId: string;
-  /** 请求的任务 ID */
-  taskId: string;
-  /** 包名 */
-  packageName: string;
-  /** 期望版本（可选） */
-  version?: string;
-  /** 请求原因 */
-  reason: string;
-  /** 是否是开发依赖 */
-  isDev: boolean;
-  /** 请求状态 */
-  status: 'pending' | 'approved' | 'rejected' | 'installed';
-  /** 请求时间 */
-  requestedAt: Date;
-  /** 处理时间 */
-  processedAt?: Date;
-  /** 拒绝原因（如果被拒绝） */
-  rejectionReason?: string;
-}
-
-/**
- * 项目初始化结果
- */
-export interface ProjectInitResult {
-  /** 是否成功 */
-  success: boolean;
-  /** 错误信息 */
-  error?: string;
-  /** 创建的文件列表 */
-  createdFiles: string[];
-  /** 安装的依赖 */
-  installedDependencies: string[];
-  /** 项目配置 */
-  projectConfig: ProjectConfig;
-}
-
-/**
- * 任务类型（扩展：添加项目初始化类型）
- */
-export type TaskType =
-  | 'project_init'     // 项目初始化（创建 package.json 等）
-  | 'module_impl'      // 模块实现
-  | 'feature'          // 功能实现
-  | 'bugfix'           // Bug 修复
-  | 'refactor'         // 重构
-  | 'test'             // 测试
-  | 'docs';            // 文档
-
-// ============================================================================
-// 蜂王上下文管理相关类型
-// ============================================================================
-
-/**
- * 上下文管理配置
- * 控制蜂王的上下文窗口大小和压缩策略
- */
-export interface ContextManagementConfig {
-  /** 最大上下文 Token 数（触发压缩的阈值） */
-  maxContextTokens: number;
-
-  /** 压缩后目标 Token 数 */
-  targetContextTokens: number;
-
-  /** 保留的最近决策数量 */
-  recentDecisionsCount: number;
-
-  /** 保留的最近时间线事件数量 */
-  recentTimelineCount: number;
-
-  /** 保留的最近 Worker 输出数量（每个 Worker） */
-  recentWorkerOutputsCount: number;
-
-  /** 摘要压缩比例（旧内容压缩为多少比例） */
-  summaryCompressionRatio: number;
-
-  /** 是否启用自动压缩 */
-  autoCompression: boolean;
-
-  /** 压缩检查间隔（毫秒） */
-  compressionCheckInterval: number;
-}
-
-/**
- * 上下文摘要
- * 将旧的详细信息压缩为摘要
- */
-export interface ContextSummary {
-  /** 摘要 ID */
-  id: string;
-
-  /** 摘要类型 */
-  type: 'decisions' | 'timeline' | 'worker_outputs' | 'full';
-
-  /** 覆盖的时间范围 */
-  timeRange: {
-    start: Date;
-    end: Date;
-  };
-
-  /** 摘要内容 */
-  content: string;
-
-  /** 原始条目数量 */
-  originalCount: number;
-
-  /** 压缩后的估算 Token 数 */
-  tokenCount: number;
-
-  /** 创建时间 */
-  createdAt: Date;
-}
-
-/**
- * 分层上下文结构
- * 核心信息常驻，详细信息按需加载/压缩
- */
-export interface HierarchicalContext {
-  /** 核心层：始终保留的关键信息 */
-  core: {
-    /** 蓝图基本信息 */
-    blueprintSummary: string;
-    /** 模块边界（精简版） */
-    moduleBoundaries: string;
-    /** NFR 要求（Must 级别） */
-    criticalNFRs: string;
-    /** 蜂王职责 */
-    queenResponsibilities: string;
-  };
-
-  /** 工作层：当前任务相关的详细信息 */
-  working: {
-    /** 当前任务详情 */
-    currentTasks: string;
-    /** 活跃 Worker 状态 */
-    activeWorkers: string;
-    /** 最近的依赖请求 */
-    recentDependencyRequests: string;
-  };
-
-  /** 历史层：压缩的历史信息 */
-  history: {
-    /** 决策摘要 */
-    decisionsSummary: ContextSummary | null;
-    /** 最近的决策（未压缩） */
-    recentDecisions: AgentDecision[];
-    /** 时间线摘要 */
-    timelineSummary: ContextSummary | null;
-    /** 最近的时间线（未压缩） */
-    recentTimeline: TimelineEvent[];
-  };
-
-  /** 元信息 */
-  meta: {
-    /** 总估算 Token 数 */
-    estimatedTokens: number;
-    /** 最后压缩时间 */
-    lastCompressionAt: Date | null;
-    /** 压缩次数 */
-    compressionCount: number;
-  };
-}
-
-/**
- * 上下文压缩结果
- */
-export interface ContextCompressionResult {
-  /** 是否执行了压缩 */
-  compressed: boolean;
-  /** 压缩前 Token 数 */
-  beforeTokens: number;
-  /** 压缩后 Token 数 */
-  afterTokens: number;
-  /** 压缩的内容类型 */
-  compressedTypes: ('decisions' | 'timeline' | 'worker_outputs')[];
-  /** 生成的摘要 */
-  summaries: ContextSummary[];
-}
-
-/**
- * 上下文健康状态
- */
-export interface ContextHealthStatus {
-  /** 健康等级 */
-  level: 'healthy' | 'warning' | 'critical';
-  /** 当前 Token 使用率 */
-  tokenUsagePercent: number;
-  /** 当前估算 Token 数 */
-  currentTokens: number;
-  /** 最大 Token 数 */
-  maxTokens: number;
-  /** 建议操作 */
-  recommendation: string | null;
-  /** 下次压缩预估时间 */
-  nextCompressionEstimate: Date | null;
-}
-
-// ============================================================================
-// 可视化相关类型
-// ============================================================================
-
-/**
- * 树可视化节点
- */
-export interface TreeViewNode {
-  id: string;
-  label: string;
-  status: TaskStatus;
-  progress: number;            // 0-100
-  children: TreeViewNode[];
-  depth: number;
-  isExpanded: boolean;
-  hasCheckpoint: boolean;
-  agentStatus?: string;
-}
-
-/**
- * 时间线事件
- */
-export interface TimelineEvent {
-  id: string;
-  timestamp: Date;
-  type: 'task_start' | 'task_complete' | 'test_pass' | 'test_fail' | 'checkpoint' | 'rollback' | 'user_action' | 'task_review';
-  taskId?: string;
-  agentId?: string;
-  description: string;
-  data?: any;
-}
-
-/**
- * 仪表板数据
- */
-export interface BlueprintDashboard {
-  blueprint: Blueprint;
-  taskTree: TaskTree;
-  queen: QueenAgent;
-  workers: WorkerAgent[];
-  timeline: TimelineEvent[];
-  stats: TaskTreeStats;
 }

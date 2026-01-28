@@ -2,15 +2,21 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle, type PanelImperativeHandle } from 'react-resizable-panels';
 import styles from './SwarmConsole.module.css';
 import { TaskTree, TaskNode as ComponentTaskNode } from '../../components/swarm/TaskTree';
-import { WorkerPanel, QueenAgent as ComponentQueenAgent, WorkerAgent as ComponentWorkerAgent } from '../../components/swarm/WorkerPanel';
-import { TDDPanel } from '../../components/swarm/TDDPanel';
-import { TimeTravelPanel } from '../../components/swarm/TimeTravelPanel';
+import { WorkerPanel, WorkerAgent as ComponentWorkerAgent, SelectedTask } from '../../components/swarm/WorkerPanel';
 import { FadeIn } from '../../components/swarm/common';
 import { useSwarmState } from './hooks/useSwarmState';
-import { coordinatorApi, taskTreeApi } from '../../api/blueprint';
-import type { Blueprint, TaskNode as APITaskNode, TimelineEvent as APITimelineEvent } from './types';
+import { coordinatorApi } from '../../api/blueprint';
+import type {
+  Blueprint,
+  TaskNode as APITaskNode,
+  WorkerAgent as APIWorkerAgent,
+  ExecutionPlan,
+  GitBranchStatus,
+  CostEstimate,
+  PlanDecision,
+} from './types';
 
-// 获取 WebSocket URL (复用 App.tsx 中的逻辑)
+// 获取 WebSocket URL
 function getWebSocketUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
@@ -19,20 +25,15 @@ function getWebSocketUrl(): string {
 
 // ============================================================================
 // 数据转换函数: API 类型 → 组件类型
+// v2.0: 前后端状态已统一，简化转换逻辑
 // ============================================================================
 
 /**
- * 转换任务节点状态
+ * v2.0: 任务状态已统一，直接返回（仅做类型兼容）
  */
 function mapTaskStatus(apiStatus: APITaskNode['status']): ComponentTaskNode['status'] {
-  const statusMap: Record<string, ComponentTaskNode['status']> = {
-    'pending': 'pending',
-    'running': 'coding',
-    'passed': 'passed',
-    'failed': 'test_failed',
-    'blocked': 'pending',
-  };
-  return statusMap[apiStatus] || 'pending';
+  // v2.0: 状态名已统一，直接返回
+  return apiStatus as ComponentTaskNode['status'];
 }
 
 /**
@@ -41,188 +42,49 @@ function mapTaskStatus(apiStatus: APITaskNode['status']): ComponentTaskNode['sta
 function convertTaskNode(apiNode: APITaskNode): ComponentTaskNode {
   return {
     id: apiNode.id,
-    name: apiNode.title,
+    name: apiNode.name,
     status: mapTaskStatus(apiNode.status),
-    progress: undefined, // API 没有 progress 字段，组件会自动处理
+    progress: undefined,
     children: apiNode.children.map(convertTaskNode),
+    // v2.0: 传递任务详细信息
+    type: apiNode.type,
+    complexity: apiNode.complexity,
+    needsTest: apiNode.needsTest,
+    workerId: apiNode.workerId,
+    estimatedMinutes: apiNode.estimatedMinutes,
+    // 传递失败原因（优先使用直接的 error 字段，其次使用 result.error）
+    error: apiNode.error || apiNode.result?.error,
   };
 }
 
 /**
- * 转换 Queen 状态
+ * v2.0: Worker 状态已统一，直接返回
  */
-function mapQueenStatus(apiStatus: string): ComponentQueenAgent['status'] {
-  const statusMap: Record<string, ComponentQueenAgent['status']> = {
-    'idle': 'idle',
-    'planning': 'planning',
-    'coordinating': 'coordinating',
-    'monitoring': 'reviewing',
-  };
-  return statusMap[apiStatus] || 'idle';
-}
-
-/**
- * 转换 Queen: API QueenAgent → Component QueenAgent
- */
-function convertQueen(apiQueen: any): ComponentQueenAgent {
-  return {
-    status: mapQueenStatus(apiQueen.status),
-    decision: apiQueen.currentAction || undefined,
-  };
-}
-
-/**
- * 转换 Worker 状态
- * 优先使用 detailedStatus（详细状态），否则使用 status（简化状态）
- */
-function mapWorkerStatus(apiStatus: string, detailedStatus?: string): ComponentWorkerAgent['status'] {
-  // 优先使用详细状态
-  if (detailedStatus) {
-    const detailedStatusMap: Record<string, ComponentWorkerAgent['status']> = {
-      'idle': 'idle',
-      'test_writing': 'test_writing',
-      'coding': 'coding',
-      'testing': 'testing',
-      'waiting': 'waiting',
-      'completed': 'idle',
-      'failed': 'idle',
-    };
-    if (detailedStatusMap[detailedStatus]) {
-      return detailedStatusMap[detailedStatus];
-    }
-  }
-
-  // 回退到简化状态
-  const statusMap: Record<string, ComponentWorkerAgent['status']> = {
-    'idle': 'idle',
-    'working': 'coding',
-    'paused': 'waiting',
-    'completed': 'idle',
-    'failed': 'idle',
-  };
-  return statusMap[apiStatus] || 'idle';
-}
-
-/**
- * 获取 TDD 阶段（优先使用服务端数据，否则推断）
- */
-function getTDDPhase(worker: any): ComponentWorkerAgent['tddPhase'] {
-  // 优先使用服务端发送的真实 TDD 循环状态
-  if (worker.tddCycle && worker.tddCycle.phase) {
-    const validPhases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor', 'done'];
-    if (validPhases.includes(worker.tddCycle.phase)) {
-      return worker.tddCycle.phase as ComponentWorkerAgent['tddPhase'];
-    }
-  }
-
-  // 如果没有 TDD 循环数据，根据 Worker 状态推断
-  if (worker.status === 'idle' || worker.status === 'completed') return 'done';
-  if (worker.status === 'working') return 'write_code';
-  return 'write_test';
+function mapWorkerStatus(apiStatus: APIWorkerAgent['status']): ComponentWorkerAgent['status'] {
+  // v2.0: 状态名已统一，直接返回
+  return apiStatus as ComponentWorkerAgent['status'];
 }
 
 /**
  * 转换 Worker: API WorkerAgent → Component WorkerAgent
+ * v2.0: 移除 tddPhase，Worker 自主决策
  */
-function convertWorker(apiWorker: any): ComponentWorkerAgent {
+function convertWorker(apiWorker: APIWorkerAgent): ComponentWorkerAgent {
   return {
-    id: apiWorker.name || apiWorker.id,
-    // 优先使用 detailedStatus 获取更精确的状态
-    status: mapWorkerStatus(apiWorker.status, apiWorker.detailedStatus),
+    id: apiWorker.id,
+    status: mapWorkerStatus(apiWorker.status),
     taskId: apiWorker.currentTaskId || undefined,
-    taskName: apiWorker.currentTaskTitle || undefined,
+    taskName: apiWorker.currentTaskName || undefined,
     progress: apiWorker.progress || 0,
-    tddPhase: getTDDPhase(apiWorker),
-    retryCount: apiWorker.tddCycle?.iteration || 0,
+    retryCount: apiWorker.errorCount || 0,
     maxRetries: 3,
     duration: undefined,
-  };
-}
-
-/**
- * 时间线事件类型(增强版，用于前端显示)
- */
-interface TimelineEvent {
-  id: string;
-  type: 'task_started' | 'task_completed' | 'task_failed' | 'worker_created' | 'test_passed' | 'test_failed' | 'system' | 'error';
-  timestamp: Date;
-  description: string;
-  category: 'task' | 'worker' | 'system' | 'error';
-  details?: Record<string, any>;
-  actor?: string;
-}
-
-/**
- * 时间线筛选类型
- */
-type TimelineFilterType = 'all' | 'task' | 'worker' | 'system' | 'error';
-
-const EVENT_ICONS: Record<TimelineEvent['type'], string> = {
-  task_started: '▶',
-  task_completed: '✓',
-  task_failed: '✗',
-  worker_created: '👷',
-  test_passed: '✓',
-  test_failed: '✗',
-  system: '⚙',
-  error: '⚠',
-};
-
-const EVENT_COLORS: Record<TimelineEvent['type'], string> = {
-  task_started: '#3b82f6',
-  task_completed: '#22c55e',
-  task_failed: '#ef4444',
-  worker_created: '#f59e0b',
-  test_passed: '#22c55e',
-  test_failed: '#ef4444',
-  system: '#6b7280',
-  error: '#ef4444',
-};
-
-/**
- * 事件分类映射
- */
-const EVENT_CATEGORY_MAP: Record<TimelineEvent['type'], TimelineEvent['category']> = {
-  task_started: 'task',
-  task_completed: 'task',
-  task_failed: 'task',
-  worker_created: 'worker',
-  test_passed: 'task',
-  test_failed: 'task',
-  system: 'system',
-  error: 'error',
-};
-
-/**
- * 转换时间线事件
- */
-function convertTimelineEvent(apiEvent: APITimelineEvent): TimelineEvent {
-  // 映射 API 事件类型到前端显示类型
-  const typeMap: Record<string, TimelineEvent['type']> = {
-    'task_start': 'task_started',
-    'task_complete': 'task_completed',
-    'task_fail': 'task_failed',
-    'worker_start': 'worker_created',
-    'swarm_start': 'system',
-    'swarm_stop': 'system',
-    'swarm_pause': 'system',
-    'swarm_resume': 'system',
-    'queen_action': 'system',
-    'system': 'system',
-    'worker_pause': 'worker_created',
-    'worker_complete': 'task_completed',
-  };
-
-  const eventType = typeMap[apiEvent.type] || 'system';
-
-  return {
-    id: apiEvent.id,
-    type: eventType,
-    timestamp: new Date(apiEvent.timestamp),
-    description: apiEvent.message,
-    category: EVENT_CATEGORY_MAP[eventType] || 'system',
-    details: apiEvent.data as Record<string, any>,
-    actor: apiEvent.actor,
+    // v2.0 新增字段
+    branchName: apiWorker.branchName,
+    branchStatus: apiWorker.branchStatus,
+    modelUsed: apiWorker.modelUsed,
+    currentAction: apiWorker.currentAction,
+    decisions: apiWorker.decisions,
   };
 }
 
@@ -230,28 +92,15 @@ function convertTimelineEvent(apiEvent: APITimelineEvent): TimelineEvent {
 // 主组件
 // ============================================================================
 
-/**
- * 蜂群控制台页面 - 主组件
- * 包含三栏布局 + 可折叠底部时间线
- */
-// SwarmConsole Props
 interface SwarmConsoleProps {
-  /** 初始蓝图 ID（从蓝图页面跳转时传入） */
   initialBlueprintId?: string | null;
 }
 
-// 仪表板数据类型
 interface DashboardData {
-  queen: {
-    status: string;
-    blueprintId: string | null;
-    currentAction: string | null;
-  } | null;
   workers: {
     total: number;
     active: number;
     idle: number;
-    // ...
   };
   tasks: {
     total: number;
@@ -260,44 +109,25 @@ interface DashboardData {
     completed: number;
     failed: number;
   };
-  timeline: Array<{
-    timestamp: number;
-    event: string;
-    details: string;
-  }>;
 }
 
-// 任务树统计类型
 interface TaskTreeStats {
   totalTasks: number;
   completedTasks: number;
   pendingTasks: number;
   runningTasks: number;
   failedTasks: number;
-  maxDepth: number;
-  leafTasks: number;
 }
 
-// 右侧面板视图类型
-type RightPanelView = 'workers' | 'tdd' | 'timetravel';
-
 export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) {
-  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
-  const [timelineHeight, setTimelineHeight] = useState(160);
-  const [isResizingTimeline, setIsResizingTimeline] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
-  // 使用 initialBlueprintId 作为初始值
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(initialBlueprintId || null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
-  const [rightPanelView, setRightPanelView] = useState<RightPanelView>('workers');
   const [loadingBlueprints, setLoadingBlueprints] = useState(true);
 
   // 面板折叠状态
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
-
-  // 时间线滚动 ref
-  const timelineListRef = useRef<HTMLDivElement>(null);
 
   // 协调器数据状态
   const [coordinatorWorkers, setCoordinatorWorkers] = useState<any[]>([]);
@@ -305,78 +135,77 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [taskTreeStats, setTaskTreeStats] = useState<TaskTreeStats | null>(null);
   const [loadingCoordinator, setLoadingCoordinator] = useState(false);
 
-  // 时间线增强功能状态
-  const [timelineFilter, setTimelineFilter] = useState<TimelineFilterType>('all');
-  const [timelineSearchTerm, setTimelineSearchTerm] = useState('');
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  // v2.0: 新增状态
+  const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null);
+  const [gitBranches, setGitBranches] = useState<GitBranchStatus[]>([]);
+  const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
+  const [showPlanDetails, setShowPlanDetails] = useState(false);
+  const [showGitPanel, setShowGitPanel] = useState(false);
+  const [isStartingExecution, setIsStartingExecution] = useState(false);
 
-  // 使用 WebSocket 状态管理
-  const { state, isLoading, error, refresh } = useSwarmState({
+  // v2.1: 可恢复状态
+  const [recoverableState, setRecoverableState] = useState<{
+    hasRecoverableState: boolean;
+    stateDetails?: {
+      completedTasks: number;
+      failedTasks: number;
+      totalTasks: number;
+      currentGroupIndex: number;
+      totalGroups: number;
+      lastUpdatedAt: string;
+    };
+  } | null>(null);
+  const [isRecovering, setIsRecovering] = useState(false);
+
+  // WebSocket 状态
+  const { state, isLoading, error, refresh, retryTask } = useSwarmState({
     url: getWebSocketUrl(),
     blueprintId: selectedBlueprintId || undefined,
   });
 
-  // 获取协调器数据
+  // 获取协调器数据（v2.0 增强版）
   const fetchCoordinatorData = useCallback(async () => {
     setLoadingCoordinator(true);
     try {
-      // 并行获取 workers 和 dashboard 数据
       const [workersResult, dashboardResult] = await Promise.all([
         coordinatorApi.getWorkers(),
         coordinatorApi.getDashboard(),
       ]);
       setCoordinatorWorkers(workersResult);
       setDashboardData(dashboardResult);
+
+      // v2.0: 获取执行计划、Git分支和成本数据
+      if (selectedBlueprintId) {
+        try {
+          const [planResult, branchesResult, costResult, recoverableResult] = await Promise.all([
+            coordinatorApi.getExecutionPlan(selectedBlueprintId).catch(() => null),
+            coordinatorApi.getGitBranches(selectedBlueprintId).catch(() => []),
+            coordinatorApi.getCostEstimate(selectedBlueprintId).catch(() => null),
+            // v2.1: 检查可恢复状态
+            coordinatorApi.getRecoverableState(selectedBlueprintId).catch(() => null),
+          ]);
+          // v2.0: 类型转换（API 返回的 status 是 string）
+          setExecutionPlan(planResult as ExecutionPlan | null);
+          setGitBranches(branchesResult);
+          setCostEstimate(costResult);
+          // v2.1: 设置可恢复状态
+          setRecoverableState(recoverableResult);
+        } catch (v2Err) {
+          // v2.0 数据获取失败不影响基础功能
+          console.warn('获取v2.0扩展数据失败:', v2Err);
+        }
+      }
     } catch (err) {
       console.error('获取协调器数据失败:', err);
     } finally {
       setLoadingCoordinator(false);
     }
-  }, []);
+  }, [selectedBlueprintId]);
 
-  // 获取任务树统计
-  const fetchTaskTreeStats = useCallback(async (treeId: string) => {
-    try {
-      const stats = await taskTreeApi.getTaskTreeStats(treeId);
-      setTaskTreeStats(stats);
-    } catch (err) {
-      console.error('获取任务树统计失败:', err);
-    }
-  }, []);
-
-  // 蓝图选中时获取任务树统计
-  useEffect(() => {
-    if (state.taskTree?.id) {
-      fetchTaskTreeStats(state.taskTree.id);
-    }
-  }, [state.taskTree?.id, fetchTaskTreeStats]);
-
-  // 时间线高度拖拽调整
-  useEffect(() => {
-    if (!isResizingTimeline) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newHeight = window.innerHeight - e.clientY;
-      setTimelineHeight(Math.max(80, Math.min(400, newHeight)));
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingTimeline(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingTimeline]);
-
-  // 定时刷新协调器数据
+  // 定时刷新
   useEffect(() => {
     fetchCoordinatorData();
-    const interval = setInterval(fetchCoordinatorData, 5000); // 每5秒刷新
+    const interval = setInterval(fetchCoordinatorData, 5000);
     return () => clearInterval(interval);
   }, [fetchCoordinatorData]);
 
@@ -390,8 +219,6 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
         if (result.success && result.data) {
           setBlueprints(result.data);
-
-          // 只有在没有 initialBlueprintId 且没有选中蓝图时才自动选中第一个
           if (result.data.length > 0 && !selectedBlueprintId && !initialBlueprintId) {
             setSelectedBlueprintId(result.data[0].id);
           }
@@ -402,103 +229,94 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
         setLoadingBlueprints(false);
       }
     };
-
     fetchBlueprints();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 只在挂载时运行一次
+  }, []);
 
+  // 任务树统计
+  useEffect(() => {
+    if (state.stats) {
+      setTaskTreeStats({
+        totalTasks: state.stats.totalTasks,
+        completedTasks: state.stats.completedTasks,
+        pendingTasks: state.stats.pendingTasks,
+        runningTasks: state.stats.runningTasks,
+        failedTasks: state.stats.failedTasks,
+      });
+    }
+  }, [state.stats]);
 
-
-  // 转换数据为组件所需格式
+  // 转换数据
   const taskTreeRoot: ComponentTaskNode | null = useMemo(() => {
     if (!state.taskTree) return null;
     return convertTaskNode(state.taskTree.root);
   }, [state.taskTree]);
 
-  const queen: ComponentQueenAgent | null = useMemo(() => {
-    if (!state.queen) return null;
-    return convertQueen(state.queen);
-  }, [state.queen]);
-
-  // 使用 REST API 数据源（coordinatorWorkers），保持与协调器一致
   const workers: ComponentWorkerAgent[] = useMemo(() => {
     return coordinatorWorkers.map(convertWorker);
   }, [coordinatorWorkers]);
 
-  const timeline: TimelineEvent[] = useMemo(() => {
-    return state.timeline.map(convertTimelineEvent);
-  }, [state.timeline]);
+  // v2.1: 计算选中的任务详情
+  const selectedTask: SelectedTask | null = useMemo(() => {
+    if (!selectedTaskId || !executionPlan) return null;
 
-  // 过滤后的时间线事件
-  const filteredTimeline: TimelineEvent[] = useMemo(() => {
-    return timeline.filter(event => {
-      // 按类型过滤
-      if (timelineFilter !== 'all' && event.category !== timelineFilter) {
-        return false;
-      }
-      // 按搜索词过滤
-      if (timelineSearchTerm) {
-        const searchLower = timelineSearchTerm.toLowerCase();
-        const matchDescription = event.description.toLowerCase().includes(searchLower);
-        const matchActor = event.actor?.toLowerCase().includes(searchLower) || false;
-        return matchDescription || matchActor;
-      }
-      return true;
-    });
-  }, [timeline, timelineFilter, timelineSearchTerm]);
+    const task = executionPlan.tasks.find(t => t.id === selectedTaskId);
+    if (!task) return null;
 
-  // 计算统计信息
-  const stats = useMemo(() => {
-    if (!taskTreeRoot) return { total: 0, completed: 0 };
-
-    const countTasks = (node: ComponentTaskNode): { total: number; completed: number } => {
-      let total = 1;
-      let completed = node.status === 'passed' ? 1 : 0;
-      for (const child of node.children) {
-        const childStats = countTasks(child);
-        total += childStats.total;
-        completed += childStats.completed;
-      }
-      return { total, completed };
+    return {
+      id: task.id,
+      name: task.name,
+      description: task.description,
+      type: task.type,
+      complexity: task.complexity,
+      status: task.status,
+      needsTest: task.needsTest,
+      estimatedMinutes: task.estimatedMinutes,
+      workerId: task.workerId,
+      startedAt: task.startedAt,
+      completedAt: task.completedAt,
+      error: task.error,
+      result: task.result,
+      files: task.files,
+      dependencies: task.dependencies,
     };
-    return countTasks(taskTreeRoot);
-  }, [taskTreeRoot]);
+  }, [selectedTaskId, executionPlan]);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
-
-  // 时间线滚动函数
-  const scrollTimeline = useCallback((direction: 'left' | 'right') => {
-    if (timelineListRef.current) {
-      const scrollAmount = 300; // 每次滚动的像素数
-      const currentScroll = timelineListRef.current.scrollLeft;
-      const newScroll = direction === 'left'
-        ? currentScroll - scrollAmount
-        : currentScroll + scrollAmount;
-      timelineListRef.current.scrollTo({
-        left: newScroll,
-        behavior: 'smooth'
-      });
-    }
-  }, []);
-
-
-
-  // 开始/恢复执行（合并功能：会自动初始化Queen、重置中断和失败的任务）
+  // 开始/恢复执行
   const handleStartOrResumeExecution = async () => {
     if (!selectedBlueprintId) {
       alert('请先选择一个蓝图');
       return;
     }
+    if (isStartingExecution) {
+      return; // 防止重复点击
+    }
+
+    setIsStartingExecution(true);
+    console.log('[SwarmConsole] 开始执行蓝图:', selectedBlueprintId);
+
     try {
-      await coordinatorApi.resume(selectedBlueprintId);
-      alert('执行已启动');
+      const result = await coordinatorApi.resume(selectedBlueprintId);
+      console.log('[SwarmConsole] 执行启动结果:', result);
+
+      // 刷新数据以获取执行计划
+      await fetchCoordinatorData();
       refresh();
-      fetchCoordinatorData();
+
+      // 显示成功提示
+      if (result.started) {
+        console.log(`[SwarmConsole] 新执行已启动: ${result.totalTasks} 个任务, 预计 ${result.estimatedMinutes} 分钟`);
+      } else if (result.recovered) {
+        console.log('[SwarmConsole] 从中断位置恢复执行:', result.message);
+        alert(result.message || '已从上次中断的位置恢复执行');
+      } else if (result.resumed) {
+        console.log('[SwarmConsole] 执行已恢复');
+      }
     } catch (err) {
-      console.error('启动执行失败:', err);
+      console.error('[SwarmConsole] 启动执行失败:', err);
       alert('启动执行失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsStartingExecution(false);
     }
   };
 
@@ -515,11 +333,40 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   };
 
+  // v2.1: 恢复中断的执行
+  const handleRecoverExecution = async () => {
+    if (!selectedBlueprintId) {
+      alert('请先选择一个蓝图');
+      return;
+    }
+    if (isRecovering) {
+      return; // 防止重复点击
+    }
+
+    setIsRecovering(true);
+    console.log('[SwarmConsole] 恢复执行蓝图:', selectedBlueprintId);
+
+    try {
+      const result = await coordinatorApi.recoverExecution(selectedBlueprintId);
+      console.log('[SwarmConsole] 恢复执行结果:', result);
+
+      // 刷新数据
+      await fetchCoordinatorData();
+      refresh();
+
+      alert('执行已恢复，将从上次中断的位置继续');
+    } catch (err) {
+      console.error('[SwarmConsole] 恢复执行失败:', err);
+      alert('恢复执行失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
   const handleBlueprintSelect = (blueprintId: string) => {
     setSelectedBlueprintId(blueprintId);
   };
 
-  // 获取当前蓝图的进度
   const currentBlueprintProgress = useMemo(() => {
     if (!state.stats) return 0;
     return state.stats.progressPercentage;
@@ -527,7 +374,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
   return (
     <div className={styles.swarmConsole}>
-      {/* 主内容区域 - PanelGroup 三栏布局 */}
+      {/* 主内容区域 */}
       <PanelGroup orientation="horizontal" className={styles.mainArea}>
         {/* 左侧：蓝图列表 */}
         <Panel
@@ -538,9 +385,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
           collapsible={true}
           onResize={(size) => {
             const isCollapsed = size.asPercentage === 0;
-            if (isCollapsed !== isLeftPanelCollapsed) {
-              setIsLeftPanelCollapsed(isCollapsed);
-            }
+            if (isCollapsed !== isLeftPanelCollapsed) setIsLeftPanelCollapsed(isCollapsed);
           }}
           className={styles.leftPanel}
         >
@@ -590,14 +435,10 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
             <button
               className={styles.collapseHandleButton}
               onClick={(e) => {
-                e.stopPropagation(); // 防止触发拖拽
+                e.stopPropagation();
                 const panel = leftPanelRef.current;
                 if (panel) {
-                  if (isLeftPanelCollapsed) {
-                    panel.expand();
-                  } else {
-                    panel.collapse();
-                  }
+                  isLeftPanelCollapsed ? panel.expand() : panel.collapse();
                 }
               }}
               title={isLeftPanelCollapsed ? "展开" : "折叠"}
@@ -607,47 +448,169 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
           </div>
         </PanelResizeHandle>
 
-        {/* 中央：任务树区域 */}
-        <Panel defaultSize="45" minSize="30" className={styles.centerPanel}>
+        {/* 中央：V2.0 执行计划（替代任务树） */}
+        <Panel defaultSize="50" minSize="30" className={styles.centerPanel}>
           <div className={styles.panelHeader}>
-            <h2>🌳 任务树</h2>
-            {/* 任务树统计 */}
-            {taskTreeStats && (
+            <h2>📋 执行计划</h2>
+            {/* V2.0: 显示执行计划统计 */}
+            {executionPlan && (
               <div className={styles.taskStats}>
                 <span title="已完成/总任务数">
-                  {taskTreeStats.completedTasks}/{taskTreeStats.totalTasks} 完成
+                  {executionPlan.tasks.filter(t => t.status === 'completed').length}/{executionPlan.tasks.length} 完成
                 </span>
-                {taskTreeStats.runningTasks > 0 && (
-                  <span className={styles.runningBadge} title="执行中">
-                    {taskTreeStats.runningTasks} 执行中
+                {executionPlan.tasks.filter(t => t.status === 'running').length > 0 && (
+                  <span className={styles.runningBadge}>
+                    {executionPlan.tasks.filter(t => t.status === 'running').length} 执行中
                   </span>
                 )}
-                {taskTreeStats.failedTasks > 0 && (
-                  <span className={styles.failedBadge} title="失败">
-                    {taskTreeStats.failedTasks} 失败
+                {executionPlan.tasks.filter(t => t.status === 'failed').length > 0 && (
+                  <span className={styles.failedBadge}>
+                    {executionPlan.tasks.filter(t => t.status === 'failed').length} 失败
                   </span>
                 )}
               </div>
             )}
-            {/* 仪表板快速预览 */}
             {dashboardData?.workers && (
               <div className={styles.dashboardPreview}>
                 <span className={styles.dashboardItem} title="工作中/总Workers">
                   👷 {dashboardData.workers.active}/{dashboardData.workers.total}
                 </span>
-                {dashboardData.queen && (
-                  <span className={styles.dashboardItem} title={`Queen 状态: ${dashboardData.queen.status}`}>
-                    👑 {dashboardData.queen.status}
-                  </span>
-                )}
+              </div>
+            )}
+            {/* v2.0: 成本估算 */}
+            {costEstimate && (
+              <div className={styles.costEstimate}>
+                <span className={styles.costItem} title="预估成本">
+                  💰 ${costEstimate.currentSpent.toFixed(2)} / ${costEstimate.totalEstimated.toFixed(2)}
+                </span>
               </div>
             )}
             <div className={styles.headerActions}>
+              <button
+                className={`${styles.iconButton} ${showPlanDetails ? styles.active : ''}`}
+                title="AI决策详情"
+                onClick={() => setShowPlanDetails(!showPlanDetails)}
+              >🤖</button>
+              <button
+                className={`${styles.iconButton} ${showGitPanel ? styles.active : ''}`}
+                title="Git分支状态"
+                onClick={() => setShowGitPanel(!showGitPanel)}
+              >🌿</button>
               <button className={styles.iconButton} title="刷新" onClick={() => { refresh(); fetchCoordinatorData(); }}>🔄</button>
-              <button className={styles.iconButton} title="开始/恢复执行" onClick={handleStartOrResumeExecution}>▶️</button>
+              <button
+                className={`${styles.iconButton} ${isStartingExecution ? styles.loading : ''}`}
+                title={isStartingExecution ? "正在启动..." : "开始/恢复执行"}
+                onClick={handleStartOrResumeExecution}
+                disabled={isStartingExecution}
+              >
+                {isStartingExecution ? '⏳' : '▶️'}
+              </button>
               <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
             </div>
           </div>
+
+          {/* v2.0: 执行计划详情面板 */}
+          {showPlanDetails && executionPlan && (
+            <FadeIn>
+              <div className={styles.planDetailsPanel}>
+                <div className={styles.planHeader}>
+                  <h3>📋 执行计划</h3>
+                  <span className={`${styles.planStatus} ${styles[executionPlan.status]}`}>
+                    {executionPlan.status === 'ready' ? '就绪' :
+                     executionPlan.status === 'executing' ? '执行中' :
+                     executionPlan.status === 'completed' ? '已完成' :
+                     executionPlan.status === 'failed' ? '失败' : '已暂停'}
+                  </span>
+                </div>
+                <div className={styles.planInfo}>
+                  <div className={styles.planInfoItem}>
+                    <span className={styles.planLabel}>预估时间</span>
+                    <span className={styles.planValue}>{executionPlan.estimatedMinutes} 分钟</span>
+                  </div>
+                  <div className={styles.planInfoItem}>
+                    <span className={styles.planLabel}>预估成本</span>
+                    <span className={styles.planValue}>${executionPlan.estimatedCost.toFixed(2)}</span>
+                  </div>
+                  <div className={styles.planInfoItem}>
+                    <span className={styles.planLabel}>任务数</span>
+                    <span className={styles.planValue}>{executionPlan.tasks.length}</span>
+                  </div>
+                  <div className={styles.planInfoItem}>
+                    <span className={styles.planLabel}>并行组</span>
+                    <span className={styles.planValue}>{executionPlan.parallelGroups.length}</span>
+                  </div>
+                </div>
+                {/* AI 决策展示 */}
+                {executionPlan.autoDecisions.length > 0 && (
+                  <div className={styles.aiDecisions}>
+                    <h4>🤖 AI 决策</h4>
+                    <div className={styles.decisionList}>
+                      {executionPlan.autoDecisions.slice(0, 5).map((decision, index) => (
+                        <div key={index} className={styles.decisionItem}>
+                          <span className={styles.decisionType}>
+                            {decision.type === 'task_split' ? '任务拆分' :
+                             decision.type === 'parallel' ? '并行化' :
+                             decision.type === 'dependency' ? '依赖分析' :
+                             decision.type === 'tech_choice' ? '技术选择' : '其他'}
+                          </span>
+                          <span className={styles.decisionDesc}>{decision.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </FadeIn>
+          )}
+
+          {/* v2.0: Git 分支状态面板 */}
+          {showGitPanel && (
+            <FadeIn>
+              <div className={styles.gitBranchPanel}>
+                <h3>🌿 Git 分支状态</h3>
+                {gitBranches.length > 0 ? (
+                  <div className={styles.branchList}>
+                    {gitBranches.map((branch) => (
+                      <div key={branch.branchName} className={`${styles.branchItem} ${styles[branch.status]}`}>
+                        <div className={styles.branchHeader}>
+                          <span className={styles.branchName}>{branch.branchName}</span>
+                          <span className={`${styles.branchStatus} ${styles[branch.status]}`}>
+                            {branch.status === 'active' ? '活跃' :
+                             branch.status === 'merged' ? '已合并' :
+                             branch.status === 'conflict' ? '冲突' : '等待'}
+                          </span>
+                        </div>
+                        <div className={styles.branchMeta}>
+                          <span>Worker: {branch.workerId}</span>
+                          <span>提交: {branch.commits}</span>
+                          <span>文件: {branch.filesChanged}</span>
+                        </div>
+                        {branch.status === 'conflict' && branch.conflictFiles && (
+                          <div className={styles.conflictFiles}>
+                            <span className={styles.conflictLabel}>冲突文件:</span>
+                            {branch.conflictFiles.map((file, i) => (
+                              <span key={i} className={styles.conflictFile}>{file}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.emptyState}>
+                    <div className={styles.emptyStateIcon}>🌿</div>
+                    <div className={styles.emptyStateText}>
+                      暂无活跃的 Worker 分支
+                      <br />
+                      <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
+                        开始执行任务后，这里会显示各 Worker 的 Git 分支状态
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </FadeIn>
+          )}
           <div className={styles.panelContent}>
             {isLoading ? (
               <div className={styles.loadingState}>
@@ -660,20 +623,143 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 <div className={styles.errorText}>错误: {error}</div>
                 <button className={styles.retryButton} onClick={refresh}>重试</button>
               </div>
-            ) : !taskTreeRoot ? (
+            ) : !selectedBlueprintId ? (
               <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}>🌳</div>
+                <div className={styles.emptyStateIcon}>📋</div>
+                <div className={styles.emptyStateText}>请选择一个蓝图</div>
+              </div>
+            ) : isStartingExecution ? (
+              /* V2.0: 正在创建执行计划 */
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}>⏳</div>
                 <div className={styles.emptyStateText}>
-                  {!selectedBlueprintId ? '请选择一个蓝图' : '暂无任务树数据'}
+                  正在创建执行计划...
+                </div>
+                <div className={styles.emptyStateHint}>
+                  SmartPlanner 正在分析需求并分解任务，请稍候
+                </div>
+              </div>
+            ) : !executionPlan && recoverableState?.hasRecoverableState ? (
+              /* V2.1: 有可恢复的执行状态 */
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}>🔄</div>
+                <div className={styles.emptyStateText}>
+                  发现中断的执行
+                </div>
+                <div className={styles.emptyStateHint}>
+                  {recoverableState.stateDetails && (
+                    <>
+                      已完成 {recoverableState.stateDetails.completedTasks}/{recoverableState.stateDetails.totalTasks} 个任务，
+                      当前进度: 第 {recoverableState.stateDetails.currentGroupIndex + 1}/{recoverableState.stateDetails.totalGroups} 组
+                      <br />
+                      上次更新: {new Date(recoverableState.stateDetails.lastUpdatedAt).toLocaleString()}
+                    </>
+                  )}
+                </div>
+                <div style={{ marginTop: '16px', display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                  <button
+                    className={styles.retryButton}
+                    onClick={handleRecoverExecution}
+                    disabled={isRecovering}
+                    style={{ background: '#4CAF50', minWidth: '120px' }}
+                  >
+                    {isRecovering ? '恢复中...' : '🔄 恢复执行'}
+                  </button>
+                  <button
+                    className={styles.retryButton}
+                    onClick={handleStartOrResumeExecution}
+                    disabled={isStartingExecution}
+                    style={{ background: '#ff9800', minWidth: '120px' }}
+                  >
+                    {isStartingExecution ? '创建中...' : '🆕 重新开始'}
+                  </button>
+                </div>
+              </div>
+            ) : !executionPlan ? (
+              /* V2.0: 蓝图已选择但尚未生成执行计划 */
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}>🚀</div>
+                <div className={styles.emptyStateText}>
+                  蓝图已选择，点击 ▶️ 开始执行
+                </div>
+                <div className={styles.emptyStateHint}>
+                  SmartPlanner 将自动分解任务并分配给 Worker
                 </div>
               </div>
             ) : (
+              /* V2.0: 显示执行计划的任务列表（按并行组分组） */
               <FadeIn>
-                <TaskTree
-                  root={taskTreeRoot}
-                  selectedTaskId={selectedTaskId}
-                  onTaskSelect={setSelectedTaskId}
-                />
+                <div className={styles.executionPlanView}>
+                  {executionPlan.parallelGroups.map((group, groupIndex) => (
+                    <div key={groupIndex} className={styles.parallelGroup}>
+                      <div className={styles.parallelGroupHeader}>
+                        <span className={styles.parallelGroupIcon}>⚡</span>
+                        <span className={styles.parallelGroupTitle}>
+                          并行组 {groupIndex + 1}
+                        </span>
+                        <span className={styles.parallelGroupCount}>
+                          {group.length} 个任务
+                        </span>
+                      </div>
+                      <div className={styles.taskList}>
+                        {group.map(taskId => {
+                          const task = executionPlan.tasks.find(t => t.id === taskId);
+                          if (!task) return null;
+                          return (
+                            <div
+                              key={task.id}
+                              className={`${styles.taskItem} ${styles[task.status]} ${selectedTaskId === task.id ? styles.selected : ''}`}
+                              onClick={() => setSelectedTaskId(task.id)}
+                            >
+                              <div className={styles.taskStatus}>
+                                {task.status === 'completed' ? '✅' :
+                                 task.status === 'running' ? '🔄' :
+                                 task.status === 'failed' ? '❌' :
+                                 task.status === 'skipped' ? '⏭️' : '⏳'}
+                              </div>
+                              <div className={styles.taskInfo}>
+                                <div className={styles.taskName}>{task.name}</div>
+                                <div className={styles.taskMeta}>
+                                  <span className={styles.taskType}>
+                                    {task.type === 'code' ? '💻' :
+                                     task.type === 'test' ? '🧪' :
+                                     task.type === 'config' ? '⚙️' :
+                                     task.type === 'refactor' ? '🔧' :
+                                     task.type === 'docs' ? '📄' : '🔗'}
+                                    {task.type}
+                                  </span>
+                                  <span className={`${styles.taskComplexity} ${styles[task.complexity]}`}>
+                                    {task.complexity}
+                                  </span>
+                                  {task.needsTest && <span className={styles.needsTest}>需要测试</span>}
+                                  <span className={styles.taskTime}>~{task.estimatedMinutes}分钟</span>
+                                </div>
+                              </div>
+                              {task.workerId && (
+                                <div className={styles.taskWorker}>
+                                  👷 {task.workerId.slice(0, 8)}
+                                </div>
+                              )}
+                              {/* v2.1: 失败任务重试按钮 */}
+                              {task.status === 'failed' && selectedBlueprintId && (
+                                <button
+                                  className={styles.retryTaskButton}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    retryTask(selectedBlueprintId, task.id);
+                                  }}
+                                  title="重试此任务"
+                                >
+                                  🔄 重试
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </FadeIn>
             )}
           </div>
@@ -681,241 +767,41 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
         <PanelResizeHandle className={styles.resizeHandle} />
 
-        {/* 右侧：Worker 面板 / TDD 面板（可切换） */}
-        <Panel defaultSize="30" minSize="20" collapsible={true} className={styles.rightPanel}>
+        {/* 右侧：Worker 面板（简化版，移除 TDD 和时光倒流） */}
+        <Panel defaultSize="33" minSize="20" collapsible={true} className={styles.rightPanel}>
           <div className={styles.panelHeader}>
-            {/* 视图切换标签 */}
-            <div className={styles.viewTabs}>
-              <button
-                className={`${styles.viewTab} ${rightPanelView === 'workers' ? styles.activeTab : ''}`}
-                onClick={() => setRightPanelView('workers')}
-              >
-                Workers
-              </button>
-              <button
-                className={`${styles.viewTab} ${rightPanelView === 'tdd' ? styles.activeTab : ''}`}
-                onClick={() => setRightPanelView('tdd')}
-              >
-                TDD
-              </button>
-              <button
-                className={`${styles.viewTab} ${rightPanelView === 'timetravel' ? styles.activeTab : ''}`}
-                onClick={() => setRightPanelView('timetravel')}
-              >
-                时光倒流
-              </button>
-            </div>
-            {rightPanelView === 'workers' && (
-              <span className={styles.workerCount}>
-                {dashboardData?.workers ? `${dashboardData.workers.active}/${dashboardData.workers.total}` :
-                  `${workers.filter(w => w.status !== 'idle' && w.status !== 'waiting').length}/${workers.length}`}
-              </span>
-            )}
+            <h2>👷 Workers</h2>
+            <span className={styles.workerCount}>
+              {dashboardData?.workers
+                ? `${dashboardData.workers.active}/${dashboardData.workers.total}`
+                : `${workers.filter(w => w.status !== 'idle').length}/${workers.length}`}
+            </span>
             {loadingCoordinator && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {/* Workers 视图 - 统一使用 REST API 数据源 */}
-            {rightPanelView === 'workers' && (
-              <>
-                {!queen && workers.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    <div className={styles.emptyStateIcon}>👑</div>
-                    <div className={styles.emptyStateText}>
-                      {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
-                    </div>
-                  </div>
-                ) : (
-                  <FadeIn>
-                    <WorkerPanel queen={queen} workers={workers} />
-                  </FadeIn>
-                )}
-              </>
-            )}
-
-            {/* TDD 视图 */}
-            {rightPanelView === 'tdd' && (
+            {workers.length === 0 && !selectedTask ? (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}>👷</div>
+                <div className={styles.emptyStateText}>
+                  {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
+                  {selectedBlueprintId && !selectedTask && (
+                    <>
+                      <br />
+                      <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
+                        点击左侧任务查看详情
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
               <FadeIn>
-                <TDDPanel
-                  treeId={state.taskTree?.id}
-                  taskId={selectedTaskId}
-                  autoRefresh={true}
-                  refreshInterval={3000}
-                />
-              </FadeIn>
-            )}
-
-            {/* 时光倒流视图 */}
-            {rightPanelView === 'timetravel' && (
-              <FadeIn>
-                {state.taskTree?.id ? (
-                  <TimeTravelPanel
-                    treeId={state.taskTree.id}
-                    onRefresh={() => {
-                      refresh();
-                      fetchCoordinatorData();
-                    }}
-                  />
-                ) : (
-                  <div className={styles.emptyState}>
-                    <div className={styles.emptyStateIcon}>&#9200;</div>
-                    <div className={styles.emptyStateText}>
-                      {!selectedBlueprintId ? '请选择一个蓝图' : '暂无任务树数据'}
-                    </div>
-                  </div>
-                )}
+                <WorkerPanel queen={null} workers={workers} selectedTask={selectedTask} />
               </FadeIn>
             )}
           </div>
         </Panel>
       </PanelGroup>
-
-      {/* 底部：时间线区域（可折叠） - 增强版 */}
-      {!timelineCollapsed && (
-        <div
-          className={styles.timelineResizeHandle}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            setIsResizingTimeline(true);
-          }}
-        />
-      )}
-      <div
-        className={`${styles.timelineArea} ${timelineCollapsed ? styles.collapsed : ''}`}
-        style={timelineCollapsed ? undefined : { height: timelineHeight }}
-      >
-        <div className={styles.timelineHeader} onClick={() => setTimelineCollapsed(!timelineCollapsed)}>
-          <h3>⏱ 时间线</h3>
-          <span className={styles.eventCount}>
-            {filteredTimeline.length}/{timeline.length}
-          </span>
-          {/* 过滤器和搜索（内联在标题栏） */}
-          {!timelineCollapsed && (
-            <div className={styles.timelineFilters} onClick={(e) => e.stopPropagation()}>
-              <button
-                className={styles.timelineNavButton}
-                onClick={() => scrollTimeline('left')}
-                title="向左滚动"
-              >
-                ◀
-              </button>
-              <select
-                className={styles.timelineFilterSelect}
-                value={timelineFilter}
-                onChange={(e) => setTimelineFilter(e.target.value as TimelineFilterType)}
-              >
-                <option value="all">全部</option>
-                <option value="task">任务</option>
-                <option value="worker">Worker</option>
-                <option value="system">系统</option>
-                <option value="error">错误</option>
-              </select>
-              <input
-                type="text"
-                className={styles.timelineSearchInput}
-                placeholder="搜索..."
-                value={timelineSearchTerm}
-                onChange={(e) => setTimelineSearchTerm(e.target.value)}
-              />
-              {(timelineFilter !== 'all' || timelineSearchTerm) && (
-                <button
-                  className={styles.timelineClearFilter}
-                  onClick={() => {
-                    setTimelineFilter('all');
-                    setTimelineSearchTerm('');
-                  }}
-                  title="清除"
-                >
-                  ✕
-                </button>
-              )}
-              <button
-                className={styles.timelineNavButton}
-                onClick={() => scrollTimeline('right')}
-                title="向右滚动"
-              >
-                ▶
-              </button>
-            </div>
-          )}
-          <button
-            className={styles.collapseButton}
-            onClick={(e) => {
-              e.stopPropagation();
-              setTimelineCollapsed(!timelineCollapsed);
-            }}
-          >
-            {timelineCollapsed ? '▲' : '▼'}
-          </button>
-        </div>
-        {!timelineCollapsed && (
-          <div className={styles.timelineContent}>
-            {filteredTimeline.length === 0 ? (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateText}>
-                  {timeline.length === 0 ? '暂无事件' : '没有匹配的事件'}
-                </div>
-              </div>
-            ) : (
-              <div className={styles.timelineList} ref={timelineListRef}>
-                {filteredTimeline.slice().reverse().map((event, index, arr) => (
-                  <FadeIn key={event.id}>
-                    <>
-                      <div
-                        className={`${styles.timelineEvent} ${styles[event.category]} ${expandedEventId === event.id ? styles.expanded : ''}`}
-                        onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
-                      >
-                        {/* 事件头部 */}
-                        <div className={styles.eventHeader}>
-                          <span
-                            className={styles.eventIcon}
-                            style={{ color: EVENT_COLORS[event.type] }}
-                          >
-                            {EVENT_ICONS[event.type]}
-                          </span>
-                          <span className={styles.eventTime}>{formatTime(event.timestamp)}</span>
-                          {event.details && (
-                            <span className={styles.eventExpandIcon}>
-                              {expandedEventId === event.id ? '▼' : '▶'}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* 事件内容 */}
-                        <div className={styles.eventBody}>
-                          <span className={styles.eventDesc}>{event.description}</span>
-                        </div>
-
-                        {/* 事件底部 */}
-                        <div className={styles.eventFooter}>
-                          <span className={`${styles.eventCategory} ${styles[event.category]}`}>
-                            {event.category === 'task' ? '任务' :
-                             event.category === 'worker' ? 'Worker' :
-                             event.category === 'system' ? '系统' : '错误'}
-                          </span>
-                          {event.actor && (
-                            <span className={styles.eventActor}>{event.actor}</span>
-                          )}
-                        </div>
-
-                        {/* 事件详情展开 */}
-                        {expandedEventId === event.id && event.details && (
-                          <div className={styles.eventDetails} onClick={(e) => e.stopPropagation()}>
-                            <pre className={styles.eventDetailsContent}>
-                              {JSON.stringify(event.details, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                      {/* 分隔符 */}
-                      {index < arr.length - 1 && <div className={styles.timelineDivider} />}
-                    </>
-                  </FadeIn>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -67,8 +67,8 @@ export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
         />
       )}
 
-      {isEmptyProject ? (
-        // 空项目：显示创建蓝图流程
+      {isEmptyProject && !hasBlueprint ? (
+        // 空项目且无蓝图：显示创建蓝图流程
         <>
           <p className="welcome-subtitle">
             欢迎使用 Claude Code！这是一个新项目，让我们从创建项目蓝图开始。
@@ -97,7 +97,7 @@ export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
           )}
         </>
       ) : (
-        // 非空项目：显示 AI 对话提示
+        // 非空项目或已有蓝图：显示 AI 对话提示
         <>
           <p className="welcome-subtitle">
             欢迎使用 Claude Code 的 Web 界面。在下方输入框中输入你的问题或指令，我会帮助你完成编程任务。

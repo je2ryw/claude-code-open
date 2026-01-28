@@ -13,6 +13,8 @@ export interface Project {
   path: string;
   /** 最后打开时间 */
   lastOpenedAt?: string;
+  /** 项目是否为空（无源代码文件）*/
+  isEmpty?: boolean;
   /** 是否已有蓝图文件 */
   hasBlueprint?: boolean;
 }
@@ -94,7 +96,9 @@ export default function ProjectSelector({
       });
       const result = await response.json();
       if (result.success) {
-        onProjectChange?.(project);
+        // 使用 API 返回的完整数据（包含 isEmpty 和 hasBlueprint）
+        const updatedProject = result.data || project;
+        onProjectChange?.(updatedProject);
         setIsOpen(false);
       } else {
         console.error('打开项目失败:', result.error);

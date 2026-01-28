@@ -1,12 +1,13 @@
 /**
- * 蓝图系统 API 路由
+ * 蓝图系统 API 路由 - 蜂群架构 v2.0
  *
- * 提供：
- * 1. 蓝图管理 API
- * 2. 任务树管理 API
- * 3. Agent 协调 API
- * 4. 时光倒流 API
- * 5. 实时事件推送（WebSocket）
+ * 核心 API：
+ * 1. 蓝图管理 API（v2.0 架构）
+ * 2. 执行管理 API（SmartPlanner + RealtimeCoordinator）
+ * 3. 项目管理 API（保留原始实现）
+ * 4. 文件操作 API（保留原始实现）
+ * 5. 代码 Tab API（保留原始实现）
+ * 6. 分析 API（保留原始实现）
  */
 
 import { Router, Request, Response } from 'express';
@@ -15,184 +16,1187 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { spawn } from 'child_process';
+
+// ============================================================================
+// 新架构 v2.0 导入
+// ============================================================================
+
 import {
-  blueprintManager,
-  taskTreeManager,
-  agentCoordinator,
-  tddExecutor,
-  generateBlueprintSummary,
-  codebaseAnalyzer,
-  requirementDialogManager,
+  // 类型
+  type Blueprint,
+  type ExecutionPlan,
+  type ExecutionStatus,
+  type SmartTask,
+  type SwarmEvent,
+  type DialogState,
+  type TaskResult,
+  type SerializableExecutionPlan,
+  type SerializableSmartTask,
+  // 智能规划器
+  SmartPlanner,
+  smartPlanner,
+  createSmartPlanner,
+  // 实时协调器
+  RealtimeCoordinator,
+  createRealtimeCoordinator,
+  type ExecutionResult,
+  type TaskExecutor,
+  // 自治 Worker
+  AutonomousWorkerExecutor,
+  createAutonomousWorker,
+  // Git 并发
+  GitConcurrency,
+  // 错误处理
+  ErrorHandler,
+  createErrorHandler,
 } from '../../../blueprint/index.js';
-import { timeTravelManager } from '../../../blueprint/time-travel.js';
-import { analysisCache } from '../../../blueprint/analysis-cache.js';
-import { architectureGraphCache, type ArchitectureGraphCacheEntry } from '../../../blueprint/architecture-graph-cache.js';
-import { CallGraphBuilder } from '../../../map/call-graph-builder.js';
-import type { ModuleNode, CallGraphNode, CallGraphEdge } from '../../../map/types.js';
-import { classifySymbol, canGenerateCallGraph } from './symbol-classifier.js';
-import { calculateTotalLines, groupByDirectory, detectEntryPoints, getCoreSymbols } from './project-map-generator.js';
-import { configManager } from '../../../config/index.js';
-import { getAuth } from '../../../auth/index.js';
-import { TaskManager } from '../task-manager.js';
-import codebaseAnalysisRouter from './codebase-analysis-api.js';
+
+// ============================================================================
+// 分析缓存（简单内存实现）
+// ============================================================================
+
+/**
+ * 简单的分析结果缓存
+ * 使用 LRU 策略，最多缓存 100 个结果，30 分钟过期
+ */
+class SimpleAnalysisCache {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private maxSize = 100;
+  private ttl = 30 * 60 * 1000; // 30 分钟
+
+  private getKey(path: string, isFile: boolean): string {
+    return `${isFile ? 'file' : 'dir'}:${path}`;
+  }
+
+  get(path: string, isFile: boolean): any | null {
+    const key = this.getKey(path, isFile);
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    // 检查是否过期
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  set(path: string, isFile: boolean, data: any): void {
+    const key = this.getKey(path, isFile);
+
+    // LRU: 如果缓存满了，删除最老的条目
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+      }
+    }
+
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+}
+
+const analysisCache = new SimpleAnalysisCache();
 
 const router = Router();
 
-// 挂载代码库分析子路由
-router.use('/codebase-analysis', codebaseAnalysisRouter);
+// ============================================================================
+// 执行事件广播器 - 连接 RealtimeCoordinator 和 WebSocket
+// ============================================================================
+import { EventEmitter } from 'events';
+
+/**
+ * 全局执行事件广播器
+ * 用于将 RealtimeCoordinator 的事件转发给 WebSocket
+ */
+export const executionEventEmitter = new EventEmitter();
+executionEventEmitter.setMaxListeners(50); // 允许多个监听器
 
 // ============================================================================
-// 蓝图 API
+// 蓝图存储（内存 + 文件系统）- v2.0 新架构
+// 蓝图存储在项目的 .blueprint/ 目录中（与老格式一致）
 // ============================================================================
 
 /**
- * 获取所有蓝图
- * 支持 projectPath 查询参数按项目过滤
+ * 蓝图存储管理器
+ * 蓝图存储在项目的 .blueprint/ 目录中
  */
-router.get('/blueprints', (req: Request, res: Response) => {
-  try {
-    const { projectPath } = req.query;
-    let blueprints = blueprintManager.getAllBlueprints();
+class BlueprintStore {
+  private blueprints: Map<string, Blueprint> = new Map();
 
-    // 如果指定了项目路径，按项目过滤
-    if (projectPath && typeof projectPath === 'string') {
-      const normalizedPath = projectPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-      blueprints = blueprints.filter(b => {
-        const bpPath = b.projectPath?.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-        return bpPath === normalizedPath;
-      });
+  constructor() {
+    // 延迟加载，等待 recentProjects 可用
+  }
+
+  /**
+   * 获取项目的蓝图目录
+   */
+  private getBlueprintDir(projectPath: string): string {
+    return path.join(projectPath, '.blueprint');
+  }
+
+  /**
+   * 确保蓝图目录存在
+   */
+  private ensureDir(projectPath: string): void {
+    const dir = this.getBlueprintDir(projectPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  /**
+   * 从项目目录加载蓝图
+   */
+  private loadFromProject(projectPath: string): Blueprint[] {
+    const blueprints: Blueprint[] = [];
+    const blueprintDir = this.getBlueprintDir(projectPath);
+
+    if (!fs.existsSync(blueprintDir)) return blueprints;
+
+    try {
+      const files = fs.readdirSync(blueprintDir);
+      for (const file of files) {
+        // 跳过非蓝图文件
+        if (!file.endsWith('.json') || file.startsWith('.')) continue;
+
+        try {
+          const filePath = path.join(blueprintDir, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+          // 确保有必要的字段
+          if (data.id && data.name) {
+            const blueprint = this.deserializeBlueprint(data, projectPath);
+            blueprints.push(blueprint);
+            this.blueprints.set(blueprint.id, blueprint);
+          }
+        } catch (e) {
+          console.error(`[BlueprintStore] 读取蓝图失败: ${file}`, e);
+        }
+      }
+    } catch (e) {
+      console.error(`[BlueprintStore] 扫描蓝图目录失败: ${blueprintDir}`, e);
     }
 
-    res.json({
-      success: true,
-      data: blueprints.map(b => ({
-        id: b.id,
-        name: b.name,
-        description: b.description,
-        version: b.version,
-        status: b.status,
-        createdAt: b.createdAt,
-        updatedAt: b.updatedAt,
-        moduleCount: b.modules?.length || 0,
-        processCount: b.businessProcesses?.length || 0,
-        nfrCount: b.nfrs?.length || 0,
-        projectPath: b.projectPath,  // 全局视图需要显示项目路径
-      })),
-      total: blueprints.length,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    return blueprints;
   }
-});
 
-/**
- * 获取单个蓝图详情
- * 如果内存中找不到，会尝试从所有已注册项目的蓝图文件中加载
- */
-router.get('/blueprints/:id', (req: Request, res: Response) => {
-  try {
-    const blueprintId = req.params.id;
+  /**
+   * 反序列化蓝图（直接返回原始数据，仅补充默认值）
+   */
+  private deserializeBlueprint(data: any, projectPath: string): Blueprint {
+    return {
+      ...data,
+      projectPath: data.projectPath || projectPath,
+      // 确保有默认值
+      version: data.version || '1.0.0',
+      status: data.status || 'draft',
+      businessProcesses: data.businessProcesses || [],
+      modules: data.modules || [],
+      nfrs: data.nfrs || [],
+      constraints: data.constraints || [],
+      // 日期字段保持原样
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: data.updatedAt || new Date().toISOString(),
+    } as Blueprint;
+  }
 
-    // 首先从内存中查找
-    let blueprint = blueprintManager.getBlueprint(blueprintId);
+  /**
+   * 序列化蓝图（处理日期字段）
+   */
+  private serializeBlueprint(blueprint: Blueprint): any {
+    return {
+      ...blueprint,
+      createdAt: blueprint.createdAt instanceof Date ? blueprint.createdAt.toISOString() : blueprint.createdAt,
+      updatedAt: blueprint.updatedAt instanceof Date ? blueprint.updatedAt.toISOString() : blueprint.updatedAt,
+      confirmedAt: blueprint.confirmedAt instanceof Date ? blueprint.confirmedAt.toISOString() : blueprint.confirmedAt,
+    };
+  }
 
-    // 如果内存中没有，尝试从所有项目中加载
-    if (!blueprint) {
-      const projects = loadRecentProjects();
-      for (const project of projects) {
-        const blueprintFilePath = path.join(project.path, '.blueprint', `${blueprintId}.json`);
-        if (fs.existsSync(blueprintFilePath)) {
-          // 找到蓝图文件，加载该项目的蓝图
-          blueprintManager.setProject(project.path);
-          blueprint = blueprintManager.getBlueprint(blueprintId);
-          if (blueprint) break;
+  /**
+   * 根据项目路径获取蓝图
+   * 用于检查某个项目是否已存在蓝图（防止重复创建）
+   */
+  getByProjectPath(projectPath: string): Blueprint | null {
+    // 先从缓存查找
+    for (const blueprint of this.blueprints.values()) {
+      if (blueprint.projectPath === projectPath) {
+        return blueprint;
+      }
+    }
+
+    // 缓存未命中，从项目目录加载
+    const blueprints = this.loadFromProject(projectPath);
+    if (blueprints.length > 0) {
+      return blueprints[0]; // 返回第一个蓝图
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取所有蓝图
+   */
+  getAll(projectPath?: string): Blueprint[] {
+    // 获取要扫描的项目路径列表
+    const projectPaths: string[] = [];
+
+    if (projectPath) {
+      projectPaths.push(projectPath);
+    } else {
+      // 扫描所有已知项目
+      const recentProjects = loadRecentProjects();
+      projectPaths.push(...recentProjects.map(p => p.path));
+    }
+
+    // 从每个项目加载蓝图
+    const allBlueprints: Blueprint[] = [];
+    for (const projPath of projectPaths) {
+      const blueprints = this.loadFromProject(projPath);
+      allBlueprints.push(...blueprints);
+    }
+
+    // 按更新时间倒序（处理日期可能是字符串的情况）
+    return allBlueprints.sort((a, b) => {
+      const timeA = new Date(a.updatedAt).getTime();
+      const timeB = new Date(b.updatedAt).getTime();
+      return timeB - timeA;
+    });
+  }
+
+  /**
+   * 获取单个蓝图
+   */
+  get(id: string): Blueprint | null {
+    // 先从缓存查找
+    if (this.blueprints.has(id)) {
+      return this.blueprints.get(id) || null;
+    }
+
+    // 缓存未命中，扫描所有项目
+    const recentProjects = loadRecentProjects();
+    for (const project of recentProjects) {
+      const blueprintDir = this.getBlueprintDir(project.path);
+      const filePath = path.join(blueprintDir, `${id}.json`);
+
+      if (fs.existsSync(filePath)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          const blueprint = this.deserializeBlueprint(data, project.path);
+          this.blueprints.set(id, blueprint);
+          return blueprint;
+        } catch (e) {
+          console.error(`[BlueprintStore] 读取蓝图失败: ${filePath}`, e);
         }
       }
     }
 
+    return null;
+  }
+
+  /**
+   * 检查蓝图是否有实质内容
+   */
+  private hasContent(blueprint: Blueprint): boolean {
+    const moduleCount = blueprint.modules?.length || 0;
+    const processCount = blueprint.businessProcesses?.length || 0;
+    const requirementCount = blueprint.requirements?.length || 0;
+    const nfrCount = blueprint.nfrs?.length || 0;
+    return moduleCount > 0 || processCount > 0 || requirementCount > 0 || nfrCount > 0;
+  }
+
+  /**
+   * 保存蓝图
+   */
+  save(blueprint: Blueprint): void {
+    if (!blueprint.projectPath) {
+      throw new Error('蓝图必须有 projectPath');
+    }
+
+    // 状态校验：confirmed 状态必须有实质内容
+    if (blueprint.status === 'confirmed' && !this.hasContent(blueprint)) {
+      throw new Error('蓝图状态不能为 confirmed：没有任何实质内容（模块、流程、需求或NFR）');
+    }
+
+    // 版本号逻辑：空内容的蓝图版本号应为 0.1.0
+    if (!this.hasContent(blueprint) && (!blueprint.version || blueprint.version === '1.0.0')) {
+      blueprint.version = '0.1.0';
+    }
+
+    blueprint.updatedAt = new Date();
+    this.blueprints.set(blueprint.id, blueprint);
+
+    // 确保目录存在
+    this.ensureDir(blueprint.projectPath);
+
+    // 持久化到项目的 .blueprint 目录
+    const filePath = path.join(this.getBlueprintDir(blueprint.projectPath), `${blueprint.id}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(this.serializeBlueprint(blueprint), null, 2), 'utf-8');
+  }
+
+  /**
+   * 删除蓝图
+   */
+  delete(id: string): boolean {
+    const blueprint = this.blueprints.get(id);
     if (!blueprint) {
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+      // 尝试从磁盘查找
+      const found = this.get(id);
+      if (!found) return false;
     }
-    res.json({ success: true, data: blueprint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+
+    const bp = blueprint || this.blueprints.get(id);
+    if (!bp) return false;
+
+    this.blueprints.delete(id);
+
+    // 从项目目录删除
+    if (bp.projectPath) {
+      const filePath = path.join(this.getBlueprintDir(bp.projectPath), `${id}.json`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+
+    return true;
   }
-});
+}
+
+// 全局蓝图存储实例
+const blueprintStore = new BlueprintStore();
+
+// ============================================================================
+// 执行管理器 - v2.0 新架构（完整集成版）
+// ============================================================================
 
 /**
- * 获取蓝图摘要（Markdown 格式）
+ * 执行会话
+ * 跟踪每个蓝图的执行状态
  */
-router.get('/blueprints/:id/summary', (req: Request, res: Response) => {
-  try {
-    const blueprint = blueprintManager.getBlueprint(req.params.id);
+interface ExecutionSession {
+  id: string;
+  blueprintId: string;
+  plan: ExecutionPlan;
+  coordinator: RealtimeCoordinator;
+  gitConcurrency: GitConcurrency;  // Git并发控制
+  result?: ExecutionResult;
+  startedAt: Date;
+  completedAt?: Date;
+}
+
+/**
+ * 真正的任务执行器
+ * 使用 AutonomousWorkerExecutor 执行任务，并通过 GitConcurrency 管理代码变更
+ */
+class RealTaskExecutor implements TaskExecutor {
+  private gitConcurrency: GitConcurrency;
+  private blueprint: Blueprint;
+  private workerPool: Map<string, AutonomousWorkerExecutor> = new Map();
+
+  constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
+    this.gitConcurrency = gitConcurrency;
+    this.blueprint = blueprint;
+  }
+
+  async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
+    console.log(`[RealTaskExecutor] 开始执行任务: ${task.name} (Worker: ${workerId})`);
+
+    // 获取或创建 Worker
+    let worker = this.workerPool.get(workerId);
+    if (!worker) {
+      worker = createAutonomousWorker({
+        maxRetries: 3,
+        testTimeout: 60000,
+        defaultModel: task.complexity === 'complex' ? 'opus' : task.complexity === 'simple' ? 'haiku' : 'sonnet',
+      });
+
+      // v2.0: 监听 Worker 分析事件并转发到 WebSocket
+      worker.on('worker:analyzing', (data: any) => {
+        executionEventEmitter.emit('worker:analyzing', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          task: data.task,
+        });
+      });
+
+      worker.on('worker:analyzed', (data: any) => {
+        executionEventEmitter.emit('worker:analyzed', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          task: data.task,
+          analysis: data.analysis,
+        });
+      });
+
+      worker.on('worker:strategy_decided', (data: any) => {
+        executionEventEmitter.emit('worker:strategy_decided', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          strategy: data.strategy,
+        });
+      });
+
+      this.workerPool.set(workerId, worker);
+    }
+
+    try {
+      // 为 Worker 创建独立的 Git 分支
+      const branchName = await this.gitConcurrency.createWorkerBranch(workerId);
+      console.log(`[RealTaskExecutor] 创建分支: ${branchName}`);
+
+      // 构建 Worker 上下文
+      const context = {
+        projectPath: this.blueprint.projectPath,
+        techStack: this.blueprint.techStack || {
+          language: 'typescript' as const,
+          packageManager: 'npm' as const,
+        },
+        config: {
+          maxWorkers: 5,
+          workerTimeout: 300000,
+          defaultModel: 'sonnet' as const,
+          complexTaskModel: 'opus' as const,
+          simpleTaskModel: 'haiku' as const,
+          autoTest: true,
+          testTimeout: 60000,
+          maxRetries: 3,
+          skipOnFailure: true,
+          useGitBranches: true,
+          autoMerge: true,
+          maxCost: 10,
+          costWarningThreshold: 0.8,
+        },
+        constraints: this.blueprint.constraints,
+      };
+
+      // 执行任务
+      const result = await worker.execute(task, context);
+
+      // 如果任务成功，提交并合并分支
+      if (result.success && result.changes.length > 0) {
+        // 提交更改到 Worker 分支
+        await this.gitConcurrency.commitChanges(
+          workerId,
+          result.changes,
+          `[Swarm] ${task.name}`
+        );
+
+        // 合并到主分支
+        const mergeResult = await this.gitConcurrency.mergeWorkerBranch(workerId);
+
+        if (!mergeResult.success) {
+          console.warn(`[RealTaskExecutor] 合并冲突: ${mergeResult.conflict?.description}`);
+          // 如果需要人工review，标记但不阻塞
+          if (mergeResult.needsHumanReview) {
+            console.warn(`[RealTaskExecutor] 需要人工review分支: ${mergeResult.branchName}`);
+          }
+        }
+      } else if (!result.success) {
+        // 任务失败，回滚分支
+        try {
+          await this.gitConcurrency.rollbackWorkerBranch(workerId);
+        } catch (e) {
+          // 忽略回滚错误
+        }
+      }
+
+      console.log(`[RealTaskExecutor] 任务完成: ${task.name}, 成功: ${result.success}`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`[RealTaskExecutor] 任务执行失败: ${task.name}`, error);
+
+      // 清理分支
+      try {
+        await this.gitConcurrency.deleteWorkerBranch(workerId);
+      } catch (e) {
+        // 忽略清理错误
+      }
+
+      return {
+        success: false,
+        changes: [],
+        decisions: [],
+        error: error.message || '任务执行失败',
+      };
+    }
+  }
+
+  /**
+   * 清理所有 Worker 分支
+   */
+  async cleanup(): Promise<void> {
+    try {
+      await this.gitConcurrency.cleanupAllWorkerBranches();
+    } catch (e) {
+      console.warn('[RealTaskExecutor] 清理分支失败:', e);
+    }
+    this.workerPool.clear();
+  }
+}
+
+/**
+ * 执行管理器
+ * 管理所有蓝图的执行，集成 AutonomousWorkerExecutor 和 GitConcurrency
+ */
+class ExecutionManager {
+  private sessions: Map<string, ExecutionSession> = new Map();
+  private planner: SmartPlanner;
+
+  constructor() {
+    this.planner = createSmartPlanner();
+  }
+
+  /**
+   * 序列化 ExecutionPlan 用于持久化到蓝图
+   */
+  private serializeExecutionPlan(plan: ExecutionPlan): SerializableExecutionPlan {
+    return {
+      id: plan.id,
+      blueprintId: plan.blueprintId,
+      tasks: plan.tasks.map(task => this.serializeTask(task)),
+      parallelGroups: plan.parallelGroups,
+      estimatedCost: plan.estimatedCost,
+      estimatedMinutes: plan.estimatedMinutes,
+      autoDecisions: plan.autoDecisions,
+      status: plan.status,
+      createdAt: plan.createdAt instanceof Date ? plan.createdAt.toISOString() : plan.createdAt,
+      startedAt: plan.startedAt instanceof Date ? plan.startedAt.toISOString() : plan.startedAt,
+      completedAt: plan.completedAt instanceof Date ? plan.completedAt.toISOString() : plan.completedAt,
+    };
+  }
+
+  /**
+   * 序列化单个任务
+   */
+  private serializeTask(task: SmartTask): SerializableSmartTask {
+    return {
+      id: task.id,
+      name: task.name,
+      description: task.description,
+      type: task.type,
+      complexity: task.complexity,
+      blueprintId: task.blueprintId,
+      moduleId: task.moduleId,
+      files: task.files,
+      dependencies: task.dependencies,
+      needsTest: task.needsTest,
+      estimatedMinutes: task.estimatedMinutes,
+      status: task.status,
+      workerId: task.workerId,
+      startedAt: task.startedAt instanceof Date ? task.startedAt.toISOString() : task.startedAt,
+      completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+    };
+  }
+
+  /**
+   * 开始执行蓝图
+   */
+  async startExecution(
+    blueprint: Blueprint,
+    onEvent?: (event: SwarmEvent) => void
+  ): Promise<ExecutionSession> {
+    // 检查是否已有执行
+    const existingSession = this.getSessionByBlueprint(blueprint.id);
+    if (existingSession && !existingSession.completedAt) {
+      throw new Error('该蓝图已有正在执行的任务');
+    }
+
+    // v2.0: 监听 SmartPlanner 探索事件并转发到 WebSocket
+    const plannerExploringHandler = (data: any) => {
+      executionEventEmitter.emit('planner:exploring', {
+        blueprintId: blueprint.id,
+        requirements: blueprint.requirements || [],
+      });
+    };
+    const plannerExploredHandler = (data: any) => {
+      executionEventEmitter.emit('planner:explored', {
+        blueprintId: blueprint.id,
+        exploration: data.exploration,
+      });
+    };
+    const plannerDecomposingHandler = () => {
+      executionEventEmitter.emit('planner:decomposing', {
+        blueprintId: blueprint.id,
+      });
+    };
+
+    this.planner.on('planner:exploring', plannerExploringHandler);
+    this.planner.on('planner:explored', plannerExploredHandler);
+    this.planner.on('planner:decomposing', plannerDecomposingHandler);
+
+    // 创建执行计划
+    let plan;
+    try {
+      plan = await this.planner.createExecutionPlan(blueprint);
+    } finally {
+      // 移除监听器避免内存泄漏
+      this.planner.off('planner:exploring', plannerExploringHandler);
+      this.planner.off('planner:explored', plannerExploredHandler);
+      this.planner.off('planner:decomposing', plannerDecomposingHandler);
+    }
+
+    // 创建 Git 并发控制器
+    const gitConcurrency = new GitConcurrency(blueprint.projectPath);
+
+    // 创建协调器
+    const coordinator = createRealtimeCoordinator({
+      maxWorkers: 5,
+      workerTimeout: 300000,
+      skipOnFailure: true,
+      stopOnGroupFailure: true, // 当并行组全部失败时停止
+      useGitBranches: true,
+      autoMerge: true,
+    });
+
+    // 设置真正的任务执行器（使用 AutonomousWorkerExecutor）
+    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
+    coordinator.setTaskExecutor(executor);
+
+    // 监听事件并转发到全局事件发射器
+    if (onEvent) {
+      coordinator.on('swarm:event', onEvent);
+    }
+
+    // 监听所有 coordinator 事件并转发给 WebSocket
+    coordinator.on('swarm:event', (event: SwarmEvent) => {
+      executionEventEmitter.emit('swarm:event', {
+        blueprintId: blueprint.id,
+        event,
+      });
+    });
+
+    // Worker 创建事件
+    coordinator.on('worker:created', (data: any) => {
+      // 更新全局 workerTracker
+      workerTracker.update(data.workerId, {
+        status: 'working',
+      });
+
+      executionEventEmitter.emit('worker:update', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        updates: {
+          id: data.workerId,
+          status: 'working',
+          createdAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    // Worker 空闲事件
+    coordinator.on('worker:idle', (data: any) => {
+      // 更新全局 workerTracker
+      workerTracker.update(data.workerId, {
+        status: 'idle',
+        currentTaskId: undefined,
+        currentTaskName: undefined,
+      });
+
+      executionEventEmitter.emit('worker:update', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        updates: {
+          status: 'idle',
+          currentTaskId: undefined,
+          currentTaskName: undefined,
+        },
+      });
+    });
+
+    // 任务开始事件
+    coordinator.on('task:started', (data: any) => {
+      // 更新全局 workerTracker
+      workerTracker.update(data.workerId, {
+        status: 'working',
+        currentTaskId: data.taskId,
+        currentTaskName: data.taskName,
+      });
+
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: {
+          status: 'running',
+          startedAt: new Date().toISOString(),
+        },
+      });
+      // 同时更新 Worker 状态
+      executionEventEmitter.emit('worker:update', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        updates: {
+          status: 'working',
+          currentTaskId: data.taskId,
+          currentTaskName: data.taskName,
+        },
+      });
+    });
+
+    // 任务完成事件
+    coordinator.on('task:completed', (data: any) => {
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    // 任务失败事件
+    coordinator.on('task:failed', (data: any) => {
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: {
+          status: 'failed',
+          error: data.error,
+          completedAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    // 进度更新事件
+    coordinator.on('progress:update', (data: any) => {
+      executionEventEmitter.emit('stats:update', {
+        blueprintId: blueprint.id,
+        stats: {
+          totalTasks: data.totalTasks,
+          completedTasks: data.completedTasks,
+          failedTasks: data.failedTasks,
+          runningTasks: data.runningTasks,
+          pendingTasks: data.totalTasks - data.completedTasks - data.failedTasks - data.runningTasks,
+          progressPercentage: data.totalTasks > 0
+            ? Math.round((data.completedTasks / data.totalTasks) * 100)
+            : 0,
+        },
+      });
+    });
+
+    // 计划失败事件（包括并行组全部失败）
+    coordinator.on('plan:failed', (data: any) => {
+      executionEventEmitter.emit('execution:failed', {
+        blueprintId: blueprint.id,
+        error: data.error || '执行失败',
+      });
+    });
+
+    coordinator.on('plan:group_failed', (data: any) => {
+      executionEventEmitter.emit('execution:failed', {
+        blueprintId: blueprint.id,
+        error: data.reason,
+        groupIndex: data.groupIndex,
+        failedCount: data.failedCount,
+      });
+    });
+
+    // 监听 Git 事件
+    gitConcurrency.on('branch:created', (data) => {
+      console.log(`[Git] 分支已创建: ${data.branchName}`);
+    });
+    gitConcurrency.on('merge:success', (data) => {
+      console.log(`[Git] 合并成功: ${data.branchName}`);
+    });
+    gitConcurrency.on('merge:conflict', (data) => {
+      console.warn(`[Git] 合并冲突: ${data.branchName}`);
+    });
+
+    // 创建会话
+    const session: ExecutionSession = {
+      id: plan.id,
+      blueprintId: blueprint.id,
+      plan,
+      coordinator,
+      gitConcurrency,
+      startedAt: new Date(),
+    };
+
+    this.sessions.set(session.id, session);
+
+    // 更新蓝图状态，同时保存执行计划
+    blueprint.status = 'executing';
+    blueprint.lastExecutionPlan = this.serializeExecutionPlan(plan);
+    blueprintStore.save(blueprint);
+
+    // 异步执行
+    this.runExecution(session, blueprint, executor).catch(error => {
+      console.error('[ExecutionManager] 执行失败:', error);
+    });
+
+    return session;
+  }
+
+  /**
+   * 运行执行（异步）
+   */
+  private async runExecution(
+    session: ExecutionSession,
+    blueprint: Blueprint,
+    executor: RealTaskExecutor
+  ): Promise<void> {
+    try {
+      // 传递 projectPath 以启用状态持久化
+      const result = await session.coordinator.start(session.plan, blueprint.projectPath);
+      session.result = result;
+      session.completedAt = new Date();
+
+      // 获取最终的执行计划（包含任务状态）
+      const finalPlan = session.coordinator.getCurrentPlan();
+
+      // 更新蓝图状态和执行计划
+      blueprint.status = result.success ? 'completed' : 'failed';
+      if (finalPlan) {
+        blueprint.lastExecutionPlan = this.serializeExecutionPlan(finalPlan);
+      }
+      blueprintStore.save(blueprint);
+
+      // 执行成功后清理状态文件（保留历史记录选项可以后续添加）
+      // 注意：如果需要保留历史，可以注释掉下面这行
+      // session.coordinator.deleteExecutionState(blueprint.projectPath);
+
+      // 清理 Worker 分支
+      await executor.cleanup();
+
+    } catch (error: any) {
+      session.completedAt = new Date();
+
+      // 获取当前执行计划（即使失败也保存状态）
+      const currentPlan = session.coordinator.getCurrentPlan();
+
+      blueprint.status = 'failed';
+      if (currentPlan) {
+        blueprint.lastExecutionPlan = this.serializeExecutionPlan(currentPlan);
+      }
+      blueprintStore.save(blueprint);
+
+      // 失败时保留状态文件以便恢复
+      console.log(`[ExecutionManager] 执行失败，状态已保存到: ${blueprint.projectPath}/.claude/execution-state.json`);
+
+      // 清理 Worker 分支
+      await executor.cleanup();
+    }
+  }
+
+  /**
+   * 获取执行状态
+   */
+  getStatus(executionId: string): ExecutionStatus | null {
+    const session = this.sessions.get(executionId);
+    if (!session) return null;
+    return session.coordinator.getStatus();
+  }
+
+  /**
+   * 暂停执行
+   */
+  pause(executionId: string): boolean {
+    const session = this.sessions.get(executionId);
+    if (!session || session.completedAt) return false;
+    session.coordinator.pause();
+    return true;
+  }
+
+  /**
+   * 取消暂停，继续执行
+   */
+  resume(executionId: string): boolean {
+    const session = this.sessions.get(executionId);
+    if (!session || session.completedAt) return false;
+    session.coordinator.unpause();
+    return true;
+  }
+
+  /**
+   * 取消执行
+   */
+  cancel(executionId: string): boolean {
+    const session = this.sessions.get(executionId);
+    if (!session || session.completedAt) return false;
+
+    session.coordinator.cancel();
+    session.completedAt = new Date();
+
+    // 清理 Git 分支
+    session.gitConcurrency.cleanupAllWorkerBranches().catch(e => {
+      console.warn('[ExecutionManager] 清理分支失败:', e);
+    });
+
+    // 更新蓝图状态
+    const blueprint = blueprintStore.get(session.blueprintId);
+    if (blueprint) {
+      blueprint.status = 'paused';
+      blueprintStore.save(blueprint);
+    }
+
+    return true;
+  }
+
+  /**
+   * 根据蓝图ID获取会话
+   */
+  getSessionByBlueprint(blueprintId: string): ExecutionSession | undefined {
+    const sessions = Array.from(this.sessions.values());
+    for (const session of sessions) {
+      if (session.blueprintId === blueprintId) {
+        return session;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 获取会话
+   */
+  getSession(executionId: string): ExecutionSession | undefined {
+    return this.sessions.get(executionId);
+  }
+
+  /**
+   * 注册会话（用于从持久化状态恢复）
+   */
+  registerSession(session: ExecutionSession): void {
+    this.sessions.set(session.id, session);
+  }
+
+  /**
+   * 从项目目录恢复执行
+   */
+  async recoverFromProject(projectPath: string): Promise<ExecutionSession | null> {
+    // 检查是否有可恢复的状态
+    if (!RealtimeCoordinator.hasRecoverableState(projectPath)) {
+      return null;
+    }
+
+    // 加载状态
+    const state = RealtimeCoordinator.loadStateFromProject(projectPath);
+    if (!state) {
+      return null;
+    }
+
+    // 获取或创建蓝图
+    let blueprint = blueprintStore.get(state.plan.blueprintId);
     if (!blueprint) {
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
-    }
-    const summary = generateBlueprintSummary(blueprint);
-    res.json({ success: true, data: summary });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 创建新蓝图
- */
-router.post('/blueprints', (req: Request, res: Response) => {
-  try {
-    const { name, description, projectPath } = req.body;
-    // 使用请求中的 projectPath，或者当前项目路径，或者当前工作目录
-    const targetPath = projectPath || blueprintManager.getCurrentProjectPath() || process.cwd();
-    const blueprint = blueprintManager.createBlueprint(name, description, targetPath);
-    res.json({ success: true, data: blueprint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 添加系统模块
- */
-router.post('/blueprints/:id/modules', (req: Request, res: Response) => {
-  try {
-    const module = blueprintManager.addModule(req.params.id, req.body);
-    res.json({ success: true, data: module });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 添加业务流程
- */
-router.post('/blueprints/:id/processes', (req: Request, res: Response) => {
-  try {
-    const process = blueprintManager.addBusinessProcess(req.params.id, req.body);
-    res.json({ success: true, data: process });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 提交审核
- */
-router.post('/blueprints/:id/submit', (req: Request, res: Response) => {
-  try {
-    // 先获取蓝图用于验证警告
-    const blueprintForValidation = blueprintManager.getBlueprint(req.params.id);
-    let warnings: string[] | undefined;
-    if (blueprintForValidation) {
-      const validation = blueprintManager.validateBlueprint(blueprintForValidation);
-      warnings = validation.warnings;
+      // 创建临时蓝图用于恢复
+      blueprint = {
+        id: state.plan.blueprintId,
+        name: '恢复的执行',
+        description: '从持久化状态恢复的执行',
+        status: 'executing',
+        requirements: [],
+        projectPath,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
     }
 
-    // 提交审核
-    const blueprint = blueprintManager.submitForReview(req.params.id);
+    // 创建 Git 并发控制器
+    const gitConcurrency = new GitConcurrency(projectPath);
+
+    // 创建协调器
+    const coordinator = createRealtimeCoordinator({
+      maxWorkers: 5,
+      workerTimeout: 300000,
+      skipOnFailure: true,
+      stopOnGroupFailure: true,
+      useGitBranches: true,
+      autoMerge: true,
+    });
+
+    // 设置任务执行器
+    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
+    coordinator.setTaskExecutor(executor);
+
+    // 创建会话
+    const session: ExecutionSession = {
+      id: state.plan.id,
+      blueprintId: state.plan.blueprintId,
+      plan: null as any, // 将由 resume 方法设置
+      coordinator,
+      gitConcurrency,
+      startedAt: new Date(state.startedAt),
+    };
+
+    this.sessions.set(session.id, session);
+
+    // 异步恢复执行
+    coordinator.resume(projectPath).then(result => {
+      session.plan = coordinator.getCurrentPlan()!;
+      session.result = result;
+      session.completedAt = new Date();
+
+      // 更新蓝图状态
+      blueprint!.status = result.success ? 'completed' : 'failed';
+      blueprintStore.save(blueprint!);
+
+      // 执行成功后删除状态文件
+      if (result.success) {
+        coordinator.deleteExecutionState(projectPath);
+      }
+
+      // 清理 Worker 分支
+      executor.cleanup().catch(e => {
+        console.warn('[ExecutionManager] 清理分支失败:', e);
+      });
+    }).catch(error => {
+      console.error('[ExecutionManager] 恢复执行失败:', error);
+      session.completedAt = new Date();
+      blueprint!.status = 'failed';
+      blueprintStore.save(blueprint!);
+    });
+
+    // 返回恢复后的计划
+    session.plan = coordinator.getCurrentPlan()!;
+    return session;
+  }
+
+  /**
+   * 初始化恢复：检查所有已知蓝图的项目目录，恢复未完成的执行
+   * 应该在服务器启动时调用
+   */
+  async initRecovery(): Promise<void> {
+    console.log('[ExecutionManager] 检查可恢复的执行状态...');
+
+    // 获取所有蓝图
+    const blueprints = blueprintStore.getAll();
+
+    for (const blueprint of blueprints) {
+      // 只检查状态为 executing 的蓝图
+      if (blueprint.status === 'executing' && blueprint.projectPath) {
+        try {
+          // 检查是否有可恢复的状态文件
+          if (RealtimeCoordinator.hasRecoverableState(blueprint.projectPath)) {
+            console.log(`[ExecutionManager] 发现可恢复的执行: ${blueprint.name} (${blueprint.projectPath})`);
+
+            // 尝试恢复
+            const session = await this.recoverFromProject(blueprint.projectPath);
+            if (session) {
+              console.log(`[ExecutionManager] 成功恢复执行: ${blueprint.name}`);
+            }
+          } else {
+            // 状态文件不存在，但蓝图状态是 executing，重置为 paused
+            console.log(`[ExecutionManager] 蓝图 ${blueprint.name} 状态为 executing 但无状态文件，重置为 paused`);
+            blueprint.status = 'paused';
+            blueprintStore.save(blueprint);
+          }
+        } catch (error) {
+          console.error(`[ExecutionManager] 恢复执行失败 (${blueprint.name}):`, error);
+          // 恢复失败，将蓝图状态设置为 paused
+          blueprint.status = 'paused';
+          blueprintStore.save(blueprint);
+        }
+      }
+    }
+
+    console.log('[ExecutionManager] 恢复检查完成');
+  }
+
+  /**
+   * 获取指定蓝图的可恢复状态（如果存在）
+   */
+  getRecoverableState(blueprintId: string): { hasState: boolean; projectPath?: string } {
+    const blueprint = blueprintStore.get(blueprintId);
+    if (!blueprint || !blueprint.projectPath) {
+      return { hasState: false };
+    }
+
+    const hasState = RealtimeCoordinator.hasRecoverableState(blueprint.projectPath);
+    return {
+      hasState,
+      projectPath: hasState ? blueprint.projectPath : undefined,
+    };
+  }
+
+  /**
+   * v2.1: 重试失败的任务
+   * @param blueprintId 蓝图 ID
+   * @param taskId 要重试的任务 ID
+   * @returns 重试结果
+   */
+  async retryTask(blueprintId: string, taskId: string): Promise<{ success: boolean; error?: string }> {
+    // 查找会话
+    const session = this.getSessionByBlueprint(blueprintId);
+    if (!session) {
+      return { success: false, error: '找不到该蓝图的执行会话' };
+    }
+
+    if (!session.coordinator) {
+      return { success: false, error: '执行协调器不可用' };
+    }
+
+    try {
+      // 调用协调器的重试方法
+      const result = await session.coordinator.retryTask(taskId);
+
+      // 发送事件通知前端
+      executionEventEmitter.emit('task:update', {
+        blueprintId,
+        taskId,
+        updates: {
+          status: result ? 'completed' : 'failed',
+        },
+      });
+
+      return { success: result };
+    } catch (error: any) {
+      console.error(`[ExecutionManager] 重试任务失败:`, error);
+      return { success: false, error: error.message || '重试任务时发生错误' };
+    }
+  }
+}
+
+// 全局执行管理器实例（导出供 WebSocket 使用）
+export const executionManager = new ExecutionManager();
+
+// 服务器启动时自动恢复未完成的执行
+// 使用 setTimeout 延迟执行，确保其他模块先初始化完成
+setTimeout(() => {
+  executionManager.initRecovery().catch(error => {
+    console.error('[ExecutionManager] 初始化恢复失败:', error);
+  });
+}, 1000);
+
+// ============================================================================
+// 蓝图 API 路由 - v2.0
+// ============================================================================
+
+/**
+ * GET /blueprints
+ * 获取所有蓝图
+ * 支持 projectPath 查询参数按项目过滤
+ * BlueprintStore 统一处理新旧格式
+ */
+router.get('/blueprints', (req: Request, res: Response) => {
+  try {
+    const { projectPath } = req.query;
+    const filterPath = typeof projectPath === 'string' ? projectPath : undefined;
+
+    // BlueprintStore 统一从项目的 .blueprint/ 目录加载蓝图
+    const blueprints = blueprintStore.getAll(filterPath);
+
+    // 直接返回完整蓝图数据，添加便捷统计字段
+    const data = blueprints.map(b => ({
+      ...b,
+      // 便捷统计字段（供列表展示用）
+      moduleCount: b.modules?.length || 0,
+      processCount: b.businessProcesses?.length || 0,
+      nfrCount: b.nfrs?.length || 0,
+    }));
+
     res.json({
       success: true,
-      data: blueprint,
-      warnings,  // 返回警告信息给前端
+      data,
+      total: data.length,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -200,180 +1204,77 @@ router.post('/blueprints/:id/submit', (req: Request, res: Response) => {
 });
 
 /**
- * 批准蓝图
+ * POST /blueprints
+ * 创建新蓝图（通过 SmartPlanner 对话流程）
  */
-router.post('/blueprints/:id/approve', (req: Request, res: Response) => {
+router.post('/blueprints', async (req: Request, res: Response) => {
   try {
-    const { approvedBy } = req.body;
-    const blueprint = blueprintManager.approveBlueprint(req.params.id, approvedBy);
-    res.json({ success: true, data: blueprint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    const { name, description, projectPath, requirements, techStack, constraints } = req.body;
 
-/**
- * 拒绝蓝图
- */
-router.post('/blueprints/:id/reject', (req: Request, res: Response) => {
-  try {
-    const { reason } = req.body;
-    const blueprint = blueprintManager.rejectBlueprint(req.params.id, reason);
-    res.json({ success: true, data: blueprint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 启动蓝图执行
- *
- * 完整的执行流程：
- * 1. 初始化蜂王 Agent（负责全局协调）
- * 2. 更新蓝图状态为 executing
- * 3. 启动主循环开始执行任务
- */
-router.post('/blueprints/:id/execute', async (req: Request, res: Response) => {
-  try {
-    const blueprintId = req.params.id;
-
-    // 1. 获取蓝图并验证状态
-    const blueprint = blueprintManager.getBlueprint(blueprintId);
-    if (!blueprint) {
-      return res.status(404).json({ success: false, error: '蓝图不存在' });
-    }
-
-    if (blueprint.status !== 'approved') {
+    // 验证必填字段
+    if (!name || !projectPath) {
       return res.status(400).json({
         success: false,
-        error: `无法执行状态为 "${blueprint.status}" 的蓝图。蓝图必须先获得批准。`,
+        error: '缺少必填字段: name, projectPath',
       });
     }
 
-    // 2. 初始化蜂王 Agent
-    const queen = await agentCoordinator.initializeQueen(blueprintId);
-
-    // 3. 获取或创建任务树
-    let taskTreeId = blueprint.taskTreeId;
-    if (!taskTreeId) {
-      // 如果没有任务树，从蓝图生成一个
-      const taskTree = taskTreeManager.generateFromBlueprint(blueprint);
-      taskTreeId = taskTree.id;
-    }
-
-    // 4. 更新蓝图状态为 executing
-    const updatedBlueprint = blueprintManager.startExecution(blueprintId, taskTreeId);
-
-    // 5. 启动主循环
-    agentCoordinator.startMainLoop();
-
-    res.json({
-      success: true,
-      data: {
-        blueprint: updatedBlueprint,
-        queen: {
-          id: queen.id,
-          status: queen.status,
-          blueprintId: queen.blueprintId,
-          taskTreeId: queen.taskTreeId,
+    // 检查该项目路径是否已存在蓝图（防止重复创建）
+    const existingBlueprint = blueprintStore.getByProjectPath(projectPath);
+    if (existingBlueprint) {
+      return res.status(409).json({
+        success: false,
+        error: `该项目路径已存在蓝图: "${existingBlueprint.name}" (ID: ${existingBlueprint.id})`,
+        existingBlueprint: {
+          id: existingBlueprint.id,
+          name: existingBlueprint.name,
+          status: existingBlueprint.status,
         },
-        taskTreeId,
-        message: '蓝图执行已启动',
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 暂停蓝图执行
- */
-router.post('/blueprints/:id/pause', (req: Request, res: Response) => {
-  try {
-    const blueprint = blueprintManager.pauseExecution(req.params.id);
-    agentCoordinator.stopMainLoop();
-    res.json({
-      success: true,
-      data: blueprint,
-      message: '蓝图执行已暂停',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 恢复蓝图执行
- */
-router.post('/blueprints/:id/resume', async (req: Request, res: Response) => {
-  try {
-    const blueprintId = req.params.id;
-    const blueprint = blueprintManager.resumeExecution(blueprintId);
-
-    // 确保 projectRoot 被正确设置（即使蜂王已存在）
-    if (blueprint.projectPath) {
-      agentCoordinator.setProjectRoot(blueprint.projectPath);
+      });
     }
 
-    // 检查蜂王是否已初始化，如果没有则重新初始化
-    if (!agentCoordinator.getQueen()) {
-      await agentCoordinator.initializeQueen(blueprintId);
+    // 如果提供了完整需求，直接创建蓝图
+    if (requirements && Array.isArray(requirements) && requirements.length > 0) {
+      const { v4: uuidv4 } = await import('uuid');
+
+      const blueprint: Blueprint = {
+        id: uuidv4(),
+        name,
+        description: description || requirements[0],
+        projectPath,
+        requirements,
+        techStack: techStack || {
+          language: 'typescript',
+          packageManager: 'npm',
+          testFramework: 'vitest',
+        },
+        modules: [],
+        constraints: constraints || [],
+        status: 'confirmed',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        confirmedAt: new Date(),
+      };
+
+      blueprintStore.save(blueprint);
+
+      return res.json({
+        success: true,
+        data: blueprint,
+        message: '蓝图创建成功',
+      });
     }
 
-    agentCoordinator.startMainLoop();
-    res.json({
-      success: true,
-      data: blueprint,
-      message: '蓝图执行已恢复',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 停止蓝图执行（完成）
- */
-router.post('/blueprints/:id/complete', (req: Request, res: Response) => {
-  try {
-    const blueprint = blueprintManager.completeExecution(req.params.id);
-    agentCoordinator.stopMainLoop();
-    res.json({
-      success: true,
-      data: blueprint,
-      message: '蓝图执行已完成',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 重置所有失败的任务
- * 将 test_failed 和 rejected 状态的任务重置为 pending，以便重新执行
- */
-router.post('/blueprints/:id/reset-failed', (req: Request, res: Response) => {
-  try {
-    const blueprint = blueprintManager.getBlueprint(req.params.id);
-    if (!blueprint) {
-      return res.status(404).json({ success: false, error: '蓝图不存在' });
-    }
-
-    if (!blueprint.taskTreeId) {
-      return res.status(400).json({ success: false, error: '蓝图没有关联的任务树' });
-    }
-
-    const resetRetryCount = req.body.resetRetryCount !== false; // 默认重置重试计数
-    const resetCount = taskTreeManager.resetFailedTasks(blueprint.taskTreeId, resetRetryCount);
+    // 否则开始对话流程
+    const planner = createSmartPlanner();
+    const dialogState = await planner.startDialog(projectPath);
 
     res.json({
       success: true,
       data: {
-        resetCount,
-        taskTreeId: blueprint.taskTreeId,
+        dialogState,
+        message: '对话已开始，请继续提供需求',
       },
-      message: `已重置 ${resetCount} 个失败任务`,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -381,35 +1282,23 @@ router.post('/blueprints/:id/reset-failed', (req: Request, res: Response) => {
 });
 
 /**
- * 重置所有中断的任务
- * 将 coding、testing、test_writing、review 状态的任务重置为 pending
- * 用于服务重启后恢复被中断的任务
+ * GET /blueprints/:id
+ * 获取蓝图详情
  */
-router.post('/blueprints/:id/reset-interrupted', (req: Request, res: Response) => {
+router.get('/blueprints/:id', (req: Request, res: Response) => {
   try {
-    const blueprint = blueprintManager.getBlueprint(req.params.id);
+    const blueprint = blueprintStore.get(req.params.id);
+
     if (!blueprint) {
-      return res.status(404).json({ success: false, error: '蓝图不存在' });
+      return res.status(404).json({
+        success: false,
+        error: '蓝图不存在',
+      });
     }
-
-    if (!blueprint.taskTreeId) {
-      return res.status(400).json({ success: false, error: '蓝图没有关联的任务树' });
-    }
-
-    const resetRetryCount = req.body.resetRetryCount === true; // 默认不重置重试计数
-    const resetCount = taskTreeManager.resetInterruptedTasks(blueprint.taskTreeId, resetRetryCount);
-
-    // 清理相关的 TDD 循环，避免前端持续轮询已被重置的任务
-    const removedTddLoops = tddExecutor.removeLoopsByTreeId(blueprint.taskTreeId);
 
     res.json({
       success: true,
-      data: {
-        resetCount,
-        removedTddLoops,
-        taskTreeId: blueprint.taskTreeId,
-      },
-      message: `已重置 ${resetCount} 个中断任务，清理 ${removedTddLoops} 个 TDD 循环`,
+      data: blueprint,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -417,27 +1306,2155 @@ router.post('/blueprints/:id/reset-interrupted', (req: Request, res: Response) =
 });
 
 /**
+ * DELETE /blueprints/:id
  * 删除蓝图
  */
 router.delete('/blueprints/:id', (req: Request, res: Response) => {
   try {
-    const success = blueprintManager.deleteBlueprint(req.params.id);
-    if (!success) {
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
+    const blueprint = blueprintStore.get(req.params.id);
+
+    if (!blueprint) {
+      return res.status(404).json({
+        success: false,
+        error: '蓝图不存在',
+      });
     }
-    res.json({ success: true, message: '蓝图已删除' });
+
+    // 检查是否正在执行
+    if (blueprint.status === 'executing') {
+      return res.status(400).json({
+        success: false,
+        error: '无法删除正在执行的蓝图',
+      });
+    }
+
+    blueprintStore.delete(req.params.id);
+
+    res.json({
+      success: true,
+      message: '蓝图已删除',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /blueprints/:id/execute
+ * 执行蓝图
+ */
+router.post('/blueprints/:id/execute', async (req: Request, res: Response) => {
+  try {
+    const blueprint = blueprintStore.get(req.params.id);
+
+    if (!blueprint) {
+      return res.status(404).json({
+        success: false,
+        error: '蓝图不存在',
+      });
+    }
+
+    // 检查蓝图状态
+    if (blueprint.status === 'executing') {
+      return res.status(400).json({
+        success: false,
+        error: '蓝图正在执行中',
+      });
+    }
+
+    if (blueprint.status !== 'confirmed' && blueprint.status !== 'paused' && blueprint.status !== 'failed') {
+      return res.status(400).json({
+        success: false,
+        error: '蓝图状态不允许执行，需要先确认蓝图',
+      });
+    }
+
+    // 开始执行
+    const session = await executionManager.startExecution(blueprint);
+
+    res.json({
+      success: true,
+      data: {
+        executionId: session.id,
+        planId: session.plan.id,
+        totalTasks: session.plan.tasks.length,
+        estimatedMinutes: session.plan.estimatedMinutes,
+        estimatedCost: session.plan.estimatedCost,
+      },
+      message: '执行已开始',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /execution/:id/status
+ * 获取执行状态
+ */
+router.get('/execution/:id/status', (req: Request, res: Response) => {
+  try {
+    const status = executionManager.getStatus(req.params.id);
+
+    if (!status) {
+      return res.status(404).json({
+        success: false,
+        error: '执行会话不存在',
+      });
+    }
+
+    const session = executionManager.getSession(req.params.id);
+
+    res.json({
+      success: true,
+      data: {
+        ...status,
+        isCompleted: !!session?.completedAt,
+        result: session?.result,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/:id/pause
+ * 暂停执行
+ */
+router.post('/execution/:id/pause', (req: Request, res: Response) => {
+  try {
+    const success = executionManager.pause(req.params.id);
+
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        error: '无法暂停执行（可能已完成或不存在）',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '执行已暂停',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/:id/resume
+ * 恢复执行
+ */
+router.post('/execution/:id/resume', (req: Request, res: Response) => {
+  try {
+    const success = executionManager.resume(req.params.id);
+
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        error: '无法恢复执行（可能已完成或不存在）',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '执行已恢复',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/:id/cancel
+ * 取消执行
+ */
+router.post('/execution/:id/cancel', (req: Request, res: Response) => {
+  try {
+    const success = executionManager.cancel(req.params.id);
+
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        error: '无法取消执行（可能已完成或不存在）',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '执行已取消',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /execution/recoverable
+ * 检查项目是否有可恢复的执行状态
+ */
+router.get('/execution/recoverable', (req: Request, res: Response) => {
+  try {
+    const projectPath = req.query.projectPath as string;
+    if (!projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 projectPath 参数',
+      });
+    }
+
+    const hasState = RealtimeCoordinator.hasRecoverableState(projectPath);
+    let stateInfo = null;
+
+    if (hasState) {
+      const state = RealtimeCoordinator.loadStateFromProject(projectPath);
+      if (state) {
+        stateInfo = {
+          planId: state.plan.id,
+          blueprintId: state.plan.blueprintId,
+          currentGroupIndex: state.currentGroupIndex,
+          completedTasks: state.completedTaskIds.length,
+          failedTasks: state.failedTaskIds.length,
+          totalTasks: state.plan.tasks.length,
+          isPaused: state.isPaused,
+          lastUpdatedAt: state.lastUpdatedAt,
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        hasRecoverableState: hasState,
+        stateInfo,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/recover
+ * 从项目目录恢复执行
+ * Body: { projectPath: string }
+ */
+router.post('/execution/recover', async (req: Request, res: Response) => {
+  try {
+    const { projectPath } = req.body;
+    if (!projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 projectPath 参数',
+      });
+    }
+
+    // 使用 ExecutionManager 的恢复方法
+    const session = await executionManager.recoverFromProject(projectPath);
+
+    if (!session) {
+      return res.status(400).json({
+        success: false,
+        error: `项目 ${projectPath} 没有可恢复的执行状态`,
+      });
+    }
+
+    // 获取恢复状态信息
+    const state = RealtimeCoordinator.loadStateFromProject(projectPath);
+
+    res.json({
+      success: true,
+      data: {
+        executionId: session.id,
+        blueprintId: session.blueprintId,
+        planId: session.plan?.id,
+        resumedFrom: state ? {
+          currentGroupIndex: state.currentGroupIndex,
+          completedTasks: state.completedTaskIds.length,
+          failedTasks: state.failedTaskIds.length,
+        } : null,
+      },
+    });
+  } catch (error: any) {
+    console.error('[/execution/recover] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// Coordinator API - v2.0 协调器接口
+// ============================================================================
+
+/**
+ * Worker 状态追踪器
+ * 管理当前活跃的 Worker 状态
+ */
+class WorkerStateTracker {
+  private workers: Map<string, {
+    id: string;
+    status: 'idle' | 'working' | 'waiting' | 'error';
+    currentTaskId?: string;
+    currentTaskName?: string;
+    branchName?: string;
+    branchStatus?: 'active' | 'merged' | 'conflict';
+    modelUsed?: 'opus' | 'sonnet' | 'haiku';
+    progress: number;
+    decisions: Array<{ type: string; description: string; timestamp: string }>;
+    currentAction?: { type: string; description: string; startedAt: string };
+    errorCount: number;
+    createdAt: string;
+    lastActiveAt: string;
+  }> = new Map();
+
+  /**
+   * 获取所有 Workers
+   */
+  getAll() {
+    return Array.from(this.workers.values());
+  }
+
+  /**
+   * 获取或创建 Worker
+   */
+  getOrCreate(workerId: string) {
+    if (!this.workers.has(workerId)) {
+      this.workers.set(workerId, {
+        id: workerId,
+        status: 'idle',
+        progress: 0,
+        decisions: [],
+        errorCount: 0,
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+      });
+    }
+    return this.workers.get(workerId)!;
+  }
+
+  /**
+   * 更新 Worker 状态
+   */
+  update(workerId: string, updates: Partial<ReturnType<typeof this.getOrCreate>>) {
+    const worker = this.getOrCreate(workerId);
+    Object.assign(worker, updates, { lastActiveAt: new Date().toISOString() });
+  }
+
+  /**
+   * 添加决策记录
+   */
+  addDecision(workerId: string, type: string, description: string) {
+    const worker = this.getOrCreate(workerId);
+    worker.decisions.push({
+      type,
+      description,
+      timestamp: new Date().toISOString(),
+    });
+    // 只保留最近 20 条决策
+    if (worker.decisions.length > 20) {
+      worker.decisions = worker.decisions.slice(-20);
+    }
+  }
+
+  /**
+   * 清除所有 Workers
+   */
+  clear() {
+    this.workers.clear();
+  }
+
+  /**
+   * 获取统计信息
+   */
+  getStats() {
+    const workers = this.getAll();
+    return {
+      total: workers.length,
+      active: workers.filter(w => w.status === 'working').length,
+      idle: workers.filter(w => w.status === 'idle').length,
+      waiting: workers.filter(w => w.status === 'waiting').length,
+      error: workers.filter(w => w.status === 'error').length,
+    };
+  }
+}
+
+// 全局 Worker 状态追踪器
+const workerTracker = new WorkerStateTracker();
+
+/**
+ * GET /coordinator/workers
+ * 获取所有 Worker 状态
+ */
+router.get('/coordinator/workers', (_req: Request, res: Response) => {
+  try {
+    const workers = workerTracker.getAll();
+    res.json({
+      success: true,
+      data: workers,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/dashboard
+ * 获取仪表盘数据
+ */
+router.get('/coordinator/dashboard', (_req: Request, res: Response) => {
+  try {
+    const workerStats = workerTracker.getStats();
+
+    // 统计任务信息（从所有活跃会话中收集）
+    let taskStats = {
+      total: 0,
+      pending: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    };
+
+    // 遍历所有执行会话统计任务
+    const sessions = Array.from((executionManager as any).sessions?.values() || []);
+    for (const session of sessions) {
+      const status = (session as any).coordinator?.getStatus?.();
+      if (status?.stats) {
+        taskStats.total += status.stats.totalTasks || 0;
+        taskStats.pending += status.stats.pendingTasks || 0;
+        taskStats.running += status.stats.runningTasks || 0;
+        taskStats.completed += status.stats.completedTasks || 0;
+        taskStats.failed += status.stats.failedTasks || 0;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        workers: workerStats,
+        tasks: taskStats,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordinator/stop
+ * 停止/暂停协调器
+ */
+router.post('/coordinator/stop', (_req: Request, res: Response) => {
+  try {
+    // 暂停所有执行会话
+    const sessions = Array.from((executionManager as any).sessions?.values() || []);
+    let pausedCount = 0;
+    for (const session of sessions) {
+      if (!(session as any).completedAt) {
+        (session as any).coordinator?.pause?.();
+        pausedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { pausedSessions: pausedCount },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordinator/start
+ * 启动/恢复协调器（V2.0）
+ * - 如果已有执行会话：恢复它
+ * - 如果没有会话：创建新的执行
+ */
+router.post('/coordinator/start', async (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.body;
+    console.log('[coordinator/start] 收到请求:', { blueprintId });
+
+    if (blueprintId) {
+      // 检查是否有现有会话
+      const existingSession = executionManager.getSessionByBlueprint(blueprintId);
+      if (existingSession && !existingSession.completedAt) {
+        // 取消暂停现有会话
+        console.log('[coordinator/start] 恢复现有会话:', existingSession.id);
+        existingSession.coordinator.unpause();
+        return res.json({
+          success: true,
+          data: {
+            resumed: true,
+            blueprintId,
+            executionId: existingSession.id,
+            planId: existingSession.plan.id,
+          },
+        });
+      }
+
+      // 没有现有会话，检查是否有可恢复的文件状态
+      const blueprint = blueprintStore.get(blueprintId);
+      if (!blueprint) {
+        console.log('[coordinator/start] 蓝图不存在:', blueprintId);
+        return res.status(404).json({
+          success: false,
+          error: '蓝图不存在',
+        });
+      }
+
+      // V2.1: 优先检查文件系统上的可恢复状态
+      if (blueprint.projectPath && RealtimeCoordinator.hasRecoverableState(blueprint.projectPath)) {
+        console.log('[coordinator/start] 发现可恢复的执行状态，尝试恢复...');
+        try {
+          const recoveredSession = await executionManager.recoverFromProject(blueprint.projectPath);
+          if (recoveredSession) {
+            console.log('[coordinator/start] 成功恢复执行:', {
+              executionId: recoveredSession.id,
+              blueprintId: recoveredSession.blueprintId,
+            });
+            return res.json({
+              success: true,
+              data: {
+                recovered: true,
+                blueprintId,
+                executionId: recoveredSession.id,
+                planId: recoveredSession.plan?.id,
+                message: '已从上次中断的位置恢复执行',
+              },
+            });
+          }
+        } catch (recoverErr) {
+          console.warn('[coordinator/start] 恢复执行失败，将创建新执行:', recoverErr);
+          // 恢复失败，继续创建新执行
+        }
+      }
+
+      // 检查蓝图状态（允许 executing 以便处理会话丢失的情况，允许 completed 以便重新执行）
+      const allowedStatuses = ['confirmed', 'draft', 'paused', 'failed', 'executing'];
+      if (!allowedStatuses.includes(blueprint.status)) {
+        console.log('[coordinator/start] 蓝图状态不允许执行:', blueprint.status);
+        return res.status(400).json({
+          success: false,
+          error: `蓝图状态 "${blueprint.status}" 不允许执行`,
+        });
+      }
+
+      // 如果是重新执行已完成的蓝图，记录日志
+      if (blueprint.status === 'completed') {
+        console.log('[coordinator/start] 重新执行已完成的蓝图:', blueprintId);
+      }
+
+      // V2.0: 开始新的执行
+      console.log('[coordinator/start] 开始创建执行计划...');
+      const session = await executionManager.startExecution(blueprint);
+      console.log('[coordinator/start] 执行计划创建完成:', {
+        executionId: session.id,
+        planId: session.plan.id,
+        totalTasks: session.plan.tasks.length,
+      });
+      return res.json({
+        success: true,
+        data: {
+          started: true,
+          blueprintId,
+          executionId: session.id,
+          planId: session.plan.id,
+          totalTasks: session.plan.tasks.length,
+          parallelGroups: session.plan.parallelGroups.length,
+          estimatedMinutes: session.plan.estimatedMinutes,
+          estimatedCost: session.plan.estimatedCost,
+        },
+      });
+    }
+
+    // 恢复所有暂停的会话
+    const sessions = Array.from((executionManager as any).sessions?.values() || []);
+    let resumedCount = 0;
+    for (const session of sessions) {
+      if (!(session as any).completedAt) {
+        (session as any).coordinator?.resume?.();
+        resumedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { resumedSessions: resumedCount },
+    });
+  } catch (error: any) {
+    console.error('[coordinator/start] 执行失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/recoverable/:blueprintId
+ * 检查蓝图是否有可恢复的执行状态
+ */
+router.get('/coordinator/recoverable/:blueprintId', (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const result = executionManager.getRecoverableState(blueprintId);
+
+    // 如果有可恢复状态，尝试加载状态详情
+    let stateDetails = null;
+    if (result.hasState && result.projectPath) {
+      const state = RealtimeCoordinator.loadStateFromProject(result.projectPath);
+      if (state) {
+        stateDetails = {
+          planId: state.plan.id,
+          completedTasks: state.completedTaskIds.length,
+          failedTasks: state.failedTaskIds.length,
+          skippedTasks: state.skippedTaskIds.length,
+          totalTasks: state.plan.tasks.length,
+          currentGroupIndex: state.currentGroupIndex,
+          totalGroups: state.plan.parallelGroups.length,
+          lastUpdatedAt: state.lastUpdatedAt,
+          isPaused: state.isPaused,
+          currentCost: state.currentCost,
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        hasRecoverableState: result.hasState,
+        projectPath: result.projectPath,
+        stateDetails,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordinator/recover/:blueprintId
+ * 恢复蓝图的执行
+ */
+router.post('/coordinator/recover/:blueprintId', async (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const blueprint = blueprintStore.get(blueprintId);
+
+    if (!blueprint) {
+      return res.status(404).json({
+        success: false,
+        error: '蓝图不存在',
+      });
+    }
+
+    if (!blueprint.projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '蓝图没有关联的项目路径',
+      });
+    }
+
+    // 检查是否有可恢复的状态
+    if (!RealtimeCoordinator.hasRecoverableState(blueprint.projectPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '没有可恢复的执行状态',
+      });
+    }
+
+    // 检查是否已有正在执行的会话
+    const existingSession = executionManager.getSessionByBlueprint(blueprintId);
+    if (existingSession && !existingSession.completedAt) {
+      return res.status(409).json({
+        success: false,
+        error: '该蓝图已有正在执行的任务',
+      });
+    }
+
+    // 恢复执行
+    const session = await executionManager.recoverFromProject(blueprint.projectPath);
+
+    if (!session) {
+      return res.status(500).json({
+        success: false,
+        error: '恢复执行失败',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        executionId: session.id,
+        blueprintId: session.blueprintId,
+        message: '执行已恢复',
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/plan/:blueprintId
+ * 获取执行计划（包含实时任务状态）
+ * v2.1: 当没有活跃 session 时，从蓝图的 lastExecutionPlan 中读取历史数据
+ */
+router.get('/coordinator/plan/:blueprintId', (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+
+    if (!session) {
+      // v2.1: 从蓝图中读取历史执行计划
+      const blueprint = blueprintStore.get(blueprintId);
+      if (blueprint?.lastExecutionPlan) {
+        return res.json({
+          success: true,
+          data: blueprint.lastExecutionPlan,
+        });
+      }
+      return res.json({
+        success: true,
+        data: null,
+      });
+    }
+
+    const plan = session.plan;
+    const status = session.coordinator.getStatus() as any;
+
+    // 获取带有运行时状态的任务列表
+    const tasksWithStatus = session.coordinator.getTasksWithStatus();
+
+    // 序列化任务（转换日期为字符串）
+    const serializedTasks = tasksWithStatus.map(task => ({
+      ...task,
+      startedAt: task.startedAt instanceof Date ? task.startedAt.toISOString() : task.startedAt,
+      completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+      // 移除 result 中的 Date 对象
+      result: task.result ? {
+        success: task.result.success,
+        testsRan: task.result.testsRan,
+        testsPassed: task.result.testsPassed,
+        error: task.result.error,
+      } : undefined,
+    }));
+
+    // 根据 ExecutionStatus 的实际字段推断状态
+    const inferredStatus = status
+      ? (status.completedTasks === status.totalTasks && status.totalTasks > 0 ? 'completed' :
+         status.failedTasks > 0 ? 'failed' :
+         status.runningTasks > 0 ? 'executing' : 'ready')
+      : 'ready';
+
+    res.json({
+      success: true,
+      data: {
+        id: plan.id,
+        blueprintId: plan.blueprintId,
+        tasks: serializedTasks,  // 使用带状态的任务列表
+        parallelGroups: plan.parallelGroups || [],
+        estimatedCost: plan.estimatedCost || 0,
+        estimatedMinutes: plan.estimatedMinutes || 0,
+        autoDecisions: plan.autoDecisions || [],
+        status: inferredStatus,
+        createdAt: session.startedAt.toISOString(),
+        startedAt: session.startedAt.toISOString(),
+        completedAt: session.completedAt?.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/git-branches/:blueprintId
+ * 获取 Git 分支状态
+ */
+router.get('/coordinator/git-branches/:blueprintId', async (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+
+    if (!session || !session.gitConcurrency) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // 从 GitConcurrency 获取分支状态
+    const gitConcurrency = session.gitConcurrency;
+    const branches = await gitConcurrency.getAllBranches();
+
+    res.json({
+      success: true,
+      data: branches,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/cost/:blueprintId
+ * 获取成本估算
+ */
+router.get('/coordinator/cost/:blueprintId', (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+
+    if (!session) {
+      return res.json({
+        success: true,
+        data: {
+          totalEstimated: 0,
+          currentSpent: 0,
+          remainingEstimated: 0,
+          breakdown: [],
+        },
+      });
+    }
+
+    const plan = session.plan;
+    const status = session.coordinator.getStatus();
+
+    // 计算成本分解
+    const breakdown: Array<{ model: string; tasks: number; cost: number }> = [];
+    const modelCounts: Record<string, { tasks: number; cost: number }> = {};
+
+    for (const task of (plan.tasks || []) as any[]) {
+      const model = task.recommendedModel || task.model || 'sonnet';
+      if (!modelCounts[model]) {
+        modelCounts[model] = { tasks: 0, cost: 0 };
+      }
+      modelCounts[model].tasks++;
+      // 估算成本：opus=$0.03, sonnet=$0.01, haiku=$0.003 per task
+      const costPerTask = model === 'opus' ? 0.03 : model === 'haiku' ? 0.003 : 0.01;
+      modelCounts[model].cost += costPerTask;
+    }
+
+    for (const [model, data] of Object.entries(modelCounts)) {
+      breakdown.push({ model, ...data });
+    }
+
+    const totalEstimated = plan.estimatedCost || breakdown.reduce((sum, b) => sum + b.cost, 0);
+    // 从 ExecutionStatus 计算进度百分比
+    const statusAny = status as any;
+    const progressRatio = statusAny?.totalTasks > 0
+      ? (statusAny?.completedTasks || 0) / statusAny.totalTasks
+      : 0;
+    const currentSpent = totalEstimated * progressRatio;
+
+    res.json({
+      success: true,
+      data: {
+        totalEstimated,
+        currentSpent,
+        remainingEstimated: totalEstimated - currentSpent,
+        breakdown,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordinator/merge
+ * 手动触发合并
+ */
+router.post('/coordinator/merge', async (req: Request, res: Response) => {
+  try {
+    const { workerId } = req.body;
+
+    if (!workerId) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 workerId 参数',
+      });
+    }
+
+    // 查找包含该 Worker 的会话
+    const sessions = Array.from((executionManager as any).sessions?.values() || []);
+    for (const session of sessions) {
+      const gitConcurrency = (session as any).gitConcurrency;
+      if (gitConcurrency) {
+        const result = await gitConcurrency.mergeWorkerBranch?.(workerId);
+        if (result) {
+          return res.json({
+            success: true,
+            data: {
+              success: result.success,
+              branchName: result.branchName,
+              autoResolved: result.autoResolved || false,
+              needsHumanReview: result.needsHumanReview || false,
+              conflictFiles: result.conflict?.files || [],
+            },
+          });
+        }
+      }
+    }
+
+    res.status(404).json({
+      success: false,
+      error: '未找到该 Worker 的分支',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/workers/:workerId/decisions
+ * 获取 Worker 决策历史
+ */
+router.get('/coordinator/workers/:workerId/decisions', (req: Request, res: Response) => {
+  try {
+    const { workerId } = req.params;
+    const worker = workerTracker.getAll().find(w => w.id === workerId);
+
+    if (!worker) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    res.json({
+      success: true,
+      data: worker.decisions,
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ============================================================================
-// 项目地图 API
+// 对话 API - v2.0 蓝图创建对话流程
 // ============================================================================
 
 /**
- * GET /api/blueprint/project-map
- *
+ * 对话会话管理器
+ * 管理所有活跃的 SmartPlanner 对话会话
+ */
+class DialogSessionManager {
+  private sessions: Map<string, { planner: SmartPlanner; state: DialogState; projectPath: string }> = new Map();
+
+  /**
+   * 创建新对话会话
+   */
+  async createSession(projectPath: string): Promise<{ sessionId: string; state: DialogState }> {
+    const { v4: uuidv4 } = await import('uuid');
+    const sessionId = uuidv4();
+    const planner = createSmartPlanner();
+    const state = await planner.startDialog(projectPath);
+
+    this.sessions.set(sessionId, { planner, state, projectPath });
+
+    return { sessionId, state };
+  }
+
+  /**
+   * 获取对话会话
+   */
+  getSession(sessionId: string) {
+    return this.sessions.get(sessionId);
+  }
+
+  /**
+   * 处理用户输入
+   */
+  async processInput(sessionId: string, input: string): Promise<DialogState | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+
+    const newState = await session.planner.processUserInput(input, session.state);
+    session.state = newState;
+
+    return newState;
+  }
+
+  /**
+   * 生成蓝图
+   * 优先使用确认时已生成的蓝图，避免重复调用 AI
+   */
+  async generateBlueprint(sessionId: string): Promise<Blueprint | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.state.isComplete) return null;
+
+    // 检查该项目路径是否已存在蓝图（防止重复创建）
+    const existingBlueprint = blueprintStore.getByProjectPath(session.projectPath);
+    if (existingBlueprint) {
+      throw new Error(`该项目路径已存在蓝图: "${existingBlueprint.name}" (ID: ${existingBlueprint.id})`);
+    }
+
+    // 优先使用已生成的蓝图（在用户确认时生成）
+    let blueprint = session.state.generatedBlueprint;
+
+    // 如果没有预生成的蓝图，才调用 AI 生成
+    if (!blueprint) {
+      blueprint = await session.planner.generateBlueprint(session.state);
+    }
+
+    // 保存蓝图
+    blueprintStore.save(blueprint);
+
+    // 清理会话
+    this.sessions.delete(sessionId);
+
+    return blueprint;
+  }
+
+  /**
+   * 删除会话
+   */
+  deleteSession(sessionId: string): boolean {
+    return this.sessions.delete(sessionId);
+  }
+
+  /**
+   * 获取所有活跃会话
+   */
+  getAllSessions() {
+    const result: Array<{ sessionId: string; projectPath: string; phase: string; isComplete: boolean }> = [];
+    for (const [sessionId, session] of this.sessions) {
+      result.push({
+        sessionId,
+        projectPath: session.projectPath,
+        phase: session.state.phase,
+        isComplete: session.state.isComplete,
+      });
+    }
+    return result;
+  }
+}
+
+const dialogManager = new DialogSessionManager();
+
+/**
+ * POST /dialog/start
+ * 开始新的对话会话
+ */
+router.post('/dialog/start', async (req: Request, res: Response) => {
+  try {
+    const { projectPath } = req.body;
+
+    if (!projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填字段: projectPath',
+      });
+    }
+
+    // 验证项目路径
+    if (!fs.existsSync(projectPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '项目路径不存在',
+      });
+    }
+
+    const { sessionId, state } = await dialogManager.createSession(projectPath);
+
+    res.json({
+      success: true,
+      data: {
+        sessionId,
+        projectPath,
+        phase: state.phase,
+        messages: state.messages,
+        isComplete: state.isComplete,
+        collectedRequirements: state.collectedRequirements,
+        collectedConstraints: state.collectedConstraints,
+        techStack: state.techStack,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /dialog/:sessionId/message
+ * 发送消息继续对话
+ */
+router.post('/dialog/:sessionId/message', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { input } = req.body;
+
+    if (!input) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填字段: input',
+      });
+    }
+
+    const state = await dialogManager.processInput(sessionId, input);
+
+    if (!state) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        phase: state.phase,
+        messages: state.messages,
+        isComplete: state.isComplete,
+        collectedRequirements: state.collectedRequirements,
+        collectedConstraints: state.collectedConstraints,
+        techStack: state.techStack,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /dialog/:sessionId
+ * 获取对话状态
+ */
+router.get('/dialog/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const session = dialogManager.getSession(sessionId);
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        projectPath: session.projectPath,
+        phase: session.state.phase,
+        messages: session.state.messages,
+        isComplete: session.state.isComplete,
+        collectedRequirements: session.state.collectedRequirements,
+        collectedConstraints: session.state.collectedConstraints,
+        techStack: session.state.techStack,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /dialog/:sessionId/confirm
+ * 确认对话并生成蓝图
+ */
+router.post('/dialog/:sessionId/confirm', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const session = dialogManager.getSession(sessionId);
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    if (!session.state.isComplete) {
+      return res.status(400).json({
+        success: false,
+        error: '对话未完成，请先完成对话流程',
+      });
+    }
+
+    const blueprint = await dialogManager.generateBlueprint(sessionId);
+
+    if (!blueprint) {
+      return res.status(500).json({
+        success: false,
+        error: '生成蓝图失败',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: blueprint,
+      message: '蓝图生成成功',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /dialog/:sessionId
+ * 取消并删除对话会话
+ */
+router.delete('/dialog/:sessionId', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const deleted = dialogManager.deleteSession(sessionId);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '对话已取消',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /dialog/sessions
+ * 获取所有活跃的对话会话
+ */
+router.get('/dialog/sessions', (_req: Request, res: Response) => {
+  try {
+    const sessions = dialogManager.getAllSessions();
+
+    res.json({
+      success: true,
+      data: sessions,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 项目管理 API - 原始实现
+// ============================================================================
+
+/**
+ * 最近打开的项目接口
+ */
+interface RecentProject {
+  id: string;           // 唯一ID（用路径hash）
+  path: string;         // 绝对路径
+  name: string;         // 项目名（目录名）
+  lastOpenedAt: string; // 最后打开时间
+}
+
+/**
+ * 获取 Claude 配置目录路径
+ */
+function getClaudeConfigDir(): string {
+  const homeDir = os.homedir();
+  return path.join(homeDir, '.claude');
+}
+
+/**
+ * 获取最近项目列表的存储路径
+ */
+function getRecentProjectsPath(): string {
+  return path.join(getClaudeConfigDir(), 'recent-projects.json');
+}
+
+/**
+ * 生成路径的唯一 ID（使用 MD5 hash）
+ */
+function generateProjectId(projectPath: string): string {
+  const normalizedPath = path.normalize(projectPath).toLowerCase();
+  return crypto.createHash('md5').update(normalizedPath).digest('hex').substring(0, 12);
+}
+
+/**
+ * 检测项目是否为空（无源代码文件）
+ */
+function isProjectEmpty(projectPath: string): boolean {
+  const ignoredDirs = new Set([
+    'node_modules', '.git', '.svn', '.hg', '.claude', '.vscode', '.idea',
+    '__pycache__', '.cache', 'dist', 'build', 'target', 'out', '.next',
+    'coverage', '.nyc_output', 'vendor', 'Pods', '.gradle', 'bin', 'obj'
+  ]);
+
+  const sourceExtensions = new Set([
+    '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+    '.py', '.pyw',
+    '.java', '.kt', '.kts', '.scala',
+    '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
+    '.go', '.rs', '.rb', '.rake', '.php', '.swift',
+    '.vue', '.svelte',
+    '.html', '.htm', '.css', '.scss', '.sass', '.less',
+    '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
+    '.sql', '.r', '.R', '.lua', '.dart',
+    '.ex', '.exs', '.clj', '.cljs', '.fs', '.fsx', '.hs', '.ml', '.mli',
+    '.json', '.yaml', '.yml', '.toml', '.xml',
+    '.md', '.mdx', '.rst', '.txt',
+  ]);
+
+  function hasSourceFiles(dir: string, depth: number = 0): boolean {
+    if (depth > 5) return false;
+
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || ignoredDirs.has(entry.name)) {
+          continue;
+        }
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (sourceExtensions.has(ext)) {
+            return true;
+          }
+        } else if (entry.isDirectory()) {
+          if (hasSourceFiles(fullPath, depth + 1)) {
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      // 忽略无法访问的目录
+    }
+
+    return false;
+  }
+
+  return !hasSourceFiles(projectPath);
+}
+
+/**
+ * 检测项目是否有蓝图文件
+ */
+function projectHasBlueprint(projectPath: string): boolean {
+  try {
+    const blueprintDir = path.join(projectPath, '.blueprint');
+    if (!fs.existsSync(blueprintDir)) {
+      return false;
+    }
+    const files = fs.readdirSync(blueprintDir);
+    return files.some(file => file.endsWith('.json'));
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * 读取最近打开的项目列表
+ */
+function loadRecentProjects(): RecentProject[] {
+  try {
+    const filePath = getRecentProjectsPath();
+    if (!fs.existsSync(filePath)) {
+      return [];
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(content) as RecentProject[];
+  } catch (error) {
+    console.error('[Recent Projects] 读取失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 保存最近打开的项目列表
+ */
+function saveRecentProjects(projects: RecentProject[]): void {
+  try {
+    const configDir = getClaudeConfigDir();
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    const filePath = getRecentProjectsPath();
+    fs.writeFileSync(filePath, JSON.stringify(projects, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('[Recent Projects] 保存失败:', error);
+    throw error;
+  }
+}
+
+/**
+ * 检查路径是否安全（不是系统目录）
+ */
+function isPathSafe(targetPath: string): boolean {
+  const normalizedPath = path.normalize(targetPath).toLowerCase();
+  const homeDir = os.homedir().toLowerCase();
+
+  const windowsUnsafePaths = [
+    'c:\\windows',
+    'c:\\program files',
+    'c:\\program files (x86)',
+    'c:\\programdata',
+    'c:\\$recycle.bin',
+    'c:\\system volume information',
+    'c:\\recovery',
+    'c:\\boot',
+  ];
+
+  const unixUnsafePaths = [
+    '/bin', '/sbin', '/usr/bin', '/usr/sbin',
+    '/usr/local/bin', '/usr/local/sbin',
+    '/etc', '/var', '/root', '/boot',
+    '/lib', '/lib64', '/proc', '/sys', '/dev', '/run',
+  ];
+
+  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
+
+  for (const unsafePath of unsafePaths) {
+    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
+      return false;
+    }
+  }
+
+  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
+    return false;
+  }
+
+  if (normalizedPath.startsWith(homeDir)) {
+    return true;
+  }
+
+  return true;
+}
+
+/**
+ * 检查路径是否安全（用于 file-tree API）
+ */
+function isPathSafeForFileTree(targetPath: string): boolean {
+  const normalizedPath = path.normalize(targetPath).toLowerCase();
+
+  const windowsUnsafePaths = [
+    'c:\\windows',
+    'c:\\program files',
+    'c:\\program files (x86)',
+    'c:\\programdata',
+    'c:\\$recycle.bin',
+    'c:\\system volume information',
+    'c:\\recovery',
+    'c:\\boot',
+  ];
+
+  const unixUnsafePaths = [
+    '/bin', '/sbin', '/usr/bin', '/usr/sbin',
+    '/usr/local/bin', '/usr/local/sbin',
+    '/etc', '/var', '/root', '/boot',
+    '/lib', '/lib64', '/proc', '/sys', '/dev', '/run',
+  ];
+
+  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
+
+  for (const unsafePath of unsafePaths) {
+    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
+      return false;
+    }
+  }
+
+  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * GET /projects
+ * 获取最近打开的项目列表
+ */
+router.get('/projects', (req: Request, res: Response) => {
+  try {
+    const projects = loadRecentProjects();
+    projects.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
+    const projectsWithStatus = projects.map(project => ({
+      ...project,
+      isEmpty: isProjectEmpty(project.path),
+      hasBlueprint: projectHasBlueprint(project.path),
+    }));
+    res.json({
+      success: true,
+      data: projectsWithStatus,
+      total: projectsWithStatus.length,
+    });
+  } catch (error: any) {
+    console.error('[GET /projects]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /projects/open
+ * 打开项目
+ */
+router.post('/projects/open', (req: Request, res: Response) => {
+  try {
+    const { path: projectPath } = req.body;
+
+    if (!projectPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    if (!path.isAbsolute(projectPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '必须提供绝对路径',
+      });
+    }
+
+    if (!fs.existsSync(projectPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `路径不存在: ${projectPath}`,
+      });
+    }
+
+    if (!fs.statSync(projectPath).isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: '路径必须是目录',
+      });
+    }
+
+    if (!isPathSafe(projectPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止访问系统目录',
+      });
+    }
+
+    const projects = loadRecentProjects();
+    const projectId = generateProjectId(projectPath);
+
+    const existingIndex = projects.findIndex(p => p.id === projectId);
+    const newProject: RecentProject = {
+      id: projectId,
+      path: projectPath,
+      name: path.basename(projectPath),
+      lastOpenedAt: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      projects[existingIndex] = newProject;
+    } else {
+      projects.unshift(newProject);
+      if (projects.length > 50) {
+        projects.pop();
+      }
+    }
+
+    saveRecentProjects(projects);
+
+    // 检查项目是否有蓝图（使用 v2.0 BlueprintStore）
+    const projectBlueprints = blueprintStore.getAll(projectPath);
+    const currentBlueprint = projectBlueprints.length > 0 ? projectBlueprints[0] : null;
+
+    const isEmpty = isProjectEmpty(projectPath);
+    const hasBlueprint = projectBlueprints.length > 0 || projectHasBlueprint(projectPath);
+
+    res.json({
+      success: true,
+      data: {
+        ...newProject,
+        isEmpty,
+        hasBlueprint,
+        blueprint: currentBlueprint ? {
+          id: currentBlueprint.id,
+          name: currentBlueprint.name,
+          status: currentBlueprint.status,
+        } : null,
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /projects/open]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /projects/browse
+ * 打开系统原生的文件夹选择对话框
+ */
+router.post('/projects/browse', async (req: Request, res: Response) => {
+  try {
+    const platform = os.platform();
+    let cmd: string;
+    let args: string[];
+
+    if (platform === 'win32') {
+      const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "选择项目文件夹"
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.SelectedPath
+}
+`;
+      cmd = 'powershell';
+      args = ['-NoProfile', '-NonInteractive', '-Command', psScript];
+    } else if (platform === 'darwin') {
+      cmd = 'osascript';
+      args = ['-e', 'POSIX path of (choose folder with prompt "选择项目文件夹")'];
+    } else {
+      cmd = 'zenity';
+      args = ['--file-selection', '--directory', '--title=选择项目文件夹'];
+    }
+
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code === 1 || !stdout.trim()) {
+        return res.json({
+          success: true,
+          data: { path: null, cancelled: true },
+        });
+      }
+
+      if (code !== 0) {
+        console.error('[POST /projects/browse] process error:', stderr);
+        return res.status(500).json({
+          success: false,
+          error: '无法打开文件夹选择对话框',
+        });
+      }
+
+      const selectedPath = stdout.trim();
+
+      if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isDirectory()) {
+        return res.status(400).json({
+          success: false,
+          error: '选择的路径无效',
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { path: selectedPath, cancelled: false },
+      });
+    });
+
+    child.on('error', (error) => {
+      console.error('[POST /projects/browse] spawn error:', error);
+      res.status(500).json({
+        success: false,
+        error: '无法启动文件夹选择对话框',
+      });
+    });
+  } catch (error: any) {
+    console.error('[POST /projects/browse]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /projects/:id
+ * 从最近项目列表中移除
+ */
+router.delete('/projects/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const projects = loadRecentProjects();
+    const index = projects.findIndex(p => p.id === id);
+
+    if (index < 0) {
+      return res.status(404).json({
+        success: false,
+        error: '项目不存在',
+      });
+    }
+
+    const removedProject = projects.splice(index, 1)[0];
+    saveRecentProjects(projects);
+
+    res.json({
+      success: true,
+      message: `项目 "${removedProject.name}" 已从列表中移除`,
+      data: removedProject,
+    });
+  } catch (error: any) {
+    console.error('[DELETE /projects/:id]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /projects/current
+ * 获取当前工作目录的项目信息
+ */
+router.get('/projects/current', (req: Request, res: Response) => {
+  try {
+    const currentPath = process.cwd();
+    const projects = loadRecentProjects();
+    const currentProject = projects.find(p => p.path === currentPath);
+
+    if (currentProject) {
+      res.json({ success: true, data: currentProject });
+    } else {
+      const projectId = generateProjectId(currentPath);
+      res.json({
+        success: true,
+        data: {
+          id: projectId,
+          name: path.basename(currentPath),
+          path: currentPath,
+          lastOpenedAt: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error('[GET /projects/current]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /projects/cwd
+ * 获取当前工作目录
+ */
+router.get('/projects/cwd', (req: Request, res: Response) => {
+  try {
+    const currentPath = process.cwd();
+    res.json({
+      success: true,
+      data: {
+        path: currentPath,
+        name: path.basename(currentPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[GET /projects/cwd]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 文件树 & 文件操作 API
+// ============================================================================
+
+/**
+ * 文件树节点接口
+ */
+interface FileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: FileTreeNode[];
+}
+
+/**
+ * GET /file-tree
+ * 获取目录树结构
+ */
+router.get('/file-tree', (req: Request, res: Response) => {
+  try {
+    const root = (req.query.root as string) || 'src';
+
+    const isAbsolutePath = path.isAbsolute(root);
+    const absoluteRoot = isAbsolutePath ? root : path.resolve(process.cwd(), root);
+
+    if (!isPathSafeForFileTree(absoluteRoot)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止访问系统目录或根目录',
+      });
+    }
+
+    if (!fs.existsSync(absoluteRoot)) {
+      return res.status(404).json({
+        success: false,
+        error: `目录不存在: ${root}`,
+      });
+    }
+
+    if (!fs.statSync(absoluteRoot).isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: `路径不是目录: ${root}`,
+      });
+    }
+
+    const buildTree = (dirPath: string, relativePath: string): FileTreeNode => {
+      const name = path.basename(dirPath);
+      const stats = fs.statSync(dirPath);
+      const returnPath = isAbsolutePath ? dirPath : relativePath;
+
+      if (stats.isFile()) {
+        return {
+          name,
+          path: returnPath,
+          type: 'file',
+        };
+      }
+
+      const entries = fs.readdirSync(dirPath);
+      const filteredEntries = entries.filter(entry => {
+        if (entry.startsWith('.')) return false;
+        if (entry === 'node_modules') return false;
+        if (entry === 'dist') return false;
+        if (entry === 'coverage') return false;
+        if (entry === '__pycache__') return false;
+        return true;
+      });
+
+      const children = filteredEntries
+        .map(entry => {
+          const entryPath = path.join(dirPath, entry);
+          const entryRelativePath = relativePath ? `${relativePath}/${entry}` : entry;
+          return buildTree(entryPath, entryRelativePath);
+        })
+        .sort((a, b) => {
+          if (a.type === b.type) return a.name.localeCompare(b.name);
+          return a.type === 'directory' ? -1 : 1;
+        });
+
+      return {
+        name,
+        path: returnPath || name,
+        type: 'directory',
+        children,
+      };
+    };
+
+    const tree = buildTree(absoluteRoot, root);
+
+    res.json({
+      success: true,
+      data: tree,
+      meta: {
+        isAbsolutePath,
+        absoluteRoot,
+        projectName: path.basename(absoluteRoot),
+      },
+    });
+  } catch (error: any) {
+    console.error('[File Tree Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /file-content
+ * 读取文件内容
+ */
+router.get('/file-content', (req: Request, res: Response) => {
+  try {
+    const filePath = req.query.path as string;
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: '缺少文件路径参数' });
+    }
+
+    const isAbsolutePath = path.isAbsolute(filePath);
+    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
+
+    if (!isPathSafeForFileTree(absolutePath)) {
+      return res.status(403).json({ success: false, error: '禁止访问系统目录' });
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({ success: false, error: `文件不存在: ${filePath}` });
+    }
+
+    const stats = fs.statSync(absolutePath);
+    if (!stats.isFile()) {
+      return res.status(400).json({ success: false, error: '路径不是文件' });
+    }
+
+    if (stats.size > 1024 * 1024) {
+      return res.status(413).json({ success: false, error: '文件过大，超过 1MB 限制' });
+    }
+
+    const content = fs.readFileSync(absolutePath, 'utf-8');
+
+    const ext = path.extname(filePath).toLowerCase();
+    const languageMap: Record<string, string> = {
+      '.ts': 'typescript', '.tsx': 'typescript',
+      '.js': 'javascript', '.jsx': 'javascript',
+      '.json': 'json', '.css': 'css', '.scss': 'scss', '.less': 'less',
+      '.html': 'html', '.md': 'markdown',
+      '.py': 'python', '.go': 'go', '.rs': 'rust', '.java': 'java',
+      '.c': 'c', '.cpp': 'cpp', '.h': 'c', '.hpp': 'cpp',
+      '.yaml': 'yaml', '.yml': 'yaml', '.xml': 'xml',
+      '.sh': 'bash', '.bat': 'batch', '.ps1': 'powershell', '.sql': 'sql',
+    };
+
+    res.json({
+      success: true,
+      data: {
+        path: filePath,
+        content,
+        language: languageMap[ext] || 'plaintext',
+        size: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error('[File Content Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /file-content
+ * 保存文件内容
+ */
+router.put('/file-content', (req: Request, res: Response) => {
+  try {
+    const { path: filePath, content } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: '缺少文件路径参数' });
+    }
+
+    if (typeof content !== 'string') {
+      return res.status(400).json({ success: false, error: '内容必须是字符串' });
+    }
+
+    const isAbsolutePath = path.isAbsolute(filePath);
+    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
+
+    if (!isPathSafeForFileTree(absolutePath)) {
+      return res.status(403).json({ success: false, error: '禁止修改系统目录文件' });
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({ success: false, error: `文件不存在: ${filePath}` });
+    }
+
+    fs.writeFileSync(absolutePath, content, 'utf-8');
+    const stats = fs.statSync(absolutePath);
+
+    res.json({
+      success: true,
+      data: {
+        path: filePath,
+        size: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+      },
+      message: '文件保存成功',
+    });
+  } catch (error: any) {
+    console.error('[File Save Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /files/create
+ * 创建文件或文件夹
+ */
+router.post('/files/create', (req: Request, res: Response) => {
+  try {
+    const { path: filePath, type, content } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    if (!type || !['file', 'directory'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: 'type 参数必须是 "file" 或 "directory"',
+      });
+    }
+
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+
+    if (!isPathSafe(absolutePath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止在系统目录中创建文件',
+      });
+    }
+
+    if (fs.existsSync(absolutePath)) {
+      return res.status(409).json({
+        success: false,
+        error: `路径已存在: ${filePath}`,
+      });
+    }
+
+    const parentDir = path.dirname(absolutePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    if (type === 'directory') {
+      fs.mkdirSync(absolutePath, { recursive: true });
+    } else {
+      fs.writeFileSync(absolutePath, content || '', 'utf-8');
+    }
+
+    res.json({
+      success: true,
+      message: `${type === 'directory' ? '文件夹' : '文件'} 创建成功`,
+      data: {
+        path: absolutePath,
+        type,
+        name: path.basename(absolutePath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/create]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /files
+ * 删除文件或文件夹
+ */
+router.delete('/files', (req: Request, res: Response) => {
+  try {
+    const { path: filePath, permanent } = req.body;
+
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 path 参数',
+      });
+    }
+
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+
+    if (!isPathSafe(absolutePath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止删除系统目录中的文件',
+      });
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        success: false,
+        error: `路径不存在: ${filePath}`,
+      });
+    }
+
+    const stats = fs.statSync(absolutePath);
+    const isDirectory = stats.isDirectory();
+    const fileName = path.basename(absolutePath);
+
+    if (permanent) {
+      if (isDirectory) {
+        fs.rmSync(absolutePath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(absolutePath);
+      }
+
+      res.json({
+        success: true,
+        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已永久删除`,
+      });
+    } else {
+      const projectRoot = process.cwd();
+      const trashDir = path.join(projectRoot, '.trash');
+      const timestamp = Date.now();
+      const trashPath = path.join(trashDir, `${fileName}_${timestamp}`);
+
+      if (!fs.existsSync(trashDir)) {
+        fs.mkdirSync(trashDir, { recursive: true });
+      }
+
+      fs.renameSync(absolutePath, trashPath);
+
+      res.json({
+        success: true,
+        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已移到回收站`,
+        data: {
+          originalPath: absolutePath,
+          trashPath,
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error('[DELETE /files]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /files/rename
+ * 重命名文件或文件夹
+ */
+router.post('/files/rename', (req: Request, res: Response) => {
+  try {
+    const { oldPath, newPath } = req.body;
+
+    if (!oldPath || !newPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 oldPath 或 newPath 参数',
+      });
+    }
+
+    const absoluteOldPath = path.isAbsolute(oldPath) ? oldPath : path.resolve(process.cwd(), oldPath);
+    const absoluteNewPath = path.isAbsolute(newPath) ? newPath : path.resolve(process.cwd(), newPath);
+
+    if (!isPathSafe(absoluteOldPath) || !isPathSafe(absoluteNewPath)) {
+      return res.status(403).json({
+        success: false,
+        error: '禁止在系统目录中操作文件',
+      });
+    }
+
+    if (!fs.existsSync(absoluteOldPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `源路径不存在: ${oldPath}`,
+      });
+    }
+
+    if (fs.existsSync(absoluteNewPath)) {
+      return res.status(409).json({
+        success: false,
+        error: `目标路径已存在: ${newPath}`,
+      });
+    }
+
+    fs.renameSync(absoluteOldPath, absoluteNewPath);
+
+    res.json({
+      success: true,
+      message: '重命名成功',
+      data: {
+        oldPath: absoluteOldPath,
+        newPath: absoluteNewPath,
+        name: path.basename(absoluteNewPath),
+      },
+    });
+  } catch (error: any) {
+    console.error('[POST /files/rename]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 代码 Tab API - 项目地图、Treemap、模块文件、文件详情
+// ============================================================================
+
+/**
+ * GET /project-map
  * 返回项目概览信息
  */
 router.get('/project-map', async (req: Request, res: Response) => {
@@ -471,8 +3488,22 @@ router.get('/project-map', async (req: Request, res: Response) => {
     console.log(`[Project Map] 扫描到 ${tsFiles.length} 个 TypeScript 文件`);
 
     // 2. 模块统计
-    const totalLines = await calculateTotalLines(tsFiles);
-    const byDirectory = groupByDirectory(tsFiles);
+    let totalLines = 0;
+    const byDirectory: Record<string, number> = {};
+
+    for (const file of tsFiles) {
+      try {
+        const content = fs.readFileSync(file, 'utf-8');
+        const lines = content.split('\n').length;
+        totalLines += lines;
+
+        const relativePath = path.relative(srcPath, file);
+        const dir = path.dirname(relativePath).split(path.sep)[0] || 'root';
+        byDirectory[dir] = (byDirectory[dir] || 0) + 1;
+      } catch (e) {
+        // 忽略读取错误
+      }
+    }
 
     const moduleStats = {
       totalFiles: tsFiles.length,
@@ -483,105 +3514,29 @@ router.get('/project-map', async (req: Request, res: Response) => {
 
     console.log(`[Project Map] 模块统计: ${moduleStats.totalFiles} 文件, ${moduleStats.totalLines} 行代码`);
 
-    // 3. 架构分层（如果存在 layer-classifier）
-    let layers = null;
-    try {
-      const { LayerClassifier } = await import('../../../map/layer-classifier.js');
-      const { CodeMapAnalyzer } = await import('../../../map/analyzer.js');
-
-      // 使用 analyzer 提取模块信息
-      const modules: ModuleNode[] = [];
-      const analyzer = new CodeMapAnalyzer(projectRoot);
-
-      for (const file of tsFiles.slice(0, 100)) { // 限制数量避免太慢
-        try {
-          const module = await analyzer.analyzeFile(file);
-          if (module) {
-            modules.push(module);
-          }
-        } catch (err) {
-          // 忽略分析失败的文件
-        }
+    // 3. 入口点检测
+    const entryPoints: string[] = [];
+    const entryPatterns = ['index.ts', 'main.ts', 'app.ts', 'cli.ts'];
+    for (const file of tsFiles) {
+      const basename = path.basename(file);
+      if (entryPatterns.includes(basename)) {
+        entryPoints.push(path.relative(projectRoot, file));
       }
-
-      // 分类
-      const classifier = new LayerClassifier();
-      const classifications = classifier.classifyAll(modules);
-
-      // 统计每层的模块数
-      const layerStats: Record<string, number> = {};
-      for (const [, result] of classifications) {
-        layerStats[result.layer] = (layerStats[result.layer] || 0) + 1;
-      }
-
-      layers = {
-        total: classifications.size,
-        distribution: layerStats,
-      };
-
-      console.log(`[Project Map] 架构分层: ${JSON.stringify(layerStats)}`);
-    } catch (err) {
-      console.log(`[Project Map] 架构分层分析跳过: ${err}`);
-      // Layer classifier 不存在或分析失败时跳过
     }
 
-    // 4. 入口点检测
-    const entryPoints = await detectEntryPoints(tsFiles);
     console.log(`[Project Map] 检测到 ${entryPoints.length} 个入口点`);
 
-    // 5. 核心符号 (简化版本，从文件中提取符号)
-    const allSymbols: any[] = [];
-    try {
-      // 使用 LSP 分析器提取符号
-      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
-      const lspAnalyzer = new TypeScriptLSPAnalyzer();
-      lspAnalyzer.initProgram(tsFiles.slice(0, 50), projectRoot); // 限制数量
-
-      for (const file of tsFiles.slice(0, 50)) {
-        try {
-          const { functions, classes } = lspAnalyzer.analyzeFile(file);
-          const relativePath = path.relative(projectRoot, file);
-
-          for (const func of functions) {
-            allSymbols.push({
-              name: func.name,
-              kind: 'function',
-              moduleId: relativePath,
-            });
-          }
-
-          for (const cls of classes) {
-            allSymbols.push({
-              name: cls.name,
-              kind: 'class',
-              moduleId: relativePath,
-            });
-
-            for (const method of cls.methods) {
-              allSymbols.push({
-                name: method.name,
-                kind: 'method',
-                moduleId: relativePath,
-              });
-            }
-          }
-        } catch (err) {
-          // 忽略分析失败的文件
-        }
-      }
-    } catch (err) {
-      console.log(`[Project Map] LSP 符号提取失败: ${err}`);
-      // LSP 分析器不存在时跳过
-    }
-
-    const coreSymbols = await getCoreSymbols(allSymbols);
-    console.log(`[Project Map] 核心符号: ${coreSymbols.classes.length} 类, ${coreSymbols.functions.length} 函数`);
+    // 4. 核心符号（简化版本）
+    const coreSymbols = {
+      classes: [] as string[],
+      functions: [] as string[],
+    };
 
     console.log('[Project Map] 项目地图生成完成!');
 
     res.json({
       success: true,
-      data: { moduleStats, layers, entryPoints, coreSymbols },
+      data: { moduleStats, layers: null, entryPoints, coreSymbols },
     });
   } catch (error: any) {
     console.error('[Project Map] 错误:', error);
@@ -590,37 +3545,42 @@ router.get('/project-map', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/blueprint/treemap
- *
- * 返回项目 Treemap 数据（矩形树图）
- *
- * 查询参数:
- * - maxDepth: 最大深度 (默认 4)
+ * GET /treemap
+ * 返回项目 Treemap 数据
  */
 router.get('/treemap', async (req: Request, res: Response) => {
   try {
-    const { maxDepth = '4', includeSymbols = 'false' } = req.query;
+    const { maxDepth = '4' } = req.query;
     const projectRoot = process.cwd();
-    const withSymbols = includeSymbols === 'true';
 
-    console.log(`[Treemap] 开始生成 Treemap 数据... (符号级别: ${withSymbols})`);
+    console.log('[Treemap] 开始生成 Treemap 数据...');
 
-    // 动态导入 treemap 生成函数
-    const { generateTreemapDataAsync } = await import('./project-map-generator.js');
-
-    const treemapData = await generateTreemapDataAsync(
-      projectRoot,
-      parseInt(maxDepth as string, 10),
-      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__'],
-      withSymbols
-    );
-
-    console.log('[Treemap] Treemap 数据生成完成!');
-
-    res.json({
-      success: true,
-      data: treemapData,
-    });
+    // 动态导入 treemap 生成函数（如果存在）
+    try {
+      const { generateTreemapDataAsync } = await import('./project-map-generator.js');
+      const treemapData = await generateTreemapDataAsync(
+        projectRoot,
+        parseInt(maxDepth as string, 10),
+        ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__'],
+        false
+      );
+      console.log('[Treemap] Treemap 数据生成完成!');
+      res.json({
+        success: true,
+        data: treemapData,
+      });
+    } catch (importError) {
+      // 如果模块不存在，返回简化版本
+      res.json({
+        success: true,
+        data: {
+          name: path.basename(projectRoot),
+          path: projectRoot,
+          value: 0,
+          children: [],
+        },
+      });
+    }
   } catch (error: any) {
     console.error('[Treemap] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -628,14 +3588,8 @@ router.get('/treemap', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/blueprint/layered-treemap
- *
- * 分层加载 Treemap 数据（地图模式）
- *
- * 查询参数:
- * - level: 缩放级别 0-4 (PROJECT/MODULE/FILE/SYMBOL/CODE)
- * - path: 聚焦路径（可选）
- * - depth: 加载深度，默认 1
+ * GET /layered-treemap
+ * 分层加载 Treemap 数据
  */
 router.get('/layered-treemap', async (req: Request, res: Response) => {
   try {
@@ -651,31 +3605,39 @@ router.get('/layered-treemap', async (req: Request, res: Response) => {
 
     console.log(`[LayeredTreemap] 加载数据: level=${zoomLevel}, path=${focusPath}, depth=${loadDepth}`);
 
-    // 动态导入分层加载函数
-    const { generateLayeredTreemapData, ZoomLevel } = await import('./project-map-generator.js');
+    try {
+      const { generateLayeredTreemapData, ZoomLevel } = await import('./project-map-generator.js');
 
-    // 验证缩放级别
-    if (zoomLevel < ZoomLevel.PROJECT || zoomLevel > ZoomLevel.CODE) {
-      return res.status(400).json({
-        success: false,
-        error: `无效的缩放级别: ${zoomLevel}，应为 0-4`
+      if (zoomLevel < ZoomLevel.PROJECT || zoomLevel > ZoomLevel.CODE) {
+        return res.status(400).json({
+          success: false,
+          error: `无效的缩放级别: ${zoomLevel}，应为 0-4`
+        });
+      }
+
+      const result = await generateLayeredTreemapData(
+        projectRoot,
+        zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
+        focusPath as string,
+        loadDepth,
+        ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+      );
+
+      console.log(`[LayeredTreemap] 数据加载完成: ${result.stats.childCount} 个子节点`);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (importError) {
+      res.json({
+        success: true,
+        data: {
+          node: { name: path.basename(projectRoot), path: projectRoot },
+          stats: { childCount: 0 },
+        },
       });
     }
-
-    const result = await generateLayeredTreemapData(
-      projectRoot,
-      zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
-      focusPath as string,
-      loadDepth,
-      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
-    );
-
-    console.log(`[LayeredTreemap] 数据加载完成: ${result.stats.childCount} 个子节点`);
-
-    res.json({
-      success: true,
-      data: result,
-    });
   } catch (error: any) {
     console.error('[LayeredTreemap] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -683,13 +3645,8 @@ router.get('/layered-treemap', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/blueprint/layered-treemap/children
- *
+ * GET /layered-treemap/children
  * 懒加载特定节点的子节点
- *
- * 查询参数:
- * - path: 节点路径
- * - level: 当前缩放级别
  */
 router.get('/layered-treemap/children', async (req: Request, res: Response) => {
   try {
@@ -710,349 +3667,37 @@ router.get('/layered-treemap/children', async (req: Request, res: Response) => {
 
     console.log(`[LayeredTreemap] 懒加载子节点: path=${nodePath}, level=${zoomLevel}`);
 
-    // 动态导入懒加载函数
-    const { loadNodeChildren, ZoomLevel } = await import('./project-map-generator.js');
+    try {
+      const { loadNodeChildren, ZoomLevel } = await import('./project-map-generator.js');
 
-    const children = await loadNodeChildren(
-      projectRoot,
-      nodePath as string,
-      zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
-      ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
-    );
+      const children = await loadNodeChildren(
+        projectRoot,
+        nodePath as string,
+        zoomLevel as typeof ZoomLevel[keyof typeof ZoomLevel],
+        ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__']
+      );
 
-    console.log(`[LayeredTreemap] 加载完成: ${children.length} 个子节点`);
+      console.log(`[LayeredTreemap] 加载完成: ${children.length} 个子节点`);
 
-    res.json({
-      success: true,
-      data: children,
-    });
+      res.json({
+        success: true,
+        data: children,
+      });
+    } catch (importError) {
+      res.json({
+        success: true,
+        data: [],
+      });
+    }
   } catch (error: any) {
     console.error('[LayeredTreemap] 懒加载错误:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ============================================================================
-// 文件树 & 节点分析 API
-// ============================================================================
-
 /**
- * 文件树节点接口
- */
-interface FileTreeNode {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: FileTreeNode[];
-}
-
-/**
- * 读取文件内容
- */
-router.get('/file-content', (req: Request, res: Response) => {
-  try {
-    const filePath = req.query.path as string;
-    if (!filePath) {
-      return res.status(400).json({ success: false, error: '缺少文件路径参数' });
-    }
-
-    // 支持绝对路径和相对路径
-    const isAbsolutePath = path.isAbsolute(filePath);
-    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
-
-    // 安全检查：使用 isPathSafeForFileTree 函数检查路径（与 file-tree API 保持一致）
-    if (!isPathSafeForFileTree(absolutePath)) {
-      return res.status(403).json({ success: false, error: '禁止访问系统目录' });
-    }
-
-    // 检查文件是否存在
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({ success: false, error: `文件不存在: ${filePath}` });
-    }
-
-    const stats = fs.statSync(absolutePath);
-    if (!stats.isFile()) {
-      return res.status(400).json({ success: false, error: '路径不是文件' });
-    }
-
-    // 检查文件大小（限制 1MB）
-    if (stats.size > 1024 * 1024) {
-      return res.status(413).json({ success: false, error: '文件过大，超过 1MB 限制' });
-    }
-
-    // 读取文件内容
-    const content = fs.readFileSync(absolutePath, 'utf-8');
-
-    // 获取文件扩展名用于语法高亮
-    const ext = path.extname(filePath).toLowerCase();
-    const languageMap: Record<string, string> = {
-      '.ts': 'typescript',
-      '.tsx': 'typescript',
-      '.js': 'javascript',
-      '.jsx': 'javascript',
-      '.json': 'json',
-      '.css': 'css',
-      '.scss': 'scss',
-      '.less': 'less',
-      '.html': 'html',
-      '.md': 'markdown',
-      '.py': 'python',
-      '.go': 'go',
-      '.rs': 'rust',
-      '.java': 'java',
-      '.c': 'c',
-      '.cpp': 'cpp',
-      '.h': 'c',
-      '.hpp': 'cpp',
-      '.yaml': 'yaml',
-      '.yml': 'yaml',
-      '.xml': 'xml',
-      '.sh': 'bash',
-      '.bat': 'batch',
-      '.ps1': 'powershell',
-      '.sql': 'sql',
-    };
-
-    res.json({
-      success: true,
-      data: {
-        path: filePath,
-        content,
-        language: languageMap[ext] || 'plaintext',
-        size: stats.size,
-        modifiedAt: stats.mtime.toISOString(),
-      },
-    });
-  } catch (error: any) {
-    console.error('[File Content Error]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 保存文件内容
- */
-router.put('/file-content', (req: Request, res: Response) => {
-  try {
-    const { path: filePath, content } = req.body;
-
-    if (!filePath) {
-      return res.status(400).json({ success: false, error: '缺少文件路径参数' });
-    }
-
-    if (typeof content !== 'string') {
-      return res.status(400).json({ success: false, error: '内容必须是字符串' });
-    }
-
-    // 支持绝对路径和相对路径
-    const isAbsolutePath = path.isAbsolute(filePath);
-    const absolutePath = isAbsolutePath ? filePath : path.resolve(process.cwd(), filePath);
-
-    // 安全检查：使用 isPathSafeForFileTree 函数检查路径（与 file-tree API 保持一致）
-    if (!isPathSafeForFileTree(absolutePath)) {
-      return res.status(403).json({ success: false, error: '禁止修改系统目录文件' });
-    }
-
-    // 检查文件是否存在
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({ success: false, error: `文件不存在: ${filePath}` });
-    }
-
-    // 写入文件
-    fs.writeFileSync(absolutePath, content, 'utf-8');
-
-    const stats = fs.statSync(absolutePath);
-
-    res.json({
-      success: true,
-      data: {
-        path: filePath,
-        size: stats.size,
-        modifiedAt: stats.mtime.toISOString(),
-      },
-      message: '文件保存成功',
-    });
-  } catch (error: any) {
-    console.error('[File Save Error]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取目录树结构
- *
- * 支持两种模式：
- * 1. 相对路径模式：root=src（相对于当前工作目录）
- * 2. 绝对路径模式：root=C:\Users\xxx\project 或 root=/home/user/project
- *
- * 安全检查：
- * - 禁止访问系统目录（Windows: C:\Windows, C:\Program Files 等；Unix: /bin, /etc 等）
- * - 禁止访问根目录
- */
-router.get('/file-tree', (req: Request, res: Response) => {
-  try {
-    const root = (req.query.root as string) || 'src';
-
-    // 判断是否是绝对路径
-    const isAbsolutePath = path.isAbsolute(root);
-    const absoluteRoot = isAbsolutePath ? root : path.resolve(process.cwd(), root);
-
-    // 安全检查：使用 isPathSafeForFileTree 函数检查路径
-    if (!isPathSafeForFileTree(absoluteRoot)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止访问系统目录或根目录',
-      });
-    }
-
-    // 检查目录是否存在
-    if (!fs.existsSync(absoluteRoot)) {
-      return res.status(404).json({
-        success: false,
-        error: `目录不存在: ${root}`,
-      });
-    }
-
-    // 检查是否是目录
-    if (!fs.statSync(absoluteRoot).isDirectory()) {
-      return res.status(400).json({
-        success: false,
-        error: `路径不是目录: ${root}`,
-      });
-    }
-
-    // 递归构建文件树
-    // 对于绝对路径，使用绝对路径作为 path 属性
-    // 对于相对路径，使用相对路径作为 path 属性
-    const buildTree = (dirPath: string, relativePath: string): FileTreeNode => {
-      const name = path.basename(dirPath);
-      const stats = fs.statSync(dirPath);
-
-      // 计算返回的路径：如果是绝对路径模式，返回绝对路径；否则返回相对路径
-      const returnPath = isAbsolutePath ? dirPath : relativePath;
-
-      if (stats.isFile()) {
-        return {
-          name,
-          path: returnPath,
-          type: 'file',
-        };
-      }
-
-      // 读取目录内容
-      const entries = fs.readdirSync(dirPath);
-
-      // 过滤掉不需要的文件和目录
-      const filteredEntries = entries.filter(entry => {
-        // 排除隐藏文件、node_modules、dist 等
-        if (entry.startsWith('.')) return false;
-        if (entry === 'node_modules') return false;
-        if (entry === 'dist') return false;
-        if (entry === 'coverage') return false;
-        if (entry === '__pycache__') return false;
-        return true;
-      });
-
-      // 排序：目录在前，文件在后
-      const children = filteredEntries
-        .map(entry => {
-          const entryPath = path.join(dirPath, entry);
-          const entryRelativePath = relativePath ? `${relativePath}/${entry}` : entry;
-          return buildTree(entryPath, entryRelativePath);
-        })
-        .sort((a, b) => {
-          if (a.type === b.type) return a.name.localeCompare(b.name);
-          return a.type === 'directory' ? -1 : 1;
-        });
-
-      return {
-        name,
-        path: returnPath || name,
-        type: 'directory',
-        children,
-      };
-    };
-
-    const tree = buildTree(absoluteRoot, root);
-
-    res.json({
-      success: true,
-      data: tree,
-      // 返回额外信息，方便前端判断
-      meta: {
-        isAbsolutePath,
-        absoluteRoot,
-        projectName: path.basename(absoluteRoot),
-      },
-    });
-  } catch (error: any) {
-    console.error('[File Tree Error]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 检查路径是否安全（用于 file-tree API）
- * 这个函数与 isPathSafe 类似，但针对 file-tree 场景做了优化
- */
-function isPathSafeForFileTree(targetPath: string): boolean {
-  const normalizedPath = path.normalize(targetPath).toLowerCase();
-  const homeDir = os.homedir().toLowerCase();
-
-  // Windows 系统目录黑名单
-  const windowsUnsafePaths = [
-    'c:\\windows',
-    'c:\\program files',
-    'c:\\program files (x86)',
-    'c:\\programdata',
-    'c:\\$recycle.bin',
-    'c:\\system volume information',
-    'c:\\recovery',
-    'c:\\boot',
-  ];
-
-  // Unix 系统目录黑名单
-  const unixUnsafePaths = [
-    '/bin',
-    '/sbin',
-    '/usr/bin',
-    '/usr/sbin',
-    '/usr/local/bin',
-    '/usr/local/sbin',
-    '/etc',
-    '/var',
-    '/root',
-    '/boot',
-    '/lib',
-    '/lib64',
-    '/proc',
-    '/sys',
-    '/dev',
-    '/run',
-  ];
-
-  // 检查是否是系统目录
-  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
-
-  for (const unsafePath of unsafePaths) {
-    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
-      return false;
-    }
-  }
-
-  // 不允许访问根目录
-  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
+ * GET /module-files
  * 获取模块内部文件列表
- * GET /api/blueprint/module-files?path=src/core
- *
- * 返回模块目录下的所有文件（带语言、行数等信息）
  */
 router.get('/module-files', (req: Request, res: Response) => {
   try {
@@ -1067,7 +3712,6 @@ router.get('/module-files', (req: Request, res: Response) => {
 
     const absolutePath = path.resolve(process.cwd(), modulePath);
 
-    // 检查目录是否存在
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({
         success: false,
@@ -1075,7 +3719,6 @@ router.get('/module-files', (req: Request, res: Response) => {
       });
     }
 
-    // 检查是否是目录
     if (!fs.statSync(absolutePath).isDirectory()) {
       return res.status(400).json({
         success: false,
@@ -1093,29 +3736,20 @@ router.get('/module-files', (req: Request, res: Response) => {
       symbolCount?: number;
     }
 
-    // 语言检测映射
     const EXT_TO_LANGUAGE: Record<string, string> = {
-      '.ts': 'TypeScript',
-      '.tsx': 'TypeScript',
-      '.js': 'JavaScript',
-      '.jsx': 'JavaScript',
-      '.css': 'CSS',
-      '.scss': 'SCSS',
-      '.json': 'JSON',
-      '.md': 'Markdown',
-      '.html': 'HTML',
-      '.yml': 'YAML',
-      '.yaml': 'YAML',
+      '.ts': 'TypeScript', '.tsx': 'TypeScript',
+      '.js': 'JavaScript', '.jsx': 'JavaScript',
+      '.css': 'CSS', '.scss': 'SCSS',
+      '.json': 'JSON', '.md': 'Markdown',
+      '.html': 'HTML', '.yml': 'YAML', '.yaml': 'YAML',
     };
 
-    // 递归读取文件列表
     const files: ModuleFileInfo[] = [];
 
     const readFiles = (dirPath: string, relativePath: string) => {
       const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
       for (const entry of entries) {
-        // 跳过隐藏文件和 node_modules
         if (entry.name.startsWith('.')) continue;
         if (entry.name === 'node_modules') continue;
         if (entry.name === 'dist') continue;
@@ -1127,12 +3761,10 @@ router.get('/module-files', (req: Request, res: Response) => {
           : entry.name;
 
         if (entry.isDirectory()) {
-          // 递归读取子目录
           readFiles(fullPath, fileRelativePath);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name);
 
-          // 只处理源代码文件
           if (!['.ts', '.tsx', '.js', '.jsx', '.css', '.scss', '.json', '.md', '.html', '.yml', '.yaml'].includes(ext)) {
             continue;
           }
@@ -1144,7 +3776,6 @@ router.get('/module-files', (req: Request, res: Response) => {
             const content = fs.readFileSync(fullPath, 'utf-8');
             lineCount = content.split('\n').length;
 
-            // 简单统计符号数量
             if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
               const matches = content.match(
                 /(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+\w+/g
@@ -1170,7 +3801,6 @@ router.get('/module-files', (req: Request, res: Response) => {
 
     readFiles(absolutePath, '');
 
-    // 按文件名排序
     files.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
@@ -1188,8 +3818,8 @@ router.get('/module-files', (req: Request, res: Response) => {
 });
 
 /**
+ * GET /file-detail
  * 获取单个文件的详情信息
- * GET /api/blueprint/file-detail?path=xxx
  */
 router.get('/file-detail', (req: Request, res: Response) => {
   try {
@@ -1204,7 +3834,6 @@ router.get('/file-detail', (req: Request, res: Response) => {
 
     const absolutePath = path.resolve(process.cwd(), filePath);
 
-    // 检查文件是否存在
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({
         success: false,
@@ -1212,7 +3841,6 @@ router.get('/file-detail', (req: Request, res: Response) => {
       });
     }
 
-    // 检查是否是文件
     const stat = fs.statSync(absolutePath);
     if (!stat.isFile()) {
       return res.status(400).json({
@@ -1221,23 +3849,13 @@ router.get('/file-detail', (req: Request, res: Response) => {
       });
     }
 
-    // 语言检测映射
     const EXT_TO_LANGUAGE: Record<string, string> = {
-      '.ts': 'TypeScript',
-      '.tsx': 'TypeScript',
-      '.js': 'JavaScript',
-      '.jsx': 'JavaScript',
-      '.css': 'CSS',
-      '.scss': 'SCSS',
-      '.json': 'JSON',
-      '.md': 'Markdown',
-      '.html': 'HTML',
-      '.yml': 'YAML',
-      '.yaml': 'YAML',
-      '.py': 'Python',
-      '.java': 'Java',
-      '.go': 'Go',
-      '.rs': 'Rust',
+      '.ts': 'TypeScript', '.tsx': 'TypeScript',
+      '.js': 'JavaScript', '.jsx': 'JavaScript',
+      '.css': 'CSS', '.scss': 'SCSS',
+      '.json': 'JSON', '.md': 'Markdown',
+      '.html': 'HTML', '.yml': 'YAML', '.yaml': 'YAML',
+      '.py': 'Python', '.java': 'Java', '.go': 'Go', '.rs': 'Rust',
     };
 
     const fileName = path.basename(filePath);
@@ -1256,15 +3874,12 @@ router.get('/file-detail', (req: Request, res: Response) => {
       const content = fs.readFileSync(absolutePath, 'utf-8');
       lineCount = content.split('\n').length;
 
-      // 分析 TypeScript/JavaScript 文件
       if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-        // 统计符号数量
         const symbolMatches = content.match(
           /(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+\w+/g
         );
         symbolCount = symbolMatches?.length || 0;
 
-        // 提取 import 语句
         const importMatches = content.match(/import\s+.*?from\s+['"](.+?)['"]/g);
         if (importMatches) {
           imports = importMatches.slice(0, 10).map((imp) => {
@@ -1273,7 +3888,6 @@ router.get('/file-detail', (req: Request, res: Response) => {
           });
         }
 
-        // 提取 export 语句
         const exportMatches = content.match(/export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+(\w+)/g);
         if (exportMatches) {
           exports = exportMatches.slice(0, 10).map((exp) => {
@@ -1282,7 +3896,6 @@ router.get('/file-detail', (req: Request, res: Response) => {
           });
         }
 
-        // 基于文件内容生成简单描述
         const hasReact = content.includes('React') || content.includes('useState') || content.includes('useEffect');
         const hasExpress = content.includes('express') || content.includes('router.') || content.includes('Request');
         const isTest = fileName.includes('.test.') || fileName.includes('.spec.');
@@ -1311,25 +3924,12 @@ router.get('/file-detail', (req: Request, res: Response) => {
           description = `${language} 代码文件`;
           keyPoints = ['待 AI 分析详细内容'];
         }
-      } else if (ext === '.css' || ext === '.scss') {
-        summary = `${fileName} 样式文件`;
-        description = `CSS 样式表，定义组件或页面的视觉样式`;
-        keyPoints = ['样式定义', '待 AI 分析详细内容'];
-      } else if (ext === '.json') {
-        summary = `${fileName} 配置文件`;
-        description = `JSON 格式的配置或数据文件`;
-        keyPoints = ['配置数据', '待 AI 分析详细内容'];
-      } else if (ext === '.md') {
-        summary = `${fileName} 文档`;
-        description = `Markdown 格式的文档或说明文件`;
-        keyPoints = ['文档说明', '待 AI 分析详细内容'];
       } else {
         summary = `${fileName} 文件`;
         description = `${language} 代码文件`;
         keyPoints = ['待 AI 分析详细内容'];
       }
     } catch (e) {
-      // 读取失败时使用默认值
       summary = `${fileName} 文件`;
       description = `无法读取文件内容`;
       keyPoints = ['文件读取失败'];
@@ -1349,7 +3949,7 @@ router.get('/file-detail', (req: Request, res: Response) => {
           summary,
           description,
           keyPoints,
-          confidence: 0.6, // 静态分析置信度较低
+          confidence: 0.6,
           userModified: false,
         },
       },
@@ -1360,15 +3960,18 @@ router.get('/file-detail', (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// 分析 API
+// ============================================================================
+
 /**
- * 查找反向依赖（哪些文件引用了当前文件）
+ * 查找反向依赖
  */
 const findReverseDependencies = (targetPath: string, rootDir: string = 'src'): Array<{path: string, imports: string[]}> => {
   const results: Array<{path: string, imports: string[]}> = [];
   const absoluteRoot = path.resolve(process.cwd(), rootDir);
   const targetRelative = path.relative(process.cwd(), path.resolve(process.cwd(), targetPath));
 
-  // 递归遍历所有文件
   const scanDirectory = (dirPath: string) => {
     if (!fs.existsSync(dirPath)) return;
 
@@ -1386,37 +3989,29 @@ const findReverseDependencies = (targetPath: string, rootDir: string = 'src'): A
           const content = fs.readFileSync(fullPath, 'utf-8');
           const imports: string[] = [];
 
-          // 匹配 import 和 export 语句（包括 export ... from）
           const importExportRegex = /(?:import|export)\s+(?:[\s\S]*?)\s+from\s+['"]([^'"]+)['"]/g;
           let match;
           while ((match = importExportRegex.exec(content)) !== null) {
             const importPath = match[1];
 
-            // 解析相对路径
             if (importPath.startsWith('.')) {
               const currentDir = path.dirname(fullPath);
               const resolvedImport = path.resolve(currentDir, importPath);
               const normalizedImport = path.relative(process.cwd(), resolvedImport);
 
-              // 检查是否匹配目标文件（考虑扩展名）
               const targetWithoutExt = targetRelative.replace(/\.(ts|tsx|js|jsx)$/, '');
               const importWithoutExt = normalizedImport.replace(/\.(ts|tsx|js|jsx)$/, '');
 
               if (importWithoutExt === targetWithoutExt || normalizedImport === targetRelative) {
-                // 提取导入/导出的具体项
                 const fullStatement = match[0];
 
-                // 匹配 export * from
                 if (/export\s+\*\s+from/.test(fullStatement)) {
                   imports.push('* (所有导出)');
-                }
-                // 匹配 { ... } 形式
-                else {
+                } else {
                   const items = fullStatement.match(/(?:import|export)\s+\{([^}]+)\}/);
                   if (items) {
                     imports.push(...items[1].split(',').map(s => s.trim()));
                   } else {
-                    // 匹配默认导入/导出
                     const defaultItem = fullStatement.match(/(?:import|export)\s+(\w+)\s+from/);
                     if (defaultItem) {
                       imports.push(defaultItem[1]);
@@ -1445,8 +4040,8 @@ const findReverseDependencies = (targetPath: string, rootDir: string = 'src'): A
 };
 
 /**
+ * POST /analyze-node
  * 分析单个节点（文件或目录）
- * 使用 getDefaultClient() 获取已认证的 Claude 客户端（与其他模块一致）
  */
 router.post('/analyze-node', async (req: Request, res: Response) => {
   try {
@@ -1458,7 +4053,6 @@ router.post('/analyze-node', async (req: Request, res: Response) => {
 
     const absolutePath = path.resolve(process.cwd(), nodePath);
 
-    // 检查路径是否存在
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({
         success: false,
@@ -1473,29 +4067,30 @@ router.post('/analyze-node', async (req: Request, res: Response) => {
     console.log(`[Analyze Node] 开始分析: ${nodePath} (${isFile ? '文件' : '目录'})`);
 
     // 检查缓存
-    const cachedAnalysis = analysisCache.get(absolutePath, isFile);
-    if (cachedAnalysis) {
-      console.log(`[Analyze Node] 使用缓存结果: ${nodePath}`);
+    if (analysisCache) {
+      const cachedAnalysis = analysisCache.get(absolutePath, isFile);
+      if (cachedAnalysis) {
+        console.log(`[Analyze Node] 使用缓存结果: ${nodePath}`);
 
-      // 即使使用缓存，也计算反向依赖（因为其他文件可能变化）
-      let reverseDeps: Array<{path: string, imports: string[]}> = [];
-      if (isFile) {
-        reverseDeps = findReverseDependencies(nodePath);
+        let reverseDeps: Array<{path: string, imports: string[]}> = [];
+        if (isFile) {
+          reverseDeps = findReverseDependencies(nodePath);
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            ...cachedAnalysis,
+            reverseDependencies: reverseDeps,
+            fromCache: true,
+          },
+        });
       }
-
-      return res.json({
-        success: true,
-        data: {
-          ...cachedAnalysis,
-          reverseDependencies: reverseDeps,
-          fromCache: true,
-        },
-      });
     }
 
     console.log(`[Analyze Node] 缓存未命中，调用 AI 分析...`);
 
-    // 使用 getDefaultClient() 获取已认证的客户端（与其他模块一致）
+    // 使用 getDefaultClient() 获取已认证的客户端
     const { getDefaultClient } = await import('../../../core/client.js');
     const client = getDefaultClient();
 
@@ -1552,21 +4147,17 @@ ${contentInfo}
 
     // 提取 JSON
     let analysis: Record<string, any>;
-    // 尝试直接解析
     try {
       analysis = JSON.parse(analysisText.trim());
     } catch {
-      // 尝试提取 JSON 块
       const jsonMatch = analysisText.match(/```json\s*([\s\S]*?)\s*```/);
       if (jsonMatch) {
         analysis = JSON.parse(jsonMatch[1]);
       } else {
-        // 尝试匹配裸 JSON
         const bareJsonMatch = analysisText.match(/\{[\s\S]*\}/);
         if (bareJsonMatch) {
           analysis = JSON.parse(bareJsonMatch[0]);
         } else {
-          // 无法解析 JSON，直接报错
           throw new Error(`无法解析 AI 返回的 JSON: ${analysisText.slice(0, 200)}`);
         }
       }
@@ -1582,7 +4173,9 @@ ${contentInfo}
     }
 
     // 保存到缓存
-    analysisCache.set(absolutePath, isFile, analysis);
+    if (analysisCache) {
+      analysisCache.set(absolutePath, isFile, analysis);
+    }
 
     console.log(`[Analyze Node] 分析完成: ${nodePath}`);
 
@@ -1600,50 +4193,30 @@ ${contentInfo}
   }
 });
 
-// ============================================================================
-// 一键分析 API
-// ============================================================================
-
 /**
+ * POST /analyze
  * 分析现有代码库并生成蓝图
+ * v2.0: 该功能已迁移至 SmartPlanner，通过对话式需求调研创建蓝图
  */
 router.post('/analyze', async (req: Request, res: Response) => {
   try {
-    const { rootDir = '.', projectName, projectDescription, granularity = 'medium' } = req.body;
+    const { rootDir = '.', projectName, projectDescription } = req.body;
 
-    // 使用代码库分析器
-    const result = await codebaseAnalyzer.analyzeAndGenerate({
-      rootDir,
-      projectName,
-      projectDescription,
-      granularity,
-    });
-
+    // v2.0 架构中，使用 SmartPlanner 替代 codebaseAnalyzer
+    // 返回提示信息，引导用户使用新的对话式蓝图创建流程
     res.json({
-      success: true,
-      data: {
-        codebase: {
-          name: result.codebase.name,
-          description: result.codebase.description,
-          stats: result.codebase.stats,
-          modules: result.codebase.modules.map(m => ({
-            name: m.name,
-            path: m.path,
-            type: m.type,
-            fileCount: m.files.length,
-          })),
-        },
-        blueprint: {
-          id: result.blueprint.id,
-          name: result.blueprint.name,
-          moduleCount: result.blueprint.modules.length,
-          processCount: result.blueprint.businessProcesses.length,
-        },
-        taskTree: {
-          id: result.taskTree.id,
-          taskCount: result.taskTree.stats.totalTasks,
-          maxDepth: result.taskTree.stats.maxDepth,
-        },
+      success: false,
+      needsDialog: true,
+      message: 'v2.0 蜂群架构已使用 SmartPlanner 替代代码库分析器。请通过对话式需求调研创建蓝图。',
+      hint: '使用 POST /blueprints 创建蓝图，然后通过 /swarm/plan 进行智能规划。',
+      suggestion: {
+        createBlueprint: 'POST /api/blueprint/blueprints',
+        planExecution: 'POST /api/blueprint/swarm/plan',
+      },
+      providedParams: {
+        rootDir,
+        projectName,
+        projectDescription,
       },
     });
   } catch (error: any) {
@@ -1652,11 +4225,11 @@ router.post('/analyze', async (req: Request, res: Response) => {
 });
 
 /**
- * 获取分析进度（用于长时间运行的分析）
+ * GET /analyze/status
+ * 获取分析进度
  */
 router.get('/analyze/status', (req: Request, res: Response) => {
   try {
-    // 简单实现：返回当前状态
     res.json({
       success: true,
       data: {
@@ -1671,5579 +4244,367 @@ router.get('/analyze/status', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /generate
  * 智能生成蓝图
- *
- * 根据当前项目状态选择合适的生成方式：
- * - 有代码：分析现有代码库生成蓝图
- * - 无代码：提示用户进行对话式需求调研
+ * v2.0: 使用 SmartPlanner 进行对话式需求调研和蓝图生成
  */
 router.post('/generate', async (req: Request, res: Response) => {
   const startTime = Date.now();
   console.log('\n========================================');
-  console.log('[Blueprint Generate] 🚀 开始生成蓝图');
+  console.log('[Blueprint Generate v2.0] 🚀 开始生成蓝图');
   console.log('========================================');
 
   try {
-    const { projectRoot = '.' } = req.body;
-
-    // 将相对路径转为绝对路径，确保项目名称正确
+    const { projectRoot = '.', name, description, requirements = [] } = req.body;
     const absoluteRoot = path.resolve(process.cwd(), projectRoot);
-    console.log(`[Blueprint Generate] 📁 项目根目录: ${absoluteRoot}`);
 
-    // Step 1: 设置配置
-    console.log('[Blueprint Generate] ⚙️  Step 1: 设置代码库分析器配置...');
-    codebaseAnalyzer.setRootDir(absoluteRoot);
+    console.log(`[Blueprint Generate v2.0] 📁 项目根目录: ${absoluteRoot}`);
 
-    // Step 2: 分析代码库
-    console.log('[Blueprint Generate] 🔍 Step 2: 分析代码库结构...');
-    const analyzeStart = Date.now();
-    const codebaseInfo = await codebaseAnalyzer.analyze();
-    console.log(`[Blueprint Generate]    ✓ 分析完成，耗时 ${Date.now() - analyzeStart}ms`);
-    console.log(`[Blueprint Generate]    - 项目名称: ${codebaseInfo.name}`);
-    console.log(`[Blueprint Generate]    - 检测到模块: ${codebaseInfo.modules.length} 个`);
-    console.log(`[Blueprint Generate]    - 总文件数: ${codebaseInfo.stats.totalFiles}`);
-    console.log(`[Blueprint Generate]    - 总代码行: ${codebaseInfo.stats.totalLines}`);
-    if (codebaseInfo.modules.length > 0) {
-      console.log(`[Blueprint Generate]    - 模块列表: ${codebaseInfo.modules.map(m => m.name).join(', ')}`);
-    }
+    // v2.0: 使用 SmartPlanner 创建蓝图
+    const planner = createSmartPlanner();
 
-    // Step 3: 判断是否有足够的代码
-    console.log('[Blueprint Generate] 📊 Step 3: 判断代码库是否满足要求...');
-    const hasCode = codebaseInfo.modules.length > 0 &&
-                    codebaseInfo.stats.totalFiles > 5;
-
-    if (!hasCode) {
-      console.log('[Blueprint Generate] ⚠️  代码不足，需要对话式调研');
-      console.log(`[Blueprint Generate]    - 模块数: ${codebaseInfo.modules.length} (需要 > 0)`);
-      console.log(`[Blueprint Generate]    - 文件数: ${codebaseInfo.stats.totalFiles} (需要 > 5)`);
-      console.log(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+    // 检查是否有足够的需求信息
+    if (!name && requirements.length === 0) {
+      console.log('[Blueprint Generate v2.0] ⚠️  需求信息不足，需要对话式调研');
+      console.log(`[Blueprint Generate v2.0] 总耗时: ${Date.now() - startTime}ms`);
       console.log('========================================\n');
 
       return res.json({
         success: false,
         needsDialog: true,
-        message: '当前目录没有检测到足够的代码。请通过对话方式描述您的项目需求，AI 将帮您生成蓝图。',
-        hint: '您可以开始一个新的需求对话来描述您想要构建的系统。',
+        message: '请提供项目名称和需求描述，或通过对话方式描述您的项目需求。',
+        hint: '使用 POST /blueprints 创建蓝图，或使用 /swarm/plan 进行智能规划。',
+        suggestion: {
+          createBlueprint: 'POST /api/blueprint/blueprints',
+          requiredFields: ['name', 'description', 'requirements'],
+        },
       });
     }
 
-    console.log('[Blueprint Generate]    ✓ 代码库满足要求');
+    // 检查该项目路径是否已存在蓝图（防止重复创建）
+    const existingBlueprint = blueprintStore.getByProjectPath(absoluteRoot);
+    if (existingBlueprint) {
+      console.log(`[Blueprint Generate v2.0] ⚠️  该项目路径已存在蓝图: ${existingBlueprint.name}`);
+      return res.status(409).json({
+        success: false,
+        error: `该项目路径已存在蓝图: "${existingBlueprint.name}" (ID: ${existingBlueprint.id})`,
+        existingBlueprint: {
+          id: existingBlueprint.id,
+          name: existingBlueprint.name,
+          status: existingBlueprint.status,
+        },
+      });
+    }
 
-    // Step 4: 生成蓝图和任务树
-    console.log('[Blueprint Generate] 🏗️  Step 4: 生成蓝图和任务树...');
-    const generateStart = Date.now();
-    const result = await codebaseAnalyzer.analyzeAndGenerate({
-      rootDir: absoluteRoot,
-      projectName: codebaseInfo.name,
-      projectDescription: codebaseInfo.description,
-      granularity: 'medium',
-    });
-    console.log(`[Blueprint Generate]    ✓ 生成完成，耗时 ${Date.now() - generateStart}ms`);
-    console.log(`[Blueprint Generate]    - 蓝图 ID: ${result.blueprint.id}`);
-    console.log(`[Blueprint Generate]    - 蓝图名称: ${result.blueprint.name}`);
-    console.log(`[Blueprint Generate]    - 模块数: ${result.blueprint.modules.length}`);
-    console.log(`[Blueprint Generate]    - 业务流程数: ${result.blueprint.businessProcesses.length}`);
-    console.log(`[Blueprint Generate]    - NFR 数: ${result.blueprint.nfrs?.length || 0}`);
-    console.log(`[Blueprint Generate]    - 任务树 ID: ${result.taskTree?.id || 'N/A'}`);
+    // 创建蓝图
+    const blueprint: Blueprint = {
+      id: crypto.randomUUID(),
+      name: name || path.basename(absoluteRoot),
+      description: description || `项目 ${name || path.basename(absoluteRoot)} 的蓝图`,
+      projectPath: absoluteRoot,
+      requirements: requirements,
+      techStack: {
+        language: 'typescript',
+        packageManager: 'npm',
+      },
+      modules: [],
+      constraints: [],
+      status: 'draft',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    console.log('[Blueprint Generate] ✅ 蓝图生成成功！');
-    console.log(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+    // 保存蓝图
+    blueprintStore.save(blueprint);
+
+    console.log('[Blueprint Generate v2.0] ✅ 蓝图创建成功！');
+    console.log(`[Blueprint Generate v2.0] 总耗时: ${Date.now() - startTime}ms`);
     console.log('========================================\n');
 
     res.json({
       success: true,
       data: {
-        id: result.blueprint.id,
-        name: result.blueprint.name,
-        description: result.blueprint.description,
-        status: result.blueprint.status,
-        createdAt: result.blueprint.createdAt,
-        updatedAt: result.blueprint.updatedAt,
-        moduleCount: result.blueprint.modules.length,
-        processCount: result.blueprint.businessProcesses.length,
-        nfrCount: result.blueprint.nfrs?.length || 0,
-        codebaseStats: {
-          totalFiles: codebaseInfo.stats.totalFiles,
-          totalLines: codebaseInfo.stats.totalLines,
-          filesByType: codebaseInfo.stats.filesByType,
-        },
-        taskTreeId: result.taskTree?.id,
+        id: blueprint.id,
+        name: blueprint.name,
+        description: blueprint.description,
+        status: blueprint.status,
+        createdAt: blueprint.createdAt,
+        updatedAt: blueprint.updatedAt,
+        moduleCount: blueprint.modules.length,
+        projectPath: blueprint.projectPath,
       },
-      message: `成功从代码库生成蓝图！检测到 ${codebaseInfo.modules.length} 个模块，${codebaseInfo.stats.totalFiles} 个文件。`,
+      message: `蓝图 "${blueprint.name}" 创建成功！使用 /swarm/plan 进行智能规划。`,
+      nextSteps: {
+        plan: `POST /api/blueprint/swarm/plan { blueprintId: "${blueprint.id}" }`,
+        execute: `POST /api/blueprint/swarm/execute { blueprintId: "${blueprint.id}" }`,
+      },
     });
   } catch (error: any) {
     console.error('\n========================================');
-    console.error('[Blueprint Generate] ❌ 生成蓝图失败！');
+    console.error('[Blueprint Generate v2.0] ❌ 生成蓝图失败！');
     console.error('========================================');
-    console.error(`[Blueprint Generate] 错误信息: ${error.message}`);
-    console.error(`[Blueprint Generate] 错误堆栈:\n${error.stack}`);
-    console.error(`[Blueprint Generate] 总耗时: ${Date.now() - startTime}ms`);
+    console.error(`[Blueprint Generate v2.0] 错误信息: ${error.message}`);
+    console.error(`[Blueprint Generate v2.0] 总耗时: ${Date.now() - startTime}ms`);
     console.error('========================================\n');
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ============================================================================
-// 任务树 API
+// 简化的文件操作 API（与原有 /file-operation/* 兼容）
 // ============================================================================
 
 /**
- * 获取任务树
+ * POST /file-operation/create
+ * 创建文件
  */
-router.get('/task-trees/:id', (req: Request, res: Response) => {
+router.post('/file-operation/create', (req: Request, res: Response) => {
   try {
-    const tree = taskTreeManager.getTaskTree(req.params.id);
-    if (!tree) {
-      return res.status(404).json({ success: false, error: 'Task tree not found' });
-    }
-    res.json({ success: true, data: tree });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    const { path: filePath, content } = req.body;
 
-/**
- * 获取任务树统计
- */
-router.get('/task-trees/:id/stats', (req: Request, res: Response) => {
-  try {
-    const tree = taskTreeManager.getTaskTree(req.params.id);
-    if (!tree) {
-      return res.status(404).json({ success: false, error: 'Task tree not found' });
-    }
-    res.json({ success: true, data: tree.stats });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取可执行任务
- */
-router.get('/task-trees/:id/executable', (req: Request, res: Response) => {
-  try {
-    const tasks = taskTreeManager.getExecutableTasks(req.params.id);
-    res.json({
-      success: true,
-      data: tasks.map(t => ({
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        priority: t.priority,
-        depth: t.depth,
-        dependencies: t.dependencies,
-      })),
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取叶子任务
- */
-router.get('/task-trees/:id/leaves', (req: Request, res: Response) => {
-  try {
-    const tasks = taskTreeManager.getLeafTasks(req.params.id);
-    res.json({
-      success: true,
-      data: tasks.map(t => ({
-        id: t.id,
-        name: t.name,
-        status: t.status,
-        depth: t.depth,
-      })),
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 更新任务状态
- */
-router.patch('/task-trees/:treeId/tasks/:taskId/status', (req: Request, res: Response) => {
-  try {
-    const { status } = req.body;
-    const task = taskTreeManager.updateTaskStatus(req.params.treeId, req.params.taskId, status);
-    if (!task) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    res.json({ success: true, data: task });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 动态添加子任务
- */
-router.post('/task-trees/:treeId/tasks/:parentId/subtasks', (req: Request, res: Response) => {
-  try {
-    const task = taskTreeManager.addSubTask(req.params.treeId, req.params.parentId, req.body);
-    res.json({ success: true, data: task });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// Agent 协调 API
-// ============================================================================
-
-/**
- * 初始化蜂王
- */
-router.post('/coordinator/queen', async (req: Request, res: Response) => {
-  try {
-    const { blueprintId } = req.body || {};
-    const queen = await agentCoordinator.initializeQueen(blueprintId);
-    res.json({ success: true, data: queen });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取蜂王状态
- */
-router.get('/coordinator/queen', (req: Request, res: Response) => {
-  try {
-    const queen = agentCoordinator.getQueen();
-    res.json({ success: true, data: queen });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 启动/恢复主循环
- * 如果蜂王未初始化，需要传入 blueprintId 来初始化
- */
-router.post('/coordinator/start', async (req: Request, res: Response) => {
-  try {
-    const { blueprintId } = req.body || {};
-
-    // 确保 projectRoot 被正确设置
-    const queen = agentCoordinator.getQueen();
-    let targetBlueprintId = blueprintId || queen?.blueprintId;
-
-    if (targetBlueprintId) {
-      const blueprint = blueprintManager.getBlueprint(targetBlueprintId);
-      if (blueprint?.projectPath) {
-        agentCoordinator.setProjectRoot(blueprint.projectPath);
-      }
-    }
-
-    // 检查蜂王是否已初始化
-    if (!queen) {
-      if (!blueprintId) {
-        return res.status(400).json({
-          success: false,
-          error: '蜂王未初始化，请先调用 initializeQueen() 或提供 blueprintId',
-        });
-      }
-      // 初始化蜂王
-      await agentCoordinator.initializeQueen(blueprintId);
-    }
-
-    agentCoordinator.startMainLoop();
-    res.json({ success: true, message: '主循环已启动' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 停止主循环
- */
-router.post('/coordinator/stop', (req: Request, res: Response) => {
-  try {
-    agentCoordinator.stopMainLoop();
-    res.json({ success: true, message: '主循环已停止' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取所有 Worker
- */
-router.get('/coordinator/workers', (req: Request, res: Response) => {
-  try {
-    const workers = agentCoordinator.getWorkers();
-    res.json({ success: true, data: workers });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取仪表板数据
- */
-router.get('/coordinator/dashboard', (req: Request, res: Response) => {
-  try {
-    const data = agentCoordinator.getDashboardData();
-    res.json({ success: true, data });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取时间线
- */
-router.get('/coordinator/timeline', (req: Request, res: Response) => {
-  try {
-    const timeline = agentCoordinator.getTimeline();
-    res.json({ success: true, data: timeline });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// TDD 循环 API
-// ============================================================================
-// 重要：Express 路由匹配是按定义顺序进行的！
-// 固定路径（如 /tdd/start, /tdd/consistency-check）必须在参数路径（如 /tdd/:taskId）之前定义
-// 否则 "consistency-check" 会被当作 taskId 参数处理
-
-/**
- * 启动 TDD 循环
- */
-router.post('/tdd/start', (req: Request, res: Response) => {
-  try {
-    const { treeId, taskId } = req.body;
-    const state = tddExecutor.startLoop(treeId, taskId);
-    res.json({ success: true, data: state });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取活跃的 TDD 循环
- */
-router.get('/tdd', (req: Request, res: Response) => {
-  try {
-    const loops = tddExecutor.getActiveLoops();
-    res.json({ success: true, data: loops });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 检查 TDD 循环与任务树的状态一致性
- */
-router.get('/tdd/consistency-check', (req: Request, res: Response) => {
-  try {
-    const results = tddExecutor.checkStateConsistency();
-    const inconsistent = results.filter(r => !r.isConsistent);
-    res.json({
-      success: true,
-      data: {
-        total: results.length,
-        consistent: results.filter(r => r.isConsistent).length,
-        inconsistent: inconsistent.length,
-        details: results,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 批量同步所有不一致的状态
- */
-router.post('/tdd/sync-all', (req: Request, res: Response) => {
-  try {
-    const result = tddExecutor.syncAllInconsistentStates();
-    res.json({
-      success: true,
-      data: result,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 清理孤立的 TDD 循环
- * 孤立循环：TDD 循环存在但没有对应的 Worker 在执行
- * 同时会重置任务状态为 pending，以便重新分配给 Worker
- */
-router.post('/tdd/cleanup-orphaned', (req: Request, res: Response) => {
-  try {
-    const result = agentCoordinator.cleanupOrphanedTDDLoops();
-    let message = '没有孤立的 TDD 循环需要清理';
-    if (result.removedCount > 0) {
-      message = `已清理 ${result.removedCount} 个孤立的 TDD 循环`;
-      if (result.resetTasks.length > 0) {
-        message += `，重置了 ${result.resetTasks.length} 个任务为待执行状态`;
-      }
-    }
-    res.json({
-      success: true,
-      data: result,
-      message,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ---- 以下是参数路由，必须放在固定路径之后 ----
-
-/**
- * 获取 TDD 循环状态
- */
-router.get('/tdd/:taskId', (req: Request, res: Response) => {
-  try {
-    if (!tddExecutor.isInLoop(req.params.taskId)) {
-      return res.status(404).json({ success: false, error: 'TDD loop not found' });
-    }
-    const state = tddExecutor.getLoopState(req.params.taskId);
-    res.json({ success: true, data: state });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取阶段指南
- */
-router.get('/tdd/:taskId/guidance', (req: Request, res: Response) => {
-  try {
-    const guidance = tddExecutor.getPhaseGuidance(req.params.taskId);
-    res.json({ success: true, data: guidance });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取 TDD 报告
- */
-router.get('/tdd/:taskId/report', (req: Request, res: Response) => {
-  try {
-    const report = tddExecutor.generateReport(req.params.taskId);
-    res.json({ success: true, data: report });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 转换到指定阶段
- */
-router.post('/tdd/:taskId/phase-transition', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const { phase } = req.body;
-
-    if (!phase) {
-      return res.status(400).json({ success: false, error: '缺少 phase 参数' });
-    }
-
-    // 验证 phase 是否有效
-    const validPhases = ['write_test', 'run_test_red', 'write_code', 'run_test_green', 'refactor'];
-    if (!validPhases.includes(phase)) {
-      return res.status(400).json({ success: false, error: `无效的阶段: ${phase}` });
-    }
-
-    const state = tddExecutor.manualTransitionPhase(taskId, phase);
-    res.json({ success: true, data: state });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 标记当前阶段完成，自动转换到下一阶段
- */
-router.post('/tdd/:taskId/mark-complete', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const state = tddExecutor.markPhaseComplete(taskId);
-    res.json({ success: true, data: state });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 回退到上一阶段
- */
-router.post('/tdd/:taskId/revert-phase', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const state = tddExecutor.revertPhase(taskId);
-    res.json({ success: true, data: state });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 同步单个任务的 TDD 状态到任务树
- */
-router.post('/tdd/:taskId/sync', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const result = tddExecutor.syncLoopStateToTaskTree(taskId);
-    res.json({
-      success: result.success,
-      data: result,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 重启 TDD 循环（用于测试修正后）
- */
-router.post('/tdd/:taskId/restart', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const { resetIteration, resetErrorCount } = req.body;
-
-    const state = tddExecutor.restartLoop(taskId, {
-      resetIteration: resetIteration !== false,
-      resetErrorCount: resetErrorCount !== false,
-    });
-
-    if (!state) {
-      return res.status(404).json({ success: false, error: 'TDD loop not found' });
-    }
-
-    res.json({
-      success: true,
-      data: state,
-      message: 'TDD 循环已重启',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取测试修正历史
- */
-router.get('/tdd/:taskId/fix-history', (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const state = tddExecutor.getLoopState(taskId);
-
-    if (!state) {
-      return res.status(404).json({ success: false, error: 'TDD loop not found' });
-    }
-
-    // 返回重复错误检测信息
-    res.json({
-      success: true,
-      data: {
-        taskId,
-        iteration: state.iteration,
-        consecutiveSameErrorCount: state.consecutiveSameErrorCount,
-        lastErrorSignature: state.lastErrorSignature,
-        lastError: state.lastError,
-        hasAcceptanceTests: state.hasAcceptanceTests,
-        acceptanceTestCount: state.acceptanceTests.length,
-        phaseHistory: state.phaseHistory,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 时光倒流 API
-// ============================================================================
-
-/**
- * 获取所有检查点
- */
-router.get('/time-travel/:treeId/checkpoints', (req: Request, res: Response) => {
-  try {
-    const checkpoints = timeTravelManager.getAllCheckpoints(req.params.treeId);
-    res.json({ success: true, data: checkpoints });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取时间线视图
- */
-router.get('/time-travel/:treeId/timeline', (req: Request, res: Response) => {
-  try {
-    const view = timeTravelManager.getTimelineView(req.params.treeId);
-    res.json({ success: true, data: view });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 创建检查点
- */
-router.post('/time-travel/:treeId/checkpoints', (req: Request, res: Response) => {
-  try {
-    const { name, description, taskId } = req.body;
-    const checkpoint = timeTravelManager.createManualCheckpoint(
-      req.params.treeId,
-      name,
-      description,
-      taskId
-    );
-    res.json({ success: true, data: checkpoint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 回滚到检查点
- */
-router.post('/time-travel/:treeId/rollback/:checkpointId', (req: Request, res: Response) => {
-  try {
-    timeTravelManager.rollback(req.params.treeId, req.params.checkpointId);
-    res.json({ success: true, message: '回滚成功' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 预览回滚效果
- */
-router.get('/time-travel/:treeId/preview/:checkpointId', (req: Request, res: Response) => {
-  try {
-    const preview = timeTravelManager.previewRollback(req.params.treeId, req.params.checkpointId);
-    res.json({ success: true, data: preview });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取检查点详情
- */
-router.get('/time-travel/:treeId/checkpoints/:checkpointId', (req: Request, res: Response) => {
-  try {
-    const details = timeTravelManager.getCheckpointDetails(
-      req.params.treeId,
-      req.params.checkpointId
-    );
-    if (!details) {
-      return res.status(404).json({ success: false, error: 'Checkpoint not found' });
-    }
-    res.json({ success: true, data: details });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 创建分支
- */
-router.post('/time-travel/:treeId/branches', (req: Request, res: Response) => {
-  try {
-    const { checkpointId, branchName } = req.body;
-    const branch = timeTravelManager.createBranch(req.params.treeId, checkpointId, branchName);
-    res.json({ success: true, data: branch });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取 ASCII 时间线图
- */
-router.get('/time-travel/:treeId/ascii', (req: Request, res: Response) => {
-  try {
-    const ascii = timeTravelManager.generateTimelineAscii(req.params.treeId);
-    res.json({ success: true, data: ascii });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取当前/最新的蓝图（便捷接口）
- */
-router.get('/blueprints/current', (req: Request, res: Response) => {
-  try {
-    const blueprints = blueprintManager.getAllBlueprints();
-    if (blueprints.length === 0) {
-      return res.status(404).json({ success: false, error: 'No blueprints found' });
-    }
-    // 返回最新的蓝图
-    const latest = blueprints.sort((a, b) =>
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    )[0];
-    res.json({ success: true, data: latest });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 需求对话 API
-// ============================================================================
-
-/**
- * 开始新的需求对话
- */
-router.post('/requirement-dialog/start', (req: Request, res: Response) => {
-  try {
-    const dialogState = requirementDialogManager.startDialog();
-    res.json({
-      success: true,
-      data: {
-        sessionId: dialogState.id,
-        phase: dialogState.phase,
-        history: dialogState.history,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 发送消息到需求对话
- */
-router.post('/requirement-dialog/:sessionId/message', async (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    const { message } = req.body;
-
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ success: false, error: 'Message is required' });
-    }
-
-    const response = await requirementDialogManager.processUserInput(sessionId, message);
-    const state = requirementDialogManager.getDialogState(sessionId);
-
-    res.json({
-      success: true,
-      data: {
-        response,
-        phase: state?.phase,
-        isComplete: state?.phase === 'complete',
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取对话状态
- */
-router.get('/requirement-dialog/:sessionId', (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    const state = requirementDialogManager.getDialogState(sessionId);
-
-    if (!state) {
-      return res.status(404).json({ success: false, error: 'Dialog session not found' });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        sessionId: state.id,
-        phase: state.phase,
-        projectName: state.projectName,
-        projectDescription: state.projectDescription,
-        businessProcesses: state.businessProcesses,
-        modules: state.modules,
-        nfrs: state.nfrs,
-        history: state.history,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 结束对话
- */
-router.delete('/requirement-dialog/:sessionId', (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    requirementDialogManager.endDialog(sessionId);
-    res.json({ success: true, message: 'Dialog ended' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取对话摘要
- * GET /api/blueprint/requirement-dialog/:sessionId/summary
- */
-router.get('/requirement-dialog/:sessionId/summary', (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    const state = requirementDialogManager.getDialogState(sessionId);
-
-    if (!state) {
-      return res.status(404).json({
+    if (!filePath) {
+      return res.status(400).json({
         success: false,
-        error: 'Dialog session not found',
+        error: '缺少文件路径',
       });
     }
 
-    // 生成对话摘要
-    const summary = {
-      sessionId: state.id,
-      phase: state.phase,
-      projectName: state.projectName,
-      projectDescription: state.projectDescription,
-      targetUsers: state.targetUsers,
-      problemsToSolve: state.problemsToSolve,
-      businessProcessCount: state.businessProcesses.length,
-      moduleCount: state.modules.length,
-      nfrCount: state.nfrs.length,
-      messageCount: state.history.length,
-      createdAt: state.createdAt,
-      updatedAt: state.updatedAt,
-      // 详细数据
-      businessProcesses: state.businessProcesses.map(p => ({
-        name: p.name,
-        type: p.type,
-        stepsCount: p.steps.length,
-      })),
-      modules: state.modules.map(m => ({
-        name: m.name,
-        type: m.type,
-        responsibilitiesCount: m.responsibilities.length,
-      })),
-      nfrs: state.nfrs.map(n => ({
-        name: n.name,
-        category: n.category,
-        priority: n.priority,
-      })),
-    };
+    const cwd = process.cwd();
+    const fullPath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
 
-    res.json({
-      success: true,
-      data: summary,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 时光倒流 API
-// ============================================================================
-
-/**
- * 获取时间线视图
- */
-router.get('/time-travel/:treeId/timeline', (req: Request, res: Response) => {
-  try {
-    const { treeId } = req.params;
-    const timeline = timeTravelManager.getTimelineView(treeId);
-    res.json({ success: true, data: timeline });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取检查点详情
- */
-router.get('/time-travel/:treeId/checkpoints/:checkpointId', (req: Request, res: Response) => {
-  try {
-    const { treeId, checkpointId } = req.params;
-    const detail = timeTravelManager.getCheckpointDetails(treeId, checkpointId);
-
-    if (!detail) {
-      return res.status(404).json({ success: false, error: 'Checkpoint not found' });
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
-    // 添加任务状态快照
-    const tree = taskTreeManager.getTaskTree(treeId);
-    let taskSnapshot: any[] = [];
-    if (tree) {
-      const collectTasks = (node: any) => {
-        taskSnapshot.push({
-          id: node.id,
-          name: node.name,
-          status: node.status,
-        });
-        for (const child of node.children || []) {
-          collectTasks(child);
-        }
-      };
-      collectTasks(tree.root);
-    }
-
-    res.json({
-      success: true,
-      data: {
-        ...detail,
-        taskSnapshot: taskSnapshot.slice(0, 20), // 限制数量
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 创建检查点
- */
-router.post('/time-travel/:treeId/checkpoints', (req: Request, res: Response) => {
-  try {
-    const { treeId } = req.params;
-    const { name, description, isGlobal, taskId } = req.body;
-
-    const checkpoint = timeTravelManager.createManualCheckpoint(
-      treeId,
-      name,
-      description,
-      isGlobal ? undefined : taskId
-    );
-
-    res.json({ success: true, data: checkpoint });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 创建分支
- */
-router.post('/time-travel/:treeId/branches', (req: Request, res: Response) => {
-  try {
-    const { treeId } = req.params;
-    const { checkpointId, branchName } = req.body;
-
-    const branch = timeTravelManager.createBranch(treeId, checkpointId, branchName);
-
-    res.json({ success: true, data: branch });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 对比两个检查点
- */
-router.get('/time-travel/:treeId/compare', (req: Request, res: Response) => {
-  try {
-    const { treeId } = req.params;
-    const { from, to } = req.query;
-
-    if (!from || !to) {
-      return res.status(400).json({ success: false, error: 'Missing from or to parameter' });
-    }
-
-    const result = timeTravelManager.compare(treeId, from as string, to as string);
-
-    res.json({ success: true, data: result });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 蓝图编辑 API（对话式修改）
-// ============================================================================
-
-/**
- * 对话式修改蓝图
- * 用户可以用自然语言描述修改需求
- */
-router.post('/blueprints/:id/chat-edit', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { message } = req.body;
-
-    const blueprint = blueprintManager.getBlueprint(id);
-    if (!blueprint) {
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
-    }
-
-    // 使用 AI 解析修改请求并应用
-    const { getDefaultClient } = await import('../../../core/client.js');
-    const client = getDefaultClient();
-
-    const response = await client.createMessage(
-      [{
-        role: 'user',
-        content: `用户想要修改以下蓝图：
-
-蓝图名称：${blueprint.name}
-蓝图描述：${blueprint.description}
-系统模块：${blueprint.modules.map(m => m.name).join('、')}
-业务流程：${blueprint.businessProcesses.map(p => p.name).join('、')}
-非功能要求：${blueprint.nfrs.map(n => n.name).join('、')}
-
-用户的修改请求：${message}
-
-请分析用户的请求，返回 JSON 格式的修改指令：
-{
-  "action": "add_module" | "remove_module" | "update_module" | "add_process" | "remove_process" | "update_process" | "add_nfr" | "remove_nfr" | "update_description",
-  "target": "目标项名称（如果有）",
-  "data": { ... 新数据 ... },
-  "explanation": "修改说明"
-}`,
-      }],
-      undefined,
-      '你是一个蓝图编辑助手。分析用户的修改请求，返回 JSON 格式的修改指令。'
-    );
-
-    let text = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        text += block.text;
-      }
-    }
-
-    // 解析 JSON
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return res.json({
-        success: true,
-        data: {
-          modified: false,
-          explanation: '无法解析修改请求，请尝试更明确地描述你想要的修改。',
-        },
+    if (fs.existsSync(fullPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '文件已存在',
       });
     }
 
-    const instruction = JSON.parse(jsonMatch[0]);
-
-    // 应用修改
-    let modified = false;
-    switch (instruction.action) {
-      case 'add_module':
-        if (instruction.data) {
-          blueprintManager.addModule(id, instruction.data);
-          modified = true;
-        }
-        break;
-      case 'add_process':
-        if (instruction.data) {
-          blueprintManager.addBusinessProcess(id, instruction.data);
-          modified = true;
-        }
-        break;
-      case 'add_nfr':
-        if (instruction.data) {
-          blueprintManager.addNFR(id, instruction.data);
-          modified = true;
-        }
-        break;
-      case 'update_description':
-        if (instruction.data?.description) {
-          const current = blueprintManager.getBlueprint(id);
-          if (current) {
-            blueprintManager.modifyDuringExecution(id, { description: instruction.data.description });
-            modified = true;
-          }
-        }
-        break;
-      // 可以添加更多操作类型
-    }
-
-    const updatedBlueprint = blueprintManager.getBlueprint(id);
+    fs.writeFileSync(fullPath, content || '', 'utf-8');
 
     res.json({
       success: true,
-      data: {
-        modified,
-        explanation: instruction.explanation,
-        blueprint: updatedBlueprint,
-      },
+      data: { path: filePath },
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ============================================================================
-// 缓存管理 API
-// ============================================================================
-
 /**
- * 获取缓存统计
+ * POST /file-operation/mkdir
+ * 创建目录
  */
-router.get('/cache/stats', (req: Request, res: Response) => {
+router.post('/file-operation/mkdir', (req: Request, res: Response) => {
   try {
-    const stats = analysisCache.getStats();
-    res.json({ success: true, data: stats });
+    const { path: dirPath } = req.body;
+
+    if (!dirPath) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少目录路径',
+      });
+    }
+
+    const cwd = process.cwd();
+    const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(cwd, dirPath);
+
+    if (fs.existsSync(fullPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '目录已存在',
+      });
+    }
+
+    fs.mkdirSync(fullPath, { recursive: true });
+
+    res.json({
+      success: true,
+      data: { path: dirPath },
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
- * 清除所有缓存
+ * POST /file-operation/delete
+ * 删除文件或目录
  */
-router.delete('/cache', (req: Request, res: Response) => {
-  try {
-    const count = analysisCache.clear();
-    res.json({ success: true, message: `已清除 ${count} 个缓存文件` });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 清除过期缓存
- */
-router.delete('/cache/expired', (req: Request, res: Response) => {
-  try {
-    const count = analysisCache.cleanExpired();
-    res.json({ success: true, message: `已清除 ${count} 个过期缓存` });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 清除指定路径的缓存
- */
-router.delete('/cache/path', (req: Request, res: Response) => {
+router.post('/file-operation/delete', (req: Request, res: Response) => {
   try {
     const { path: targetPath } = req.body;
+
     if (!targetPath) {
-      return res.status(400).json({ success: false, error: '缺少路径参数' });
-    }
-
-    const absolutePath = path.resolve(process.cwd(), targetPath);
-    const success = analysisCache.delete(absolutePath);
-
-    if (success) {
-      res.json({ success: true, message: '缓存已清除' });
-    } else {
-      res.json({ success: false, message: '未找到缓存' });
-    }
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 重置缓存统计
- */
-router.post('/cache/reset-stats', (req: Request, res: Response) => {
-  try {
-    analysisCache.resetStats();
-    res.json({ success: true, message: '统计已重置' });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 调用图 API (LSP + AI混合)
-// ============================================================================
-
-// 缓存
-const callGraphCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5分钟
-
-// 全局 LSP 分析器（延迟初始化）
-let lspAnalyzer: any = null;
-let aiAnalyzer: any = null;
-
-/**
- * 获取文件/符号的调用图 (LSP + AI混合分析)
- * 参数:
- *   - path: 文件路径 (可选)
- *   - symbol: 符号名称 (可选, 例如函数名或类名.方法名)
- *   - depth: 分析深度 (默认: 2)
- *   - useAI: 是否使用AI增强分析 (默认: true)
- *   - detectCycles: 是否检测循环依赖 (默认: false)
- *
- * 如果不提供参数,返回整个项目的调用图
- */
-router.get('/call-graph', async (req: Request, res: Response) => {
-  try {
-    const {
-      path: filePath,
-      symbol,
-      depth = '2',
-      useAI = 'true',
-      detectCycles = 'false'
-    } = req.query;
-    const maxDepth = parseInt(depth as string) || 2;
-    const enableAI = useAI === 'true';
-    const enableCycleDetection = detectCycles === 'true';
-
-    console.log('[Call Graph API] 请求参数:', { filePath, symbol, maxDepth, enableAI, enableCycleDetection });
-
-    // 检查缓存
-    const cacheKey = JSON.stringify({ filePath, symbol, maxDepth, enableAI });
-    const cached = callGraphCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log('[Call Graph API] 使用缓存');
-      return res.json({
-        success: true,
-        ...cached.data,
-        cached: true,
-      });
-    }
-
-    const projectRoot = process.cwd();
-    console.log('[Call Graph API] 项目根目录:', projectRoot);
-
-    // 1. 扫描TypeScript文件
-    const tsFiles: string[] = [];
-    const srcPath = path.join(projectRoot, 'src');
-
-    const scanDir = (dir: string) => {
-      if (!fs.existsSync(dir)) return;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (['node_modules', 'dist', '.git', '.lh'].includes(entry.name)) continue;
-          scanDir(fullPath);
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name);
-          if (['.ts', '.tsx'].includes(ext)) {
-            tsFiles.push(fullPath);
-          }
-        }
-      }
-    };
-
-    scanDir(srcPath);
-    console.log(`[Call Graph API] 扫描到 ${tsFiles.length} 个TypeScript文件`);
-
-    if (tsFiles.length === 0) {
-      return res.json({
-        success: true,
-        data: { nodes: [], edges: [] },
-        message: '未找到TypeScript文件',
-      });
-    }
-
-    // 2. 初始化LSP分析器（延迟加载）
-    if (!lspAnalyzer) {
-      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
-      lspAnalyzer = new TypeScriptLSPAnalyzer();
-      lspAnalyzer.initProgram(tsFiles, projectRoot);
-      console.log('[Call Graph API] LSP分析器已初始化');
-    }
-
-    // 3. 使用LSP提取符号（只分析必要的文件）
-    const allNodes: CallGraphNode[] = [];
-    const allEdges: CallGraphEdge[] = [];
-    const symbolMap = new Map<string, CallGraphNode>();
-
-    // 确定需要分析的文件
-    let filesToAnalyze = tsFiles;
-    if (filePath) {
-      // 规范化路径：将相对路径转为绝对路径，统一使用正斜杠
-      const normalizedFilePath = path.normalize(path.join(projectRoot, filePath as string));
-      console.log(`[Call Graph API] 查找文件: ${normalizedFilePath}`);
-
-      // 只分析指定文件及其依赖
-      filesToAnalyze = tsFiles.filter(f => {
-        const normalized = path.normalize(f);
-        return normalized === normalizedFilePath || normalized.includes(path.basename(normalizedFilePath));
-      });
-
-      // 如果精确匹配失败，尝试模糊匹配
-      if (filesToAnalyze.length === 0) {
-        const fileName = path.basename(filePath as string);
-        filesToAnalyze = tsFiles.filter(f => f.includes(fileName));
-      }
-
-      // 限制数量
-      filesToAnalyze = filesToAnalyze.slice(0, 10);
-    } else {
-      // 限制文件数量（避免太慢）
-      filesToAnalyze = tsFiles.slice(0, 50);
-    }
-
-    console.log(`[Call Graph API] 将分析 ${filesToAnalyze.length} 个文件`);
-
-    for (const file of filesToAnalyze) {
-      try {
-        const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(file);
-        const relativePath = path.relative(projectRoot, file);
-
-        console.log(`[Call Graph API] 分析文件: ${relativePath}, 函数: ${functions.length}, 类: ${classes.length}, 接口: ${interfaces.length}, 类型: ${types.length}`);
-
-        // 添加函数节点
-        for (const func of functions) {
-          const node: CallGraphNode = {
-            id: func.id,
-            name: func.name,
-            type: 'function',
-            moduleId: relativePath,
-            signature: func.signature,
-          };
-          allNodes.push(node);
-          symbolMap.set(func.name, node);
-          symbolMap.set(func.id, node);
-        }
-
-        // 添加类节点
-        for (const cls of classes) {
-          // 添加类本身作为节点
-          const clsNode: CallGraphNode = {
-            id: cls.id,
-            name: cls.name,
-            type: cls.isAbstract ? 'function' : 'method', // 抽象类显示为 function 类型
-            moduleId: relativePath,
-            signature: `${cls.isExported ? 'export ' : ''}${cls.isAbstract ? 'abstract ' : ''}class ${cls.name}`,
-          };
-          allNodes.push(clsNode);
-          symbolMap.set(cls.name, clsNode);
-          symbolMap.set(cls.id, clsNode);
-
-          // 添加类方法节点
-          for (const method of cls.methods) {
-            const node: CallGraphNode = {
-              id: method.id,
-              name: method.name,
-              type: method.name === 'constructor' ? 'constructor' : 'method',
-              moduleId: relativePath,
-              className: cls.name,
-              signature: method.signature,
-            };
-            allNodes.push(node);
-            symbolMap.set(method.name, node);
-            symbolMap.set(`${cls.name}.${method.name}`, node);
-            symbolMap.set(method.id, node);
-          }
-        }
-
-        // 添加接口节点
-        for (const iface of interfaces) {
-          // 添加接口本身作为节点
-          const ifaceNode: CallGraphNode = {
-            id: iface.id,
-            name: iface.name,
-            type: 'function', // 接口显示为 function 类型
-            moduleId: relativePath,
-            signature: `${iface.isExported ? 'export ' : ''}interface ${iface.name}`,
-          };
-          allNodes.push(ifaceNode);
-          symbolMap.set(iface.name, ifaceNode);
-          symbolMap.set(iface.id, ifaceNode);
-
-          // 添加接口方法签名
-          for (const method of iface.methods) {
-            const node: CallGraphNode = {
-              id: `${iface.id}::${method.name}`,
-              name: method.name,
-              type: 'method',
-              moduleId: relativePath,
-              className: iface.name,
-              signature: method.signature,
-            };
-            allNodes.push(node);
-            symbolMap.set(`${iface.name}.${method.name}`, node);
-            symbolMap.set(node.id, node);
-          }
-        }
-
-        // 添加类型别名节点
-        for (const type of types) {
-          const typeNode: CallGraphNode = {
-            id: type.id,
-            name: type.name,
-            type: 'function', // 类型别名显示为 function 类型
-            moduleId: relativePath,
-            signature: `${type.isExported ? 'export ' : ''}type ${type.name} = ${type.definition.substring(0, 50)}...`,
-          };
-          allNodes.push(typeNode);
-          symbolMap.set(type.name, typeNode);
-          symbolMap.set(type.id, typeNode);
-        }
-      } catch (error) {
-        console.error(`[Call Graph API] 分析文件失败: ${file}`, error);
-      }
-    }
-
-    console.log(`[Call Graph API] LSP提取到 ${allNodes.length} 个符号`);
-
-    // 4. 如果启用AI，使用Claude分析调用关系
-    if (enableAI && allNodes.length > 0 && allNodes.length < 200) {
-      try {
-        if (!aiAnalyzer) {
-          const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-          if (apiKey) {
-            const { AICallGraphAnalyzer } = await import('./lsp-analyzer.js');
-            aiAnalyzer = new AICallGraphAnalyzer(apiKey);
-            console.log('[Call Graph API] AI分析器已初始化');
-          }
-        }
-
-        if (aiAnalyzer) {
-          // 只分析重点文件
-          const targetFile = filePath
-            ? filesToAnalyze.find(f => f.includes(filePath as string))
-            : filesToAnalyze[0];
-
-          if (targetFile && fs.existsSync(targetFile)) {
-            const content = fs.readFileSync(targetFile, 'utf-8');
-            const allSymbols = {
-              functions: [],
-              classes: []
-            };
-
-            console.log('[Call Graph API] 使用AI分析调用关系...');
-            const aiResult = await aiAnalyzer.analyzeCallRelationships(
-              content,
-              targetFile,
-              allSymbols
-            );
-
-            // 将AI结果转换为边
-            for (const call of aiResult.calls || []) {
-              const sourceNode = symbolMap.get(call.from);
-              const targetNode = symbolMap.get(call.to);
-
-              if (sourceNode && targetNode) {
-                allEdges.push({
-                  source: sourceNode.id,
-                  target: targetNode.id,
-                  type: call.type || 'direct',
-                  count: 1,
-                  locations: [],
-                });
-              }
-            }
-
-            console.log(`[Call Graph API] AI分析得到 ${allEdges.length} 条调用关系`);
-          }
-        }
-      } catch (error) {
-        console.error('[Call Graph API] AI分析失败:', error);
-        // 继续使用正则表达式分析
-      }
-    }
-
-    // 5. 如果没有AI结果，回退到正则表达式分析
-    if (allEdges.length === 0) {
-      console.log('[Call Graph API] 使用正则表达式分析调用关系...');
-      // 简单的正则分析
-      for (const file of filesToAnalyze.slice(0, 20)) {
-        try {
-          const content = fs.readFileSync(file, 'utf-8');
-          const lines = content.split('\n');
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            // 匹配函数调用: xxx(...)
-            const callPattern = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
-            let match;
-
-            while ((match = callPattern.exec(line)) !== null) {
-              const calledName = match[1];
-              const targetNode = symbolMap.get(calledName);
-
-              if (targetNode) {
-                // 找到调用者（当前行所在的函数）
-                for (const node of allNodes) {
-                  if (node.moduleId === path.relative(projectRoot, file)) {
-                    allEdges.push({
-                      source: node.id,
-                      target: targetNode.id,
-                      type: 'direct',
-                      count: 1,
-                      locations: [],
-                    });
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch (error) {
-          // 忽略错误
-        }
-      }
-
-      console.log(`[Call Graph API] 正则分析得到 ${allEdges.length} 条调用关系`);
-    }
-
-    let callGraph = { nodes: allNodes, edges: allEdges };
-
-    // 5. 如果指定了文件或符号，过滤调用图
-    let filteredNodes = callGraph.nodes;
-    let filteredEdges = callGraph.edges;
-    const originalTargetNodes = new Set<string>(); // 原始目标节点（用户选中的符号）
-    const targetNodes = new Set<string>(); // 扩展后的节点集合
-
-    if (filePath || symbol) {
-
-      // 如果指定了符号，先检查它是否为静态符号（不支持调用图）
-      if (symbol) {
-        const symbolName = symbol as string;
-
-        // 从 symbolMap 中查找符号
-        const symbolNode = symbolMap.get(symbolName);
-
-        if (symbolNode && (symbolNode as any).isStatic) {
-          // 这是一个静态符号（interface/type/property），不支持调用图
-          const signature = symbolNode.signature || symbolName;
-          const kind = signature.includes('interface') ? 'interface' :
-                       signature.includes('type') ? 'type' : 'static symbol';
-
-          console.log(`[Call Graph API] 符号 "${symbolName}" 是静态符号 (${kind})，不支持调用图`);
-
-          return res.json({
-            success: false,
-            error: `符号 "${symbolName}" 是 ${kind}，不支持调用图分析`,
-            suggestion: 'references',
-            hint: `${kind} 是类型定义，建议使用"引用查找"视图查看它在哪些地方被使用`,
-            data: {
-              symbol: symbolName,
-              type: kind,
-              supportedViews: ['definition', 'references', 'type-hierarchy'],
-            },
-          });
-        }
-      }
-
-      // 查找目标节点
-      for (const node of callGraph.nodes) {
-        let matched = false;
-
-        if (filePath) {
-          // 规范化路径比较（统一使用正斜杠）
-          const normalizedModuleId = node.moduleId.replace(/\\/g, '/');
-          const normalizedFilePath = (filePath as string).replace(/\\/g, '/');
-          if (normalizedModuleId.includes(normalizedFilePath) ||
-              normalizedFilePath.includes(normalizedModuleId)) {
-            matched = true;
-          }
-        }
-
-        if (symbol) {
-          const symbolName = symbol as string;
-          if (node.name === symbolName ||
-              node.name.includes(symbolName) ||
-              (node.className && `${node.className}.${node.name}` === symbolName)) {
-            matched = true;
-          }
-        }
-
-        if (matched) {
-          originalTargetNodes.add(node.id); // 保存原始目标
-          targetNodes.add(node.id);
-          console.log(`[Call Graph API] 匹配到目标节点: ${node.name} (${node.id})`);
-        }
-      }
-
-      console.log(`[Call Graph API] 找到 ${originalTargetNodes.size} 个原始目标节点`);
-
-      // 扩展到相关节点（基于depth）
-      const expandNodes = (nodeIds: Set<string>, currentDepth: number) => {
-        if (currentDepth >= maxDepth) return;
-
-        const newNodes = new Set<string>();
-        for (const edge of callGraph.edges) {
-          if (nodeIds.has(edge.source)) {
-            newNodes.add(edge.target);
-          }
-          if (nodeIds.has(edge.target)) {
-            newNodes.add(edge.source);
-          }
-        }
-
-        newNodes.forEach(id => targetNodes.add(id));
-        if (newNodes.size > 0) {
-          expandNodes(newNodes, currentDepth + 1);
-        }
-      };
-
-      expandNodes(targetNodes, 0);
-
-      // 过滤节点和边
-      filteredNodes = callGraph.nodes.filter(n => targetNodes.has(n.id));
-      filteredEdges = callGraph.edges.filter(e =>
-        targetNodes.has(e.source) && targetNodes.has(e.target)
-      );
-
-      console.log(`[Call Graph API] 过滤后节点数: ${filteredNodes.length}, 边数: ${filteredEdges.length}`);
-    }
-
-    // 6. 限制返回的节点数量（避免图太大）
-    const MAX_NODES = 100;
-    if (filteredNodes.length > MAX_NODES) {
-      // 按照调用次数排序，保留最重要的节点
-      const nodeDegree = new Map<string, number>();
-      for (const node of filteredNodes) {
-        nodeDegree.set(node.id, 0);
-      }
-      for (const edge of filteredEdges) {
-        nodeDegree.set(edge.source, (nodeDegree.get(edge.source) || 0) + 1);
-        nodeDegree.set(edge.target, (nodeDegree.get(edge.target) || 0) + 1);
-      }
-
-      filteredNodes = filteredNodes
-        .sort((a, b) => (nodeDegree.get(b.id) || 0) - (nodeDegree.get(a.id) || 0))
-        .slice(0, MAX_NODES);
-
-      const nodeIds = new Set(filteredNodes.map(n => n.id));
-      filteredEdges = filteredEdges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
-
-      console.log(`[Call Graph API] 限制节点数到 ${MAX_NODES}, 最终边数: ${filteredEdges.length}`);
-    }
-
-    // 7. 循环依赖检测
-    const cycles: string[][] = [];
-    if (enableCycleDetection) {
-      console.log('[Call Graph API] 检测循环依赖...');
-      const visited = new Set<string>();
-      const recStack = new Set<string>();
-      const currentPath: string[] = [];
-
-      const detectCycle = (nodeId: string): boolean => {
-        if (recStack.has(nodeId)) {
-          // 找到循环，提取循环路径
-          const cycleStart = currentPath.indexOf(nodeId);
-          if (cycleStart >= 0) {
-            const cycle = currentPath.slice(cycleStart);
-            cycle.push(nodeId); // 闭合循环
-            cycles.push(cycle);
-          }
-          return true;
-        }
-
-        if (visited.has(nodeId)) return false;
-
-        visited.add(nodeId);
-        recStack.add(nodeId);
-        currentPath.push(nodeId);
-
-        // 检查所有出边
-        for (const edge of filteredEdges) {
-          if (edge.source === nodeId) {
-            detectCycle(edge.target);
-          }
-        }
-
-        recStack.delete(nodeId);
-        currentPath.pop();
-        return false;
-      };
-
-      // 对每个节点进行DFS
-      for (const node of filteredNodes) {
-        if (!visited.has(node.id)) {
-          detectCycle(node.id);
-        }
-      }
-
-      console.log(`[Call Graph API] 检测到 ${cycles.length} 个循环依赖`);
-    }
-
-    // 7. 调用链追踪：查找从入口点到目标符号的路径
-    const callChains: string[][] = [];
-
-    // 检测入口点（常见入口模式）
-    const entryPoints: string[] = [];
-    for (const node of filteredNodes) {
-      const name = node.name.toLowerCase();
-      const moduleId = node.moduleId.toLowerCase();
-
-      // 检测入口特征
-      if (
-        name === 'main' ||                      // main函数
-        name === 'index' ||                     // index函数
-        name === 'start' ||                     // start函数
-        name === 'init' ||                      // init函数
-        name === 'run' ||                       // run函数
-        moduleId.includes('index.ts') ||        // index文件
-        moduleId.includes('main.ts') ||         // main文件
-        moduleId.includes('cli.ts') ||          // CLI入口
-        moduleId.includes('app.ts') ||          // app入口
-        moduleId.includes('server.ts')          // server入口
-      ) {
-        entryPoints.push(node.id);
-        console.log(`[Call Graph API] 检测到入口点: ${node.name} (${moduleId})`);
-      }
-    }
-
-    console.log(`[Call Graph API] 共找到 ${entryPoints.length} 个入口点`);
-
-    // 如果没有找到传统入口点，使用入度为0的节点（没有被调用的节点）
-    if (entryPoints.length === 0 && filteredNodes.length > 0) {
-      console.log('[Call Graph API] 未找到传统入口点，使用入度为0的节点');
-      const inDegree = new Map<string, number>();
-      filteredNodes.forEach(n => inDegree.set(n.id, 0));
-      filteredEdges.forEach(e => {
-        inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
-      });
-
-      for (const node of filteredNodes) {
-        if (inDegree.get(node.id) === 0) {
-          entryPoints.push(node.id);
-          console.log(`[Call Graph API] 入度为0的节点作为入口: ${node.name}`);
-        }
-      }
-
-      // 限制入口点数量
-      if (entryPoints.length > 10) {
-        entryPoints.splice(10);
-      }
-
-      console.log(`[Call Graph API] 使用 ${entryPoints.length} 个入度为0的节点作为入口点`);
-    }
-
-    // 如果找到入口点且有原始目标节点，查找调用链
-    if (entryPoints.length > 0 && originalTargetNodes.size > 0) {
-      console.log(`[Call Graph API] 从 ${entryPoints.length} 个入口点搜索到 ${originalTargetNodes.size} 个目标的调用链`);
-
-      const findPaths = (startId: string, targetId: string): string[][] => {
-        const paths: string[][] = [];
-        const visited = new Set<string>();
-        const currentPath: string[] = [];
-
-        const dfs = (nodeId: string) => {
-          if (nodeId === targetId) {
-            paths.push([...currentPath, nodeId]);
-            return;
-          }
-
-          if (visited.has(nodeId) || currentPath.length > 10) return; // 限制深度避免死循环
-
-          visited.add(nodeId);
-          currentPath.push(nodeId);
-
-          // 查找所有出边（使用完整的callGraph而不是filteredEdges，以找到更完整的路径）
-          for (const edge of callGraph.edges) {
-            if (edge.source === nodeId) {
-              dfs(edge.target);
-            }
-          }
-
-          currentPath.pop();
-          visited.delete(nodeId);
-        };
-
-        dfs(startId);
-        return paths;
-      };
-
-      // 为每个原始目标节点查找从所有入口点的路径
-      for (const targetId of originalTargetNodes) {
-        for (const entryId of entryPoints) {
-          const paths = findPaths(entryId, targetId);
-          if (paths.length > 0) {
-            console.log(`[Call Graph API] 找到 ${paths.length} 条从 ${entryId} 到 ${targetId} 的路径`);
-          }
-          callChains.push(...paths);
-        }
-      }
-
-      // 限制返回的路径数量（避免太多）
-      if (callChains.length > 10) {
-        callChains.splice(10);
-      }
-
-      console.log(`[Call Graph API] 找到 ${callChains.length} 条调用链`);
-    }
-
-    // 8. 构建结果
-    const result = {
-      data: {
-        nodes: filteredNodes,
-        edges: filteredEdges,
-        cycles: enableCycleDetection ? cycles : undefined,
-        callChains: callChains.length > 0 ? callChains : undefined,
-        entryPoints: entryPoints.map(id => {
-          const node = filteredNodes.find(n => n.id === id);
-          return node ? { id, name: node.name, moduleId: node.moduleId } : null;
-        }).filter(Boolean),
-      },
-      stats: {
-        totalNodes: callGraph.nodes.length,
-        totalEdges: callGraph.edges.length,
-        filteredNodes: filteredNodes.length,
-        filteredEdges: filteredEdges.length,
-        cycleCount: cycles.length,
-      },
-      metadata: {
-        usedLSP: true,
-        usedAI: enableAI && allEdges.length > 0,
-        detectedCycles: enableCycleDetection,
-        analysisTime: Date.now(),
-      },
-    };
-
-    // 9. 缓存结果
-    callGraphCache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now(),
-    });
-
-    res.json({
-      success: true,
-      ...result,
-    });
-  } catch (error: any) {
-    console.error('[Call Graph API] 错误:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 模块依赖图 API
-// ============================================================================
-
-/**
- * GET /api/blueprint/dependency-graph?module=src/core/client.ts
- *
- * 生成模块依赖图
- *
- * 参数:
- *   - module: 模块路径（可选）。如果提供，只分析该模块及其依赖；否则分析整个项目
- *   - depth: 依赖深度（默认：3）
- *   - includeTypeOnly: 是否包含纯类型导入（默认：false）
- *
- * 返回:
- *   - nodes: 模块节点列表，包含导入/导出信息
- *   - edges: 依赖边列表，表示模块间的导入关系
- *   - cycles: 循环依赖列表（如果存在）
- *   - stats: 依赖统计信息
- */
-router.get('/dependency-graph', async (req: Request, res: Response) => {
-  try {
-    const { module, depth = '3', includeTypeOnly = 'false' } = req.query;
-    const maxDepth = parseInt(depth as string) || 3;
-    const includeTypeOnlyImports = includeTypeOnly === 'true';
-
-    console.log('[Dependency Graph API] 请求参数:', { module, maxDepth, includeTypeOnlyImports });
-
-    const projectRoot = process.cwd();
-    const srcPath = path.join(projectRoot, 'src');
-
-    // 1. 扫描所有 TypeScript/JavaScript 文件
-    const allFiles: string[] = [];
-
-    const scanDir = (dir: string) => {
-      if (!fs.existsSync(dir)) return;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          // 跳过不需要的目录
-          if (['node_modules', 'dist', '.git', '.lh', 'coverage'].includes(entry.name)) continue;
-          scanDir(fullPath);
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name);
-          if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-            allFiles.push(fullPath);
-          }
-        }
-      }
-    };
-
-    scanDir(srcPath);
-    console.log(`[Dependency Graph API] 扫描到 ${allFiles.length} 个文件`);
-
-    if (allFiles.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          nodes: [],
-          edges: [],
-          cycles: [],
-          stats: {
-            totalEdges: 0,
-            internalDeps: 0,
-            typeOnlyDeps: 0,
-            dynamicDeps: 0,
-            mostDependent: [],
-            mostDepended: [],
-          },
-        },
-        message: '未找到任何源文件',
-      });
-    }
-
-    // 2. 解析所有文件的导入/导出
-    const { CodeMapAnalyzer } = await import('../../../map/analyzer.js');
-    const fileAnalyzer = new CodeMapAnalyzer(projectRoot);
-
-    const modules: ModuleNode[] = [];
-
-    // 限制文件数量（避免太慢），优先分析 src 目录
-    const filesToAnalyze = allFiles.slice(0, 200);
-    console.log(`[Dependency Graph API] 将分析 ${filesToAnalyze.length} 个文件`);
-
-    for (const file of filesToAnalyze) {
-      try {
-        const moduleNode = await fileAnalyzer.analyzeFile(file);
-        modules.push(moduleNode);
-      } catch (error) {
-        console.error(`[Dependency Graph API] 解析文件失败: ${file}`, error);
-      }
-    }
-
-    console.log(`[Dependency Graph API] 成功解析 ${modules.length} 个模块`);
-
-    // 3. 使用 DependencyAnalyzer 分析依赖关系
-    const { DependencyAnalyzer } = await import('../../../map/dependency-analyzer.js');
-    const analyzer = new DependencyAnalyzer();
-
-    let dependencyGraph = analyzer.analyzeDependencies(modules);
-
-    // 4. 如果指定了模块，过滤依赖图
-    let filteredModules = modules;
-    let filteredEdges = dependencyGraph.edges;
-
-    if (module && typeof module === 'string') {
-      console.log(`[Dependency Graph API] 过滤模块: ${module}`);
-
-      // 规范化模块路径
-      const normalizedModulePath = module.replace(/\\/g, '/');
-
-      // 查找目标模块
-      const targetModules = modules.filter(m => {
-        const normalizedId = m.id.replace(/\\/g, '/');
-        return normalizedId.includes(normalizedModulePath) || normalizedModulePath.includes(normalizedId);
-      });
-
-      if (targetModules.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: `未找到模块: ${module}`,
-        });
-      }
-
-      console.log(`[Dependency Graph API] 找到 ${targetModules.length} 个匹配的模块`);
-
-      // 扩展到相关模块（基于 depth）
-      const targetModuleIds = new Set(targetModules.map(m => m.id));
-      const relatedModuleIds = new Set<string>(targetModuleIds);
-
-      const expandModules = (moduleIds: Set<string>, currentDepth: number) => {
-        if (currentDepth >= maxDepth) return;
-
-        const newModuleIds = new Set<string>();
-
-        // 查找所有相关的依赖
-        for (const edge of dependencyGraph.edges) {
-          if (moduleIds.has(edge.source)) {
-            newModuleIds.add(edge.target);
-          }
-          if (moduleIds.has(edge.target)) {
-            newModuleIds.add(edge.source);
-          }
-        }
-
-        newModuleIds.forEach(id => relatedModuleIds.add(id));
-
-        if (newModuleIds.size > 0) {
-          expandModules(newModuleIds, currentDepth + 1);
-        }
-      };
-
-      expandModules(targetModuleIds, 0);
-
-      // 过滤模块和边
-      filteredModules = modules.filter(m => relatedModuleIds.has(m.id));
-      filteredEdges = dependencyGraph.edges.filter(e =>
-        relatedModuleIds.has(e.source) && relatedModuleIds.has(e.target)
-      );
-
-      console.log(`[Dependency Graph API] 过滤后模块数: ${filteredModules.length}, 边数: ${filteredEdges.length}`);
-    }
-
-    // 5. 过滤纯类型导入（如果需要）
-    if (!includeTypeOnlyImports) {
-      const beforeCount = filteredEdges.length;
-      filteredEdges = filteredEdges.filter(e => !e.isTypeOnly);
-      console.log(`[Dependency Graph API] 排除纯类型导入: ${beforeCount} -> ${filteredEdges.length}`);
-    }
-
-    // 6. 检测循环依赖
-    const cycles = analyzer.detectCircularDependencies({ edges: filteredEdges });
-    console.log(`[Dependency Graph API] 检测到 ${cycles.length} 个循环依赖`);
-
-    // 7. 获取统计信息
-    const stats = analyzer.getDependencyStats({ edges: filteredEdges });
-
-    // 8. 构建返回数据（简化版）
-    const nodes = filteredModules.map(m => ({
-      id: m.id,
-      name: m.name,
-      path: m.path,
-      language: m.language,
-      lines: m.lines,
-      imports: m.imports.map(imp => ({
-        source: imp.source,
-        symbols: imp.symbols,
-        isDefault: imp.isDefault,
-        isDynamic: imp.isDynamic,
-      })),
-      exports: m.exports.map(exp => ({
-        name: exp.name,
-        type: exp.type,
-      })),
-    }));
-
-    const edges = filteredEdges.map(e => ({
-      source: e.source,
-      target: e.target,
-      type: e.type,
-      symbols: e.symbols,
-      isTypeOnly: e.isTypeOnly,
-    }));
-
-    res.json({
-      success: true,
-      data: {
-        nodes,
-        edges,
-        cycles: cycles.length > 0 ? cycles : undefined,
-        stats,
-      },
-      metadata: {
-        totalModules: modules.length,
-        filteredModules: filteredModules.length,
-        totalEdges: dependencyGraph.edges.length,
-        filteredEdges: filteredEdges.length,
-        analysisTime: new Date().toISOString(),
-      },
-    });
-  } catch (error: any) {
-    console.error('[Dependency Graph API] 错误:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 数据流分析 API
-// ============================================================================
-
-/**
- * GET /api/blueprint/data-flow/:symbolId
- *
- * 获取数据流分析结果
- *
- * 追踪属性/变量的所有读写位置
- *
- * 参数:
- *   - symbolId: 符号ID，格式为 "filePath::symbolName" 或 "filePath::className::propertyName"
- *
- * 返回:
- *   - symbolId: 符号ID
- *   - symbolName: 符号名称
- *   - reads: 读取位置列表
- *   - writes: 写入位置列表
- *   - dataFlowGraph: 数据流图（可选）
- */
-router.get('/data-flow', async (req: Request, res: Response) => {
-  try {
-    const symbolId = req.query.symbolId as string;
-
-    if (!symbolId) {
       return res.status(400).json({
         success: false,
-        error: '缺少必需的参数: symbolId',
+        error: '缺少路径',
       });
     }
 
-    // 解码符号 ID
-    const decodedId = decodeURIComponent(symbolId);
+    const cwd = process.cwd();
+    const fullPath = path.isAbsolute(targetPath) ? targetPath : path.join(cwd, targetPath);
 
-    console.log('[Data Flow API] 分析符号:', decodedId);
-
-    // 执行数据流分析
-    const { DataFlowAnalyzer } = await import('./data-flow-analyzer.js');
-    const analyzer = new DataFlowAnalyzer();
-    const dataFlow = await analyzer.analyzeDataFlow(decodedId);
-
-    console.log('[Data Flow API] 分析完成:', {
-      symbolName: dataFlow.symbolName,
-      reads: dataFlow.reads.length,
-      writes: dataFlow.writes.length,
-    });
-
-    res.json({
-      success: true,
-      data: dataFlow,
-    });
-  } catch (error) {
-    console.error('[Data Flow API] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: (error as Error).message,
-    });
-  }
-});
-
-
-// ============================================================================
-// 符号浏览 API (LSP)
-// ============================================================================
-
-// 符号缓存（避免每次都扫描所有文件）
-let symbolsCache: {
-  data: Array<{
-    id: string;
-    name: string;
-    type: string;
-    moduleId: string;
-    signature?: string;
-    className?: string;
-  }>;
-  timestamp: number;
-} | null = null;
-
-const SYMBOLS_CACHE_TTL = 10 * 60 * 1000; // 10分钟
-
-/**
- * 获取符号列表（支持过滤）
- * GET /api/blueprint/symbols?type=function&module=src/core&search=handler
- *
- * 查询参数：
- * - type: 符号类型 (function/method/class/interface/type)
- * - module: 模块路径（支持部分匹配）
- * - search: 搜索词（匹配符号名称）
- */
-
-/**
- * 获取文件内容 API
- * GET /api/blueprint/file-content?path=xxx
- */
-router.get('/file-content', async (req: Request, res: Response) => {
-  try {
-    const filePath = req.query.path as string;
-
-    if (!filePath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少必需的参数: path',
-      });
-    }
-
-    const projectRoot = process.cwd();
-    let absolutePath: string;
-
-    // 处理相对路径和绝对路径
-    if (path.isAbsolute(filePath)) {
-      absolutePath = filePath;
-    } else {
-      absolutePath = path.join(projectRoot, filePath);
-    }
-
-    if (!fs.existsSync(absolutePath)) {
+    if (!fs.existsSync(fullPath)) {
       return res.status(404).json({
         success: false,
-        error: `文件不存在: ${filePath}`,
+        error: '文件或目录不存在',
       });
     }
 
-    const content = fs.readFileSync(absolutePath, 'utf-8');
-    const stats = fs.statSync(absolutePath);
-
-    res.json({
-      success: true,
-      data: {
-        path: filePath,
-        absolutePath,
-        content,
-        size: stats.size,
-        modified: stats.mtime.toISOString(),
-      },
-    });
-  } catch (error: any) {
-    console.error('[File Content API] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || '读取文件失败',
-    });
-  }
-});
-
-router.get('/symbols', async (req: Request, res: Response) => {
-  try {
-    const { type, module, search } = req.query;
-
-    console.log('[Symbols API] 查询参数:', { type, module, search });
-
-    // 检查缓存
-    if (symbolsCache && Date.now() - symbolsCache.timestamp < SYMBOLS_CACHE_TTL) {
-      console.log('[Symbols API] 使用缓存的符号列表');
+    const stats = fs.statSync(fullPath);
+    if (stats.isDirectory()) {
+      fs.rmSync(fullPath, { recursive: true });
     } else {
-      console.log('[Symbols API] 重新扫描符号...');
-
-      const projectRoot = process.cwd();
-      const tsFiles: string[] = [];
-      const srcPath = path.join(projectRoot, 'src');
-
-      // 扫描 TypeScript 文件
-      const scanDir = (dir: string) => {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            if (['node_modules', 'dist', '.git', '.lh'].includes(entry.name)) continue;
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name);
-            if (['.ts', '.tsx'].includes(ext)) {
-              tsFiles.push(fullPath);
-            }
-          }
-        }
-      };
-
-      scanDir(srcPath);
-      console.log(`[Symbols API] 扫描到 ${tsFiles.length} 个 TypeScript 文件`);
-
-      // 初始化 LSP 分析器（复用全局实例）
-      if (!lspAnalyzer) {
-        const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
-        lspAnalyzer = new TypeScriptLSPAnalyzer();
-        lspAnalyzer.initProgram(tsFiles, projectRoot);
-        console.log('[Symbols API] LSP 分析器已初始化');
-      }
-
-      // 提取所有符号
-      const allSymbols: Array<{
-        id: string;
-        name: string;
-        type: string;
-        moduleId: string;
-        signature?: string;
-        className?: string;
-      }> = [];
-
-      for (const file of tsFiles) {
-        try {
-          const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(file);
-          const relativePath = path.relative(projectRoot, file);
-
-          // 添加函数
-          for (const func of functions) {
-            allSymbols.push({
-              id: func.id,
-              name: func.name,
-              type: 'function',
-              moduleId: relativePath,
-              signature: func.signature,
-            });
-          }
-
-          // 添加类和类方法
-          for (const cls of classes) {
-            // 添加类本身
-            const exportStr = cls.isExported ? 'export ' : '';
-            const abstractStr = cls.isAbstract ? 'abstract ' : '';
-            allSymbols.push({
-              id: cls.id,
-              name: cls.name,
-              type: 'class',
-              moduleId: relativePath,
-              signature: `${exportStr}${abstractStr}class ${cls.name}`,
-            });
-
-            // 添加类方法
-            for (const method of cls.methods) {
-              allSymbols.push({
-                id: method.id,
-                name: method.name,
-                type: method.name === 'constructor' ? 'constructor' : 'method',
-                moduleId: relativePath,
-                className: cls.name,
-                signature: method.signature,
-              });
-            }
-          }
-
-          // 添加接口
-          for (const iface of interfaces) {
-            const exportStr = iface.isExported ? 'export ' : '';
-            allSymbols.push({
-              id: iface.id,
-              name: iface.name,
-              type: 'interface',
-              moduleId: relativePath,
-              signature: `${exportStr}interface ${iface.name}`,
-            });
-          }
-
-          // 添加类型别名
-          for (const typeNode of types) {
-            const exportStr = typeNode.isExported ? 'export ' : '';
-            allSymbols.push({
-              id: typeNode.id,
-              name: typeNode.name,
-              type: 'type',
-              moduleId: relativePath,
-              signature: `${exportStr}type ${typeNode.name}`,
-            });
-          }
-        } catch (error) {
-          console.error(`[Symbols API] 分析文件失败: ${file}`, error);
-        }
-      }
-
-      // 更新缓存
-      symbolsCache = {
-        data: allSymbols,
-        timestamp: Date.now(),
-      };
-
-      console.log(`[Symbols API] 提取到 ${allSymbols.length} 个符号`);
+      fs.unlinkSync(fullPath);
     }
-
-    // 应用过滤
-    let filteredSymbols = symbolsCache.data;
-
-    // 过滤：按类型
-    if (type && typeof type === 'string') {
-      filteredSymbols = filteredSymbols.filter(s => s.type === type);
-    }
-
-    // 过滤：按模块
-    if (module && typeof module === 'string') {
-      const normalizedModule = (module as string).replace(/\\/g, '/');
-      filteredSymbols = filteredSymbols.filter(s =>
-        s.moduleId.replace(/\\/g, '/').includes(normalizedModule)
-      );
-    }
-
-    // 过滤：按搜索词
-    if (search && typeof search === 'string') {
-      const searchLower = (search as string).toLowerCase();
-      filteredSymbols = filteredSymbols.filter(s =>
-        s.name.toLowerCase().includes(searchLower) ||
-        (s.className && s.className.toLowerCase().includes(searchLower))
-      );
-    }
-
-    console.log(`[Symbols API] 过滤后剩余 ${filteredSymbols.length} 个符号`);
 
     res.json({
       success: true,
-      data: filteredSymbols,
-      count: filteredSymbols.length,
-      cached: symbolsCache !== null,
+      data: { path: targetPath },
     });
   } catch (error: any) {
-    console.error('[Symbols API] 错误:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
- * 获取符号详情
- * GET /api/blueprint/symbol/:id/detail
- *
- * 符号 ID 格式:
- * - 函数/类/接口/类型: "file.ts::symbolName"
- * - 类方法: "file.ts::ClassName::methodName"
+ * POST /file-operation/rename
+ * 重命名文件或目录
  */
-router.get('/symbol-detail', async (req: Request, res: Response) => {
-  try {
-    const id = req.query.id as string;
-
-    if (!id) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少必需的参数: id',
-      });
-    }
-
-    console.log(`[Symbol Detail API] 查询符号: ${id}`);
-
-    // 解析符号 ID
-    // ID 格式: "file.ts::symbolName" 或 "file.ts::ClassName::methodName"
-    const parts = id.split('::');
-    if (parts.length < 2) {
-      return res.status(400).json({
-        success: false,
-        error: `无效的符号 ID 格式: ${id}`,
-        hint: 'ID 格式应为 "file.ts::symbolName" 或 "file.ts::ClassName::methodName"',
-      });
-    }
-
-    const filePath = parts[0];
-    const symbolName = parts[parts.length - 1];
-
-    console.log(`[Symbol Detail API] 文件: ${filePath}, 符号: ${symbolName}`);
-
-    // 构建绝对路径（处理相对路径和绝对路径两种情况）
-    const projectRoot = process.cwd();
-    let absolutePath: string;
-
-    // 检查是否为绝对路径
-    if (path.isAbsolute(filePath)) {
-      absolutePath = filePath;
-    } else {
-      absolutePath = path.join(projectRoot, filePath);
-    }
-
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({
-        success: false,
-        error: `文件不存在: ${filePath}`,
-      });
-    }
-
-    // 初始化 LSP 分析器（复用全局实例）
-    if (!lspAnalyzer) {
-      const tsFiles: string[] = [];
-      const srcPath = path.join(projectRoot, 'src');
-
-      const scanDir = (dir: string) => {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            if (['node_modules', 'dist', '.git', '.lh'].includes(entry.name)) continue;
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name);
-            if (['.ts', '.tsx'].includes(ext)) {
-              tsFiles.push(fullPath);
-            }
-          }
-        }
-      };
-
-      scanDir(srcPath);
-
-      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
-      lspAnalyzer = new TypeScriptLSPAnalyzer();
-      lspAnalyzer.initProgram(tsFiles, projectRoot);
-      console.log('[Symbol Detail API] LSP 分析器已初始化');
-    }
-
-    // 分析文件
-    const { functions, classes, interfaces, types } = lspAnalyzer.analyzeFile(absolutePath);
-
-    console.log(`[Symbol Detail API] 分析结果 - 函数: ${functions.length}, 类: ${classes.length}, 接口: ${interfaces.length}, 类型: ${types.length}`);
-
-    // 查找符号
-    let detail: any = null;
-    let symbolType = 'unknown';
-
-    // 在 functions 中查找
-    const func = functions.find(f => f.name === symbolName);
-    if (func) {
-      detail = func;
-      symbolType = 'function';
-    }
-
-    // 在 classes 中查找
-    if (!detail) {
-      const cls = classes.find(c => c.name === symbolName);
-      if (cls) {
-        detail = cls;
-        symbolType = 'class';
-      } else {
-        // 查找类的方法
-        for (const cls of classes) {
-          const method = cls.methods.find(m => m.name === symbolName);
-          if (method) {
-            detail = { ...method, className: cls.name };
-            symbolType = 'method';
-            break;
-          }
-        }
-      }
-    }
-
-    // 在 interfaces 中查找
-    if (!detail) {
-      const iface = interfaces.find(i => i.name === symbolName);
-      if (iface) {
-        detail = iface;
-        symbolType = 'interface';
-      }
-    }
-
-    // 在 types 中查找
-    if (!detail) {
-      const typeNode = types.find(t => t.name === symbolName);
-      if (typeNode) {
-        detail = typeNode;
-        symbolType = 'type';
-      }
-    }
-
-    if (!detail) {
-      return res.status(404).json({
-        success: false,
-        error: `符号 "${symbolName}" 未在文件 "${filePath}" 中找到`,
-        hint: `可用符号: ${[
-          ...functions.map(f => f.name),
-          ...classes.map(c => c.name),
-          ...interfaces.map(i => i.name),
-          ...types.map(t => t.name),
-        ].join(', ')}`,
-      });
-    }
-
-    // 获取符号分类信息
-    const classification = classifySymbol(symbolType);
-
-    console.log(`[Symbol Detail API] 找到符号: ${symbolName} (${symbolType})`);
-
-    res.json({
-      success: true,
-      data: {
-        ...detail,
-        symbolType,
-        classification,
-        availableViews: classification.supportedViews,
-      },
-    });
-  } catch (error: any) {
-    console.error('[Symbol Detail API] 错误:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 获取入口点的调用路径追踪
- * 用于代码地图的数据流向可视化
- */
-router.get('/call-paths', async (req: Request, res: Response) => {
-  try {
-    const { entryPoint, maxDepth = '5' } = req.query;
-    const depth = parseInt(maxDepth as string, 10) || 5;
-
-    console.log('[Call Paths API] 请求参数:', { entryPoint, maxDepth: depth });
-
-    const projectRoot = process.cwd();
-
-    // 1. 扫描TypeScript文件
-    const tsFiles: string[] = [];
-    const srcPath = path.join(projectRoot, 'src');
-
-    const scanDir = (dir: string) => {
-      if (!fs.existsSync(dir)) return;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const ent of entries) {
-        const fullPath = path.join(dir, ent.name);
-        if (ent.isDirectory()) {
-          if (['node_modules', 'dist', '.git', '.lh'].includes(ent.name)) continue;
-          scanDir(fullPath);
-        } else if (ent.isFile()) {
-          const ext = path.extname(ent.name);
-          if (['.ts', '.tsx'].includes(ext)) {
-            tsFiles.push(fullPath);
-          }
-        }
-      }
-    };
-
-    scanDir(srcPath);
-    console.log(`[Call Paths API] 扫描到 ${tsFiles.length} 个TypeScript文件`);
-
-    // 2. 检测入口点
-    const { detectEntryPoints } = await import('./project-map-generator.js');
-    const entryPoints = await detectEntryPoints(tsFiles);
-
-    // 如果没有指定入口点，返回所有入口点列表
-    if (!entryPoint) {
-      return res.json({
-        success: true,
-        data: {
-          entryPoints,
-          message: '请选择一个入口点',
-        },
-      });
-    }
-
-    // 3. 找到指定的入口点
-    const entry = entryPoints.find(
-      (e: any) => e.id === entryPoint || e.moduleId === entryPoint
-    );
-
-    if (!entry) {
-      return res.status(404).json({
-        success: false,
-        error: `入口点 "${entryPoint}" 未找到`,
-      });
-    }
-
-    console.log('[Call Paths API] 入口点:', entry);
-
-    // 4. 初始化LSP分析器
-    if (!lspAnalyzer) {
-      const { TypeScriptLSPAnalyzer } = await import('./lsp-analyzer.js');
-      lspAnalyzer = new TypeScriptLSPAnalyzer();
-      lspAnalyzer.initProgram(tsFiles, projectRoot);
-      console.log('[Call Paths API] LSP分析器已初始化');
-    }
-
-    // 5. 构建调用图（复用 /call-graph 的逻辑）
-    const allNodes: CallGraphNode[] = [];
-    const allEdges: CallGraphEdge[] = [];
-    const symbolMap = new Map<string, CallGraphNode>();
-
-    // 限制分析的文件数量（避免太慢）
-    const filesToAnalyze = tsFiles.slice(0, 100);
-    console.log(`[Call Paths API] 将分析 ${filesToAnalyze.length} 个文件`);
-
-    for (const file of filesToAnalyze) {
-      try {
-        const { functions, classes } = lspAnalyzer.analyzeFile(file);
-        const relativePath = path.relative(projectRoot, file);
-
-        // 添加函数节点
-        for (const func of functions) {
-          const node: CallGraphNode = {
-            id: func.id,
-            name: func.name,
-            type: 'function',
-            moduleId: relativePath,
-            signature: func.signature,
-          };
-          allNodes.push(node);
-          symbolMap.set(func.name, node);
-          symbolMap.set(func.id, node);
-        }
-
-        // 添加类方法节点
-        for (const cls of classes) {
-          for (const method of cls.methods) {
-            const node: CallGraphNode = {
-              id: method.id,
-              name: method.name,
-              type: method.name === 'constructor' ? 'constructor' : 'method',
-              moduleId: relativePath,
-              className: cls.name,
-              signature: method.signature,
-            };
-            allNodes.push(node);
-            symbolMap.set(`${cls.name}.${method.name}`, node);
-            symbolMap.set(method.id, node);
-          }
-        }
-
-        // 提取调用关系（简化版本，只提取直接调用）
-        for (const func of functions) {
-          if (func.calls) {
-            for (const call of func.calls) {
-              const targetNode = symbolMap.get(call);
-              if (targetNode) {
-                allEdges.push({
-                  source: func.id,
-                  target: targetNode.id,
-                  type: 'direct',
-                  count: 1,
-                  locations: [],
-                });
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`[Call Paths API] 分析文件失败: ${file}`, error);
-      }
-    }
-
-    console.log(`[Call Paths API] 调用图: ${allNodes.length} 节点, ${allEdges.length} 边`);
-
-    // 6. 从入口点开始追踪调用路径
-    // 找到入口点对应的节点
-    const entryNodes = allNodes.filter(n => {
-      // 使用 moduleId 匹配入口点（moduleId 是相对路径）
-      return n.moduleId === entry.moduleId || n.moduleId.includes(entry.moduleId);
-    });
-
-    console.log(`[Call Paths API] 找到 ${entryNodes.length} 个入口节点`);
-
-    // 7. BFS 追踪所有可达节点
-    const filePathMap = new Map<string, { depth: number; callCount: number; paths: string[][] }>();
-    const visited = new Set<string>();
-    const queue: Array<{ nodeId: string; depth: number; path: string[] }> = [];
-
-    // 初始化队列
-    for (const node of entryNodes) {
-      queue.push({ nodeId: node.id, depth: 0, path: [node.moduleId] });
-      visited.add(node.id);
-
-      filePathMap.set(node.moduleId, { depth: 0, callCount: 1, paths: [[node.moduleId]] });
-    }
-
-    // BFS 遍历
-    while (queue.length > 0) {
-      const { nodeId, depth: currentDepth, path: currentPath } = queue.shift()!;
-
-      if (currentDepth >= depth) continue;
-
-      // 找到所有出边
-      const outEdges = allEdges.filter(e => e.source === nodeId);
-
-      for (const edge of outEdges) {
-        const targetNode = allNodes.find(n => n.id === edge.target);
-        if (!targetNode) continue;
-
-        const targetModuleId = targetNode.moduleId;
-        const newPath = [...currentPath, targetModuleId];
-
-        // 更新文件路径映射
-        if (!filePathMap.has(targetModuleId)) {
-          filePathMap.set(targetModuleId, { depth: currentDepth + 1, callCount: 0, paths: [] });
-        }
-
-        const fileInfo = filePathMap.get(targetModuleId)!;
-        fileInfo.callCount++;
-        fileInfo.paths.push(newPath);
-
-        // 更新深度（保留最短路径深度）
-        if (currentDepth + 1 < fileInfo.depth) {
-          fileInfo.depth = currentDepth + 1;
-        }
-
-        // 继续遍历
-        if (!visited.has(edge.target)) {
-          visited.add(edge.target);
-          queue.push({ nodeId: edge.target, depth: currentDepth + 1, path: newPath });
-        }
-      }
-    }
-
-    // 8. 构建返回数据
-    const paths = Array.from(filePathMap.entries()).map(([filePath, info]) => ({
-      file: filePath,
-      depth: info.depth,
-      callCount: info.callCount,
-      paths: info.paths.slice(0, 5), // 最多返回5条路径示例
-    }));
-
-    // 按深度和调用次数排序
-    paths.sort((a, b) => {
-      if (a.depth !== b.depth) return a.depth - b.depth;
-      return b.callCount - a.callCount;
-    });
-
-    console.log(`[Call Paths API] 追踪到 ${paths.length} 个文件`);
-
-    res.json({
-      success: true,
-      data: {
-        entryPoint: {
-          id: entry.id,
-          name: entry.name,
-          moduleId: entry.moduleId,
-        },
-        paths,
-        stats: {
-          totalFiles: paths.length,
-          maxDepth: Math.max(...paths.map(p => p.depth), 0),
-          totalCalls: paths.reduce((sum, p) => sum + p.callCount, 0),
-        },
-      },
-    });
-  } catch (error: any) {
-    console.error('[Call Paths API] 错误:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 洋葱架构导航器 API (Onion Navigator)
-// ============================================================================
-
-import {
-  analyzeProjectIntent,
-  analyzeBusinessDomains,
-  analyzeKeyProcesses,
-  analyzeImplementation,
-  generateAIAnnotation,
-  // 带缓存状态的分析函数
-  analyzeProjectIntentWithCache,
-  analyzeBusinessDomainsWithCache,
-  analyzeKeyProcessesWithCache,
-  analyzeImplementationWithCache,
-  // 标注更新函数
-  updateAnnotation,
-  getUserAnnotation,
-} from './onion-analyzer.js';
-import { OnionLayer } from '../../shared/onion-types.js';
-
-/**
- * 获取指定层级的洋葱数据
- * GET /api/blueprint/onion/layer/:layer
- *
- * 路径参数:
- * - layer: 1-4 (PROJECT_INTENT | BUSINESS_DOMAIN | KEY_PROCESS | IMPLEMENTATION)
- *
- * 查询参数:
- * - context: JSON 字符串，包含 fromLayer 和 nodeId
- * - forceRefresh: boolean
- * - filePath: 第四层需要的文件路径
- * - symbolId: 第四层可选的符号ID
- * - enableAI: boolean - 是否启用 AI 分析生成关键点（默认 true）
- */
-router.get('/onion/layer/:layer', async (req: Request, res: Response) => {
-  try {
-    const layer = parseInt(req.params.layer, 10) as OnionLayer;
-    const contextStr = req.query.context as string;
-    const forceRefresh = req.query.forceRefresh === 'true';
-    const filePath = req.query.filePath as string;
-    const symbolId = req.query.symbolId as string;
-    const nodeId = req.query.nodeId as string; // 直接获取 nodeId 参数
-    const fromLayer = req.query.fromLayer as string;
-    const enableAI = req.query.enableAI !== 'false'; // 默认启用 AI
-
-    if (layer < 1 || layer > 4) {
-      return res.status(400).json({
-        success: false,
-        error: '无效的层级，必须是 1-4',
-      });
-    }
-
-    const projectRoot = process.cwd();
-    const startTime = Date.now();
-
-    let data: any;
-    let context: any;
-
-    // 优先使用直接传递的 nodeId 和 fromLayer 参数
-    if (nodeId || fromLayer) {
-      context = { nodeId, fromLayer };
-    } else if (contextStr) {
-      // 兼容旧的 context JSON 格式
-      try {
-        context = JSON.parse(contextStr);
-      } catch (e) {
-        console.warn('[Onion API] 无法解析 context:', contextStr);
-      }
-    }
-
-    console.log(`[Onion API] 请求层级 ${layer}，nodeId: ${nodeId || context?.nodeId || '无'}`);
-
-    // 使用带缓存状态的分析函数，追踪数据是否来自缓存
-    let fromCache = false;
-
-    switch (layer) {
-      case OnionLayer.PROJECT_INTENT: {
-        const result = await analyzeProjectIntentWithCache(projectRoot);
-        data = result.data;
-        fromCache = result.fromCache;
-        break;
-      }
-
-      case OnionLayer.BUSINESS_DOMAIN: {
-        const result = await analyzeBusinessDomainsWithCache(projectRoot);
-        data = result.data;
-        fromCache = result.fromCache;
-        break;
-      }
-
-      case OnionLayer.KEY_PROCESS: {
-        const result = await analyzeKeyProcessesWithCache(projectRoot, context?.nodeId, forceRefresh);
-        data = result.data;
-        fromCache = result.fromCache;
-        break;
-      }
-
-      case OnionLayer.IMPLEMENTATION: {
-        if (!filePath) {
-          return res.status(400).json({
-            success: false,
-            error: '第四层需要提供 filePath 参数',
-          });
-        }
-        const result = await analyzeImplementationWithCache(projectRoot, filePath, symbolId);
-        data = result.data;
-        fromCache = result.fromCache;
-        break;
-      }
-    }
-
-    // 如果启用 AI 分析，且 annotation.keyPoints 包含占位符，则触发 AI 分析
-    if (enableAI && data?.annotation) {
-      const keyPoints = data.annotation.keyPoints || [];
-      const hasPlaceholder = keyPoints.some((kp: string) =>
-        kp.includes('待 AI 分析') || kp.includes('分析中')
-      );
-
-      if (hasPlaceholder) {
-        console.log(`[Onion API] 检测到占位符，触发 AI 分析: layer=${layer}`);
-
-        try {
-          const targetType = layer === OnionLayer.PROJECT_INTENT ? 'project'
-            : layer === OnionLayer.BUSINESS_DOMAIN ? 'module'
-            : layer === OnionLayer.KEY_PROCESS ? 'process'
-            : 'file';
-
-          const aiAnnotation = await generateAIAnnotation(
-            targetType,
-            data.annotation.targetId || 'project',
-            { projectRoot }
-          );
-
-          // 用 AI 分析结果更新 annotation
-          data.annotation = {
-            ...data.annotation,
-            summary: aiAnnotation.summary,
-            description: aiAnnotation.description,
-            keyPoints: aiAnnotation.keyPoints,
-            confidence: aiAnnotation.confidence,
-            analyzedAt: aiAnnotation.analyzedAt,
-          };
-
-          console.log(`[Onion API] AI 分析完成，关键点: ${aiAnnotation.keyPoints.length} 个`);
-        } catch (aiError: any) {
-          console.error('[Onion API] AI 分析失败，保持原有数据:', aiError.message);
-          // AI 分析失败不影响返回数据，保持原有占位符
-        }
-      }
-    }
-
-    const analysisTime = Date.now() - startTime;
-
-    res.json({
-      success: true,
-      layer,
-      data,
-      analysisTime,
-      fromCache, // 从分析器返回的缓存状态
-    });
-  } catch (error: any) {
-    console.error('[Onion API] 层级数据获取错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * 触发 AI 分析生成语义标注
- * POST /api/blueprint/onion/analyze
- *
- * 请求体:
- * {
- *   targetType: 'project' | 'module' | 'file' | 'symbol' | 'process',
- *   targetId: string,
- *   context?: { projectName, relatedModules }
- * }
- */
-router.post('/onion/analyze', async (req: Request, res: Response) => {
-  try {
-    const { targetType, targetId, context } = req.body;
-
-    if (!targetType || !targetId) {
-      return res.status(400).json({
-        success: false,
-        error: '需要提供 targetType 和 targetId',
-      });
-    }
-
-    const annotation = await generateAIAnnotation(targetType, targetId, context);
-
-    res.json({
-      success: true,
-      annotation,
-    });
-  } catch (error: any) {
-    console.error('[Onion API] AI 分析错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * 获取特定流程的详细步骤
- * GET /api/blueprint/onion/process-flow/:processId
- */
-router.get('/onion/process-flow/:processId', async (req: Request, res: Response) => {
-  try {
-    const { processId } = req.params;
-    const projectRoot = process.cwd();
-
-    // 获取所有流程数据
-    const processData = await analyzeKeyProcesses(projectRoot);
-
-    // 查找指定流程
-    const targetProcess = processData.processes.find(p => p.id === processId);
-
-    if (!targetProcess) {
-      return res.status(404).json({
-        success: false,
-        error: '流程未找到',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: targetProcess,
-    });
-  } catch (error: any) {
-    console.error('[Onion API] 流程详情获取错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-/**
- * 用户修改语义标注
- * PUT /api/blueprint/onion/annotation/:annotationId
- *
- * 请求体:
- * {
- *   summary?: string,
- *   description?: string,
- *   keyPoints?: string[]
- * }
- */
-router.put('/onion/annotation/:annotationId', async (req: Request, res: Response) => {
-  try {
-    const { annotationId } = req.params;
-    const { summary, description, keyPoints } = req.body;
-
-    // 参数校验
-    if (!annotationId) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 annotationId 参数',
-      });
-    }
-
-    // 至少需要一个更新字段
-    if (summary === undefined && description === undefined && keyPoints === undefined) {
-      return res.status(400).json({
-        success: false,
-        error: '请提供至少一个要更新的字段（summary, description, keyPoints）',
-      });
-    }
-
-    // 校验 keyPoints 格式
-    if (keyPoints !== undefined && !Array.isArray(keyPoints)) {
-      return res.status(400).json({
-        success: false,
-        error: 'keyPoints 必须是字符串数组',
-      });
-    }
-
-    // 调用 updateAnnotation 更新标注并持久化到 ~/.claude/annotations.json
-    const updatedAnnotation = updateAnnotation(annotationId, {
-      summary,
-      description,
-      keyPoints,
-    });
-
-    if (!updatedAnnotation) {
-      return res.status(404).json({
-        success: false,
-        error: `未找到标注: ${annotationId}`,
-      });
-    }
-
-    console.log(`[Onion API] 标注更新成功: ${annotationId}`);
-
-    res.json({
-      success: true,
-      message: '标注已更新并持久化',
-      annotationId,
-      annotation: updatedAnnotation,
-    });
-  } catch (error: any) {
-    console.error('[Onion API] 标注更新错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// ============================================================================
-// 符号语义分析 API
-// ============================================================================
-
-/**
- * 符号分析缓存
- * key: filePath:symbolName:line
- * 基于文件修改时间判断缓存是否有效
- */
-const symbolAnalysisCache = new Map<string, {
-  data: any;
-  fileMtime: number; // 文件修改时间
-}>();
-
-/**
- * 分析代码符号（函数、类、方法等）
- * 返回语义描述、调用链、参数说明等信息
- */
-router.post('/analyze-symbol', async (req: Request, res: Response) => {
-  try {
-    const { filePath, symbolName, symbolKind, lineNumber, detail } = req.body;
-
-    if (!filePath || !symbolName) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少必要参数: filePath, symbolName',
-      });
-    }
-
-    const absolutePath = path.resolve(process.cwd(), filePath);
-
-    // 检查文件是否存在
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({
-        success: false,
-        error: `文件不存在: ${filePath}`,
-      });
-    }
-
-    // 获取文件修改时间
-    const stats = fs.statSync(absolutePath);
-    const currentMtime = stats.mtimeMs;
-
-    // 检查缓存（基于文件修改时间）
-    const cacheKey = `${filePath}:${symbolName}:${lineNumber || 0}`;
-    const cached = symbolAnalysisCache.get(cacheKey);
-    if (cached && cached.fileMtime === currentMtime) {
-      console.log(`[Analyze Symbol] 使用缓存 (文件未变化): ${symbolName} @ ${filePath}`);
-      return res.json({
-        success: true,
-        data: { ...cached.data, fromCache: true },
-      });
-    }
-
-    // 如果文件已修改，清除旧缓存
-    if (cached) {
-      console.log(`[Analyze Symbol] 文件已修改，清除旧缓存: ${symbolName} @ ${filePath}`);
-    }
-
-    const totalStart = Date.now();
-    console.log(`[Analyze Symbol] 开始分析符号: ${symbolName} (${symbolKind}) @ ${filePath}:${lineNumber}`);
-
-    // 读取文件内容
-    let t1 = Date.now();
-    const fileContent = fs.readFileSync(absolutePath, 'utf-8');
-    const lines = fileContent.split('\n');
-    console.log(`[Analyze Symbol] 读取文件耗时: ${Date.now() - t1}ms`);
-
-    // 提取符号上下文（符号定义前后的代码，减少上下文加速 AI 分析）
-    const targetLine = lineNumber ? lineNumber - 1 : 0;
-    const contextStart = Math.max(0, targetLine - 3);
-    const contextEnd = Math.min(lines.length, targetLine + 50); // 从 50 减到 20 行
-    const symbolContext = lines.slice(contextStart, contextEnd).join('\n');
-
-    // 分析文件内调用关系
-    t1 = Date.now();
-    const internalCalls = analyzeInternalCalls(fileContent, symbolName, symbolKind);
-    console.log(`[Analyze Symbol] analyzeInternalCalls 耗时: ${Date.now() - t1}ms`);
-
-    // 分析跨文件调用关系
-    t1 = Date.now();
-    const externalReferences = analyzeExternalReferences(filePath, symbolName);
-    console.log(`[Analyze Symbol] analyzeExternalReferences 耗时: ${Date.now() - t1}ms, 找到 ${externalReferences.length} 个引用`);
-
-    // 获取 AI 客户端 - 使用 Haiku 模型加速简单分析
-    const { createClientWithModel } = await import('../../../core/client.js');
-    const client = createClientWithModel('haiku');
-
-    // 构建分析提示
-    const prompt = `请分析以下代码符号并生成语义分析报告。
-
-## 符号信息
-- 名称: ${symbolName}
-- 类型: ${symbolKind}
-- 文件: ${filePath}
-- 行号: ${lineNumber || '未知'}
-${detail ? `- 类型签名: ${detail}` : ''}
-
-## 符号代码上下文
-\`\`\`
-${symbolContext}
-\`\`\`
-
-## 文件内调用关系
-- 被调用位置: ${internalCalls.calledBy.length > 0 ? internalCalls.calledBy.map(c => `第${c.line}行 ${c.caller}`).join(', ') : '无'}
-- 调用的符号: ${internalCalls.calls.length > 0 ? internalCalls.calls.join(', ') : '无'}
-
-## 跨文件引用
-${externalReferences.length > 0 ? externalReferences.map(r => `- ${r.file}: ${r.imports.join(', ')}`).join('\n') : '无外部引用'}
-
-请返回以下 JSON 格式的分析结果（只返回 JSON，不要其他内容）：
-{
-  "semanticDescription": "这个${symbolKind === 'function' || symbolKind === 'method' ? '函数/方法' : symbolKind === 'class' ? '类' : '符号'}的核心功能是什么，用通俗易懂的语言描述，让新手也能理解",
-  "purpose": "这个符号存在的目的和解决的问题",
-  "parameters": [{"name": "参数名", "type": "类型", "description": "参数作用说明"}],
-  "returnValue": {"type": "返回类型", "description": "返回值说明"},
-  "usageExample": "一个简短的使用示例代码",
-  "relatedConcepts": ["相关的编程概念或设计模式"],
-  "complexity": "low|medium|high",
-  "tips": ["给新手的使用提示"]
-}`;
-
-    // 调用 AI 分析
-    t1 = Date.now();
-    console.log(`[Analyze Symbol] 开始调用 AI...`);
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码教育专家，擅长用通俗易懂的语言解释复杂的代码。分析代码符号并返回结构化的 JSON 结果。只返回 JSON，不要其他内容。'
-    );
-    console.log(`[Analyze Symbol] AI 调用耗时: ${Date.now() - t1}ms`);
-    console.log(`[Analyze Symbol] AI 输入: ${prompt}`);
-    // 提取响应文本
-    let analysisText = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        analysisText += block.text;
-      }
-    }
-
-    // 解析 JSON
-    let analysis: Record<string, any>;
-    try {
-      analysis = JSON.parse(analysisText.trim());
-    } catch {
-      const jsonMatch = analysisText.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[1]);
-      } else {
-        const bareJsonMatch = analysisText.match(/\{[\s\S]*\}/);
-        if (bareJsonMatch) {
-          analysis = JSON.parse(bareJsonMatch[0]);
-        } else {
-          throw new Error(`无法解析 AI 返回的 JSON`);
-        }
-      }
-    }
-
-    // 组装完整结果
-    const result = {
-      symbolName,
-      symbolKind,
-      filePath,
-      lineNumber,
-      detail,
-      ...analysis,
-      internalCalls,
-      externalReferences,
-      analyzedAt: new Date().toISOString(),
-    };
-
-    // 保存到缓存
-    symbolAnalysisCache.set(cacheKey, {
-      data: result,
-      fileMtime: currentMtime, // 使用文件修改时间作为缓存依据
-    });
-
-    console.log(`[Analyze Symbol] 分析完成: ${symbolName}, 总耗时: ${Date.now() - totalStart}ms`);
-
-    res.json({
-      success: true,
-      data: { ...result, fromCache: false },
-    });
-  } catch (error: any) {
-    console.error('[Analyze Symbol Error]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 分析文件内调用关系
- */
-function analyzeInternalCalls(fileContent: string, symbolName: string, symbolKind: string): {
-  calledBy: Array<{ line: number; caller: string }>;
-  calls: string[];
-} {
-  const lines = fileContent.split('\n');
-  const calledBy: Array<{ line: number; caller: string }> = [];
-  const calls: string[] = [];
-
-  // 简单的正则匹配来找调用关系
-  const callPattern = new RegExp(`\\b${symbolName}\\s*\\(`, 'g');
-
-  // 找到当前符号被调用的位置
-  let currentFunction = '';
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 检测函数/方法定义（简化版）
-    const funcMatch = line.match(/(?:function|const|let|var)\s+(\w+)|(\w+)\s*[=:]\s*(?:async\s*)?\(|(\w+)\s*\(/);
-    if (funcMatch) {
-      currentFunction = funcMatch[1] || funcMatch[2] || funcMatch[3] || '';
-    }
-
-    // 检测对目标符号的调用
-    if (callPattern.test(line) && currentFunction !== symbolName) {
-      calledBy.push({ line: i + 1, caller: currentFunction || '顶层代码' });
-    }
-    callPattern.lastIndex = 0; // 重置正则
-  }
-
-  // 如果是函数/方法，分析它调用了哪些其他符号
-  if (symbolKind === 'function' || symbolKind === 'method') {
-    // 简单提取函数体中的调用
-    const funcCallPattern = /(\w+)\s*\(/g;
-    let match;
-    while ((match = funcCallPattern.exec(fileContent)) !== null) {
-      const calledFunc = match[1];
-      // 排除常见的关键字和自身
-      if (!['if', 'for', 'while', 'switch', 'catch', 'function', 'return', symbolName].includes(calledFunc)) {
-        if (!calls.includes(calledFunc)) {
-          calls.push(calledFunc);
-        }
-      }
-    }
-  }
-
-  return { calledBy: calledBy.slice(0, 10), calls: calls.slice(0, 10) };
-}
-
-/**
- * 分析跨文件引用
- */
-function analyzeExternalReferences(filePath: string, symbolName: string): Array<{ file: string; imports: string[] }> {
-  const references: Array<{ file: string; imports: string[] }> = [];
-
-  try {
-    // 获取 src 目录下的所有 ts/tsx/js/jsx 文件
-    const srcDir = path.resolve(process.cwd(), 'src');
-    if (!fs.existsSync(srcDir)) {
-      return references;
-    }
-
-    const walkDir = (dir: string, files: string[] = []): string[] => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walkDir(fullPath, files);
-        } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
-          files.push(fullPath);
-        }
-      }
-      return files;
-    };
-
-    const files = walkDir(srcDir).slice(0, 200); // 限制扫描文件数量
-    const targetFileName = path.basename(filePath, path.extname(filePath));
-
-    for (const file of files) {
-      if (file === path.resolve(process.cwd(), filePath)) continue;
-
-      try {
-        const content = fs.readFileSync(file, 'utf-8');
-
-        // 检查是否 import 了目标文件
-        const importPattern = new RegExp(`import\\s+.*from\\s+['"]\\..*${targetFileName}['"]`, 'g');
-        if (importPattern.test(content)) {
-          // 检查是否使用了目标符号
-          const usePattern = new RegExp(`\\b${symbolName}\\b`, 'g');
-          if (usePattern.test(content)) {
-            const relativePath = path.relative(process.cwd(), file);
-            references.push({
-              file: relativePath,
-              imports: [symbolName],
-            });
-          }
-        }
-      } catch {
-        // 忽略读取错误
-      }
-    }
-  } catch (error) {
-    console.error('[Analyze External References]', error);
-  }
-
-  return references.slice(0, 5); // 最多返回 5 个引用
-}
-
-// ============================================================================
-// 项目管理 API
-// ============================================================================
-
-/**
- * 最近打开的项目接口
- */
-interface RecentProject {
-  id: string;           // 唯一ID（用路径hash）
-  path: string;         // 绝对路径
-  name: string;         // 项目名（目录名）
-  lastOpenedAt: string; // 最后打开时间
-}
-
-/**
- * 获取 Claude 配置目录路径
- * 支持 Windows 和 Unix 系统
- */
-function getClaudeConfigDir(): string {
-  const homeDir = os.homedir();
-  return path.join(homeDir, '.claude');
-}
-
-/**
- * 获取最近项目列表的存储路径
- */
-function getRecentProjectsPath(): string {
-  return path.join(getClaudeConfigDir(), 'recent-projects.json');
-}
-
-/**
- * 生成路径的唯一 ID（使用 MD5 hash）
- */
-function generateProjectId(projectPath: string): string {
-  const normalizedPath = path.normalize(projectPath).toLowerCase();
-  return crypto.createHash('md5').update(normalizedPath).digest('hex').substring(0, 12);
-}
-
-/**
- * 检测项目是否为空（无源代码文件）
- *
- * 空项目定义：目录中没有任何源代码文件（忽略隐藏目录和配置文件）
- * 常见源代码扩展名：.js, .ts, .py, .java, .c, .cpp, .go, .rs, .rb, .php, .vue, .jsx, .tsx 等
- */
-function isProjectEmpty(projectPath: string): boolean {
-  // 忽略的目录名
-  const ignoredDirs = new Set([
-    'node_modules', '.git', '.svn', '.hg', '.claude', '.vscode', '.idea',
-    '__pycache__', '.cache', 'dist', 'build', 'target', 'out', '.next',
-    'coverage', '.nyc_output', 'vendor', 'Pods', '.gradle', 'bin', 'obj'
-  ]);
-
-  // 源代码文件扩展名
-  const sourceExtensions = new Set([
-    '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
-    '.py', '.pyw',
-    '.java', '.kt', '.kts', '.scala',
-    '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
-    '.go',
-    '.rs',
-    '.rb', '.rake',
-    '.php',
-    '.swift',
-    '.vue', '.svelte',
-    '.html', '.htm', '.css', '.scss', '.sass', '.less',
-    '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
-    '.sql',
-    '.r', '.R',
-    '.lua',
-    '.dart',
-    '.ex', '.exs',
-    '.clj', '.cljs',
-    '.fs', '.fsx',
-    '.hs',
-    '.ml', '.mli',
-    '.json', '.yaml', '.yml', '.toml', '.xml',
-    '.md', '.mdx', '.rst', '.txt',
-  ]);
-
-  /**
-   * 递归检查目录，找到任意源代码文件即返回 false
-   * 使用深度限制避免无限递归
-   */
-  function hasSourceFiles(dir: string, depth: number = 0): boolean {
-    if (depth > 5) return false; // 限制递归深度
-
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        // 跳过隐藏文件/目录（以 . 开头）和忽略的目录
-        if (entry.name.startsWith('.') || ignoredDirs.has(entry.name)) {
-          continue;
-        }
-
-        const fullPath = path.join(dir, entry.name);
-
-        if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          if (sourceExtensions.has(ext)) {
-            return true; // 找到源代码文件
-          }
-        } else if (entry.isDirectory()) {
-          if (hasSourceFiles(fullPath, depth + 1)) {
-            return true;
-          }
-        }
-      }
-    } catch (error) {
-      // 忽略无法访问的目录
-    }
-
-    return false;
-  }
-
-  return !hasSourceFiles(projectPath);
-}
-
-/**
- * 检测项目是否有蓝图文件
- *
- * 检查项目目录下的 .blueprint 文件夹是否存在有效的蓝图 JSON 文件
- */
-function projectHasBlueprint(projectPath: string): boolean {
-  try {
-    const blueprintDir = path.join(projectPath, '.blueprint');
-    if (!fs.existsSync(blueprintDir)) {
-      return false;
-    }
-    // 检查目录下是否有 .json 文件
-    const files = fs.readdirSync(blueprintDir);
-    return files.some(file => file.endsWith('.json'));
-  } catch (error) {
-    return false;
-  }
-}
-
-/**
- * 读取最近打开的项目列表
- */
-function loadRecentProjects(): RecentProject[] {
-  try {
-    const filePath = getRecentProjectsPath();
-    if (!fs.existsSync(filePath)) {
-      return [];
-    }
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as RecentProject[];
-  } catch (error) {
-    console.error('[Recent Projects] 读取失败:', error);
-    return [];
-  }
-}
-
-/**
- * 保存最近打开的项目列表
- */
-function saveRecentProjects(projects: RecentProject[]): void {
-  try {
-    const configDir = getClaudeConfigDir();
-    // 确保配置目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
-    }
-    const filePath = getRecentProjectsPath();
-    fs.writeFileSync(filePath, JSON.stringify(projects, null, 2), 'utf-8');
-  } catch (error) {
-    console.error('[Recent Projects] 保存失败:', error);
-    throw error;
-  }
-}
-
-/**
- * GET /api/blueprint/projects
- * 获取最近打开的项目列表
- */
-router.get('/projects', (req: Request, res: Response) => {
-  try {
-    const projects = loadRecentProjects();
-    // 按最后打开时间倒序排列
-    projects.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime());
-    // 为每个项目添加蓝图状态
-    const projectsWithBlueprint = projects.map(project => ({
-      ...project,
-      hasBlueprint: projectHasBlueprint(project.path),
-    }));
-    res.json({
-      success: true,
-      data: projectsWithBlueprint,
-      total: projectsWithBlueprint.length,
-    });
-  } catch (error: any) {
-    console.error('[GET /projects]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/blueprint/projects/open
- * 打开项目（添加到最近项目列表）
- *
- * 关键变更：同时切换蓝图上下文，实现蓝图与项目 1:1 绑定
- */
-router.post('/projects/open', (req: Request, res: Response) => {
-  try {
-    const { path: projectPath } = req.body;
-
-    if (!projectPath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 path 参数',
-      });
-    }
-
-    // 验证路径是绝对路径
-    if (!path.isAbsolute(projectPath)) {
-      return res.status(400).json({
-        success: false,
-        error: '必须提供绝对路径',
-      });
-    }
-
-    // 检查路径是否存在
-    if (!fs.existsSync(projectPath)) {
-      return res.status(404).json({
-        success: false,
-        error: `路径不存在: ${projectPath}`,
-      });
-    }
-
-    // 检查是否是目录
-    if (!fs.statSync(projectPath).isDirectory()) {
-      return res.status(400).json({
-        success: false,
-        error: '路径必须是目录',
-      });
-    }
-
-    // 安全检查：禁止打开系统目录
-    if (!isPathSafe(projectPath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止访问系统目录',
-      });
-    }
-
-    const projects = loadRecentProjects();
-    const projectId = generateProjectId(projectPath);
-
-    // 检查是否已存在
-    const existingIndex = projects.findIndex(p => p.id === projectId);
-    const newProject: RecentProject = {
-      id: projectId,
-      path: projectPath,
-      name: path.basename(projectPath),
-      lastOpenedAt: new Date().toISOString(),
-    };
-
-    if (existingIndex >= 0) {
-      // 更新现有项目的最后打开时间
-      projects[existingIndex] = newProject;
-    } else {
-      // 添加新项目到列表开头
-      projects.unshift(newProject);
-      // 限制最多保存 50 个最近项目
-      if (projects.length > 50) {
-        projects.pop();
-      }
-    }
-
-    saveRecentProjects(projects);
-
-    // 切换蓝图上下文：实现蓝图与项目 1:1 绑定
-    const currentBlueprint = blueprintManager.setProject(projectPath);
-
-    // 检测项目是否为空（无源代码文件）
-    const isEmpty = isProjectEmpty(projectPath);
-
-    // 判断项目是否有蓝图（用于前端判断是否需要触发代码库分析）
-    const hasBlueprint = !!currentBlueprint || projectHasBlueprint(projectPath);
-
-    res.json({
-      success: true,
-      data: {
-        ...newProject,
-        // 标记项目是否为空（用于前端判断显示"创建蓝图"还是直接对话）
-        isEmpty,
-        // 标记项目是否已有蓝图（用于前端判断是否触发代码库分析）
-        hasBlueprint,
-        // 返回该项目关联的蓝图信息（如果有）
-        blueprint: currentBlueprint ? {
-          id: currentBlueprint.id,
-          name: currentBlueprint.name,
-          status: currentBlueprint.status,
-          version: currentBlueprint.version,
-        } : null,
-      },
-    });
-  } catch (error: any) {
-    console.error('[POST /projects/open]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/blueprint/projects/browse
- * 打开系统原生的文件夹选择对话框
- */
-router.post('/projects/browse', async (req: Request, res: Response) => {
-  try {
-    const platform = os.platform();
-    let cmd: string;
-    let args: string[];
-
-    if (platform === 'win32') {
-      // Windows: 使用 PowerShell 打开文件夹选择对话框
-      const psScript = `
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = "选择项目文件夹"
-$dialog.ShowNewFolderButton = $true
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  Write-Output $dialog.SelectedPath
-}
-`;
-      cmd = 'powershell';
-      args = ['-NoProfile', '-NonInteractive', '-Command', psScript];
-    } else if (platform === 'darwin') {
-      // macOS: 使用 osascript 打开文件夹选择对话框
-      cmd = 'osascript';
-      args = ['-e', 'POSIX path of (choose folder with prompt "选择项目文件夹")'];
-    } else {
-      // Linux: 使用 zenity
-      cmd = 'zenity';
-      args = ['--file-selection', '--directory', '--title=选择项目文件夹'];
-    }
-
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('close', (code) => {
-      // 用户取消选择（code 1 或空输出）
-      if (code === 1 || !stdout.trim()) {
-        return res.json({
-          success: true,
-          data: { path: null, cancelled: true },
-        });
-      }
-
-      if (code !== 0) {
-        console.error('[POST /projects/browse] process error:', stderr);
-        return res.status(500).json({
-          success: false,
-          error: '无法打开文件夹选择对话框',
-        });
-      }
-
-      const selectedPath = stdout.trim();
-
-      // 验证路径是否存在且是目录
-      if (!fs.existsSync(selectedPath) || !fs.statSync(selectedPath).isDirectory()) {
-        return res.status(400).json({
-          success: false,
-          error: '选择的路径无效',
-        });
-      }
-
-      res.json({
-        success: true,
-        data: { path: selectedPath, cancelled: false },
-      });
-    });
-
-    child.on('error', (error) => {
-      console.error('[POST /projects/browse] spawn error:', error);
-      res.status(500).json({
-        success: false,
-        error: '无法启动文件夹选择对话框',
-      });
-    });
-  } catch (error: any) {
-    console.error('[POST /projects/browse]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * DELETE /api/blueprint/projects/:id
- * 从最近项目列表中移除
- */
-router.delete('/projects/:id', (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const projects = loadRecentProjects();
-    const index = projects.findIndex(p => p.id === id);
-
-    if (index < 0) {
-      return res.status(404).json({
-        success: false,
-        error: '项目不存在',
-      });
-    }
-
-    const removedProject = projects.splice(index, 1)[0];
-    saveRecentProjects(projects);
-
-    res.json({
-      success: true,
-      message: `项目 "${removedProject.name}" 已从列表中移除`,
-      data: removedProject,
-    });
-  } catch (error: any) {
-    console.error('[DELETE /projects/:id]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/blueprint/projects/current
- * 获取当前工作目录的项目信息
- */
-router.get('/projects/current', (req: Request, res: Response) => {
-  try {
-    const currentPath = process.cwd();
-    const projects = loadRecentProjects();
-    const currentProject = projects.find(p => p.path === currentPath);
-
-    if (currentProject) {
-      res.json({ success: true, data: currentProject });
-    } else {
-      // 如果不在列表中，创建一个临时项目信息
-      const projectId = generateProjectId(currentPath);
-      res.json({
-        success: true,
-        data: {
-          id: projectId,
-          name: path.basename(currentPath),
-          path: currentPath,
-          lastOpenedAt: new Date().toISOString(),
-        },
-      });
-    }
-  } catch (error: any) {
-    console.error('[GET /projects/current]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/blueprint/projects/cwd
- * 获取当前工作目录（/projects/current 的别名）
- */
-router.get('/projects/cwd', (req: Request, res: Response) => {
-  try {
-    const currentPath = process.cwd();
-    res.json({
-      success: true,
-      data: {
-        path: currentPath,
-        name: path.basename(currentPath),
-      },
-    });
-  } catch (error: any) {
-    console.error('[GET /projects/cwd]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================================================
-// 安全检查函数
-// ============================================================================
-
-/**
- * 检查路径是否安全（不是系统目录）
- * 返回 true 表示安全，可以访问
- */
-function isPathSafe(targetPath: string): boolean {
-  const normalizedPath = path.normalize(targetPath).toLowerCase();
-  const homeDir = os.homedir().toLowerCase();
-
-  // Windows 系统目录黑名单
-  const windowsUnsafePaths = [
-    'c:\\windows',
-    'c:\\program files',
-    'c:\\program files (x86)',
-    'c:\\programdata',
-    'c:\\$recycle.bin',
-    'c:\\system volume information',
-    'c:\\recovery',
-    'c:\\boot',
-  ];
-
-  // Unix 系统目录黑名单
-  const unixUnsafePaths = [
-    '/bin',
-    '/sbin',
-    '/usr/bin',
-    '/usr/sbin',
-    '/usr/local/bin',
-    '/usr/local/sbin',
-    '/etc',
-    '/var',
-    '/root',
-    '/boot',
-    '/lib',
-    '/lib64',
-    '/proc',
-    '/sys',
-    '/dev',
-    '/run',
-  ];
-
-  // 检查是否是系统目录
-  const unsafePaths = process.platform === 'win32' ? windowsUnsafePaths : unixUnsafePaths;
-
-  for (const unsafePath of unsafePaths) {
-    if (normalizedPath === unsafePath || normalizedPath.startsWith(unsafePath + path.sep)) {
-      return false;
-    }
-  }
-
-  // 不允许访问根目录
-  if (normalizedPath === '/' || normalizedPath === 'c:\\' || /^[a-z]:\\?$/i.test(normalizedPath)) {
-    return false;
-  }
-
-  // 允许访问用户主目录及其子目录
-  if (normalizedPath.startsWith(homeDir)) {
-    return true;
-  }
-
-  // 允许访问其他非系统目录（如 D:\projects, E:\work 等）
-  return true;
-}
-
-/**
- * 检查路径是否在允许的项目范围内
- * 用于文件操作的额外安全检查
- */
-function isPathWithinProject(targetPath: string, projectRoot: string): boolean {
-  const normalizedTarget = path.normalize(path.resolve(targetPath));
-  const normalizedRoot = path.normalize(path.resolve(projectRoot));
-
-  // 目标路径必须在项目根目录下
-  return normalizedTarget.startsWith(normalizedRoot + path.sep) || normalizedTarget === normalizedRoot;
-}
-
-// ============================================================================
-// 文件操作 API
-// ============================================================================
-
-/**
- * POST /api/blueprint/files/create
- * 创建文件或文件夹
- */
-router.post('/files/create', (req: Request, res: Response) => {
-  try {
-    const { path: filePath, type, content } = req.body;
-
-    if (!filePath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 path 参数',
-      });
-    }
-
-    if (!type || !['file', 'directory'].includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: 'type 参数必须是 "file" 或 "directory"',
-      });
-    }
-
-    // 转换为绝对路径
-    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
-
-    // 安全检查
-    if (!isPathSafe(absolutePath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止在系统目录中创建文件',
-      });
-    }
-
-    // 检查路径是否已存在
-    if (fs.existsSync(absolutePath)) {
-      return res.status(409).json({
-        success: false,
-        error: `路径已存在: ${filePath}`,
-      });
-    }
-
-    // 确保父目录存在
-    const parentDir = path.dirname(absolutePath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-
-    if (type === 'directory') {
-      fs.mkdirSync(absolutePath, { recursive: true });
-    } else {
-      fs.writeFileSync(absolutePath, content || '', 'utf-8');
-    }
-
-    res.json({
-      success: true,
-      message: `${type === 'directory' ? '文件夹' : '文件'} 创建成功`,
-      data: {
-        path: absolutePath,
-        type,
-        name: path.basename(absolutePath),
-      },
-    });
-  } catch (error: any) {
-    console.error('[POST /files/create]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * DELETE /api/blueprint/files
- * 删除文件或文件夹（移到回收站概念 - 实际是重命名到 .trash 目录）
- */
-router.delete('/files', (req: Request, res: Response) => {
-  try {
-    const { path: filePath, permanent } = req.body;
-
-    if (!filePath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 path 参数',
-      });
-    }
-
-    // 转换为绝对路径
-    const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
-
-    // 安全检查
-    if (!isPathSafe(absolutePath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止删除系统目录中的文件',
-      });
-    }
-
-    // 检查路径是否存在
-    if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({
-        success: false,
-        error: `路径不存在: ${filePath}`,
-      });
-    }
-
-    const stats = fs.statSync(absolutePath);
-    const isDirectory = stats.isDirectory();
-    const fileName = path.basename(absolutePath);
-
-    if (permanent) {
-      // 永久删除
-      if (isDirectory) {
-        fs.rmSync(absolutePath, { recursive: true, force: true });
-      } else {
-        fs.unlinkSync(absolutePath);
-      }
-
-      res.json({
-        success: true,
-        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已永久删除`,
-      });
-    } else {
-      // 移到项目内的 .trash 目录（模拟回收站）
-      const projectRoot = process.cwd();
-      const trashDir = path.join(projectRoot, '.trash');
-      const timestamp = Date.now();
-      const trashPath = path.join(trashDir, `${fileName}_${timestamp}`);
-
-      // 确保 .trash 目录存在
-      if (!fs.existsSync(trashDir)) {
-        fs.mkdirSync(trashDir, { recursive: true });
-      }
-
-      // 移动文件到回收站
-      fs.renameSync(absolutePath, trashPath);
-
-      res.json({
-        success: true,
-        message: `${isDirectory ? '文件夹' : '文件'} "${fileName}" 已移到回收站`,
-        data: {
-          originalPath: absolutePath,
-          trashPath,
-        },
-      });
-    }
-  } catch (error: any) {
-    console.error('[DELETE /files]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/blueprint/files/rename
- * 重命名文件或文件夹
- */
-router.post('/files/rename', (req: Request, res: Response) => {
+router.post('/file-operation/rename', (req: Request, res: Response) => {
   try {
     const { oldPath, newPath } = req.body;
 
     if (!oldPath || !newPath) {
       return res.status(400).json({
         success: false,
-        error: '缺少 oldPath 或 newPath 参数',
+        error: '缺少路径参数',
       });
     }
 
-    // 转换为绝对路径
-    const absoluteOldPath = path.isAbsolute(oldPath) ? oldPath : path.resolve(process.cwd(), oldPath);
-    const absoluteNewPath = path.isAbsolute(newPath) ? newPath : path.resolve(process.cwd(), newPath);
-
-    // 安全检查
-    if (!isPathSafe(absoluteOldPath) || !isPathSafe(absoluteNewPath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止操作系统目录中的文件',
-      });
-    }
-
-    // 检查源路径是否存在
-    if (!fs.existsSync(absoluteOldPath)) {
-      return res.status(404).json({
-        success: false,
-        error: `源路径不存在: ${oldPath}`,
-      });
-    }
-
-    // 检查目标路径是否已存在
-    if (fs.existsSync(absoluteNewPath)) {
-      return res.status(409).json({
-        success: false,
-        error: `目标路径已存在: ${newPath}`,
-      });
-    }
-
-    // 确保目标目录存在
-    const newParentDir = path.dirname(absoluteNewPath);
-    if (!fs.existsSync(newParentDir)) {
-      fs.mkdirSync(newParentDir, { recursive: true });
-    }
-
-    fs.renameSync(absoluteOldPath, absoluteNewPath);
-
-    res.json({
-      success: true,
-      message: '重命名成功',
-      data: {
-        oldPath: absoluteOldPath,
-        newPath: absoluteNewPath,
-        name: path.basename(absoluteNewPath),
-      },
-    });
-  } catch (error: any) {
-    console.error('[POST /files/rename]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/blueprint/files/copy
- * 复制文件或文件夹
- */
-router.post('/files/copy', (req: Request, res: Response) => {
-  try {
-    const { sourcePath, destPath } = req.body;
-
-    if (!sourcePath || !destPath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 sourcePath 或 destPath 参数',
-      });
-    }
-
-    // 转换为绝对路径
-    const absoluteSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(process.cwd(), sourcePath);
-    const absoluteDestPath = path.isAbsolute(destPath) ? destPath : path.resolve(process.cwd(), destPath);
-
-    // 安全检查
-    if (!isPathSafe(absoluteSourcePath) || !isPathSafe(absoluteDestPath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止操作系统目录中的文件',
-      });
-    }
-
-    // 检查源路径是否存在
-    if (!fs.existsSync(absoluteSourcePath)) {
-      return res.status(404).json({
-        success: false,
-        error: `源路径不存在: ${sourcePath}`,
-      });
-    }
-
-    // 检查目标路径是否已存在
-    if (fs.existsSync(absoluteDestPath)) {
-      return res.status(409).json({
-        success: false,
-        error: `目标路径已存在: ${destPath}`,
-      });
-    }
-
-    // 确保目标目录存在
-    const destParentDir = path.dirname(absoluteDestPath);
-    if (!fs.existsSync(destParentDir)) {
-      fs.mkdirSync(destParentDir, { recursive: true });
-    }
-
-    const stats = fs.statSync(absoluteSourcePath);
-
-    if (stats.isDirectory()) {
-      // 递归复制目录
-      copyDirectoryRecursive(absoluteSourcePath, absoluteDestPath);
-    } else {
-      // 复制文件
-      fs.copyFileSync(absoluteSourcePath, absoluteDestPath);
-    }
-
-    res.json({
-      success: true,
-      message: '复制成功',
-      data: {
-        sourcePath: absoluteSourcePath,
-        destPath: absoluteDestPath,
-        name: path.basename(absoluteDestPath),
-      },
-    });
-  } catch (error: any) {
-    console.error('[POST /files/copy]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * 递归复制目录
- */
-function copyDirectoryRecursive(source: string, destination: string): void {
-  fs.mkdirSync(destination, { recursive: true });
-
-  const entries = fs.readdirSync(source, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(source, entry.name);
-    const destPath = path.join(destination, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirectoryRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
-
-/**
- * POST /api/blueprint/files/move
- * 移动文件或文件夹
- */
-router.post('/files/move', (req: Request, res: Response) => {
-  try {
-    const { sourcePath, destPath } = req.body;
-
-    if (!sourcePath || !destPath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 sourcePath 或 destPath 参数',
-      });
-    }
-
-    // 转换为绝对路径
-    const absoluteSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(process.cwd(), sourcePath);
-    const absoluteDestPath = path.isAbsolute(destPath) ? destPath : path.resolve(process.cwd(), destPath);
-
-    // 安全检查
-    if (!isPathSafe(absoluteSourcePath) || !isPathSafe(absoluteDestPath)) {
-      return res.status(403).json({
-        success: false,
-        error: '禁止操作系统目录中的文件',
-      });
-    }
-
-    // 检查源路径是否存在
-    if (!fs.existsSync(absoluteSourcePath)) {
-      return res.status(404).json({
-        success: false,
-        error: `源路径不存在: ${sourcePath}`,
-      });
-    }
-
-    // 检查目标路径是否已存在
-    if (fs.existsSync(absoluteDestPath)) {
-      return res.status(409).json({
-        success: false,
-        error: `目标路径已存在: ${destPath}`,
-      });
-    }
-
-    // 确保目标目录存在
-    const destParentDir = path.dirname(absoluteDestPath);
-    if (!fs.existsSync(destParentDir)) {
-      fs.mkdirSync(destParentDir, { recursive: true });
-    }
-
-    // 尝试直接重命名（同一文件系统内）
-    try {
-      fs.renameSync(absoluteSourcePath, absoluteDestPath);
-    } catch (renameError: any) {
-      // 如果跨文件系统，则先复制再删除
-      if (renameError.code === 'EXDEV') {
-        const stats = fs.statSync(absoluteSourcePath);
-        if (stats.isDirectory()) {
-          copyDirectoryRecursive(absoluteSourcePath, absoluteDestPath);
-          fs.rmSync(absoluteSourcePath, { recursive: true, force: true });
-        } else {
-          fs.copyFileSync(absoluteSourcePath, absoluteDestPath);
-          fs.unlinkSync(absoluteSourcePath);
-        }
-      } else {
-        throw renameError;
-      }
-    }
-
-    res.json({
-      success: true,
-      message: '移动成功',
-      data: {
-        sourcePath: absoluteSourcePath,
-        destPath: absoluteDestPath,
-        name: path.basename(absoluteDestPath),
-      },
-    });
-  } catch (error: any) {
-    console.error('[POST /files/move]', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/blueprint/files/exists
- * 检查路径是否存在
- */
-router.get('/files/exists', (req: Request, res: Response) => {
-  try {
-    const targetPath = req.query.path as string;
-
-    if (!targetPath) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 path 参数',
-      });
-    }
-
-    // 获取当前工作目录
     const cwd = process.cwd();
-    const absolutePath = path.isAbsolute(targetPath)
-      ? targetPath
-      : path.join(cwd, targetPath);
+    const fullOldPath = path.isAbsolute(oldPath) ? oldPath : path.join(cwd, oldPath);
+    const fullNewPath = path.isAbsolute(newPath) ? newPath : path.join(cwd, newPath);
 
-    // 安全检查：确保路径在工作目录内
-    const normalizedPath = path.normalize(absolutePath);
-    const normalizedCwd = path.normalize(cwd);
-    if (!normalizedPath.startsWith(normalizedCwd)) {
-      return res.status(403).json({
+    if (!fs.existsSync(fullOldPath)) {
+      return res.status(404).json({
         success: false,
-        error: '禁止访问工作目录外的路径',
+        error: '源文件或目录不存在',
       });
     }
 
-    // 检查路径是否存在
-    const exists = fs.existsSync(absolutePath);
-    let isFile = false;
-    let isDirectory = false;
-
-    if (exists) {
-      const stat = fs.statSync(absolutePath);
-      isFile = stat.isFile();
-      isDirectory = stat.isDirectory();
+    if (fs.existsSync(fullNewPath)) {
+      return res.status(400).json({
+        success: false,
+        error: '目标已存在',
+      });
     }
+
+    fs.renameSync(fullOldPath, fullNewPath);
 
     res.json({
       success: true,
-      data: {
-        exists,
-        isFile,
-        isDirectory,
-        path: absolutePath,
-      },
+      data: { path: newPath },
     });
   } catch (error: any) {
-    console.error('[GET /files/exists]', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
- * AI 代码问答 - 回答用户关于代码的问题
- * POST /api/blueprint/ai/ask
+ * POST /file-operation/copy
+ * 复制文件或目录
  */
-router.post('/ai/ask', async (req, res) => {
+router.post('/file-operation/copy', (req: Request, res: Response) => {
   try {
-    const { code, question, filePath, context } = req.body;
+    const { sourcePath, destPath } = req.body;
 
-    if (!code || !question) {
-      return res.status(400).json({ success: false, error: '缺少代码或问题' });
-    }
-
-    // 获取 AI 客户端
-    const { getDefaultClient } = await import('../../../core/client.js');
-    const client = getDefaultClient();
-
-    const language = context?.language || 'typescript';
-    const lineCount = code.split('\n').length;
-
-    const prompt = `请回答以下关于代码的问题。
-
-**文件**: ${filePath || '未知'}
-**语言**: ${language}
-**代码行数**: ${lineCount}
-
-**代码片段**:
-\`\`\`${language}
-${code.substring(0, 3000)}
-\`\`\`
-
-**用户问题**: ${question}
-
-请用中文回答，要求：
-1. 直接回答问题，不要废话
-2. 如果是关于代码作用的问题，具体说明这段代码做了什么
-3. 如果是关于优化的问题，给出具体、可执行的建议
-4. 如果是关于问题/bug的问题，指出具体的潜在问题和位置
-5. 回答控制在 200 字以内，言简意赅`;
-
-    console.log(`[AI Ask] 回答问题: "${question.substring(0, 50)}..."`);
-    const startTime = Date.now();
-
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码专家。直接、具体地回答用户关于代码的问题，不要使用模板化的废话。'
-    );
-
-    console.log(`[AI Ask] AI 调用耗时: ${Date.now() - startTime}ms`);
-
-    // 提取回答
-    let answer = '暂时无法回答这个问题';
-    const textContent = response.content?.find((c: any) => c.type === 'text');
-    if (textContent && 'text' in textContent) {
-      answer = textContent.text;
-    }
-
-    res.json({
-      success: true,
-      answer,
-    });
-  } catch (error: any) {
-    console.error('[AI Ask] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 回答失败',
-    });
-  }
-});
-
-/**
- * AI 代码导游 - 为代码生成智能导览
- * POST /api/blueprint/ai/tour
- */
-router.post('/ai/tour', async (req, res) => {
-  try {
-    const { filePath, content } = req.body;
-
-    if (!content) {
-      return res.status(400).json({ success: false, error: '缺少文件内容' });
-    }
-
-    // 获取 AI 客户端
-    const { getDefaultClient } = await import('../../../core/client.js');
-    const client = getDefaultClient();
-
-    // 提取代码中的关键符号
-    const symbols: Array<{ type: string; name: string; line: number; code: string }> = [];
-    const lines = content.split('\n');
-
-    // 提取类
-    const classMatches = content.matchAll(/(?:export\s+)?(?:abstract\s+)?class\s+(\w+)[^{]*\{/g);
-    for (const match of classMatches) {
-      const lineNum = content.substring(0, match.index).split('\n').length;
-      // 提取类的前 50 行代码作为上下文
-      const endLine = Math.min(lineNum + 50, lines.length);
-      const classCode = lines.slice(lineNum - 1, endLine).join('\n');
-      symbols.push({
-        type: 'class',
-        name: match[1],
-        line: lineNum,
-        code: classCode.substring(0, 2000), // 限制长度
-      });
-    }
-
-    // 提取函数
-    const funcMatches = content.matchAll(/(?:export\s+)?(?:async\s+)?function\s+(\w+)[^{]*\{/g);
-    for (const match of funcMatches) {
-      const lineNum = content.substring(0, match.index).split('\n').length;
-      const endLine = Math.min(lineNum + 30, lines.length);
-      const funcCode = lines.slice(lineNum - 1, endLine).join('\n');
-      symbols.push({
-        type: 'function',
-        name: match[1],
-        line: lineNum,
-        code: funcCode.substring(0, 1500),
-      });
-    }
-
-    // 提取 React 组件
-    const componentMatches = content.matchAll(/(?:export\s+)?(?:const|function)\s+(\w+)[\s\S]*?(?:React\.FC|JSX\.Element|=>[\s\S]*?<)/g);
-    for (const match of componentMatches) {
-      // 避免与函数重复
-      if (symbols.some(s => s.name === match[1])) continue;
-      const lineNum = content.substring(0, match.index).split('\n').length;
-      const endLine = Math.min(lineNum + 40, lines.length);
-      const componentCode = lines.slice(lineNum - 1, endLine).join('\n');
-      symbols.push({
-        type: 'component',
-        name: match[1],
-        line: lineNum,
-        code: componentCode.substring(0, 1500),
-      });
-    }
-
-    if (symbols.length === 0) {
-      return res.json({
-        success: true,
-        data: { steps: [] },
-      });
-    }
-
-    // 构建 AI prompt
-    const symbolsInfo = symbols.map((s, i) => `
-### 符号 ${i + 1}: ${s.type} "${s.name}" (行 ${s.line})
-\`\`\`typescript
-${s.code}
-\`\`\`
-`).join('\n');
-
-    const prompt = `分析以下代码文件中的符号，为每个符号生成一个简洁、有信息量的中文描述。
-
-文件路径: ${filePath || '未知'}
-
-${symbolsInfo}
-
-要求：
-1. 描述要具体，说明这个符号"做什么"、"为什么存在"
-2. 如果是类，说明其职责、关键方法、继承关系
-3. 如果是函数，说明其输入输出、核心逻辑
-4. 如果是组件，说明其渲染的UI、使用的状态
-5. 描述控制在 50-100 字以内
-6. 不要使用"这是一个..."这样的废话开头
-
-返回 JSON 格式：
-{
-  "descriptions": [
-    { "name": "符号名", "description": "具体描述" }
-  ]
-}
-
-只返回 JSON，不要其他内容。`;
-
-    console.log(`[AI Tour] 分析 ${symbols.length} 个符号...`);
-    const startTime = Date.now();
-
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码分析专家。用简洁、专业的中文描述代码符号的功能和职责。'
-    );
-
-    console.log(`[AI Tour] AI 调用耗时: ${Date.now() - startTime}ms`);
-
-    // 解析 AI 响应
-    let descriptions: Array<{ name: string; description: string }> = [];
-    const textContent = response.content?.find((c: any) => c.type === 'text');
-    if (textContent && 'text' in textContent) {
-      try {
-        // 提取 JSON
-        const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          descriptions = parsed.descriptions || [];
-        }
-      } catch (parseError) {
-        console.error('[AI Tour] JSON 解析失败:', parseError);
-      }
-    }
-
-    // 构建导游步骤
-    const steps = symbols.map(symbol => {
-      const desc = descriptions.find(d => d.name === symbol.name);
-      return {
-        type: symbol.type,
-        name: symbol.name,
-        line: symbol.line,
-        description: desc?.description || `${symbol.type} ${symbol.name}`,
-        importance: 'high' as 'high' | 'medium' | 'low',
-      };
-    });
-
-    // 添加导入区域描述
-    let importEndLine = 0;
-    const importSources: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const importMatch = lines[i].match(/^import\s.*from\s+['"]([^'"]+)['"]/);
-      if (importMatch) {
-        importEndLine = i + 1;
-        const source = importMatch[1];
-        if (!source.startsWith('.') && !source.startsWith('@/') && importSources.length < 5) {
-          importSources.push(source.split('/')[0]);
-        }
-      }
-    }
-
-    if (importEndLine > 0) {
-      const uniqueSources = [...new Set(importSources)];
-      steps.unshift({
-        type: 'block',
-        name: '导入声明',
-        line: 1,
-        description: uniqueSources.length > 0
-          ? `引入 ${uniqueSources.join(', ')} 等外部依赖，以及本地模块。`
-          : '引入本地模块依赖。',
-        importance: 'medium' as const,
-      });
-    }
-
-    // 按行号排序
-    steps.sort((a, b) => a.line - b.line);
-
-    res.json({
-      success: true,
-      data: { steps },
-    });
-  } catch (error: any) {
-    console.error('[AI Tour] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 分析失败',
-    });
-  }
-});
-
-// ============================================================================
-// AI 气泡 API - 为新手生成代码解释
-// ============================================================================
-
-/**
- * AI 气泡缓存
- * key: filePath:contentHash
- * value: { bubbles, timestamp }
- */
-const aiBubblesCache = new Map<string, { bubbles: any[]; timestamp: number; contentHash: string }>();
-const BUBBLES_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
-
-/**
- * POST /api/blueprint/analyze-bubbles
- * 使用AI为代码生成新手友好的解释气泡
- */
-router.post('/analyze-bubbles', async (req: Request, res: Response) => {
-  try {
-    const { filePath, content, language } = req.body;
-
-    if (!filePath || !content) {
+    if (!sourcePath || !destPath) {
       return res.status(400).json({
         success: false,
-        error: '缺少必要参数: filePath, content',
+        error: '缺少路径参数',
       });
     }
 
-    // 计算内容hash用于缓存
-    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
-    const cacheKey = `${filePath}:${contentHash}`;
+    const cwd = process.cwd();
+    const fullSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.join(cwd, sourcePath);
+    const fullDestPath = path.isAbsolute(destPath) ? destPath : path.join(cwd, destPath);
 
-    // 检查缓存
-    const cached = aiBubblesCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < BUBBLES_CACHE_TTL) {
-      console.log(`[AI Bubbles] 使用缓存: ${filePath}`);
-      return res.json({
-        success: true,
-        data: { bubbles: cached.bubbles, fromCache: true },
+    if (!fs.existsSync(fullSourcePath)) {
+      return res.status(404).json({
+        success: false,
+        error: '源文件或目录不存在',
       });
     }
 
-    console.log(`[AI Bubbles] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
-
-    // 限制内容长度，避免 token 过大
-    const lines = content.split('\n');
-    const truncatedContent = lines.length > 200
-      ? lines.slice(0, 200).join('\n') + '\n// ... 文件过长，已截断 ...'
-      : content;
-
-    // 获取 AI 客户端 - 使用 Haiku 模型加速
-    const { createClientWithModel } = await import('../../../core/client.js');
-    const client = createClientWithModel('haiku');
-
-    // 构建分析提示
-    const prompt = `你是一个代码教育专家，专门帮助编程新手理解代码。请分析以下代码，找出对新手最有帮助的关键点，生成解释气泡。
-
-## 文件信息
-- 文件路径: ${filePath}
-- 编程语言: ${language || '未知'}
-
-## 代码内容
-\`\`\`${language || ''}
-${truncatedContent}
-\`\`\`
-
-## 生成要求
-1. 找出代码中新手最需要理解的 5-10 个关键点
-2. 每个气泡必须有具体的教育价值，不要生成废话
-3. 解释必须通俗易懂，假设读者是刚学编程的新手
-4. 解释要具体，结合这段代码的上下文，不要泛泛而谈
-5. 气泡类型: info(解释概念), tip(最佳实践), warning(注意事项)
-
-## 好的气泡示例
-- "这个函数接收用户名和密码，验证后返回登录状态。第3行的await表示需要等待服务器响应"
-- "useState(false) 创建了一个开关变量，初始值是关闭。点击按钮时会切换这个开关"
-- "这里用 try-catch 包裹是因为网络请求可能失败，catch 里处理失败的情况"
-
-## 不好的气泡示例（禁止生成这类废话）
-- "这是一个函数定义"
-- "useEffect 是 React 的副作用钩子"
-- "async 表示异步操作"
-
-请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
-{
-  "bubbles": [
-    {
-      "line": 行号（从1开始）,
-      "message": "具体的解释内容，要有教育价值",
-      "type": "info|tip|warning"
-    }
-  ]
-}`;
-
-    // 调用 AI 分析
-    const startTime = Date.now();
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码教育专家，专门帮助编程新手理解代码。你的解释必须具体、实用、有教育价值。只返回 JSON，不要其他内容。'
-    );
-    console.log(`[AI Bubbles] AI 调用耗时: ${Date.now() - startTime}ms`);
-
-    // 提取响应文本
-    let responseText = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        responseText += block.text;
-      }
+    const destDir = path.dirname(fullDestPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
     }
 
-    // 解析 JSON
-    let result: { bubbles: any[] };
-    try {
-      result = JSON.parse(responseText.trim());
-    } catch {
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[1]);
-      } else {
-        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (bareJsonMatch) {
-          result = JSON.parse(bareJsonMatch[0]);
-        } else {
-          throw new Error('无法解析 AI 返回的 JSON');
-        }
-      }
-    }
-
-    // 验证和过滤气泡
-    const validBubbles = (result.bubbles || [])
-      .filter((b: any) => {
-        // 验证必要字段
-        if (!b.line || !b.message || !b.type) return false;
-        // 过滤废话（太短或太通用的解释）
-        if (b.message.length < 10) return false;
-        // 验证行号在有效范围内
-        if (b.line < 1 || b.line > lines.length) return false;
-        return true;
-      })
-      .slice(0, 15); // 最多15个气泡
-
-    // 保存到缓存
-    aiBubblesCache.set(cacheKey, {
-      bubbles: validBubbles,
-      timestamp: Date.now(),
-      contentHash,
-    });
-
-    console.log(`[AI Bubbles] 生成 ${validBubbles.length} 个气泡`);
+    fs.cpSync(fullSourcePath, fullDestPath, { recursive: true });
 
     res.json({
       success: true,
-      data: { bubbles: validBubbles, fromCache: false },
+      data: { path: destPath },
     });
   } catch (error: any) {
-    console.error('[AI Bubbles] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 气泡生成失败',
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ============================================================================
-// AI 热力图 API - 智能分析代码复杂度
-// ============================================================================
-
 /**
- * AI 热力图缓存
+ * POST /file-operation/move
+ * 移动文件或目录
  */
-const aiHeatmapCache = new Map<string, { heatmap: any[]; timestamp: number; contentHash: string }>();
-const HEATMAP_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
-
-/**
- * POST /api/blueprint/analyze-heatmap
- * 使用AI分析代码复杂度，生成热力图数据
- */
-router.post('/analyze-heatmap', async (req: Request, res: Response) => {
+router.post('/file-operation/move', (req: Request, res: Response) => {
   try {
-    const { filePath, content, language } = req.body;
+    const { sourcePath, destPath } = req.body;
 
-    if (!filePath || !content) {
+    if (!sourcePath || !destPath) {
       return res.status(400).json({
         success: false,
-        error: '缺少必要参数: filePath, content',
+        error: '缺少路径参数',
       });
     }
 
-    // 计算内容hash用于缓存
-    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
-    const cacheKey = `heatmap:${filePath}:${contentHash}`;
+    const cwd = process.cwd();
+    const fullSourcePath = path.isAbsolute(sourcePath) ? sourcePath : path.join(cwd, sourcePath);
+    const fullDestPath = path.isAbsolute(destPath) ? destPath : path.join(cwd, destPath);
 
-    // 检查缓存
-    const cached = aiHeatmapCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < HEATMAP_CACHE_TTL) {
-      console.log(`[AI Heatmap] 使用缓存: ${filePath}`);
-      return res.json({
-        success: true,
-        data: { heatmap: cached.heatmap, fromCache: true },
+    if (!fs.existsSync(fullSourcePath)) {
+      return res.status(404).json({
+        success: false,
+        error: '源文件或目录不存在',
       });
     }
 
-    console.log(`[AI Heatmap] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
-
-    // 限制内容长度
-    const lines = content.split('\n');
-    const truncatedContent = lines.length > 300
-      ? lines.slice(0, 300).join('\n') + '\n// ... 文件过长，已截断 ...'
-      : content;
-
-    // 获取 AI 客户端
-    const { createClientWithModel } = await import('../../../core/client.js');
-    const client = createClientWithModel('haiku');
-
-    const prompt = `你是一个代码复杂度分析专家。请分析以下代码，识别出复杂度较高的代码行。
-
-## 文件信息
-- 文件路径: ${filePath}
-- 编程语言: ${language || '未知'}
-- 总行数: ${lines.length}
-
-## 代码内容
-\`\`\`${language || ''}
-${truncatedContent}
-\`\`\`
-
-## 分析要求
-1. 找出代码中复杂度较高的行（不是每一行都要标记）
-2. 只标记真正复杂、难以理解或需要重点关注的代码
-3. 复杂度评分 0-100：
-   - 0-30: 简单，不需要标记
-   - 31-50: 中等复杂度，可能需要注意
-   - 51-70: 较复杂，需要仔细理解
-   - 71-100: 非常复杂，可能需要重构
-
-## 复杂度标准
-- 深层嵌套（3层以上的 if/for/while）
-- 复杂的条件表达式（多个 && || 组合）
-- 回调地狱或 Promise 链过长
-- 正则表达式（尤其是复杂的）
-- 一行代码做太多事（超过120字符的复杂逻辑）
-- 难以理解的算法逻辑
-- 魔法数字或不清晰的变量
-
-## 不应该标记的内容
-- 普通的变量声明
-- 简单的 import/export
-- 简单的函数调用
-- 注释和空行
-- 简单的类型定义
-
-请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
-{
-  "heatmap": [
-    {
-      "line": 行号（从1开始）,
-      "complexity": 复杂度评分（31-100，低于31的不要返回）,
-      "reason": "简短说明为什么复杂（10-30字）"
-    }
-  ]
-}`;
-
-    const startTime = Date.now();
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码复杂度分析专家。只标记真正复杂的代码，不要过度标记。只返回 JSON。'
-    );
-    console.log(`[AI Heatmap] AI 调用耗时: ${Date.now() - startTime}ms`);
-
-    // 提取响应
-    let responseText = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        responseText += block.text;
-      }
+    const destDir = path.dirname(fullDestPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
     }
 
-    // 解析 JSON
-    let result: { heatmap: any[] };
-    try {
-      result = JSON.parse(responseText.trim());
-    } catch {
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[1]);
-      } else {
-        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (bareJsonMatch) {
-          result = JSON.parse(bareJsonMatch[0]);
-        } else {
-          throw new Error('无法解析 AI 返回的 JSON');
-        }
-      }
-    }
-
-    // 验证和过滤
-    const validHeatmap = (result.heatmap || [])
-      .filter((h: any) => {
-        if (!h.line || typeof h.complexity !== 'number') return false;
-        if (h.complexity < 31 || h.complexity > 100) return false;
-        if (h.line < 1 || h.line > lines.length) return false;
-        return true;
-      })
-      .map((h: any) => ({
-        line: h.line,
-        complexity: Math.min(100, Math.max(0, h.complexity)),
-        reason: h.reason || '复杂代码',
-      }));
-
-    // 保存缓存
-    aiHeatmapCache.set(cacheKey, {
-      heatmap: validHeatmap,
-      timestamp: Date.now(),
-      contentHash,
-    });
-
-    console.log(`[AI Heatmap] 标记 ${validHeatmap.length} 个复杂行`);
+    fs.renameSync(fullSourcePath, fullDestPath);
 
     res.json({
       success: true,
-      data: { heatmap: validHeatmap, fromCache: false },
+      data: { path: destPath },
     });
   } catch (error: any) {
-    console.error('[AI Heatmap] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 热力图分析失败',
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ============================================================================
-// AI 重构建议 API - 智能分析代码质量并提供改进建议
+// 导出路由和共享实例
 // ============================================================================
 
-/**
- * AI 重构建议缓存
- */
-const aiRefactorCache = new Map<string, { suggestions: any[]; timestamp: number; contentHash: string }>();
-const REFACTOR_CACHE_TTL = 30 * 60 * 1000; // 30分钟缓存
-
-/**
- * POST /api/blueprint/analyze-refactoring
- * 使用AI分析代码并提供重构建议
- */
-router.post('/analyze-refactoring', async (req: Request, res: Response) => {
-  try {
-    const { filePath, content, language } = req.body;
-
-    if (!filePath || !content) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少必要参数: filePath, content',
-      });
-    }
-
-    // 计算内容hash用于缓存
-    const contentHash = crypto.createHash('md5').update(content).digest('hex').slice(0, 16);
-    const cacheKey = `refactor:${filePath}:${contentHash}`;
-
-    // 检查缓存
-    const cached = aiRefactorCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < REFACTOR_CACHE_TTL) {
-      console.log(`[AI Refactor] 使用缓存: ${filePath}`);
-      return res.json({
-        success: true,
-        data: { suggestions: cached.suggestions, fromCache: true },
-      });
-    }
-
-    console.log(`[AI Refactor] 开始分析: ${filePath}, 语言: ${language || '未知'}`);
-
-    // 限制内容长度
-    const lines = content.split('\n');
-    const truncatedContent = lines.length > 400
-      ? lines.slice(0, 400).join('\n') + '\n// ... 文件过长，已截断 ...'
-      : content;
-
-    // 获取 AI 客户端
-    const { createClientWithModel } = await import('../../../core/client.js');
-    const client = createClientWithModel('haiku');
-
-    const prompt = `你是一个高级代码审查专家和重构顾问。请分析以下代码，提供专业的重构建议。
-
-## 文件信息
-- 文件路径: ${filePath}
-- 编程语言: ${language || '未知'}
-- 总行数: ${lines.length}
-
-## 代码内容
-\`\`\`${language || ''}
-${truncatedContent}
-\`\`\`
-
-## 分析重点
-1. **代码异味（Code Smells）**
-   - 过长的函数（超过50行应该拆分）
-   - 过深的嵌套（超过3层应该重构）
-   - 重复代码（类似逻辑应该提取）
-   - 过长的参数列表
-   - 过大的类或模块
-
-2. **可维护性问题**
-   - 魔法数字（应该定义为常量）
-   - 不清晰的命名
-   - 缺少错误处理
-   - 过于复杂的条件逻辑
-
-3. **性能隐患**
-   - 不必要的重复计算
-   - 内存泄漏风险（未清理的订阅、定时器等）
-   - 低效的循环或查找
-
-4. **最佳实践**
-   - 可以使用更现代的语法
-   - 可以利用框架特性简化代码
-   - 可以提升类型安全性
-
-## 输出要求
-- 只提供有价值的、可操作的建议
-- 每个建议都要具体说明问题和解决方案
-- 优先级：high（必须修复）、medium（建议修复）、low（可以考虑）
-- 类型：extract（提取函数/组件）、simplify（简化逻辑）、rename（重命名）、duplicate（消除重复）、performance（性能优化）、safety（安全性）
-
-请返回以下 JSON 格式（只返回 JSON，不要其他内容）：
-{
-  "suggestions": [
-    {
-      "line": 起始行号,
-      "endLine": 结束行号,
-      "type": "extract|simplify|rename|duplicate|performance|safety",
-      "message": "具体的问题描述和解决建议（30-80字）",
-      "priority": "high|medium|low",
-      "codeContext": "问题代码的一小段原文（15-40字符，必须是代码中真实存在的片段）"
-    }
-  ]
-}
-
-**重要**: codeContext 必须是代码中真实存在的原文片段，用于精确定位问题代码的位置。例如：
-- 对于接口定义问题：使用 "interface Message {" 或 "to: string | string[]"
-- 对于函数问题：使用 "function calculateTotal(" 或 "const handleSubmit ="
-- 对于变量问题：使用 "let counter = 0" 或 "const config: Config"`;
-
-    const startTime = Date.now();
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个代码审查专家。提供专业、可操作的重构建议。只返回 JSON。'
-    );
-    console.log(`[AI Refactor] AI 调用耗时: ${Date.now() - startTime}ms`);
-
-    // 提取响应
-    let responseText = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        responseText += block.text;
-      }
-    }
-
-    // 解析 JSON
-    let result: { suggestions: any[] };
-    try {
-      result = JSON.parse(responseText.trim());
-    } catch {
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[1]);
-      } else {
-        const bareJsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (bareJsonMatch) {
-          result = JSON.parse(bareJsonMatch[0]);
-        } else {
-          throw new Error('无法解析 AI 返回的 JSON');
-        }
-      }
-    }
-
-    // 验证和过滤
-    const validTypes = ['extract', 'simplify', 'rename', 'duplicate', 'performance', 'safety'];
-    const validPriorities = ['high', 'medium', 'low'];
-
-    /**
-     * 使用 codeContext 校正行号
-     * AI返回的行号可能不准确，通过搜索代码片段来找到正确位置
-     * 参考 Edit 工具的字符串匹配方式
-     */
-    const correctLineNumber = (suggestion: any): { line: number; endLine: number } => {
-      const originalLine = suggestion.line;
-      const originalEndLine = suggestion.endLine || suggestion.line;
-      const codeContext = suggestion.codeContext;
-
-      // 如果没有提供代码上下文，使用原始行号
-      if (!codeContext || typeof codeContext !== 'string' || codeContext.length < 5) {
-        return { line: originalLine, endLine: originalEndLine };
-      }
-
-      // 清理代码上下文（移除首尾空白，但保留内部格式）
-      const cleanContext = codeContext.trim();
-
-      // 在原始行号附近搜索（优先），找距离最近的匹配
-      let bestMatch: number | null = null;
-      let bestDistance = Infinity;
-
-      // 第一轮：在原始行号附近50行内搜索
-      const searchRadius = 50;
-      const startLine = Math.max(0, originalLine - searchRadius - 1);
-      const endLine = Math.min(lines.length, originalLine + searchRadius);
-
-      for (let i = startLine; i < endLine; i++) {
-        if (lines[i].includes(cleanContext)) {
-          const distance = Math.abs(i + 1 - originalLine);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            bestMatch = i + 1;
-          }
-        }
-      }
-
-      if (bestMatch !== null) {
-        const lineOffset = bestMatch - originalLine;
-        const correctedEndLine = Math.max(bestMatch, originalEndLine + lineOffset);
-        console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${bestMatch} (范围内匹配)`);
-        return {
-          line: bestMatch,
-          endLine: Math.min(correctedEndLine, lines.length),
-        };
-      }
-
-      // 第二轮：全文搜索
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes(cleanContext)) {
-          const correctedLine = i + 1;
-          const lineOffset = correctedLine - originalLine;
-          const correctedEndLine = Math.max(correctedLine, originalEndLine + lineOffset);
-          console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${correctedLine} (全文匹配)`);
-          return {
-            line: correctedLine,
-            endLine: Math.min(correctedEndLine, lines.length),
-          };
-        }
-      }
-
-      // 第三轮：尝试模糊匹配（移除空格后匹配）
-      const compactContext = cleanContext.replace(/\s+/g, '');
-      for (let i = 0; i < lines.length; i++) {
-        const compactLine = lines[i].replace(/\s+/g, '');
-        if (compactLine.includes(compactContext)) {
-          const correctedLine = i + 1;
-          const lineOffset = correctedLine - originalLine;
-          const correctedEndLine = Math.max(correctedLine, originalEndLine + lineOffset);
-          console.log(`[AI Refactor] 行号校正: "${cleanContext.slice(0, 30)}..." 从 ${originalLine} 校正到 ${correctedLine} (模糊匹配)`);
-          return {
-            line: correctedLine,
-            endLine: Math.min(correctedEndLine, lines.length),
-          };
-        }
-      }
-
-      // 如果找不到，使用原始行号
-      console.log(`[AI Refactor] 无法校正行号: "${cleanContext.slice(0, 30)}..." 未找到，保持原始行号 ${originalLine}`);
-      return { line: originalLine, endLine: originalEndLine };
-    };
-
-    const validSuggestions = (result.suggestions || [])
-      .filter((s: any) => {
-        if (!s.line || !s.message || !s.type || !s.priority) return false;
-        if (!validTypes.includes(s.type)) return false;
-        if (!validPriorities.includes(s.priority)) return false;
-        if (s.line < 1 || s.line > lines.length) return false;
-        if (s.message.length < 10) return false;
-        return true;
-      })
-      .map((s: any) => {
-        const corrected = correctLineNumber(s);
-        return {
-          line: corrected.line,
-          endLine: corrected.endLine,
-          type: s.type,
-          message: s.message,
-          priority: s.priority,
-        };
-      })
-      .slice(0, 20); // 最多20个建议
-
-    // 保存缓存
-    aiRefactorCache.set(cacheKey, {
-      suggestions: validSuggestions,
-      timestamp: Date.now(),
-      contentHash,
-    });
-
-    console.log(`[AI Refactor] 生成 ${validSuggestions.length} 个建议`);
-
-    res.json({
-      success: true,
-      data: { suggestions: validSuggestions, fromCache: false },
-    });
-  } catch (error: any) {
-    console.error('[AI Refactor] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 重构分析失败',
-    });
-  }
-});
-
-// ============================================================================
-// 架构流程图 API（AI 生成）
-// ============================================================================
-
-/** 架构图类型 */
-type ArchitectureGraphType = 'dataflow' | 'modulerelation' | 'full';
-
-// 架构图缓存已移至持久化模块: src/blueprint/architecture-graph-cache.ts
-
-/** 架构图 Prompt 模板 */
-const ARCHITECTURE_GRAPH_PROMPTS: Record<ArchitectureGraphType, string> = {
-  dataflow: `分析代码库，生成**数据流图**的 Mermaid 代码。
-
-要求：
-1. 使用 flowchart TB（从上到下）
-2. 展示从用户输入到最终输出的完整数据流
-3. 包含主要模块例如：入口层、核心引擎、工具系统、API层、持久化层
-4. 使用 subgraph 分组相关模块
-5. 用不同颜色区分不同类型的模块（使用 classDef）
-6. 箭头标注数据流向
-
-只返回 Mermaid 代码，不要其他解释。`,
-  modulerelation: `分析代码库，生成**模块关系图**的 Mermaid 代码。
-
-要求：
-1. 使用 flowchart TB
-2. 展示核心模块之间的依赖关系
-3. 分组显示：核心引擎、工具系统、Agent系统、支持系统
-4. 用箭头标注调用关系
-5. 使用不同颜色区分模块类型
-6. 包含主要类/函数名称
-
-只返回 Mermaid 代码，不要其他解释。`,
-
-  full: `分析代码库，生成**完整系统架构图**的 Mermaid 代码。
-
-要求：
-1. 使用 flowchart TB
-2. 分层展示：用户层 -> 入口层 -> 核心引擎层 -> 工具系统层 -> 支持系统 -> 持久化层
-3. 每层使用 subgraph 包裹
-4. 展示层与层之间的数据流
-5. 包含关键模块：CLI、MainLoop(核心循环)、ClaudeClient、Session、ToolRegistry、压缩系统
-6. 使用 classDef 定义不同层的颜色
-7. 标注关键流程：用户输入 -> 消息处理 -> API调用 -> 响应解析 -> 工具执行 -> 返回结果
-8. **注意**：节点 ID 禁止使用 loop、end、subgraph 等 Mermaid 保留关键字
-
-只返回 Mermaid 代码，不要其他解释。`,
-};
-
-/** 架构图标题和描述 */
-const ARCHITECTURE_GRAPH_META: Record<ArchitectureGraphType, { title: string; description: string }> = {
-  dataflow: { title: '系统数据流图', description: '展示从用户输入到最终输出的完整数据流' },
-  modulerelation: { title: '模块关系图', description: '核心模块之间的依赖和调用关系' },
-  full: { title: '完整系统架构图', description: '分层展示整体系统架构' },
-};
-
-/**
- * 获取蓝图架构流程图（AI 生成）
- */
-router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const graphType = (req.query.type as ArchitectureGraphType) || 'full';
-    const forceRefresh = req.query.forceRefresh === 'true';
-
-    console.log(`[Architecture Graph] 收到请求: blueprintId=${id}, type=${graphType}, forceRefresh=${forceRefresh}`);
-
-    // 验证图表类型
-    if (!ARCHITECTURE_GRAPH_PROMPTS[graphType]) {
-      console.error(`[Architecture Graph] 无效的图表类型: ${graphType}`);
-      return res.status(400).json({
-        success: false,
-        error: `无效的图表类型: ${graphType}`,
-      });
-    }
-
-    // 检查缓存（1小时内有效），除非强制刷新
-    const cached = architectureGraphCache.get(id, graphType);
-    if (!forceRefresh && cached) {
-      console.log(`[Architecture Graph] ✓ 使用缓存: ${id}-${graphType}`);
-      return res.json({
-        success: true,
-        data: {
-          type: cached.type,
-          title: cached.title,
-          description: cached.description,
-          mermaidCode: cached.mermaidCode,
-          generatedAt: cached.generatedAt,
-        },
-        fromCache: true,
-      });
-    }
-
-    if (forceRefresh && cached) {
-      console.log(`[Architecture Graph] ⚡ 强制刷新，忽略缓存: ${id}-${graphType}`);
-    } else if (!cached) {
-      console.log(`[Architecture Graph] ℹ️ 无缓存，需要生成: ${id}-${graphType}`);
-    }
-
-    // 获取蓝图信息
-    const blueprint = blueprintManager.getBlueprint(id);
-    if (!blueprint) {
-      console.error(`[Architecture Graph] 蓝图不存在: ${id}`);
-      return res.status(404).json({ success: false, error: 'Blueprint not found' });
-    }
-
-
-    // 获取项目根目录
-    const projectRoot = blueprint.projectPath || process.cwd();
-
-    console.log(`[Architecture Graph] 生成 ${graphType} 类型架构图...`);
-    console.log(`[Architecture Graph] 项目根目录: ${projectRoot}`);
-
-    // 先从蓝图提取已有的结构化信息
-    const modules = blueprint.modules || [];
-    const processes = blueprint.businessProcesses || [];
-
-    // 构建蓝图上下文（结构化的已分析信息）
-    const blueprintContext = `
-【项目基本信息】
-名称: ${blueprint.name}
-描述: ${blueprint.description || '无'}
-状态: ${blueprint.status}
-
-【已识别的系统模块】(${modules.length}个):
-${modules.map(m => `- ${m.name} (类型: ${m.type})
-  路径: ${m.rootPath || '未指定'}
-  描述: ${m.description || '无'}
-  依赖: ${(m.dependencies || []).slice(0, 5).join(', ') || '无'}`).join('\n') || '暂无模块信息'}
-
-【业务流程】(${processes.length}个):
-${processes.map(p => `- ${p.name} (${p.type}): ${p.description || '无描述'}`).join('\n') || '暂无业务流程'}
-
-【模块依赖关系】:
-${modules.flatMap(m =>
-  (m.dependencies || []).slice(0, 3).map(dep => `  ${m.name} --> ${dep}`)
-).join('\n') || '暂无依赖关系'}
-`;
-
-    // Step 1: 使用 Explore Agent 基于蓝图信息深入分析代码
-    console.log(`[Architecture Graph] Step 1: 启动 Explore Agent (基于蓝图信息补充分析)...`);
-
-    const explorePrompt = `我已经有了这个项目的蓝图分析结果，请基于这些信息深入代码库验证和补充实现细节：
-
-${blueprintContext}
-
-请针对上述蓝图信息，深入分析代码：
-
-1. **验证模块实现**：
-   - 检查上述模块的实际代码文件
-   - 找出每个模块的入口函数/类
-   - 确认模块间的真实调用关系
-
-2. **补充数据流细节**：
-   - 请求从哪个入口进入？
-   - 核心处理流程是什么？
-   - 响应如何组装返回？
-
-3. **发现关键实现**：
-   - 核心类和函数有哪些？
-   - 重要的数据结构？
-   - 配置和常量定义？
-
-请使用 Glob、Grep、Read 工具深入代码，基于蓝图信息补充实现细节。
-返回增强版的架构分析报告，要能用于生成准确的 Mermaid 架构图。`;
-
-    const taskManager = new TaskManager();
-    const exploreResult = await taskManager.executeTaskSync(
-      '基于蓝图分析代码架构',
-      explorePrompt,
-      'Explore',
-      {
-        workingDirectory: projectRoot,
-      }
-    );
-
-    console.log(`[Architecture Graph] Explore Agent 完成: ${exploreResult.success}`);
-
-    // 组合蓝图信息 + 探索结果
-    let combinedAnalysis = blueprintContext;
-    if (exploreResult.success && exploreResult.output) {
-      combinedAnalysis += `\n\n【Explore Agent 补充的实现细节】:\n${exploreResult.output}`;
-      console.log(`[Architecture Graph] 获得补充分析: ${exploreResult.output.length} 字符`);
-    } else {
-      console.log(`[Architecture Graph] Explore Agent 失败: ${exploreResult.error}，将仅使用蓝图信息`);
-    }
-
-    // Step 2: 基于组合信息生成 Mermaid 架构图
-    console.log(`[Architecture Graph] Step 2: 基于蓝图+代码分析生成 Mermaid 图...`);
-
-    const prompt = `${ARCHITECTURE_GRAPH_PROMPTS[graphType]}
-
-=== 项目架构分析（蓝图 + 代码分析）===
-${combinedAnalysis}
-
-请基于以上蓝图信息和代码分析结果，生成准确反映项目实际架构的 Mermaid 图表代码。
-确保图表中的模块名称和关系与分析结果一致。
-只返回 Mermaid 代码，不要其他解释。`;
-
-    // 获取认证信息（支持 API Key 和 OAuth）
-    const auth = getAuth();
-    const apiKey = auth?.apiKey || configManager.getApiKey();
-    const authToken = auth?.type === 'oauth' ? (auth.accessToken || auth.authToken) : undefined;
-
-    if (!apiKey && !authToken) {
-      return res.status(401).json({
-        success: false,
-        error: 'API 未认证，请先登录或配置 API Key',
-      });
-    }
-
-    // 使用 ClaudeClient 调用 AI 生成 Mermaid 图
-    const { ClaudeClient } = await import('../../../core/client.js');
-    const client = new ClaudeClient({
-      apiKey,
-      authToken,
-      baseUrl: process.env.ANTHROPIC_BASE_URL,
-    });
-
-    const response = await client.createMessage(
-      [{ role: 'user', content: prompt }],
-      undefined,
-      '你是一个专业的软件架构师，擅长使用 Mermaid 绘制架构图。基于代码分析结果生成准确的架构图。只返回 Mermaid 代码，不要其他解释。'
-    );
-
-    // 提取 Mermaid 代码
-    let mermaidCode = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        mermaidCode = block.text;
-        break;
-      }
-    }
-
-    // 清理代码（移除 markdown 代码块标记）
-    mermaidCode = mermaidCode
-      .replace(/```mermaid\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-
-    // 修复 Mermaid 保留关键字冲突
-    // 在 sequenceDiagram 中，loop/alt/opt/par/rect/note 是保留关键字
-    // 将这些作为参与者 ID 使用时会导致解析错误
-    mermaidCode = mermaidCode
-      // 修复 participant Loop -> participant MainLoop
-      .replace(/participant\s+Loop\b/gi, 'participant MainLoop')
-      .replace(/actor\s+Loop\b/gi, 'actor MainLoop')
-      // 修复消息中的 Loop 引用 (如 User->>Loop: 改为 User->>MainLoop:)
-      .replace(/->>Loop\s*:/g, '->>MainLoop:')
-      .replace(/-->>Loop\s*:/g, '-->>MainLoop:')
-      .replace(/Loop\s*->>/g, 'MainLoop->>')
-      .replace(/Loop\s*-->>/g, 'MainLoop-->>');
-
-    // 修复方括号内包含斜杠的节点标签（Mermaid 词法错误）
-    // 例如: ChatAPI[/api/chat] -> ChatAPI["/api/chat"]
-    // 方括号内的斜杠会导致 Mermaid 词法解析失败
-    mermaidCode = mermaidCode
-      .replace(/(\w+)\[([^\]"]*\/[^\]"]*)\]/g, '$1["$2"]');
-
-    console.log(`[Architecture Graph] Mermaid 代码已清理，长度: ${mermaidCode.length}`);
-
-
-    const meta = ARCHITECTURE_GRAPH_META[graphType];
-    const generatedAt = new Date().toLocaleString('zh-CN');
-
-    // 保存缓存
-    architectureGraphCache.set(id, graphType, {
-      type: graphType,
-      title: meta.title,
-      description: meta.description,
-      mermaidCode,
-      generatedAt,
-      timestamp: Date.now(),
-    });
-
-    console.log(`[Architecture Graph] 生成完成: ${mermaidCode.length} 字符`);
-
-    res.json({
-      success: true,
-      data: {
-        type: graphType,
-        title: meta.title,
-        description: meta.description,
-        mermaidCode,
-        generatedAt,
-      },
-      fromCache: false,
-    });
-  } catch (error: any) {
-    console.error('[Architecture Graph] 错误:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'AI 生成架构图失败',
-    });
-  }
-});
+// 导出 blueprintStore 供 WebSocket 使用
+export { blueprintStore };
 
 export default router;
-

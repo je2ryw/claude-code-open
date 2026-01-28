@@ -263,6 +263,11 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     send({ type: 'worker:terminate', payload: { workerId } });
   }, [send]);
 
+  // v2.1: 重试失败任务
+  const retryTask = useCallback((blueprintId: string, taskId: string) => {
+    send({ type: 'task:retry', payload: { blueprintId, taskId } });
+  }, [send]);
+
   return {
     connected,
     status,
@@ -275,5 +280,6 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     pauseWorker,
     resumeWorker,
     terminateWorker,
+    retryTask,
   };
 }

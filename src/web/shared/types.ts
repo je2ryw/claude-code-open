@@ -131,6 +131,8 @@ export type ClientMessage =
   | { type: 'worker:pause'; payload: { workerId: string } }
   | { type: 'worker:resume'; payload: { workerId: string } }
   | { type: 'worker:terminate'; payload: { workerId: string } }
+  // v2.1: 任务重试
+  | { type: 'task:retry'; payload: { blueprintId: string; taskId: string } }
   // 持续开发消息
   | { type: 'continuous_dev:start'; payload: { requirement: string } }
   | { type: 'continuous_dev:status' }
@@ -220,6 +222,9 @@ export type ServerMessage =
   | { type: 'worker:terminated'; payload: { workerId: string; success: boolean; message?: string; timestamp: string } }
   | { type: 'worker:removed'; payload: { workerId: string; blueprintId: string; reason: string; timestamp: string } }
   | { type: 'swarm:stats_update'; payload: { blueprintId: string; stats: any } }
+  // v2.1: 任务重试响应
+  | { type: 'task:retry_success'; payload: { blueprintId: string; taskId: string; success: true; timestamp: string } }
+  | { type: 'task:retry_failed'; payload: { blueprintId: string; taskId: string; success: false; error: string; timestamp: string } }
   // 持续开发消息
   | { type: 'continuous_dev:ack'; payload: { message: string } }
   | { type: 'continuous_dev:status_update'; payload: any }

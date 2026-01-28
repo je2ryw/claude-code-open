@@ -85,6 +85,11 @@ const RETRYABLE_ERRORS = [
   'ECONNRESET',
   'ETIMEDOUT',
   'ENOTFOUND',
+  'ECONNREFUSED',
+  'Connection error',
+  'connection error',
+  'network error',
+  'fetch failed',
 ];
 
 // 官方 Claude Code 的 beta 头

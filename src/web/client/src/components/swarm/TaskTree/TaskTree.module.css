@@ -255,3 +255,77 @@
     animation: none;
   }
 }
+
+/* ============================================ */
+/* v2.0: 新增标签样式 */
+/* ============================================ */
+
+/* 任务类型标签 */
+.typeTag {
+  font-size: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+/* 复杂度标签 */
+.complexityTag {
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  opacity: 0.9;
+  margin-left: 2px;
+}
+
+/* 需要测试标记 */
+.needsTestTag {
+  font-size: 11px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+/* Worker 分配标记 */
+.workerTag {
+  font-size: 11px;
+  flex-shrink: 0;
+  opacity: 0.8;
+  line-height: 1;
+  margin-left: 2px;
+  animation: workerPulse 2s ease-in-out infinite;
+}
+
+@keyframes workerPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+/* 预估时间 */
+.estimatedTime {
+  font-size: 10px;
+  color: #9ca3af;
+  padding: 2px 6px;
+  background: rgba(156, 163, 175, 0.1);
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* 响应式隐藏 v2.0 标签 */
+@media (max-width: 768px) {
+  .typeTag,
+  .complexityTag,
+  .needsTestTag,
+  .estimatedTime {
+    display: none;
+  }
+}

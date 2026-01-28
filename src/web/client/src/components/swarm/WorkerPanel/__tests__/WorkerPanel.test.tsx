@@ -1,13 +1,16 @@
 /**
- * WorkerPanel 组件单元测试
+ * WorkerPanel 组件单元测试 - v2.0
  *
- * 测试组件的基本渲染和功能
+ * v2.0 变化：
+ * - Worker 状态简化为 idle/working/waiting/error
+ * - 移除 tddPhase，Worker 自主决策
+ * - 新增 currentAction 和 decisions
  */
 
 import { describe, it, expect } from 'vitest';
 import type { QueenAgent, WorkerAgent } from '../index';
 
-describe('WorkerPanel Type Tests', () => {
+describe('WorkerPanel Type Tests - v2.0', () => {
   it('should have correct QueenAgent type', () => {
     const queen: QueenAgent = {
       status: 'idle',
@@ -18,23 +21,39 @@ describe('WorkerPanel Type Tests', () => {
     expect(queen.decision).toBe('Test decision');
   });
 
-  it('should have correct WorkerAgent type', () => {
+  it('should have correct WorkerAgent type (v2.0)', () => {
     const worker: WorkerAgent = {
       id: 'Worker-1',
-      status: 'coding',
+      status: 'working',
       taskId: 'task-001',
       taskName: 'Test task',
       progress: 50,
-      tddPhase: 'write_code',
       retryCount: 0,
       maxRetries: 3,
-      duration: 120
+      duration: 120,
+      // v2.0 新增字段
+      branchName: 'worker-1/task-001',
+      branchStatus: 'active',
+      modelUsed: 'sonnet',
+      currentAction: {
+        type: 'write',
+        description: '写入文件 src/index.ts',
+        startedAt: new Date().toISOString(),
+      },
+      decisions: [
+        {
+          type: 'strategy',
+          description: '使用 TDD 方式开发',
+          timestamp: new Date().toISOString(),
+        }
+      ],
     };
 
     expect(worker.id).toBe('Worker-1');
-    expect(worker.status).toBe('coding');
+    expect(worker.status).toBe('working');
     expect(worker.progress).toBe(50);
-    expect(worker.tddPhase).toBe('write_code');
+    expect(worker.branchName).toBe('worker-1/task-001');
+    expect(worker.modelUsed).toBe('sonnet');
   });
 
   it('should support all Queen statuses', () => {
@@ -52,13 +71,13 @@ describe('WorkerPanel Type Tests', () => {
     });
   });
 
-  it('should support all Worker statuses', () => {
+  it('should support all v2.0 Worker statuses', () => {
+    // v2.0: 状态简化为 idle/working/waiting/error
     const statuses: WorkerAgent['status'][] = [
       'idle',
-      'test_writing',
-      'coding',
-      'testing',
-      'waiting'
+      'working',
+      'waiting',
+      'error'
     ];
 
     statuses.forEach(status => {
@@ -66,7 +85,6 @@ describe('WorkerPanel Type Tests', () => {
         id: 'Worker-1',
         status,
         progress: 0,
-        tddPhase: 'write_test',
         retryCount: 0,
         maxRetries: 3
       };
@@ -74,26 +92,31 @@ describe('WorkerPanel Type Tests', () => {
     });
   });
 
-  it('should support all TDD phases', () => {
-    const phases: WorkerAgent['tddPhase'][] = [
-      'write_test',
-      'run_test_red',
-      'write_code',
-      'run_test_green',
-      'refactor',
-      'done'
-    ];
+  it('should support all v2.0 action types', () => {
+    const actionTypes = [
+      'read',
+      'write',
+      'edit',
+      'run_test',
+      'install_dep',
+      'git',
+      'think'
+    ] as const;
 
-    phases.forEach(phase => {
+    actionTypes.forEach(type => {
       const worker: WorkerAgent = {
         id: 'Worker-1',
-        status: 'coding',
-        progress: 0,
-        tddPhase: phase,
+        status: 'working',
+        progress: 50,
         retryCount: 0,
-        maxRetries: 3
+        maxRetries: 3,
+        currentAction: {
+          type,
+          description: `执行 ${type} 操作`,
+          startedAt: new Date().toISOString(),
+        }
       };
-      expect(worker.tddPhase).toBe(phase);
+      expect(worker.currentAction?.type).toBe(type);
     });
   });
 
@@ -102,7 +125,6 @@ describe('WorkerPanel Type Tests', () => {
       id: 'Worker-1',
       status: 'idle',
       progress: 0,
-      tddPhase: 'write_test',
       retryCount: 0,
       maxRetries: 3
     };
@@ -110,14 +132,16 @@ describe('WorkerPanel Type Tests', () => {
     expect(worker.taskId).toBeUndefined();
     expect(worker.taskName).toBeUndefined();
     expect(worker.duration).toBeUndefined();
+    expect(worker.branchName).toBeUndefined();
+    expect(worker.currentAction).toBeUndefined();
+    expect(worker.decisions).toBeUndefined();
   });
 
   it('should validate progress range', () => {
     const worker: WorkerAgent = {
       id: 'Worker-1',
-      status: 'coding',
+      status: 'working',
       progress: 50,
-      tddPhase: 'write_code',
       retryCount: 0,
       maxRetries: 3
     };
@@ -129,13 +153,72 @@ describe('WorkerPanel Type Tests', () => {
   it('should validate retry count', () => {
     const worker: WorkerAgent = {
       id: 'Worker-1',
-      status: 'coding',
+      status: 'working',
       progress: 50,
-      tddPhase: 'write_code',
       retryCount: 2,
       maxRetries: 3
     };
 
     expect(worker.retryCount).toBeLessThanOrEqual(worker.maxRetries);
+  });
+
+  it('should support v2.0 decision types', () => {
+    const decisionTypes = [
+      'strategy',
+      'skip_test',
+      'add_test',
+      'install_dep',
+      'retry',
+      'other'
+    ] as const;
+
+    decisionTypes.forEach(type => {
+      const worker: WorkerAgent = {
+        id: 'Worker-1',
+        status: 'working',
+        progress: 50,
+        retryCount: 0,
+        maxRetries: 3,
+        decisions: [{
+          type,
+          description: `决策: ${type}`,
+          timestamp: new Date().toISOString(),
+        }]
+      };
+      expect(worker.decisions?.[0].type).toBe(type);
+    });
+  });
+
+  it('should support v2.0 branch statuses', () => {
+    const branchStatuses = ['active', 'merged', 'conflict'] as const;
+
+    branchStatuses.forEach(branchStatus => {
+      const worker: WorkerAgent = {
+        id: 'Worker-1',
+        status: 'working',
+        progress: 50,
+        retryCount: 0,
+        maxRetries: 3,
+        branchName: 'feature/test',
+        branchStatus,
+      };
+      expect(worker.branchStatus).toBe(branchStatus);
+    });
+  });
+
+  it('should support v2.0 model types', () => {
+    const models = ['opus', 'sonnet', 'haiku'] as const;
+
+    models.forEach(model => {
+      const worker: WorkerAgent = {
+        id: 'Worker-1',
+        status: 'working',
+        progress: 50,
+        retryCount: 0,
+        maxRetries: 3,
+        modelUsed: model,
+      };
+      expect(worker.modelUsed).toBe(model);
+    });
   });
 });

@@ -188,6 +188,21 @@
   border-color: var(--accent-primary);
 }
 
+.iconButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.iconButton.loading {
+  background: var(--bg-tertiary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* 时间线拖拽调整手柄 */
 .timelineResizeHandle {
   height: 4px;
@@ -1171,4 +1186,617 @@
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
+}
+
+/* ============================================ */
+/* v2.0: 执行计划面板样式 */
+/* ============================================ */
+
+.costEstimate {
+  display: flex;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+}
+
+.costItem {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iconButton.active {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+}
+
+.planDetailsPanel {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0;
+}
+
+.planHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.planHeader h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.planStatus {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.planStatus.ready {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+}
+
+.planStatus.executing {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.planStatus.completed {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.planStatus.failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.planStatus.paused {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.planInfo {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.planInfoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.planLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.planValue {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.aiDecisions {
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.aiDecisions h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.decisionList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.decisionItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.decisionType {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border-radius: 3px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.decisionDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ============================================ */
+/* v2.0: Git 分支面板样式 */
+/* ============================================ */
+
+.gitBranchPanel {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gitBranchPanel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branchList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branchItem {
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--border-color);
+}
+
+.branchItem.active {
+  border-left-color: #3b82f6;
+}
+
+.branchItem.merged {
+  border-left-color: #22c55e;
+}
+
+.branchItem.conflict {
+  border-left-color: #ef4444;
+}
+
+.branchItem.pending {
+  border-left-color: #f59e0b;
+}
+
+.branchHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.branchName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.branchStatus {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.branchStatus.active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.branchStatus.merged {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.branchStatus.conflict {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.branchStatus.pending {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.branchMeta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.conflictFiles {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.conflictLabel {
+  font-size: 11px;
+  color: #f87171;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.conflictFile {
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+  margin-bottom: 4px;
+  display: inline-block;
+}
+
+/* ============================================ */
+/* v2.0: Worker 增强样式 */
+/* ============================================ */
+
+.workerBranch {
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workerBranch.active {
+  color: #60a5fa;
+}
+
+.workerBranch.merged {
+  color: #4ade80;
+}
+
+.workerBranch.conflict {
+  color: #f87171;
+}
+
+.workerModel {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.workerModel.opus {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.workerModel.sonnet {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.workerModel.haiku {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.workerAction {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workerDecisions {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.workerDecisionsTitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workerDecisionItem {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.workerDecisionType {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border-radius: 2px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* ============================================ */
+/* 响应式调整 - v2.0 */
+/* ============================================ */
+
+@media (max-width: 1400px) {
+  .planInfo {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .planInfo {
+    grid-template-columns: 1fr;
+  }
+
+  .costEstimate {
+    display: none;
+  }
+}
+
+/* ============================================ */
+/* v2.0: 执行计划视图（替代任务树） */
+/* ============================================ */
+
+.executionPlanView {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+/* 并行组容器 */
+.parallelGroup {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.parallelGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.parallelGroupIcon {
+  font-size: 14px;
+}
+
+.parallelGroupTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.parallelGroupCount {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+
+/* 任务列表 */
+.taskList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 单个任务项 */
+.taskItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.taskItem:last-child {
+  border-bottom: none;
+}
+
+.taskItem:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.taskItem.selected {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* 任务状态图标 */
+.taskStatus {
+  font-size: 16px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+/* 任务状态颜色 */
+.taskItem.completed {
+  opacity: 0.8;
+}
+
+.taskItem.running .taskStatus {
+  animation: spin 1.5s linear infinite;
+}
+
+.taskItem.failed {
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.taskItem.skipped {
+  opacity: 0.6;
+}
+
+/* 任务信息 */
+.taskInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.taskName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.taskType {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.taskComplexity {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.taskComplexity.trivial {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.taskComplexity.simple {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.taskComplexity.moderate {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.taskComplexity.complex {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.needsTest {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.taskTime {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 任务分配的 Worker */
+.taskWorker {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* v2.1: 失败任务重试按钮 */
+.retryTaskButton {
+  font-size: 12px;
+  color: #fff;
+  background: #ff9800;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.retryTaskButton:hover {
+  background: #f57c00;
+  transform: scale(1.05);
+}
+
+.retryTaskButton:active {
+  transform: scale(0.95);
+}
+
+/* 空状态提示 */
+.emptyStateHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  margin-top: 4px;
 }
