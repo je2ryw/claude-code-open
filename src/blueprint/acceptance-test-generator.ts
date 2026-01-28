@@ -196,12 +196,55 @@ ${truncatedContent}
     }
 
     prompt += `
-## 要求
+## TDD 核心原则 - 验收测试必须严格遵守！
+
+### ⛔ 绝对禁止
+1. **禁止 mock 被测试的核心模块** - 验收测试必须测试真实实现
+2. **禁止写"作弊测试"** - 即只测试 mock 返回值而不测试真实逻辑的测试
+3. **禁止硬编码预期结果** - 测试应该验证行为，而不是验证固定值
+
+### ✅ 正确做法
+1. **测试真实实现** - 导入真实模块，调用真实方法，验证真实结果
+2. **只 mock 外部依赖** - 仅限：网络请求(fetch/axios)、数据库连接、文件系统、第三方API
+3. **定义接口期望** - 测试定义"输入X应该输出Y"，Worker 编写的实现代码负责满足这个期望
+4. **测试应该在实现代码编写前就能明确期望** - Worker 看到测试后就知道要实现什么
+
+### 示例 - 错误的验收测试（禁止！）
+\`\`\`typescript
+// ❌ 错误：mock 了被测模块本身，这测试了什么？什么都没测！
+const mockPaymentService = { processPayment: vi.fn().mockResolvedValue({ success: true }) };
+expect(mockPaymentService.processPayment(100)).resolves.toEqual({ success: true });
+\`\`\`
+
+### 示例 - 正确的验收测试
+\`\`\`typescript
+// ✅ 正确：测试真实实现，只 mock 外部依赖（支付网关 API）
+import { PaymentService } from '../src/payment-service';
+
+// 只 mock 外部依赖（第三方支付网关）
+const mockPaymentGateway = { charge: vi.fn() };
+const paymentService = new PaymentService(mockPaymentGateway);
+
+describe('PaymentService', () => {
+  it('应该成功处理有效支付', async () => {
+    mockPaymentGateway.charge.mockResolvedValue({ transactionId: 'txn_123' });
+
+    const result = await paymentService.processPayment({ amount: 100, currency: 'CNY' });
+
+    expect(result.success).toBe(true);
+    expect(result.transactionId).toBeDefined();
+    expect(mockPaymentGateway.charge).toHaveBeenCalledWith(expect.objectContaining({ amount: 100 }));
+  });
+});
+\`\`\`
+
+## 技术要求
 1. 使用 ${testFramework} 测试框架
 2. 测试文件应放在 ${testDir} 目录下
 3. 生成的测试应该是**验收测试**，关注功能的正确性和完整性
 4. 每个验收测试应该有明确的验收标准
-5. 测试应该是可执行的，子 Agent 编写代码后可以直接运行
+5. 测试应该是可执行的，Worker 编写代码后可以直接运行
+6. 正确导入被测模块（即使模块还不存在，Worker 需要创建它）
 
 ## 输出格式
 请以 JSON 格式输出验收测试，格式如下：

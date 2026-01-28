@@ -73,8 +73,26 @@ function convertQueen(apiQueen: any): ComponentQueenAgent {
 
 /**
  * 转换 Worker 状态
+ * 优先使用 detailedStatus（详细状态），否则使用 status（简化状态）
  */
-function mapWorkerStatus(apiStatus: string): ComponentWorkerAgent['status'] {
+function mapWorkerStatus(apiStatus: string, detailedStatus?: string): ComponentWorkerAgent['status'] {
+  // 优先使用详细状态
+  if (detailedStatus) {
+    const detailedStatusMap: Record<string, ComponentWorkerAgent['status']> = {
+      'idle': 'idle',
+      'test_writing': 'test_writing',
+      'coding': 'coding',
+      'testing': 'testing',
+      'waiting': 'waiting',
+      'completed': 'idle',
+      'failed': 'idle',
+    };
+    if (detailedStatusMap[detailedStatus]) {
+      return detailedStatusMap[detailedStatus];
+    }
+  }
+
+  // 回退到简化状态
   const statusMap: Record<string, ComponentWorkerAgent['status']> = {
     'idle': 'idle',
     'working': 'coding',
@@ -109,7 +127,8 @@ function getTDDPhase(worker: any): ComponentWorkerAgent['tddPhase'] {
 function convertWorker(apiWorker: any): ComponentWorkerAgent {
   return {
     id: apiWorker.name || apiWorker.id,
-    status: mapWorkerStatus(apiWorker.status),
+    // 优先使用 detailedStatus 获取更精确的状态
+    status: mapWorkerStatus(apiWorker.status, apiWorker.detailedStatus),
     taskId: apiWorker.currentTaskId || undefined,
     taskName: apiWorker.currentTaskTitle || undefined,
     progress: apiWorker.progress || 0,

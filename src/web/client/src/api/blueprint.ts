@@ -1888,10 +1888,12 @@ export const tddApi = {
   /**
    * 清理孤立的 TDD 循环
    * 孤立循环：TDD 循环存在但没有对应的 Worker 在执行
+   * 同时会重置任务状态为 pending，以便重新分配给 Worker
    */
   cleanupOrphaned: async (): Promise<{
     removedCount: number;
     removedTasks: string[];
+    resetTasks: string[];
   }> => {
     const response = await fetch('/api/blueprint/tdd/cleanup-orphaned', {
       method: 'POST',

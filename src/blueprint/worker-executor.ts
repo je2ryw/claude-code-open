@@ -3,7 +3,7 @@
  *
  * Worker Agent 的实际执行逻辑：
  * 1. 执行 TDD 各阶段（测试编写、代码实现、重构）
- * 2. 与 Claude API 交互生成代码
+ * 2. 通过 ConversationLoop 使用 Edit/Write 工具生成代码
  * 3. 运行测试并解析结果
  */
 
@@ -24,6 +24,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
+
+// ConversationLoop 相关（动态导入避免循环依赖）
 
 // ============================================================================
 // 配置类型
@@ -49,7 +51,7 @@ export interface WorkerExecutorConfig {
 }
 
 const DEFAULT_CONFIG: WorkerExecutorConfig = {
-  model: 'claude-3-haiku-20240307',
+  model: 'opus',  // 使用 opus 模型确保 Agent 能正确使用工具
   maxTokens: 8000,
   temperature: 0.3,
   projectRoot: process.cwd(),
@@ -385,46 +387,47 @@ export class WorkerExecutor {
       };
     }
 
-    // 生成测试代码
-    const testCode = await this.generateTest(task);
-
     // 确定测试文件路径
     const testFilePath = this.determineTestFilePath(task);
 
-    // 保存测试文件
-    await this.saveFile(testFilePath, testCode);
+    // Agent 直接生成并写入测试文件
+    const testArtifact = await this.generateTest(task, testFilePath);
 
     return {
       success: true,
       data: {
-        testCode,
-        testFilePath,
-        testCommand: this.getTestCommand(testFilePath),
+        testCode: testArtifact.content,
+        testFilePath: testArtifact.filePath,
+        testCommand: this.getTestCommand(testArtifact.filePath),
         acceptanceCriteria: this.extractAcceptanceCriteria(task),
       },
-      artifacts: [{ filePath: testFilePath, content: testCode }],
+      artifacts: [testArtifact],
     };
   }
 
   /**
-   * 生成测试代码
+   * 生成测试代码 - 使用 Agent 方式直接写入测试文件
    */
-  async generateTest(task: TaskNode): Promise<string> {
-    const prompt = this.buildTestPrompt(task);
+  async generateTest(task: TaskNode, testFilePath: string): Promise<{ filePath: string; content: string }> {
+    const prompt = this.buildTestPrompt(task, testFilePath);
 
-    const response = await this.client.createMessage(
-      [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      undefined, // 不需要 tools
+    // 使用 Agent 方式执行，给予 Agent 完全信任，不限制工具
+    const result = await this.executeWithAgent(
+      prompt,
       this.getSystemPrompt('test_writer')
     );
 
-    // 从响应中提取代码块
-    return this.extractCodeBlock(response.content);
+    // Agent 必须使用工具写入文件
+    if (result.writtenFiles.length === 0) {
+      const responsePreview = result.response ? result.response.substring(0, 300) : '(无响应)';
+      throw new Error(
+        `Agent 未写入测试文件。\n` +
+        `响应预览: ${responsePreview}\n` +
+        `请检查 Agent 是否正确使用了 Write 工具。`
+      );
+    }
+
+    return result.writtenFiles[0];
   }
 
   // --------------------------------------------------------------------------
@@ -484,23 +487,10 @@ export class WorkerExecutor {
   private async executeWriteCode(context: ExecutionContext): Promise<PhaseResult> {
     const { task, testCode, lastError } = context;
 
-    // 生成实现代码
+    // Agent 直接使用 Write/Edit 工具写入文件
     const codeArtifacts = await this.generateCode(task, testCode || '', lastError);
 
-    // 检查是否生成了代码
-    if (codeArtifacts.length === 0) {
-      return {
-        success: false,
-        error: 'Claude 响应中未找到代码块，请确保响应包含 ```typescript 或 ```javascript 代码块',
-        artifacts: [],
-      };
-    }
-
-    // 保存代码文件
-    for (const artifact of codeArtifacts) {
-      await this.saveFile(artifact.filePath, artifact.content);
-    }
-
+    // generateCode 已经确保 Agent 写入了文件，这里直接返回结果
     return {
       success: true,
       data: {
@@ -511,7 +501,7 @@ export class WorkerExecutor {
   }
 
   /**
-   * 生成实现代码
+   * 生成实现代码 - 使用 ConversationLoop 让 Agent 直接写入代码文件
    */
   async generateCode(
     task: TaskNode,
@@ -520,19 +510,141 @@ export class WorkerExecutor {
   ): Promise<Array<{ filePath: string; content: string }>> {
     const prompt = this.buildCodePrompt(task, testCode, lastError);
 
-    const response = await this.client.createMessage(
-      [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      undefined,
+    // 使用 Agent 方式执行代码生成，给予 Agent 完全信任，不限制工具
+    const result = await this.executeWithAgent(
+      prompt,
       this.getSystemPrompt('code_writer')
     );
 
-    // 从响应中提取多个代码块
-    return this.extractCodeArtifacts(response.content);
+    // 检查 Agent 是否完成了任务
+    if (result.writtenFiles.length === 0) {
+      const responsePreview = result.response ? result.response.substring(0, 500) : '(无响应)';
+
+      // Worker 有完整权限，可能通过其他方式完成了任务（如安装依赖、修改配置等）
+      // 检查是否是合理的"无需写代码"情况
+      const isCodeAlreadyCorrect = /(?:已存在|already exists|代码.*正确|实现.*存在|测试通过|test.*pass)/i.test(responsePreview);
+      const isEnvironmentFixed = /(?:已安装|installed|依赖.*安装|npm install.*成功|配置.*修改)/i.test(responsePreview);
+
+      if (isCodeAlreadyCorrect || isEnvironmentFixed) {
+        // Agent 认为代码已正确或已修复环境，返回空数组表示无需新写代码
+        console.log(`[Worker] Agent 完成任务但无需写入新代码: ${responsePreview.substring(0, 100)}...`);
+        return [];
+      }
+
+      // 真正的问题：Agent 没有完成任务
+      throw new Error(
+        `Agent 未完成任务。\n` +
+        `响应预览: ${responsePreview}\n` +
+        `请检查 Agent 是否正确执行了任务。`
+      );
+    }
+
+    return result.writtenFiles;
+  }
+
+  /**
+   * 使用 ConversationLoop 执行任务（提供工具支持）
+   * 这是 Worker 执行代码生成的核心方法
+   */
+  private async executeWithAgent(
+    prompt: string,
+    systemPrompt: string,
+    allowedTools?: string[]  // 可选参数，不传则不限制工具
+  ): Promise<{ response: string; writtenFiles: Array<{ filePath: string; content: string }> }> {
+    // 动态导入 ConversationLoop 避免循环依赖
+    const { ConversationLoop } = await import('../core/loop.js');
+
+    console.log(`[Worker] 开始执行 Agent 任务，允许的工具: ${allowedTools ? allowedTools.join(', ') : '全部工具'}`);
+    console.log(`[Worker] 使用模型: ${this.config.model}`);
+
+    // 追踪写入的文件
+    const writtenFiles: Array<{ filePath: string; content: string }> = [];
+    // 追踪所有工具调用（用于诊断）
+    const toolCallHistory: Array<{ name: string; hasFilePath: boolean; error?: string }> = [];
+
+    // 构建 LoopOptions
+    const loopOptions = {
+      model: this.config.model,
+      maxTurns: 10,  // 限制最大轮次
+      verbose: true,  // 始终启用详细日志以便诊断
+      permissionMode: 'bypassPermissions' as const,  // Worker 执行时跳过权限提示
+      allowedTools,
+      workingDir: this.config.projectRoot,
+      systemPrompt,
+      isSubAgent: true,  // 标记为子代理
+    };
+
+    const loop = new ConversationLoop(loopOptions);
+
+    // 执行任务
+    let response = '';
+    let toolCallCount = 0;
+
+    try {
+      for await (const event of loop.processMessageStream(prompt)) {
+        if (event.type === 'text' && event.content) {
+          response += event.content;
+        } else if (event.type === 'tool_start') {
+          toolCallCount++;
+          console.log(`[Worker] Agent 调用工具: ${event.toolName}`);
+        } else if (event.type === 'tool_end') {
+          // 追踪 Edit 和 Write 工具的执行结果
+          const toolName = event.toolName;
+          const toolInput = event.toolInput as Record<string, any> | undefined;
+          const toolError = event.toolError;
+
+          console.log(`[Worker] 工具 ${toolName} 执行完成: ${toolError ? '失败 - ' + toolError : '成功'}`);
+          if (toolInput) {
+            console.log(`[Worker] 工具输入: ${JSON.stringify(toolInput).substring(0, 200)}`);
+          }
+
+          // 记录工具调用历史
+          const filePath = toolInput?.file_path || toolInput?.filePath;
+          toolCallHistory.push({
+            name: toolName || 'unknown',
+            hasFilePath: !!filePath,
+            error: toolError,
+          });
+
+          if ((toolName === 'Edit' || toolName === 'Write') && toolInput) {
+            if (filePath && typeof filePath === 'string') {
+              // 读取写入后的文件内容
+              try {
+                const absolutePath = path.isAbsolute(filePath)
+                  ? filePath
+                  : path.join(this.config.projectRoot, filePath);
+                if (fs.existsSync(absolutePath)) {
+                  const content = fs.readFileSync(absolutePath, 'utf-8');
+                  writtenFiles.push({ filePath: absolutePath, content });
+                  console.log(`[Worker] Agent 写入文件成功: ${absolutePath} (${content.length} 字符)`);
+                } else {
+                  console.log(`[Worker] 文件不存在: ${absolutePath}`);
+                }
+              } catch (err: any) {
+                console.log(`[Worker] 无法读取写入的文件 ${filePath}: ${err.message}`);
+              }
+            } else {
+              console.log(`[Worker] 工具 ${toolName} 没有提供 file_path，toolInput: ${JSON.stringify(toolInput)}`);
+            }
+          }
+        } else if (event.type === 'done' || event.type === 'interrupted') {
+          console.log(`[Worker] Agent 执行结束: ${event.type}`);
+          break;
+        }
+      }
+    } catch (error: any) {
+      console.error(`[Worker] Agent 执行失败: ${error.message}`);
+      throw error;
+    }
+
+    console.log(`[Worker] Agent 执行完成: ${toolCallCount} 次工具调用, ${writtenFiles.length} 个文件写入`);
+    console.log(`[Worker] Agent 响应长度: ${response.length} 字符`);
+    console.log(`[Worker] 工具调用历史: ${JSON.stringify(toolCallHistory)}`);
+    if (response) {
+      console.log(`[Worker] Agent 响应预览: ${response.substring(0, 500)}...`);
+    }
+
+    return { response, writtenFiles };
   }
 
   // --------------------------------------------------------------------------
@@ -609,14 +721,10 @@ export class WorkerExecutor {
       };
     }
 
-    // 生成重构后的代码
+    // Agent 直接使用 Edit 工具重构代码
     const refactoredArtifacts = await this.refactorCode(task, currentCode);
 
-    // 保存重构后的代码
-    for (const artifact of refactoredArtifacts) {
-      await this.saveFile(artifact.filePath, artifact.content);
-    }
-
+    // refactorCode 已经确保 Agent 修改了文件，这里直接返回结果
     return {
       success: true,
       data: {
@@ -627,7 +735,7 @@ export class WorkerExecutor {
   }
 
   /**
-   * 重构代码
+   * 重构代码 - 使用 Agent 直接修改文件
    */
   private async refactorCode(
     task: TaskNode,
@@ -635,19 +743,32 @@ export class WorkerExecutor {
   ): Promise<Array<{ filePath: string; content: string }>> {
     const prompt = this.buildRefactorPrompt(task, currentCode);
 
-    const response = await this.client.createMessage(
-      [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      undefined,
+    // 使用 Agent 方式执行，给予 Agent 完全信任，不限制工具
+    const result = await this.executeWithAgent(
+      prompt,
       this.getSystemPrompt('refactorer')
     );
 
-    // 从响应中提取代码块
-    return this.extractCodeArtifacts(response.content);
+    // 检查 Agent 是否完成了重构任务
+    if (result.writtenFiles.length === 0) {
+      const responsePreview = result.response ? result.response.substring(0, 300) : '(无响应)';
+
+      // 可能代码已经足够好，不需要重构
+      const isCodeAlreadyGood = /(?:已经.*(?:简洁|clean|good)|不需要.*重构|无需.*修改|代码.*良好)/i.test(responsePreview);
+
+      if (isCodeAlreadyGood) {
+        console.log(`[Worker] Agent 认为代码无需重构: ${responsePreview.substring(0, 100)}...`);
+        return [];
+      }
+
+      throw new Error(
+        `Agent 未完成重构任务。\n` +
+        `响应预览: ${responsePreview}\n` +
+        `请检查 Agent 是否正确使用了 Edit 工具。`
+      );
+    }
+
+    return result.writtenFiles;
   }
 
   // --------------------------------------------------------------------------
@@ -660,8 +781,13 @@ export class WorkerExecutor {
   async runTest(testFilePath: string): Promise<TestResult> {
     const startTime = Date.now();
 
+    // 确保使用绝对路径（testFilePath 可能是相对路径）
+    const absoluteTestFilePath = path.isAbsolute(testFilePath)
+      ? testFilePath
+      : path.join(this.config.projectRoot, testFilePath);
+
     try {
-      const command = this.getTestCommand(testFilePath);
+      const command = this.getTestCommand(absoluteTestFilePath);
       const output = await this.executeCommand(command, this.config.projectRoot);
       const duration = Date.now() - startTime;
 
@@ -712,28 +838,64 @@ export class WorkerExecutor {
   /**
    * 构建测试生成 Prompt
    */
-  private buildTestPrompt(task: TaskNode): string {
-    return `# 任务：编写测试用例
+  private buildTestPrompt(task: TaskNode, testFilePath: string): string {
+    return `# 任务：编写测试用例（TDD 红灯阶段）
 
 ## 任务描述
 ${task.name}
 
 ${task.description}
 
-## 要求
-1. 使用 ${this.config.testFramework} 测试框架
-2. 测试应该覆盖主要功能和边界情况
-3. 测试应该失败（因为还没有实现代码）
-4. 使用清晰的测试描述和断言
+## TDD 核心原则 - 必须严格遵守！
 
-## 输出格式
-请输出完整的测试代码，使用代码块包裹：
+### ⛔ 绝对禁止
+1. **禁止 mock 被测试的核心模块** - 你正在为这个模块写测试，mock 它就失去了测试意义
+2. **禁止写"作弊测试"** - 即只测试 mock 返回值而不测试真实逻辑的测试
+3. **禁止硬编码预期结果** - 测试应该验证行为，而不是验证固定值
 
+### ✅ 正确做法
+1. **测试真实实现** - 导入真实模块，调用真实方法，验证真实结果
+2. **只 mock 外部依赖** - 仅限：网络请求(fetch/axios)、数据库连接、文件系统、第三方API
+3. **定义接口期望** - 测试定义"输入X应该输出Y"，实现代码负责满足这个期望
+4. **测试应该失败** - 因为实现代码还不存在，测试必然失败（红灯阶段）
+
+### 示例 - 错误的测试（禁止！）
 \`\`\`typescript
-// 测试代码
+// ❌ 错误：mock 了被测模块本身
+const mockAuthService = { login: vi.fn().mockResolvedValue({ token: 'xxx' }) };
+expect(mockAuthService.login()).resolves.toHaveProperty('token'); // 这测试了什么？什么都没测！
 \`\`\`
 
-只输出测试代码，不要包含其他说明文字。`;
+### 示例 - 正确的测试
+\`\`\`typescript
+// ✅ 正确：测试真实实现，只 mock 外部依赖（数据库）
+import { AuthService } from './auth-service';
+
+// 只 mock 外部依赖（数据库）
+const mockDb = { findUser: vi.fn(), saveSession: vi.fn() };
+const authService = new AuthService(mockDb); // 注入依赖
+
+// 测试真实的 AuthService 逻辑
+mockDb.findUser.mockResolvedValue({ id: 1, password: 'hashed' });
+const result = await authService.login('user', 'pass');
+expect(result).toHaveProperty('token'); // 验证 AuthService 真实返回了 token
+\`\`\`
+
+## 技术要求
+1. 使用 ${this.config.testFramework} 测试框架
+2. 正确导入被测模块（即使模块还不存在）
+3. 测试应该覆盖主要功能和边界情况
+4. 使用清晰的测试描述和断言
+
+## 重要：直接使用 Write 工具写入测试文件
+
+**测试文件路径**: ${testFilePath}
+
+请使用 Write 工具直接将测试代码写入到上述路径。不要只是输出代码块，而是调用 Write 工具：
+- file_path: "${testFilePath}"
+- content: 你的测试代码
+
+完成后，简要说明你创建了什么测试。`;
   }
 
   /**
@@ -771,20 +933,15 @@ ${lastError}
 3. 专注于当前测试
 4. 遵循项目代码风格
 
-## 输出格式
-请为每个文件输出代码，使用如下格式：
+## 重要：使用工具写入文件
+请使用 Write 工具创建代码文件，或使用 Edit 工具修改现有文件。
+**不要只是输出代码块**，而是直接使用工具将代码写入到文件中。
 
-### 文件：src/example.ts
-\`\`\`typescript
-// 代码内容
-\`\`\`
+例如，如果需要创建 src/example.ts，请调用 Write 工具：
+- file_path: "${this.config.projectRoot}/src/example.ts"
+- content: 你的代码内容
 
-### 文件：src/utils.ts
-\`\`\`typescript
-// 代码内容
-\`\`\`
-
-只输出代码文件，不要包含其他说明文字。`;
+完成后，简要说明你创建或修改了哪些文件。`;
 
     return prompt;
   }
@@ -821,16 +978,12 @@ ${file.content}
 4. 提高可读性
 5. 确保测试仍然通过
 
-## 输出格式
-请为每个需要修改的文件输出重构后的代码：
+## 重要：使用 Edit 工具修改文件
+请使用 Edit 工具直接修改需要重构的文件。
+**不要只是输出代码块**，而是直接使用工具修改源文件。
 
-### 文件：src/example.ts
-\`\`\`typescript
-// 重构后的代码
-\`\`\`
-
-如果某个文件不需要重构，不用输出。
-只输出代码文件，不要包含其他说明文字。`;
+如果某个文件不需要重构，则不用修改它。
+完成后，简要说明你修改了哪些文件以及做了什么改动。`;
 
     return prompt;
   }
@@ -839,109 +992,107 @@ ${file.content}
    * 获取系统 Prompt
    */
   private getSystemPrompt(role: 'test_writer' | 'code_writer' | 'refactorer'): string {
-    const basePrompt = `你是一个专业的软件工程师，正在使用 TDD（测试驱动开发）方法开发功能。
+    // 项目上下文提示
+    const projectContextPrompt = this.buildProjectContextPrompt();
 
-项目信息：
-- 测试框架：${this.config.testFramework}
-- 项目根目录：${this.config.projectRoot}
+    // 蜂群协作规范（所有角色共享）
+    const swarmCoordinationRules = `
+## 🐝 蜂群协作规范（必须遵守！）
 
+你是蜂群系统中的一个 Worker Agent。你拥有所有工具的使用权限，但这意味着你需要承担更大的责任。
+
+### 🖥️ 工作环境（重要！）
+**你和其他 Worker 在同一台机器上并行工作！** 这意味着：
+1. **共享文件系统** - 你们操作的是同一套代码，修改会立即相互可见
+2. **共享 node_modules** - 依赖是共用的，不要擅自安装/删除包
+3. **共享测试环境** - 测试在同一环境运行，注意测试隔离
+4. **可能产生冲突** - 如果两个 Worker 同时修改同一文件，会产生冲突
+
+### 你的处境
+1. **你不是独立工作** - 蜂群中有多个 Worker 并行工作，你们共同完成一个大任务
+2. **蜂王（Queen）是总指挥** - 她负责任务分解、资源协调、依赖管理
+3. **你只负责你被分配的任务** - 不要越界去做其他 Worker 的工作
+4. **任务已被合理划分** - 蜂王确保每个 Worker 负责不同的文件/模块，避免冲突
+
+### 你的权限 - 完整权限！
+你拥有和蜂王一样的完整权限，可以自主解决遇到的任何问题：
+1. **可以安装依赖** - 如果缺少 npm 包，直接运行 \`npm install -D 包名\` 安装
+2. **可以修改配置** - 如果需要调整 tsconfig.json、vitest.config.ts 等配置来完成任务
+3. **可以运行任何命令** - npm、git、node 等，根据需要自由使用
+4. **专注于你的任务** - 你的核心目标是让分配给你的任务的测试通过
+
+### 工作原则
+1. **自主解决问题** - 遇到依赖缺失、配置问题等，直接解决，不要等待
+2. **专注任务边界** - 只修改与当前任务相关的文件，避免与其他 Worker 冲突
+3. **遵守代码风格** - 使用项目中已有的模式和约定
+4. **快速迭代** - 写代码 → 运行测试 → 修复问题 → 再测试，直到通过
+
+### 你可以自由使用的所有工具
+- Read/Glob/Grep：探索代码库，理解上下文
+- Write/Edit：创建或修改文件
+- Bash：运行测试、安装依赖、执行任何需要的命令
+- 其他所有工具：根据需要自由使用
 `;
 
     const rolePrompts: Record<string, string> = {
-      test_writer: `你的角色是测试工程师。
-你的任务是编写清晰、全面的测试用例。
-测试应该：
-1. 使用 ${this.config.testFramework} 语法
-2. 有明确的测试描述
-3. 覆盖正常情况和边界情况
-4. 包含清晰的断言`,
+      test_writer: `你是一个 TDD Worker，专门负责编写测试代码。
+${swarmCoordinationRules}
+${projectContextPrompt}
 
-      code_writer: `你的角色是实现工程师。
-你的任务是编写最小可行代码使测试通过。
-代码应该：
-1. 简洁清晰
-2. 遵循 SOLID 原则
-3. 有适当的错误处理
-4. 使测试通过`,
+## 你的当前任务
+使用 Write 工具将测试代码写入到指定的文件路径。
 
-      refactorer: `你的角色是重构工程师。
-你的任务是在保持测试通过的前提下优化代码。
-重构目标：
-1. 消除重复（DRY）
-2. 提高可读性
-3. 简化复杂逻辑
-4. 改善代码结构`,
+## 强制要求
+1. 你必须调用 Write 工具写入文件
+2. 禁止只输出代码块 - 你必须使用工具
+3. 完成写入后，简单说明你写了什么
+
+## 技术要求
+- 测试框架: ${this.config.testFramework}
+- 项目根目录: ${this.config.projectRoot}`,
+
+      code_writer: `你是一个 TDD Worker，专门负责编写实现代码。
+${swarmCoordinationRules}
+${projectContextPrompt}
+
+## 你的当前任务
+根据测试代码，使用 Write 或 Edit 工具编写实现代码使测试通过。
+
+## 强制要求
+1. 你必须调用 Write 工具创建新文件，或 Edit 工具修改现有文件
+2. 禁止只输出代码块 - 你必须使用工具将代码写入文件
+3. 完成写入后，简单说明你写了什么
+
+## 技术要求
+- 测试框架: ${this.config.testFramework}
+- 项目根目录: ${this.config.projectRoot}
+- 编写最小可行代码使测试通过
+- 不要过度设计`,
+
+      refactorer: `你是一个 TDD Worker，专门负责重构代码。
+${swarmCoordinationRules}
+${projectContextPrompt}
+
+## 你的当前任务
+使用 Edit 工具重构现有代码，保持测试通过的前提下优化代码。
+
+## 强制要求
+1. 你必须调用 Edit 工具修改文件
+2. 禁止只输出代码块 - 你必须使用工具
+3. 完成修改后，简单说明你改了什么
+
+## 重构目标
+- 消除重复（DRY）
+- 提高可读性
+- 简化复杂逻辑`,
     };
 
-    return basePrompt + rolePrompts[role];
+    return rolePrompts[role];
   }
 
   // --------------------------------------------------------------------------
   // 辅助方法
   // --------------------------------------------------------------------------
-
-  /**
-   * 从响应中提取代码块
-   */
-  private extractCodeBlock(content: any[]): string {
-    for (const block of content) {
-      if (block.type === 'text') {
-        const text = block.text;
-
-        // 提取 ``` 代码块
-        const codeBlockRegex = /```(?:typescript|ts|javascript|js)?\n([\s\S]*?)```/g;
-        const matches = Array.from(text.matchAll(codeBlockRegex));
-
-        if (matches.length > 0) {
-          return matches[0][1].trim();
-        }
-
-        // 如果没有代码块，返回全部文本
-        return text.trim();
-      }
-    }
-
-    return '';
-  }
-
-  /**
-   * 从响应中提取多个代码文件
-   */
-  private extractCodeArtifacts(content: any[]): Array<{ filePath: string; content: string }> {
-    const artifacts: Array<{ filePath: string; content: string }> = [];
-
-    for (const block of content) {
-      if (block.type === 'text') {
-        const text = block.text;
-
-        // 匹配 "### 文件：path/to/file.ts" 后面跟着代码块
-        const fileBlockRegex = /###\s*文件[：:]\s*([^\n]+)\n```(?:typescript|ts|javascript|js)?\n([\s\S]*?)```/g;
-        const matches = Array.from(text.matchAll(fileBlockRegex));
-
-        for (const match of matches) {
-          const filePath = match[1].trim();
-          const content = match[2].trim();
-          artifacts.push({ filePath, content });
-        }
-
-        // 如果没有找到文件标记，但有代码块，使用默认文件名
-        if (artifacts.length === 0) {
-          const codeBlockRegex = /```(?:typescript|ts|javascript|js)?\n([\s\S]*?)```/g;
-          const codeMatches = Array.from(text.matchAll(codeBlockRegex));
-
-          if (codeMatches.length > 0) {
-            // 使用任务 ID 作为默认文件名
-            artifacts.push({
-              filePath: 'src/generated-code.ts',
-              content: codeMatches[0][1].trim(),
-            });
-          }
-        }
-      }
-    }
-
-    return artifacts;
-  }
 
   /**
    * 确定测试文件路径

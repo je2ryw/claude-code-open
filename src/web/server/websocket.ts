@@ -3598,6 +3598,8 @@ function serializeWorker(worker: WorkerAgent): any {
     blueprintId: queen?.blueprintId || '',
     name: `Worker ${worker.id.substring(0, 8)}`,
     status: mapWorkerStatus(worker.status),
+    // 添加详细状态，前端可以用来显示更精确的状态信息
+    detailedStatus: worker.status,
     currentTaskId: worker.taskId || null,
     currentTaskTitle: taskTitle,
     progress,
@@ -3633,13 +3635,18 @@ function mapWorkerStatus(status: string): 'idle' | 'working' | 'paused' | 'compl
     case 'idle':
       return 'idle';
     case 'test_writing':
+    case 'coding':
+    case 'testing':
     case 'implementing':
       return 'working';
+    case 'waiting':
+      return 'paused';
     case 'completed':
       return 'completed';
     case 'failed':
       return 'failed';
     default:
+      console.warn(`[WebSocket] Unknown worker status: ${status}, defaulting to 'idle'`);
       return 'idle';
   }
 }

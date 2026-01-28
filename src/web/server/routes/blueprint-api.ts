@@ -2073,16 +2073,22 @@ router.post('/tdd/sync-all', (req: Request, res: Response) => {
 /**
  * 清理孤立的 TDD 循环
  * 孤立循环：TDD 循环存在但没有对应的 Worker 在执行
+ * 同时会重置任务状态为 pending，以便重新分配给 Worker
  */
 router.post('/tdd/cleanup-orphaned', (req: Request, res: Response) => {
   try {
     const result = agentCoordinator.cleanupOrphanedTDDLoops();
+    let message = '没有孤立的 TDD 循环需要清理';
+    if (result.removedCount > 0) {
+      message = `已清理 ${result.removedCount} 个孤立的 TDD 循环`;
+      if (result.resetTasks.length > 0) {
+        message += `，重置了 ${result.resetTasks.length} 个任务为待执行状态`;
+      }
+    }
     res.json({
       success: true,
       data: result,
-      message: result.removedCount > 0
-        ? `已清理 ${result.removedCount} 个孤立的 TDD 循环`
-        : '没有孤立的 TDD 循环需要清理',
+      message,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

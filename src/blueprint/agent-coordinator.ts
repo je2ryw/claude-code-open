@@ -108,7 +108,7 @@ const DEFAULT_CONFIG: CoordinatorConfig = {
   mainLoopInterval: 5000, // 5 秒
   autoAssignTasks: true,
   modelStrategy: 'adaptive',
-  defaultWorkerModel: 'haiku',
+  defaultWorkerModel: 'opus',  // 使用 opus 模型确保 Agent 能正确使用工具
   projectRoot: process.cwd(),
   testFramework: 'vitest',
   testDirectory: '__tests__',
@@ -375,13 +375,42 @@ export class AgentCoordinator extends EventEmitter {
       } else {
         console.log(`[AgentCoordinator] 测试 ${test.id} 无法自动修正: ${result.humanInterventionReason}`);
 
-        // 发出需要人工介入事件
-        this.emit('test:needs-human-intervention', {
-          taskId,
-          testId: test.id,
-          analysis: result.analysis,
-          reason: result.humanInterventionReason,
-        });
+        // 检查是否是依赖缺失问题，如果是则自动安装
+        const reason = result.humanInterventionReason || '';
+        const depMatch = reason.match(/(?:依赖|dependency|package|包).*?(?:缺失|missing|not found|cannot find).*?['"]?(\S+?)['"]?(?:\s|$|。|,|，)/i)
+          || reason.match(/(?:需要安装|install|npm install|yarn add).*?['"]?(\S+?)['"]?/i)
+          || reason.match(/(?:jsdom|vitest|jest|typescript)/i);
+
+        if (depMatch) {
+          // 提取依赖名称
+          let depName = depMatch[1] || depMatch[0];
+          // 清理依赖名称
+          depName = depName.replace(/['"`,。，]/g, '').trim();
+          // 常见依赖名映射
+          if (/jsdom/i.test(reason)) depName = 'jsdom';
+          if (/vitest/i.test(reason) && !/jsdom/i.test(reason)) depName = 'vitest';
+
+          console.log(`[AgentCoordinator] 检测到依赖缺失问题，自动安装: ${depName}`);
+          this.addTimelineEvent('task_start', `检测到依赖缺失，自动安装: ${depName}`, { taskId, dependency: depName });
+
+          // 请求安装依赖
+          await this.requestDependency('queen', taskId, depName, undefined, `测试修正时检测到缺失`, true);
+
+          // 标记需要在依赖安装后重试
+          this.emit('test:dependency-installing', {
+            taskId,
+            testId: test.id,
+            dependency: depName,
+          });
+        } else {
+          // 真正需要人工介入的情况
+          this.emit('test:needs-human-intervention', {
+            taskId,
+            testId: test.id,
+            analysis: result.analysis,
+            reason: result.humanInterventionReason,
+          });
+        }
       }
     }
 
@@ -2654,15 +2683,75 @@ export class AgentCoordinator extends EventEmitter {
     // 验收测试检查：确保任务有验收测试
     // TDD 核心：测试必须在编码前就已存在
     if (task.acceptanceTests.length === 0) {
-      // 如果没有验收测试，记录警告但继续执行
-      // 测试应该在任务创建时就已经生成了
-      console.warn(`警告：任务 ${taskId} 没有验收测试，TDD 流程可能不完整`);
-      this.addTimelineEvent('test_fail', `任务缺少验收测试，可能需要手动生成`, { taskId });
+      // 🔧 修复：如果没有验收测试，先等待生成（而不是只发警告）
+      // 这解决了竞态条件：任务树创建时异步生成测试，可能在 Worker 分配任务时还没完成
+      console.log(`[AgentCoordinator] 任务 ${taskId} 尚无验收测试，正在生成...`);
+      this.addTimelineEvent('task_start', `任务缺少验收测试，正在生成`, { taskId });
+
+      const testGenerated = await taskTreeManager.generateAcceptanceTestForTask(
+        this.queen.taskTreeId,
+        task
+      );
+
+      if (!testGenerated) {
+        // 验收测试生成失败，但仍继续执行（Worker 会自己编写测试）
+        console.warn(`警告：任务 ${taskId} 验收测试生成失败，Worker 将自行编写测试`);
+        this.addTimelineEvent('test_fail', `验收测试生成失败，Worker 将自行编写`, { taskId });
+      } else {
+        this.addTimelineEvent('test_pass', `验收测试生成成功，共 ${task.acceptanceTests.length} 个`, {
+          taskId,
+          testCount: task.acceptanceTests.length,
+        });
+      }
     } else {
       this.addTimelineEvent('test_pass', `任务已有 ${task.acceptanceTests.length} 个验收测试（在任务创建时生成）`, {
         taskId,
         testCount: task.acceptanceTests.length,
       });
+    }
+
+    // ========== 关键改进：验收测试可行性检查 ==========
+    // 在分配任务给 Worker 之前，先检查测试是否能运行
+    // 这避免了 Worker 被困在"环境问题导致的不可能任务"中
+    if (task.acceptanceTests.length > 0) {
+      const testFeasibility = await this.checkTestFeasibility(task);
+
+      if (!testFeasibility.canRun) {
+        // 测试无法运行（环境问题，不是代码问题）
+        console.log(`[AgentCoordinator] 任务 ${taskId} 验收测试无法运行: ${testFeasibility.reason}`);
+        this.addTimelineEvent('test_fail', `验收测试环境检查失败: ${testFeasibility.reason}`, {
+          taskId,
+          error: testFeasibility.error,
+          suggestion: testFeasibility.suggestion,
+        });
+
+        // 尝试自动修复环境问题
+        if (testFeasibility.missingDependencies && testFeasibility.missingDependencies.length > 0) {
+          console.log(`[AgentCoordinator] 尝试安装缺失依赖: ${testFeasibility.missingDependencies.join(', ')}`);
+
+          for (const dep of testFeasibility.missingDependencies) {
+            await this.requestDependency('queen', taskId, dep.name, dep.version, `验收测试需要`, dep.isDev);
+          }
+
+          // 处理完依赖后，重新检查
+          this.addTimelineEvent('task_start', `已请求安装依赖，任务将在依赖安装后重新分配`, { taskId });
+          return; // 不分配任务，等待依赖安装完成后重新触发
+        }
+
+        // 如果无法自动修复，发出警告让用户介入
+        this.emit('queen:environment-issue', {
+          taskId,
+          reason: testFeasibility.reason,
+          error: testFeasibility.error,
+          suggestion: testFeasibility.suggestion,
+        });
+
+        // 暂时跳过这个任务
+        taskTreeManager.updateTaskStatus(this.queen.taskTreeId, taskId, 'blocked', {
+          lastError: `环境问题: ${testFeasibility.reason}`,
+        });
+        return;
+      }
     }
 
     // 更新 Worker 状态
@@ -2783,17 +2872,29 @@ export class AgentCoordinator extends EventEmitter {
             this.updateWorkerStatus(worker, 'coding');
             this.recordWorkerAction(worker, 'write', '编写实现代码', { phase: loopState.phase });
 
+            // 获取测试代码：优先使用验收测试的代码，否则使用 testSpec 的代码
+            let testCodeForImplementation = loopState.testSpec?.testCode || '';
+            if (loopState.hasAcceptanceTests && loopState.acceptanceTests.length > 0) {
+              // 合并所有验收测试的代码
+              testCodeForImplementation = loopState.acceptanceTests
+                .map((test: any) => `// === ${test.name} ===\n${test.testCode}`)
+                .join('\n\n');
+            }
+
             const codeResult = await executor.executePhase('write_code', {
               task: currentTask,
-              testCode: loopState.testSpec?.testCode,
+              testCode: testCodeForImplementation,
               lastError: loopState.lastError,
             });
 
-            if (!codeResult.success || !codeResult.artifacts || codeResult.artifacts.length === 0) {
+            if (!codeResult.success) {
               throw new Error(codeResult.error || '实现代码生成失败');
             }
 
-            tddExecutor.submitImplementationCode(currentTask.id, codeResult.artifacts);
+            // Worker 可能发现代码已存在无需写入（artifacts 为空但 success 为 true）
+            // 这种情况下直接进入下一阶段运行测试
+            const artifacts = codeResult.artifacts || [];
+            tddExecutor.submitImplementationCode(currentTask.id, artifacts);
             break;
           }
           case 'run_test_green': {
@@ -2831,6 +2932,12 @@ export class AgentCoordinator extends EventEmitter {
             throw new Error(`未知阶段: ${loopState.phase}`);
         }
 
+        // 🔧 安全检查：在获取下一个循环状态前，确认 TDD 循环仍然存在
+        // 这可以防止在外部清理操作（如 cleanupOrphanedTDDLoops）删除循环后崩溃
+        if (!tddExecutor.isInLoop(currentTask.id)) {
+          console.warn(`[AgentCoordinator] TDD 循环已被外部删除: ${currentTask.id}，任务中止`);
+          throw new Error('TDD 循环已被外部删除，任务需要重新分配');
+        }
         loopState = tddExecutor.getLoopState(currentTask.id);
       }
 
@@ -3682,6 +3789,22 @@ export class AgentCoordinator extends EventEmitter {
     // 获取可执行任务
     const executableTasks = taskTreeManager.getExecutableTasks(this.queen.taskTreeId);
 
+    // 调试日志：显示可执行任务数量
+    const tree = taskTreeManager.getTaskTree(this.queen.taskTreeId);
+    if (executableTasks.length === 0 && tree) {
+      console.log('[AgentCoordinator] 没有可执行的任务', {
+        totalTasks: tree.stats.totalTasks,
+        pendingTasks: tree.stats.pendingTasks,
+        runningTasks: tree.stats.runningTasks,
+        passedTasks: tree.stats.passedTasks,
+        failedTasks: tree.stats.failedTasks,
+      });
+    } else if (executableTasks.length > 0) {
+      console.log(`[AgentCoordinator] 发现 ${executableTasks.length} 个可执行任务:`,
+        executableTasks.map(t => ({ id: t.id.substring(0, 8), name: t.name, status: t.status }))
+      );
+    }
+
     // 分配计数器
     let assignedCount = 0;
     let idleWorkerIndex = 0;
@@ -3807,26 +3930,378 @@ export class AgentCoordinator extends EventEmitter {
     const tree = this.queen ? taskTreeManager.getTaskTree(this.queen.taskTreeId) : null;
     const task = tree ? taskTreeManager.findTask(tree.root, failedTaskId) : null;
 
-    if (task && task.retryCount < task.maxRetries) {
-      this.recordDecision('retry', `任务 ${failedTaskId} 失败，安排重试 (${task.retryCount + 1}/${task.maxRetries})`, error);
+    if (task) {
+      // 计算错误哈希用于比较
+      const errorHash = this.computeErrorHash(error);
+      const isSameError = task.lastErrorHash === errorHash;
 
-      // 实际执行重试：将任务状态重置为 pending，以便下一轮主循环可以重新分配
-      taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, failedTaskId, 'pending', {
-        retryCount: task.retryCount + 1,
-      });
+      // 检测不可重试的错误
+      const nonRetryableError = this.isNonRetryableError(error);
 
-      this.addTimelineEvent('task_start', `任务 ${failedTaskId} 已重置为待执行，等待重新分配`, {
-        workerId,
-        taskId: failedTaskId,
-        retryCount: task.retryCount + 1,
-      });
-    } else {
-      this.recordDecision('escalate', `任务 ${failedTaskId} 已达最大重试次数 (${task?.maxRetries || 0})，需要人工介入`, error);
+      // 更新错误追踪信息
+      const newConsecutiveSameErrors = isSameError ? (task.consecutiveSameErrors || 0) + 1 : 1;
 
-      this.addTimelineEvent('test_fail', `Worker 任务失败: ${failedTaskId}`, { workerId, error });
+      // 判断是否应该停止重试
+      const shouldStopRetrying =
+        nonRetryableError ||                              // 不可重试的错误（如缺少依赖）
+        newConsecutiveSameErrors >= 2 ||                   // 连续2次相同错误
+        task.retryCount >= task.maxRetries;                // 达到最大重试次数
+
+      if (shouldStopRetrying) {
+        // 停止重试，记录原因
+        let stopReason = '';
+        if (nonRetryableError) {
+          stopReason = `检测到不可重试的错误（可能是依赖问题或环境配置错误）`;
+        } else if (newConsecutiveSameErrors >= 2) {
+          stopReason = `连续 ${newConsecutiveSameErrors} 次出现相同错误，重试无效`;
+        } else {
+          stopReason = `已达最大重试次数 (${task.maxRetries})`;
+        }
+
+        // === 关键改进：检测并自动安装缺失的依赖 ===
+        if (nonRetryableError) {
+          const depMatch = error.match(/(?:jsdom|vitest|jest|@types\/\w+)/i)
+            || error.match(/Cannot find (?:module|package) ['"]([^'"]+)['"]/i)
+            || error.match(/Missing dependency[:\s]+['"]?(\S+?)['"]?/i);
+
+          if (depMatch) {
+            let depName = depMatch[1] || depMatch[0];
+            depName = depName.replace(/['"]/g, '').trim();
+            // 常见依赖名映射
+            if (/jsdom/i.test(error)) depName = 'jsdom';
+
+            console.log(`[AgentCoordinator] Worker 失败原因是依赖缺失，自动安装: ${depName}`);
+            this.addTimelineEvent('task_start', `检测到依赖缺失，蜂王自动安装: ${depName}`, {
+              taskId: failedTaskId,
+              dependency: depName,
+            });
+
+            // 异步安装依赖（不阻塞当前流程）
+            this.requestDependency('queen', failedTaskId, depName, undefined, `Worker 执行失败时检测到缺失`, true)
+              .then(() => {
+                // 依赖安装请求已提交，任务将在依赖安装后重新分配
+                console.log(`[AgentCoordinator] 依赖 ${depName} 安装请求已提交，任务将重新分配`);
+
+                // 重置任务状态为 pending，以便依赖安装后可以重试
+                taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, failedTaskId, 'pending', {
+                  lastError: `等待依赖 ${depName} 安装`,
+                  retryCount: 0,  // 重置重试次数
+                });
+              })
+              .catch(err => {
+                console.error(`[AgentCoordinator] 依赖安装失败:`, err);
+              });
+
+            // 发送通知
+            this.emit('queen:dependency-installing', {
+              taskId: failedTaskId,
+              dependency: depName,
+            });
+            return;  // 不标记为 test_failed，等待依赖安装
+          }
+        }
+
+        this.recordDecision('escalate', `任务 ${failedTaskId} 停止重试: ${stopReason}`, error);
+        this.addTimelineEvent('test_fail', `任务失败，停止重试: ${stopReason}`, {
+          workerId,
+          taskId: failedTaskId,
+          error,
+          consecutiveSameErrors: newConsecutiveSameErrors,
+          nonRetryableError,
+        });
+
+        // 更新任务状态，保存错误信息
+        taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, failedTaskId, 'test_failed', {
+          lastError: error,
+          lastErrorHash: errorHash,
+          consecutiveSameErrors: newConsecutiveSameErrors,
+        });
+
+        // 发送通知给前端
+        this.emit('queen:task-blocked', {
+          taskId: failedTaskId,
+          reason: stopReason,
+          error,
+          suggestion: nonRetryableError
+            ? '请检查项目依赖配置或环境设置'
+            : '请手动检查失败原因后重试',
+        });
+      } else {
+        // 可以重试
+        this.recordDecision('retry', `任务 ${failedTaskId} 失败，安排重试 (${task.retryCount + 1}/${task.maxRetries})`, error);
+
+        // 实际执行重试：将任务状态重置为 pending，以便下一轮主循环可以重新分配
+        taskTreeManager.updateTaskStatus(this.queen!.taskTreeId, failedTaskId, 'pending', {
+          retryCount: task.retryCount + 1,
+          lastError: error,
+          lastErrorHash: errorHash,
+          consecutiveSameErrors: newConsecutiveSameErrors,
+        });
+
+        this.addTimelineEvent('task_start', `任务 ${failedTaskId} 已重置为待执行，等待重新分配`, {
+          workerId,
+          taskId: failedTaskId,
+          retryCount: task.retryCount + 1,
+        });
+      }
     }
 
     this.emit('worker:task-failed', { workerId, taskId: failedTaskId, error });
+  }
+
+  /**
+   * 计算错误信息的哈希值（用于比较错误是否相同）
+   * 忽略时间戳、行号等动态信息
+   */
+  private computeErrorHash(error: string): string {
+    // 标准化错误信息：移除时间戳、行号、文件路径等动态部分
+    const normalized = error
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, 'TIMESTAMP')  // ISO 时间戳
+      .replace(/\d{2}:\d{2}:\d{2}/g, 'TIME')                          // 时间
+      .replace(/:\d+:\d+/g, ':LINE:COL')                               // 行号:列号
+      .replace(/0x[0-9a-fA-F]+/g, 'HEX')                               // 十六进制地址
+      .replace(/\d+ms/g, 'DURATION')                                   // 耗时
+      .trim()
+      .toLowerCase();
+
+    // 简单哈希
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+      const char = normalized.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(16);
+  }
+
+  /**
+   * 检测不可重试的错误
+   * 这些错误通常是环境问题或依赖问题，重试不会解决
+   */
+  private isNonRetryableError(error: string): boolean {
+    const nonRetryablePatterns = [
+      // 依赖缺失
+      /Cannot find module '([^']+)'/i,
+      /Module not found/i,
+      /Failed to resolve import/i,
+      /Cannot resolve dependency/i,
+      /Package.*not found/i,
+
+      // 环境配置问题
+      /jsdom.*not found/i,
+      /vitest.*environment.*jsdom/i,
+      /Cannot use import statement outside a module/i,
+      /SyntaxError.*Unexpected token/i,
+
+      // 类型错误（通常是代码结构问题）
+      /TypeError:.*is not a function/i,
+      /TypeError:.*is not defined/i,
+
+      // 权限问题
+      /EACCES/i,
+      /Permission denied/i,
+
+      // 网络问题（可能需要配置代理）
+      /ENOTFOUND/i,
+      /ETIMEDOUT/i,
+
+      // 内存问题
+      /JavaScript heap out of memory/i,
+      /FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed/i,
+    ];
+
+    return nonRetryablePatterns.some(pattern => pattern.test(error));
+  }
+
+  /**
+   * 检查验收测试是否可以在当前环境运行
+   *
+   * 这是一个关键的预检查：
+   * - 在分配任务给 Worker 之前，先确保测试环境就绪
+   * - 区分"环境问题"和"代码问题"
+   * - 避免 Worker 被困在不可能完成的任务中
+   */
+  private async checkTestFeasibility(task: TaskNode): Promise<{
+    canRun: boolean;
+    reason?: string;
+    error?: string;
+    suggestion?: string;
+    missingDependencies?: Array<{ name: string; version?: string; isDev: boolean }>;
+  }> {
+    // 如果没有验收测试，直接返回可运行
+    if (!task.acceptanceTests || task.acceptanceTests.length === 0) {
+      return { canRun: true };
+    }
+
+    // 取第一个验收测试进行试运行
+    const testSample = task.acceptanceTests[0];
+    const testFilePath = testSample.testFilePath;
+    const projectRoot = this.config.projectRoot || process.cwd();
+
+    // 检查测试文件是否存在（需要拼接项目根目录，因为 testFilePath 是相对路径）
+    const fullTestFilePath = path.isAbsolute(testFilePath)
+      ? testFilePath
+      : path.join(projectRoot, testFilePath);
+
+    if (!fs.existsSync(fullTestFilePath)) {
+      return {
+        canRun: false,
+        reason: '测试文件不存在',
+        error: `文件不存在: ${fullTestFilePath}`,
+        suggestion: '请检查验收测试生成是否正确',
+      };
+    }
+
+    // 尝试运行测试，捕获环境错误
+    try {
+      const testCommand = testSample.testCommand || `npx vitest run ${testFilePath}`;
+      const projectRoot = this.config.projectRoot || process.cwd();
+
+      // 使用较短的超时时间进行预检查
+      const result = await this.runCommandWithTimeout(testCommand, projectRoot, 30000);
+
+      // 测试运行成功或正常失败（代码问题）都表示环境可用
+      return { canRun: true };
+    } catch (error: any) {
+      const errorOutput = error.stdout + '\n' + error.stderr + '\n' + (error.message || '');
+
+      // 分析错误类型
+      const analysis = this.analyzeTestError(errorOutput);
+
+      if (analysis.isEnvironmentIssue) {
+        return {
+          canRun: false,
+          reason: analysis.reason,
+          error: errorOutput.substring(0, 500),
+          suggestion: analysis.suggestion,
+          missingDependencies: analysis.missingDependencies,
+        };
+      }
+
+      // 不是环境问题，测试可以运行（只是会因为代码问题失败）
+      return { canRun: true };
+    }
+  }
+
+  /**
+   * 分析测试错误，区分环境问题和代码问题
+   */
+  private analyzeTestError(errorOutput: string): {
+    isEnvironmentIssue: boolean;
+    reason: string;
+    suggestion: string;
+    missingDependencies?: Array<{ name: string; version?: string; isDev: boolean }>;
+  } {
+    const missingDependencies: Array<{ name: string; version?: string; isDev: boolean }> = [];
+
+    // 检测 jsdom 缺失
+    if (/jsdom/i.test(errorOutput) && /(not found|cannot find|failed to resolve)/i.test(errorOutput)) {
+      missingDependencies.push({ name: 'jsdom', isDev: true });
+      return {
+        isEnvironmentIssue: true,
+        reason: 'jsdom 测试环境未安装',
+        suggestion: '需要安装 jsdom: npm install -D jsdom',
+        missingDependencies,
+      };
+    }
+
+    // 检测模块缺失
+    const moduleNotFoundMatch = errorOutput.match(/Cannot find module ['"]([^'"]+)['"]/i);
+    if (moduleNotFoundMatch) {
+      const moduleName = moduleNotFoundMatch[1];
+      // 排除本地模块（以 ./ 或 ../ 开头）
+      if (!moduleName.startsWith('.') && !moduleName.startsWith('/')) {
+        // 提取包名（处理 @scope/package 格式）
+        const packageName = moduleName.startsWith('@')
+          ? moduleName.split('/').slice(0, 2).join('/')
+          : moduleName.split('/')[0];
+
+        missingDependencies.push({ name: packageName, isDev: true });
+        return {
+          isEnvironmentIssue: true,
+          reason: `缺少依赖: ${packageName}`,
+          suggestion: `需要安装依赖: npm install -D ${packageName}`,
+          missingDependencies,
+        };
+      }
+    }
+
+    // 检测 vitest 环境配置问题
+    if (/vitest.*environment/i.test(errorOutput) && /not found|unknown|invalid/i.test(errorOutput)) {
+      return {
+        isEnvironmentIssue: true,
+        reason: 'Vitest 测试环境配置错误',
+        suggestion: '请检查 vitest.config.ts 中的 environment 配置',
+      };
+    }
+
+    // 检测 Node.js 版本问题
+    if (/SyntaxError.*Unexpected token/i.test(errorOutput) && /export|import/i.test(errorOutput)) {
+      return {
+        isEnvironmentIssue: true,
+        reason: 'ES 模块语法不支持',
+        suggestion: '请检查 package.json 中是否设置了 "type": "module" 或 tsconfig.json 配置',
+      };
+    }
+
+    // 检测 TypeScript 配置问题
+    if (/Cannot use import statement outside a module/i.test(errorOutput)) {
+      return {
+        isEnvironmentIssue: true,
+        reason: 'TypeScript/ESM 配置问题',
+        suggestion: '请检查 tsconfig.json 和测试框架配置',
+      };
+    }
+
+    // 不是环境问题
+    return {
+      isEnvironmentIssue: false,
+      reason: '测试断言失败（代码问题）',
+      suggestion: 'Worker 将编写实现代码来通过测试',
+    };
+  }
+
+  /**
+   * 运行命令（带超时）
+   */
+  private runCommandWithTimeout(command: string, cwd: string, timeout: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const [cmd, ...args] = command.split(' ');
+
+      const proc = spawn(cmd, args, {
+        cwd,
+        shell: true,
+        timeout,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout + stderr);
+        } else {
+          const error = new Error(`Command failed with code ${code}`);
+          (error as any).stdout = stdout;
+          (error as any).stderr = stderr;
+          reject(error);
+        }
+      });
+
+      proc.on('error', (error) => {
+        (error as any).stdout = stdout;
+        (error as any).stderr = stderr;
+        reject(error);
+      });
+    });
   }
 
   /**
@@ -4114,46 +4589,93 @@ export class AgentCoordinator extends EventEmitter {
    * 1. Worker 异常退出后 TDD 循环没有被清理
    * 2. 服务重启后状态不一致
    *
+   * 清理操作包括：
+   * 1. 删除 TDD 循环
+   * 2. 重置任务状态为 pending，以便重新分配给 Worker
+   *
    * @returns 清理的循环数量和详情
    */
   cleanupOrphanedTDDLoops(): {
     removedCount: number;
     removedTasks: string[];
+    resetTasks: string[];
   } {
-    const activeLoops = tddExecutor.getActiveLoops();
-    const activeWorkerTaskIds = new Set<string>();
+    // 🔧 安全检查：如果主循环正在运行，先暂停以避免竞态条件
+    const wasRunning = this.isRunning;
+    if (wasRunning) {
+      console.log('[AgentCoordinator] 清理孤立循环：暂停主循环以避免竞态条件');
+      this.stopMainLoop();
+    }
 
-    // 收集所有正在执行任务的 Worker 的 taskId
-    for (const worker of this.workers.values()) {
-      if (worker.status !== 'idle' && worker.taskId) {
-        activeWorkerTaskIds.add(worker.taskId);
+    try {
+      const activeLoops = tddExecutor.getActiveLoops();
+      const activeWorkerTaskIds = new Set<string>();
+
+      // 收集所有正在执行任务的 Worker 的 taskId
+      // 🔧 修复：不仅检查 worker.status，还要检查 workerExecutors 中是否有正在执行的任务
+      for (const worker of this.workers.values()) {
+        if (worker.status !== 'idle' && worker.taskId) {
+          activeWorkerTaskIds.add(worker.taskId);
+        }
+        // 额外检查：如果 workerExecutor 存在，说明任务可能正在执行
+        if (worker.taskId && this.workerExecutors.has(worker.id)) {
+          activeWorkerTaskIds.add(worker.taskId);
+        }
       }
-    }
 
-    // 找出没有对应 Worker 执行的 TDD 循环
-    const orphanedTaskIds: string[] = [];
-    for (const loop of activeLoops) {
-      if (!activeWorkerTaskIds.has(loop.taskId)) {
-        orphanedTaskIds.push(loop.taskId);
+      // 找出没有对应 Worker 执行的 TDD 循环
+      const orphanedTaskIds: string[] = [];
+      for (const loop of activeLoops) {
+        if (!activeWorkerTaskIds.has(loop.taskId)) {
+          orphanedTaskIds.push(loop.taskId);
+        }
       }
-    }
 
-    // 清理孤立循环
-    for (const taskId of orphanedTaskIds) {
-      tddExecutor.removeLoop(taskId);
-      console.log(`[AgentCoordinator] 清理孤立 TDD 循环: ${taskId}`);
-    }
+      // 清理孤立循环并重置任务状态
+      const resetTasks: string[] = [];
+      for (const taskId of orphanedTaskIds) {
+        // 1. 获取 TDD 循环的 treeId
+        const loop = activeLoops.find(l => l.taskId === taskId);
+        const treeId = loop?.treeId;
 
-    if (orphanedTaskIds.length > 0) {
-      this.addTimelineEvent('task_review', `清理了 ${orphanedTaskIds.length} 个孤立的 TDD 循环`, {
+        // 2. 删除 TDD 循环
+        tddExecutor.removeLoop(taskId);
+        console.log(`[AgentCoordinator] 清理孤立 TDD 循环: ${taskId}`);
+
+        // 3. 重置任务状态为 pending，以便重新分配
+        if (treeId) {
+          const tree = taskTreeManager.getTaskTree(treeId);
+          if (tree) {
+            const task = taskTreeManager.findTask(tree.root, taskId);
+            if (task && task.status !== 'pending' && task.status !== 'passed' && task.status !== 'approved') {
+              // 任务状态不是 pending 且未完成，需要重置
+              console.log(`[AgentCoordinator] 重置任务状态: ${taskId} (${task.status} -> pending)`);
+              taskTreeManager.updateTaskStatus(treeId, taskId, 'pending');
+              resetTasks.push(taskId);
+            }
+          }
+        }
+      }
+
+      if (orphanedTaskIds.length > 0) {
+        this.addTimelineEvent('task_review', `清理了 ${orphanedTaskIds.length} 个孤立的 TDD 循环，重置了 ${resetTasks.length} 个任务`, {
+          removedTasks: orphanedTaskIds,
+          resetTasks,
+        });
+      }
+
+      return {
+        removedCount: orphanedTaskIds.length,
         removedTasks: orphanedTaskIds,
-      });
+        resetTasks,
+      };
+    } finally {
+      // 🔧 确保主循环在清理完成后恢复
+      if (wasRunning) {
+        console.log('[AgentCoordinator] 清理孤立循环完成：恢复主循环');
+        this.startMainLoop();
+      }
     }
-
-    return {
-      removedCount: orphanedTaskIds.length,
-      removedTasks: orphanedTaskIds,
-    };
   }
 
   /**

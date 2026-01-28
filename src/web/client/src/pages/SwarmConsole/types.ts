@@ -62,9 +62,19 @@ export interface WorkerAgent {
   blueprintId: string;
   name: string;
   status: 'idle' | 'working' | 'paused' | 'completed' | 'failed';
+  // 详细状态，用于显示更精确的工作状态
+  detailedStatus?: 'idle' | 'test_writing' | 'coding' | 'testing' | 'waiting' | 'completed' | 'failed';
   currentTaskId: string | null;
   currentTaskTitle: string | null;
   progress: number; // 0-100
+  // TDD 循环状态
+  tddCycle?: {
+    phase: string;
+    iteration: number;
+    testWritten: boolean;
+    codeWritten: boolean;
+    testPassed: boolean;
+  } | null;
   logs: string[];
   createdAt: string;
   updatedAt: string;

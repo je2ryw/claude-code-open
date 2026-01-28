@@ -311,6 +311,11 @@ export interface TaskNode {
   retryCount: number;
   maxRetries: number;
 
+  // 错误追踪（用于检测相同错误重复失败）
+  lastError?: string;           // 上次失败的错误信息
+  lastErrorHash?: string;       // 错误信息的哈希（用于快速比较）
+  consecutiveSameErrors: number; // 连续相同错误的次数
+
   // 检查点（用于时光倒流）
   checkpoints: Checkpoint[];
 

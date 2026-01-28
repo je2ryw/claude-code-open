@@ -275,6 +275,7 @@ export class TaskTreeManager extends EventEmitter {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: 3,
+      consecutiveSameErrors: 0,
       checkpoints: [],
       // 继承蓝图的来源标记（用于判断是否需要 TDD）
       source: blueprint.source,
@@ -346,6 +347,7 @@ export class TaskTreeManager extends EventEmitter {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: 3,
+      consecutiveSameErrors: 0,
       checkpoints: [],
       source: 'requirement',  // 项目初始化是必须的，不是从代码逆向
       metadata: {
@@ -380,6 +382,7 @@ export class TaskTreeManager extends EventEmitter {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: 3,
+      consecutiveSameErrors: 0,
       checkpoints: [],
       metadata: {
         moduleType: module.type,
@@ -417,6 +420,12 @@ export class TaskTreeManager extends EventEmitter {
 
   /**
    * 为职责创建任务
+   *
+   * 重要设计决策：职责任务本身就是叶子任务，不再分解为子任务
+   * 原因：
+   * 1. Worker 执行的是完整的 TDD 循环（write_test → run_test_red → write_code → run_test_green → refactor）
+   * 2. 如果把"设计、测试用例、实现、集成测试"分解为独立任务，会导致重复的 TDD 循环
+   * 3. 职责（responsibility）描述的是一个功能点，应该由一个 Worker 完整实现
    */
   private createResponsibilityTask(
     responsibility: string,
@@ -424,69 +433,28 @@ export class TaskTreeManager extends EventEmitter {
     depth: number,
     index: number
   ): TaskNode {
-    const task: TaskNode = {
+    // 职责任务是叶子任务，Worker 将通过 TDD 循环完整实现它
+    return {
       id: uuidv4(),
       parentId,
       name: `功能：${responsibility}`,
-      description: responsibility,
+      description: `使用 TDD 方式实现：${responsibility}`,
       priority: 50 - index, // 按顺序递减优先级
       depth,
+      taskType: 'feature',  // 标记为功能任务，Worker 将执行完整 TDD 循环
       status: 'pending',
-      children: [],
+      children: [],  // 叶子任务，没有子任务
       dependencies: [],
       acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
       codeArtifacts: [],
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: 5,
+      consecutiveSameErrors: 0,
       checkpoints: [],
       // 继承蓝图的来源标记
       source: this.currentBlueprint?.source,
     };
-
-    // 为每个功能创建更细粒度的子任务
-    // 这些子任务会在执行时由 Agent 动态细化
-    const subtasks = this.decomposeResponsibility(responsibility, task.id, depth + 1);
-    task.children = subtasks;
-
-    return task;
-  }
-
-  /**
-   * 分解职责为更细粒度的任务
-   */
-  private decomposeResponsibility(
-    responsibility: string,
-    parentId: string,
-    depth: number
-  ): TaskNode[] {
-    // 默认的任务分解模式（实际执行时 Agent 会动态细化）
-    const subtaskTemplates = [
-      { name: '设计', description: `设计 ${responsibility} 的实现方案` },
-      { name: '测试用例', description: `编写 ${responsibility} 的测试用例` },
-      { name: '实现', description: `实现 ${responsibility}` },
-      { name: '集成测试', description: `${responsibility} 的集成测试` },
-    ];
-
-    return subtaskTemplates.map((template, index) => ({
-      id: uuidv4(),
-      parentId,
-      name: `${template.name}：${responsibility.substring(0, 20)}...`,
-      description: template.description,
-      priority: 40 - index * 10,
-      depth,
-      status: 'pending',
-      children: [],
-      dependencies: index > 0 ? [] : [], // 后续任务依赖前置任务
-      acceptanceTests: [],  // 验收测试（由 Queen Agent 生成）
-      codeArtifacts: [],
-      createdAt: new Date(),
-      retryCount: 0,
-      maxRetries: 5,
-      checkpoints: [],
-      // 继承蓝图的来源标记
-      source: this.currentBlueprint?.source,
-    }));
   }
 
   /**
@@ -512,6 +480,7 @@ export class TaskTreeManager extends EventEmitter {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: 3,
+      consecutiveSameErrors: 0,
       checkpoints: [],
       metadata: {
         interfaceType: iface.type,
@@ -595,6 +564,32 @@ export class TaskTreeManager extends EventEmitter {
     }
 
     const previousStatus = task.status;
+
+    // 🔧 修复：如果状态没有变化，不发射事件，避免重复日志
+    if (previousStatus === status) {
+      // 仍然应用额外数据（如果有）
+      if (additionalData) {
+        Object.assign(task, additionalData);
+        this.saveTaskTree(tree);
+      }
+      return task;
+    }
+
+    // 🔧 修复：状态转换合法性检查，防止非法转换（如 passed -> test_failed）
+    const invalidTransitions: Record<string, string[]> = {
+      // 已通过的任务不能转为失败状态（需要先重置）
+      'passed': ['test_failed', 'rejected'],
+      // 已批准的任务不能再改状态
+      'approved': ['pending', 'test_writing', 'coding', 'testing', 'test_failed', 'rejected', 'passed'],
+      // 已取消的任务不能再改状态
+      'cancelled': ['pending', 'test_writing', 'coding', 'testing', 'test_failed', 'passed', 'approved'],
+    };
+
+    if (invalidTransitions[previousStatus]?.includes(status)) {
+      console.warn(`[TaskTreeManager] 非法状态转换被阻止: ${previousStatus} -> ${status}，任务 ${taskId}`);
+      return task;
+    }
+
     task.status = status;
 
     // 更新时间戳
@@ -695,7 +690,13 @@ export class TaskTreeManager extends EventEmitter {
   }
 
   /**
-   * 获取可执行的任务列表（已满足依赖条件）
+   * 获取可执行的任务列表（已满足依赖条件的叶子任务）
+   *
+   * 重要设计决策：只返回叶子任务
+   * 原因：
+   * 1. 只有叶子任务才应该被分配给 Worker 执行
+   * 2. 父任务（模块任务、功能任务等）只是容器，它们的状态由子任务完成后自动更新
+   * 3. Worker 执行的是完整的 TDD 循环，需要一个具体的、可实现的任务
    */
   getExecutableTasks(treeId: string): TaskNode[] {
     const tree = this.getTaskTree(treeId);
@@ -709,17 +710,22 @@ export class TaskTreeManager extends EventEmitter {
   }
 
   private collectExecutableTasks(node: TaskNode, result: TaskNode[], treeId: string): void {
-    // 检查当前节点
-    if (node.status === 'pending' || node.status === 'blocked') {
-      const { canStart } = this.canStartTask(treeId, node.id);
-      if (canStart) {
-        result.push(node);
-      }
-    }
+    // 只有叶子任务（没有子任务）才能被分配给 Worker
+    const isLeafTask = node.children.length === 0;
 
-    // 递归检查子节点
-    for (const child of node.children) {
-      this.collectExecutableTasks(child, result, treeId);
+    if (isLeafTask) {
+      // 检查叶子任务是否可以开始
+      if (node.status === 'pending' || node.status === 'blocked') {
+        const { canStart } = this.canStartTask(treeId, node.id);
+        if (canStart) {
+          result.push(node);
+        }
+      }
+    } else {
+      // 非叶子任务：递归检查子节点
+      for (const child of node.children) {
+        this.collectExecutableTasks(child, result, treeId);
+      }
     }
   }
 
@@ -1299,15 +1305,25 @@ export class TaskTreeManager extends EventEmitter {
   /**
    * 为单个任务生成验收测试
    * TDD 核心：测试在任务创建时就生成
+   *
+   * @returns 是否成功生成验收测试（如果任务已有测试，也返回 true）
    */
-  private async generateAcceptanceTestForTask(treeId: string, task: TaskNode): Promise<void> {
-    if (!this.acceptanceTestGenerator || !this.currentBlueprint) return;
+  async generateAcceptanceTestForTask(treeId: string, task: TaskNode): Promise<boolean> {
+    if (!this.acceptanceTestGenerator || !this.currentBlueprint) {
+      console.warn(`[TaskTreeManager] 无法生成验收测试：生成器或蓝图未初始化`);
+      return false;
+    }
 
     // 如果任务已经有验收测试，跳过
-    if (task.acceptanceTests && task.acceptanceTests.length > 0) return;
+    if (task.acceptanceTests && task.acceptanceTests.length > 0) {
+      return true;
+    }
 
     const tree = this.getTaskTree(treeId);
-    if (!tree) return;
+    if (!tree) {
+      console.warn(`[TaskTreeManager] 无法生成验收测试：任务树 ${treeId} 不存在`);
+      return false;
+    }
 
     try {
       // 获取对应的模块
@@ -1331,6 +1347,7 @@ export class TaskTreeManager extends EventEmitter {
       };
 
       // 生成验收测试
+      console.log(`[TaskTreeManager] 开始为任务 ${task.id} 生成验收测试...`);
       const result = await this.acceptanceTestGenerator.generateAcceptanceTests(context);
 
       if (result.success && result.tests.length > 0) {
@@ -1343,14 +1360,20 @@ export class TaskTreeManager extends EventEmitter {
         // 更新并保存任务树
         this.saveTaskTree(tree);
 
+        console.log(`[TaskTreeManager] 任务 ${task.id} 验收测试生成成功，共 ${result.tests.length} 个测试`);
         this.emit('acceptance-test:generated', {
           treeId,
           taskId: task.id,
           testCount: result.tests.length,
         });
+        return true;
+      } else {
+        console.warn(`[TaskTreeManager] 任务 ${task.id} 验收测试生成失败: ${result.error || '未知错误'}`);
+        return false;
       }
     } catch (error) {
       console.error(`任务 ${task.id} 验收测试生成异常:`, error);
+      return false;
     }
   }
 
