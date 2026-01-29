@@ -289,12 +289,6 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     };
   }, [selectedTaskId, executionPlan]);
 
-  // v2.1: 获取选中任务的日志
-  const selectedTaskLogs = useMemo(() => {
-    if (!selectedTaskId) return [];
-    return state.taskLogs[selectedTaskId] || [];
-  }, [selectedTaskId, state.taskLogs]);
-
   // v2.1: 获取选中任务的流式内容
   const selectedTaskStream = useMemo(() => {
     if (!selectedTaskId) return null;
@@ -819,7 +813,6 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   queen={null}
                   workers={workers}
                   selectedTask={selectedTask}
-                  taskLogs={selectedTaskLogs}
                   taskStream={selectedTaskStream}
                 />
               </FadeIn>

@@ -9,6 +9,7 @@ import { getLSPManager } from '../lsp/manager.js';
 import { readFile } from 'fs/promises';
 import { pathToFileURL } from 'url';
 import * as path from 'path';
+import { getCurrentCwd } from '../core/cwd-context.js';
 
 /**
  * LSP 操作类型
@@ -453,7 +454,7 @@ Note: LSP servers must be configured for the file type. If no server is availabl
     const firstSymbol = symbols[0];
     if (firstSymbol && 'location' in firstSymbol) {
       // 使用 workspaceSymbol 的格式化方法
-      return this.formatWorkspaceSymbolResult(symbols, process.cwd());
+      return this.formatWorkspaceSymbolResult(symbols, getCurrentCwd());
     }
 
     // DocumentSymbol 格式（有 range 和可能有 children）
@@ -906,7 +907,7 @@ Note: LSP servers must be configured for the file type. If no server is availabl
     }
 
     const filePath = path.resolve(input.filePath);
-    const workingDir = process.cwd();
+    const workingDir = getCurrentCwd();
 
     // 构建 LSP 请求
     const { method, params } = this.buildLSPRequest(input, filePath);

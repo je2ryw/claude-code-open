@@ -32,9 +32,9 @@ import type {
  * 基于 Anthropic 官方定价
  */
 export const MODEL_PRICING: Record<ModelType, { input: number; output: number }> = {
-  haiku: { input: 0.00025, output: 0.00125 },    // Claude 3.5 Haiku
-  sonnet: { input: 0.003, output: 0.015 },       // Claude 3.5 Sonnet
-  opus: { input: 0.015, output: 0.075 },         // Claude 3 Opus
+  haiku: { input: 0.0008, output: 0.004 },       // Claude 4.5 Haiku
+  sonnet: { input: 0.003, output: 0.015 },       // Claude 4.5 Sonnet
+  opus: { input: 0.015, output: 0.075 },         // Claude 4.5 Opus
 };
 
 // ============================================================================
@@ -310,9 +310,9 @@ export class ModelSelector {
    */
   getModelDisplayName(model: ModelType): string {
     const displayNames: Record<ModelType, string> = {
-      haiku: 'Claude 3.5 Haiku',
-      sonnet: 'Claude 3.5 Sonnet',
-      opus: 'Claude 3 Opus',
+      haiku: 'Claude 4.5 Haiku',
+      sonnet: 'Claude 4.5 Sonnet',
+      opus: 'Claude 4.5 Opus',
     };
     return displayNames[model];
   }

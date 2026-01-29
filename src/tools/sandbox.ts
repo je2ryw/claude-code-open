@@ -10,6 +10,7 @@ import * as os from 'os';
 import { getGlobalAppState } from './planmode.js';
 import type { ToolPermissionContext } from './planmode.js';
 import { escapePathForShell, isWindows } from '../utils/platform.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 
 // ============ 类型定义 ============
 
@@ -444,7 +445,7 @@ async function executeWithBubblewrap(
   options: SandboxOptions = {}
 ): Promise<SandboxResult> {
   const {
-    cwd = process.cwd(),
+    cwd = getCurrentCwd(),
     env = {},
     timeout = 120000,
     writablePaths = [],
@@ -560,7 +561,7 @@ async function executeWithSeatbelt(
   options: SandboxOptions = {}
 ): Promise<SandboxResult> {
   const {
-    cwd = process.cwd(),
+    cwd = getCurrentCwd(),
     env = {},
     timeout = 120000,
     writablePaths = [],
@@ -803,7 +804,7 @@ export async function executeInSandbox(
   options: SandboxOptions = {}
 ): Promise<SandboxResult> {
   const {
-    cwd = process.cwd(),
+    cwd = getCurrentCwd(),
     env = {},
     timeout = 120000,
     disableSandbox = false,

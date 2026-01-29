@@ -69,9 +69,16 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
           stats: message.payload.stats,
           error: null,
           // v2.0 新增字段
-          executionPlan: message.payload.executionPlan || null,
-          gitBranches: message.payload.gitBranches || [],
-          costEstimate: message.payload.costEstimate || null,
+          // v2.1 修复：只有当 payload 中明确包含这些字段时才更新，避免意外覆盖
+          executionPlan: 'executionPlan' in message.payload
+            ? (message.payload.executionPlan || null)
+            : prev.executionPlan,
+          gitBranches: 'gitBranches' in message.payload
+            ? (message.payload.gitBranches || [])
+            : prev.gitBranches,
+          costEstimate: 'costEstimate' in message.payload
+            ? (message.payload.costEstimate || null)
+            : prev.costEstimate,
         }));
         setIsLoading(false);
         break;
@@ -295,9 +302,10 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
               for (let i = newContent.length - 1; i >= 0; i--) {
                 const block = newContent[i];
                 if (block.type === 'tool' && block.status === 'running') {
-                  // 创建新对象替换
+                  // 创建新对象替换，同时更新 input（因为 tool_start 时 input 可能是 undefined）
                   newContent[i] = {
                     ...block,
+                    input: toolInput ?? block.input,  // 使用 tool_end 传递的 input
                     status: toolError ? 'error' as const : 'completed' as const,
                     result: toolResult,
                     error: toolError,

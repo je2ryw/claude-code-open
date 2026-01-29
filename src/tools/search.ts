@@ -10,6 +10,7 @@ import { execSync, spawnSync } from 'child_process';
 import { BaseTool } from './base.js';
 import type { GlobInput, GrepInput, ToolResult, ToolDefinition } from '../types/index.js';
 import { persistLargeOutputSync } from './output-persistence.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 
 // 检测当前平台
 const isWindows = process.platform === 'win32';
@@ -41,7 +42,7 @@ export class GlobTool extends BaseTool<GlobInput, ToolResult> {
   }
 
   async execute(input: GlobInput): Promise<ToolResult> {
-    const { pattern, path: searchPath = process.cwd() } = input;
+    const { pattern, path: searchPath = getCurrentCwd() } = input;
 
     try {
       const files = await glob(pattern, {
@@ -161,7 +162,7 @@ Usage:
   async execute(input: GrepInput): Promise<ToolResult> {
     const {
       pattern,
-      path: searchPath = process.cwd(),
+      path: searchPath = getCurrentCwd(),
       glob: globPattern,
       output_mode = 'files_with_matches',
       '-B': beforeContext,
@@ -409,7 +410,7 @@ Usage:
    * 如果相对路径以 ".." 开头，则返回绝对路径
    */
   private toRelativePath(absolutePath: string): string {
-    const cwd = process.cwd();
+    const cwd = getCurrentCwd();
     const relativePath = path.relative(cwd, absolutePath);
     return relativePath.startsWith('..') ? absolutePath : relativePath;
   }
@@ -451,7 +452,7 @@ Usage:
   private fallbackGrep(input: GrepInput): ToolResult {
     const {
       pattern,
-      path: searchPath = process.cwd(),
+      path: searchPath = getCurrentCwd(),
       '-i': ignoreCase,
       head_limit,
       offset = 0,

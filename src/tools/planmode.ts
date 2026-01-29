@@ -7,6 +7,7 @@ import { BaseTool, type PermissionCheckResult } from './base.js';
 import type { ToolResult, ToolDefinition, ExitPlanModeInput } from '../types/index.js';
 import { PlanPersistenceManager } from '../plan/persistence.js';
 import type { SavedPlan } from '../plan/types.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 
 /**
  * AppState 接口（简化版本，用于权限管理）
@@ -65,7 +66,7 @@ export function setPlanMode(active: boolean, planFile?: string, planId?: string)
       toolPermissionContext: { mode: 'plan' },
       planMode: {
         active: true,
-        planFile: planFile || process.cwd() + '/PLAN.md',
+        planFile: planFile || getCurrentCwd() + '/PLAN.md',
         planId: planId || PlanPersistenceManager.generatePlanId(),
       },
     }));
@@ -204,7 +205,7 @@ User: "What files handle routing?"
 
       // Generate plan ID and file path
       const planId = PlanPersistenceManager.generatePlanId();
-      const planPath = process.cwd() + '/PLAN.md';
+      const planPath = getCurrentCwd() + '/PLAN.md';
 
       // 创建初始计划到持久化存储
       const now = Date.now();
@@ -216,7 +217,7 @@ User: "What files handle routing?"
           status: 'draft',
           createdAt: now,
           updatedAt: now,
-          workingDirectory: process.cwd(),
+          workingDirectory: getCurrentCwd(),
           version: 1,
           priority: 'medium',
         },
@@ -485,7 +486,7 @@ Awaiting user approval to proceed with implementation.`
         status: 'pending',
         createdAt: now,
         updatedAt: now,
-        workingDirectory: process.cwd(),
+        workingDirectory: getCurrentCwd(),
         version: 1,
         priority: 'medium',
       },

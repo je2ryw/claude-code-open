@@ -596,6 +596,7 @@ ${context.constraints?.map(c => `- ${c}`).join('\n') || '无特殊约束'}
             workerId: this.workerId,
             task,
             toolName: event.toolName,
+            toolInput: event.toolInput,  // 添加 toolInput 供前端显示
             toolResult: event.toolResult,
             toolError: event.toolError,
           });

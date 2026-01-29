@@ -561,6 +561,7 @@ class RealTaskExecutor implements TaskExecutor {
           taskId: this.currentTaskMap.get(workerId)?.id,
           streamType: 'tool_end',
           toolName: data.toolName,
+          toolInput: data.toolInput,  // 添加 toolInput 供前端显示
           toolResult: data.toolResult,
           toolError: data.toolError,
         });

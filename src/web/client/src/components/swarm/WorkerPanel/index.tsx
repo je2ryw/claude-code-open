@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { QueenStatus, QueenAgent } from './QueenStatus';
 import { WorkerCard, WorkerAgent } from './WorkerCard';
+import { MarkdownContent } from '../../MarkdownContent';
+import { ToolCall as ToolCallComponent } from '../../ToolCall';
+import type { ToolUse } from '../../../types';
 import styles from './WorkerPanel.module.css';
 
 /**
@@ -66,8 +69,7 @@ interface WorkerPanelProps {
   queen?: QueenAgent | null;
   workers: WorkerAgent[];
   selectedTask?: SelectedTask | null;
-  taskLogs?: WorkerLogEntry[];  // 选中任务的执行日志
-  taskStream?: TaskStreamContent | null;  // v2.1: 选中任务的流式内容
+  taskStream?: TaskStreamContent | null;
 }
 
 /**
@@ -132,9 +134,8 @@ const LOG_TYPE_ICONS = {
 const TaskDetailCard: React.FC<{
   task: SelectedTask;
   workers: WorkerAgent[];
-  logs?: WorkerLogEntry[];
-  stream?: TaskStreamContent | null;  // v2.1: 流式内容
-}> = ({ task, workers, logs = [], stream }) => {
+  stream?: TaskStreamContent | null;
+}> = ({ task, workers, stream }) => {
   const statusConfig = task.status ? STATUS_CONFIG[task.status] : STATUS_CONFIG.pending;
 
   // v2.2: 任务信息折叠状态（默认折叠，聚焦于 Worker 执行日志）
@@ -329,7 +330,7 @@ const TaskDetailCard: React.FC<{
       )}
 
       {/* v2.2: Worker 聊天式执行日志（主体） */}
-      <WorkerChatLog logs={logs} taskStatus={task.status} worker={workerDisplay.type === 'worker' ? workerDisplay.worker : null} stream={stream} />
+      <WorkerChatLog taskStatus={task.status} worker={workerDisplay.type === 'worker' ? workerDisplay.worker : null} stream={stream} />
     </div>
   );
 };
@@ -339,11 +340,10 @@ const TaskDetailCard: React.FC<{
  * 以类似聊天界面的形式展示 Worker 的工具调用、思考、输出
  */
 const WorkerChatLog: React.FC<{
-  logs: WorkerLogEntry[];
   taskStatus?: string;
   worker?: WorkerAgent | null;
-  stream?: TaskStreamContent | null;  // v2.1: 流式内容
-}> = ({ logs, taskStatus, worker, stream }) => {
+  stream?: TaskStreamContent | null;
+}> = ({ taskStatus, worker, stream }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到底部（当日志或流式内容变化时）
@@ -351,91 +351,46 @@ const WorkerChatLog: React.FC<{
     if (logsContainerRef.current) {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
-  }, [logs, stream?.content?.length, stream?.lastUpdated]);
+  }, [stream?.content?.length, stream?.lastUpdated]);
 
-  // 格式化时间
-  const formatTime = (isoString: string): string => {
-    try {
-      return new Date(isoString).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    } catch {
-      return '--:--:--';
-    }
-  };
+  // 计算总消息数（仅流式内容块）
+  const totalMessageCount = stream?.content?.length || 0;
 
-  // 获取日志图标和样式类型
-  const getLogStyle = (log: WorkerLogEntry) => {
-    const typeIcons: Record<string, string> = {
-      tool: '🔧',
-      decision: '🤔',
-      status: '📊',
-      output: '💬',
-      error: '❌',
-    };
+  // 将 StreamContentBlock 转换为官方 ToolUse 类型
+  const toToolUse = (block: StreamContentBlock & { type: 'tool' }): ToolUse => ({
+    id: block.id,
+    name: block.name,
+    input: block.input || {},
+    status: block.status,
+    result: block.status !== 'running' ? {
+      success: block.status === 'completed',
+      output: block.result,
+      error: block.error,
+    } : undefined,
+  });
 
-    const typeClasses: Record<string, string> = {
-      tool: 'chatTool',
-      decision: 'chatThinking',
-      status: 'chatStatus',
-      output: 'chatOutput',
-      error: 'chatError',
-    };
-
-    return {
-      icon: typeIcons[log.type] || '📝',
-      className: typeClasses[log.type] || 'chatDefault',
-    };
-  };
-
-  // 计算总消息数（历史日志 + 流式内容块）
-  const streamBlockCount = stream?.content?.length || 0;
-  const totalMessageCount = logs.length + streamBlockCount;
-
-  // 渲染单个内容块（参考 App.tsx 的渲染方式）
+  // 渲染流式内容块（复用官方 Chat 组件）
   const renderContentBlock = (block: StreamContentBlock, index: number) => {
     switch (block.type) {
       case 'thinking':
+        // 使用官方 thinking-block 样式
         return (
-          <div key={`thinking-${index}`} className={`${styles.chatMessage} ${styles.chatThinking}`}>
-            <div className={styles.chatMessageHeader}>
-              <span className={styles.chatMessageIcon}>🤔</span>
-              <span className={styles.chatMessageType}>思考</span>
-            </div>
-            <div className={styles.chatMessageContent}>{block.text}</div>
+          <div key={`thinking-${index}`} className="thinking-block">
+            <div className="thinking-header">💭 思考中</div>
+            <div>{block.text}</div>
           </div>
         );
       case 'text':
+        // 使用官方 MarkdownContent 组件
         return (
-          <div key={`text-${index}`} className={`${styles.chatMessage} ${styles.chatOutput}`}>
-            <div className={styles.chatMessageHeader}>
-              <span className={styles.chatMessageIcon}>💬</span>
-              <span className={styles.chatMessageType}>输出</span>
-            </div>
-            <div className={styles.chatMessageContent}>{block.text}</div>
+          <div key={`text-${index}`}>
+            <MarkdownContent content={block.text} />
           </div>
         );
       case 'tool':
+        // 使用官方 ToolCall 组件
         return (
-          <div key={block.id} className={`${styles.chatMessage} ${styles.chatTool} ${block.status === 'running' ? styles.chatStreaming : ''}`}>
-            <div className={styles.chatMessageHeader}>
-              <span className={styles.chatMessageIcon}>🔧</span>
-              <span className={styles.chatMessageType}>{block.name}</span>
-              {block.status === 'running' && <span className={styles.toolRunning}>执行中...</span>}
-            </div>
-            <div className={styles.chatMessageContent}>
-              {block.status === 'running' ? '⏳ 执行中...' :
-               block.status === 'error' ? `❌ ${block.error || '执行失败'}` : '✅ 完成'}
-            </div>
-            {(block.input || block.result) && block.status !== 'running' && (
-              <details className={styles.chatMessageDetails}>
-                <summary>查看详情</summary>
-                <pre>{JSON.stringify({ input: block.input, result: block.result }, null, 2)}</pre>
-              </details>
-            )}
-          </div>
+          <ToolCallComponent key={block.id} toolUse={toToolUse(block)} />
         );
       default:
         return null;
@@ -453,37 +408,7 @@ const WorkerChatLog: React.FC<{
       </div>
 
       <div className={styles.workerChatMessages} ref={logsContainerRef}>
-        {/* 先显示历史日志（来自 taskLogs） */}
-        {logs.map((log) => {
-          const logStyle = getLogStyle(log);
-          return (
-            <div
-              key={log.id}
-              className={`${styles.chatMessage} ${styles[logStyle.className]}`}
-            >
-              <div className={styles.chatMessageHeader}>
-                <span className={styles.chatMessageIcon}>{logStyle.icon}</span>
-                <span className={styles.chatMessageType}>
-                  {log.type === 'tool' ? '工具调用' :
-                   log.type === 'decision' ? '思考' :
-                   log.type === 'status' ? '状态' :
-                   log.type === 'output' ? '输出' :
-                   log.type === 'error' ? '错误' : '日志'}
-                </span>
-                <span className={styles.chatMessageTime}>{formatTime(log.timestamp)}</span>
-              </div>
-              <div className={styles.chatMessageContent}>{log.message}</div>
-              {log.details && (
-                <details className={styles.chatMessageDetails}>
-                  <summary>查看详情</summary>
-                  <pre>{JSON.stringify(log.details, null, 2)}</pre>
-                </details>
-              )}
-            </div>
-          );
-        })}
-
-        {/* v2.1: 渲染流式内容块（参考 App.tsx） */}
+        {/* 流式内容块（复用官方 Chat 组件） */}
         {stream?.content?.map(renderContentBlock)}
 
         {/* 空状态 */}
@@ -881,12 +806,12 @@ const WorkerLogSection: React.FC<{
  * v2.0: Queen 是可选的，仅在提供时显示
  * v2.1: 支持显示选中任务的详情和执行日志
  */
-export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskLogs = [], taskStream }) => {
+export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskStream }) => {
   return (
     <div className={styles.panel}>
       {/* 选中任务详情（优先显示） */}
       {selectedTask && (
-        <TaskDetailCard task={selectedTask} workers={workers} logs={taskLogs} stream={taskStream} />
+        <TaskDetailCard task={selectedTask} workers={workers} stream={taskStream} />
       )}
 
       {/* Queen 状态卡片（v2.0 可选） */}

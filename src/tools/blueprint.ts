@@ -18,6 +18,7 @@
 
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition } from '../types/index.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 import {
   SmartPlanner,
   smartPlanner,
@@ -324,7 +325,7 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
    */
   private async handlePlan(input: BlueprintToolInput): Promise<ToolResult> {
     const planner = executionState.getPlanner();
-    const projectPath = input.projectPath || process.cwd();
+    const projectPath = input.projectPath || getCurrentCwd();
 
     // 检查是否有进行中的对话
     const existingDialog = executionState.getDialogState();

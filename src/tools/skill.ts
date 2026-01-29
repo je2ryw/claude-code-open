@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition } from '../types/index.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 
 /**
  * 获取文件的唯一标识符（基于 inode）- 对齐官网 fo5 函数
@@ -823,7 +824,7 @@ export async function initializeSkills(): Promise<void> {
 
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const claudeDir = path.join(homeDir, '.claude');
-  const projectDir = path.join(process.cwd(), '.claude');
+  const projectDir = path.join(getCurrentCwd(), '.claude');
 
   // 清空注册表
   skillRegistry.clear();
@@ -853,7 +854,7 @@ export async function initializeSkills(): Promise<void> {
 
   // 4. v2.1.6+: 发现并加载嵌套的 .claude/skills 目录
   // 搜索当前工作目录下子目录中的 .claude/skills 目录
-  const nestedSkillsDirs = discoverNestedSkillsDirectories(process.cwd());
+  const nestedSkillsDirs = discoverNestedSkillsDirectories(getCurrentCwd());
   for (const nestedDir of nestedSkillsDirs) {
     // 避免重复加载根目录的 skills
     if (nestedDir === projectSkillsDir) continue;
@@ -861,7 +862,7 @@ export async function initializeSkills(): Promise<void> {
     const nestedSkills = await loadSkillsFromDirectory(nestedDir, 'projectSettings');
     for (const skill of nestedSkills) {
       // 添加子目录路径前缀以区分来源
-      const relativePath = path.relative(process.cwd(), nestedDir);
+      const relativePath = path.relative(getCurrentCwd(), nestedDir);
       const parentDir = path.dirname(path.dirname(relativePath)); // 获取 .claude 的父目录
       const prefixedSkillName = parentDir ? `${skill.skillName}@${parentDir}` : skill.skillName;
 

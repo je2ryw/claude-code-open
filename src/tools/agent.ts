@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { getBackgroundShell, isShellId } from './bash.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 // 使用动态导入避免循环依赖：agent.ts -> loop.ts -> tools/index.ts -> agent.ts
 import type { LoopOptions } from '../core/loop.js';
 import {
@@ -536,7 +537,7 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       history: [],
       intermediateResults: [],
       currentStep: 0,
-      workingDirectory: process.cwd(),
+      workingDirectory: getCurrentCwd(),
       metadata: {},
       messages: [],
     };

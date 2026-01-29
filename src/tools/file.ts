@@ -28,6 +28,25 @@ import {
 // 边界检查由 SmartPlanner 在任务规划阶段处理，工具层不再需要
 import { persistLargeOutputSync } from './output-persistence.js';
 import { runPreToolUseHooks, runPostToolUseHooks } from '../hooks/index.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
+
+/**
+ * 解析文件路径
+ * 如果是相对路径，则基于当前工作目录（从 AsyncLocalStorage 获取）解析
+ * 这解决了多 Worker 并发时工作目录混乱的问题
+ *
+ * @param filePath 输入的文件路径（可能是相对路径或绝对路径）
+ * @returns 绝对路径
+ */
+function resolveFilePath(filePath: string): string {
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  // 使用 getCurrentCwd() 获取当前工作目录上下文
+  // 这是通过 AsyncLocalStorage 设置的，支持多 Worker 并发
+  const cwd = getCurrentCwd();
+  return path.resolve(cwd, filePath);
+}
 
 /**
  * 差异预览接口
@@ -336,7 +355,10 @@ Usage:
   }
 
   async execute(input: FileReadInput): Promise<FileResult> {
-    const { file_path, offset = 0, limit = 2000 } = input;
+    const { file_path: inputPath, offset = 0, limit = 2000 } = input;
+
+    // 解析文件路径（支持相对路径，基于当前工作目录上下文）
+    const file_path = resolveFilePath(inputPath);
 
     try {
       if (!fs.existsSync(file_path)) {
@@ -622,7 +644,10 @@ Usage:
   }
 
   async execute(input: FileWriteInput): Promise<FileResult> {
-    const { file_path, content } = input;
+    const { file_path: inputPath, content } = input;
+
+    // 解析文件路径（支持相对路径，基于当前工作目录上下文）
+    const file_path = resolveFilePath(inputPath);
 
     try {
       const hookResult = await runPreToolUseHooks('Write', input);
@@ -900,7 +925,7 @@ Usage:
 
   async execute(input: ExtendedFileEditInput): Promise<EditToolResult> {
     const {
-      file_path,
+      file_path: inputPath,
       old_string,
       new_string,
       replace_all = false,
@@ -909,15 +934,11 @@ Usage:
       require_confirmation = false,
     } = input;
 
+    // 解析文件路径（支持相对路径，基于当前工作目录上下文）
+    const file_path = resolveFilePath(inputPath);
+
     try {
-      // 1. 验证路径是绝对路径
-      if (!path.isAbsolute(file_path)) {
-        return {
-          success: false,
-          error: `File path must be absolute. Received: ${file_path}`,
-          errorCode: EditErrorCode.INVALID_PATH,
-        };
-      }
+      // 注意：不再要求必须是绝对路径，因为 resolveFilePath 已经处理了相对路径
 
       // 注意：蓝图边界检查已移除
       // 新架构中，边界检查由 SmartPlanner 在任务规划阶段处理
