@@ -6,7 +6,7 @@
 import { ClaudeClient, type ClientConfig } from './client.js';
 import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
-import { runWithCwd } from './cwd-context.js';
+import { runWithCwd, runGeneratorWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
 import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
 
@@ -2105,10 +2105,12 @@ Guidelines:
     toolError?: string;
   }> {
     // 使用工作目录上下文包裹整个流式处理过程
-    // 注意：AsyncGenerator 需要特殊处理，使用 yield* 委托给内部方法
-    yield* runWithCwd(this.promptContext.workingDir, () => {
-      return this.processMessageStreamInternal(userInput);
-    });
+    // 注意：AsyncLocalStorage.run() 不能跨 generator 边界传播上下文
+    // 使用 runGeneratorWithCwd 确保每次迭代都在正确的上下文中执行
+    yield* runGeneratorWithCwd(
+      this.promptContext.workingDir,
+      this.processMessageStreamInternal(userInput)
+    );
   }
 
   /**

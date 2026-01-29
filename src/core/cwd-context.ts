@@ -42,3 +42,35 @@ export function getCurrentCwd(): string {
 export function isInCwdContext(): boolean {
   return cwdStorage.getStore() !== undefined;
 }
+
+/**
+ * 包装 AsyncGenerator，确保在每次迭代时都在正确的工作目录上下文中
+ *
+ * 解决问题：AsyncLocalStorage.run() 不能跨 generator 边界传播上下文
+ * 当使用 yield* 委托给另一个 generator 时，迭代发生在 run() 上下文之外
+ *
+ * @param cwd 工作目录
+ * @param generator 要包装的 AsyncGenerator
+ * @returns 包装后的 AsyncGenerator，每次迭代都在正确的上下文中
+ */
+export async function* runGeneratorWithCwd<T>(
+  cwd: string,
+  generator: AsyncGenerator<T, void, undefined>
+): AsyncGenerator<T, void, undefined> {
+  try {
+    while (true) {
+      // 在正确的上下文中执行 next()
+      const result = await cwdStorage.run(cwd, () => generator.next());
+
+      if (result.done) {
+        return;
+      }
+
+      // TypeScript 无法正确推断 result.done === false 时 result.value 的类型
+      yield result.value as T;
+    }
+  } finally {
+    // 确保 generator 被正确关闭
+    await generator.return?.(undefined);
+  }
+}

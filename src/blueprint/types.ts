@@ -675,7 +675,7 @@ export interface SwarmConfig {
   // 模型配置
   defaultModel: ModelType;      // 默认模型（默认sonnet）
   complexTaskModel: ModelType;  // 复杂任务模型（默认opus）
-  simpleTaskModel: ModelType;   // 简单任务模型（默认haiku）
+  simpleTaskModel: ModelType;   // 简单任务模型（默认sonnet）
 
   // 测试配置
   autoTest: boolean;            // 是否自动决定测试（默认true）
@@ -715,7 +715,7 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
   workerTimeout: 600000,  // 10分钟（从5分钟增加）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
-  simpleTaskModel: 'haiku',
+  simpleTaskModel: 'sonnet',
   autoTest: true,
   testTimeout: 60000,
   maxRetries: 3,

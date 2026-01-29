@@ -97,7 +97,7 @@ const getDefaultConfig = (): SwarmConfig => ({
   workerTimeout: 600000,  // 10分钟
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
-  simpleTaskModel: 'haiku',
+  simpleTaskModel: 'sonnet',
   autoTest: true,
   testTimeout: 60000,
   maxRetries: 3,

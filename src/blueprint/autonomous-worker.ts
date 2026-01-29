@@ -1,39 +1,35 @@
 /**
- * 自治 Worker Executor
+ * 自治 Worker Executor v3.0
  *
- * 蜂群架构 v2.0 的核心组件 - 自治 Worker
+ * 蜂群架构核心组件 - 真正自治的 Worker
  *
- * 特点：
- * 1. 自主决策（不需要蜂王逐步批准）
- * 2. 可选测试（AI判断是否需要测试）
- * 3. 自动错误处理（最多重试3次）
+ * v3.0 核心改进：
+ * 1. **统一 Agent Loop** - 不再拆分成多个步骤，让 AI 完全自主
+ * 2. **进度自由更新** - AI 可以随时更新任务进度文件
+ * 3. **简化执行流程** - 移除固定流水线，给 AI 最大自由度
+ * 4. **Opus 优先** - 复杂任务使用 Opus 模型，发挥其智能优势
  *
  * Worker 拥有完整权限，可以：
- * - 安装依赖
- * - 修改配置
- * - 运行测试
- * - 自动修复错误
+ * - 自主决定执行策略
+ * - 自由更新进度状态
+ * - 自己判断是否需要测试
+ * - 自动处理错误和重试
  */
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
 
-import { ClaudeClient, createClientWithModel } from '../core/client.js';
 import type {
   SmartTask,
   TaskResult,
   FileChange,
   WorkerDecision,
-  ErrorAction,
-  ErrorAnalysis,
   ModelType,
   SwarmConfig,
   TechStack,
 } from './types.js';
-import { DEFAULT_SWARM_CONFIG } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
 
 // ============================================================================
@@ -58,1092 +54,461 @@ export interface WorkerContext {
 }
 
 /**
- * 执行策略
- * Worker 自己决定如何执行任务
+ * 任务进度状态
+ * AI 可以随时更新这个状态
  */
-export interface ExecutionStrategy {
-  /** 是否需要编写测试 */
-  shouldWriteTests: boolean;
-  /** 测试理由 */
-  testReason: string;
-  /** 预计步骤 */
-  steps: string[];
-  /** 预估时间（分钟） */
-  estimatedMinutes: number;
-  /** 使用的模型 */
-  model: ModelType;
+export interface TaskProgress {
+  /** 任务 ID */
+  taskId: string;
+  /** 当前阶段 */
+  phase: 'analyzing' | 'planning' | 'coding' | 'testing' | 'fixing' | 'completed' | 'failed';
+  /** 进度百分比 (0-100) */
+  percent: number;
+  /** 当前正在做什么 */
+  currentAction: string;
+  /** 已完成的步骤 */
+  completedSteps: string[];
+  /** 遇到的问题（如果有） */
+  issues?: string[];
+  /** 更新时间 */
+  updatedAt: string;
 }
 
 /**
- * 测试运行结果
- */
-export interface TestRunResult {
-  /** 是否通过 */
-  passed: boolean;
-  /** 输出内容 */
-  output: string;
-  /** 错误信息 */
-  errorMessage?: string;
-  /** 运行时间（毫秒） */
-  duration: number;
-}
-
-/**
- * Worker 事件类型
+ * Worker 事件类型（简化版）
  */
 export type WorkerEventType =
-  | 'strategy:decided'
-  | 'code:writing'
-  | 'code:written'
-  | 'test:writing'
-  | 'test:written'
-  | 'test:running'
-  | 'test:passed'
-  | 'test:failed'
-  | 'error:occurred'
-  | 'error:retrying'
-  | 'task:completed'
-  | 'task:failed';
+  | 'task:status_change' // AI 主动汇报的状态变更（通过 UpdateTaskStatus 工具）
+  | 'stream:text'        // 流式文本输出
+  | 'stream:thinking'    // 思考过程
+  | 'stream:tool_start'  // 工具开始
+  | 'stream:tool_end'    // 工具结束
+  | 'task:completed'     // 任务完成
+  | 'task:failed';       // 任务失败
 
 // ============================================================================
-// 自治 Worker Executor
+// 进度文件管理
 // ============================================================================
 
-// 注意：工作目录问题已通过 AsyncLocalStorage 解决
-// ConversationLoop 在 processMessage 中会自动设置工作目录上下文
-// 所有工具（如 Bash）通过 getCurrentCwd() 获取正确的工作目录
-// 这样多个 Worker 可以并发执行，每个都有独立的工作目录上下文
+/**
+ * 获取进度文件路径
+ */
+function getProgressFilePath(projectPath: string, taskId: string): string {
+  const dir = path.join(projectPath, '.claude', 'progress');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return path.join(dir, `${taskId}.json`);
+}
+
+/**
+ * 读取任务进度
+ */
+export function readTaskProgress(projectPath: string, taskId: string): TaskProgress | null {
+  try {
+    const filePath = getProgressFilePath(projectPath, taskId);
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+  } catch {
+    // 忽略错误
+  }
+  return null;
+}
+
+/**
+ * 写入任务进度
+ */
+export function writeTaskProgress(projectPath: string, progress: TaskProgress): void {
+  try {
+    const filePath = getProgressFilePath(projectPath, progress.taskId);
+    fs.writeFileSync(filePath, JSON.stringify(progress, null, 2), 'utf-8');
+  } catch (error) {
+    console.error(`[Worker] 写入进度失败:`, error);
+  }
+}
+
+// ============================================================================
+// 自治 Worker Executor v3.0
+// ============================================================================
 
 export class AutonomousWorkerExecutor extends EventEmitter {
-  private client: ClaudeClient;
   private workerId: string;
-  private maxRetries: number;
-  private testTimeout: number;
-
-  // v2.0 新增：Agent 分析配置
-  private analyzeEnabled: boolean;
-  private analyzeMaxTurns: number;
+  private defaultModel: ModelType;
+  private maxTurns: number;
 
   constructor(config?: Partial<SwarmConfig>) {
     super();
 
-    // 使用配置或默认值
-    const finalConfig = {
-      maxRetries: config?.maxRetries ?? 3,
-      testTimeout: config?.testTimeout ?? 60000,
-      defaultModel: config?.defaultModel ?? 'sonnet',
-      // v2.0 新增
-      workerAnalyzeEnabled: config?.workerAnalyzeEnabled ?? true,
-      workerAnalyzeMaxTurns: config?.workerAnalyzeMaxTurns ?? 3,
-    };
-
     this.workerId = `worker-${uuidv4().slice(0, 8)}`;
-    this.maxRetries = finalConfig.maxRetries;
-    this.testTimeout = finalConfig.testTimeout;
-
-    // v2.0 新增
-    this.analyzeEnabled = finalConfig.workerAnalyzeEnabled;
-    this.analyzeMaxTurns = finalConfig.workerAnalyzeMaxTurns;
-
-    // 创建 Claude 客户端
-    this.client = createClientWithModel(finalConfig.defaultModel);
+    this.defaultModel = config?.defaultModel ?? 'sonnet';
+    // 给予足够的轮次，让 AI 有充分的自由度
+    this.maxTurns = 50;
   }
 
   // --------------------------------------------------------------------------
-  // 核心执行方法
+  // 核心执行方法 - v3.0 简化版
   // --------------------------------------------------------------------------
 
   /**
    * 执行任务（主入口）
    *
-   * 流程：
-   * 1. 决定执行策略
-   * 2. 编写代码
-   * 3. 可选：编写测试
-   * 4. 可选：运行测试
-   * 5. 错误处理（自动重试）
-   *
-   * 注意：工作目录通过 AsyncLocalStorage 管理
-   * ConversationLoop 会在执行时自动设置正确的工作目录上下文
-   * 多个 Worker 可以并发执行，不需要全局锁
+   * v3.0 核心改变：
+   * - 不再有固定的流程（strategy → writeCode → writeTests）
+   * - 给 AI 一个完整任务，让它自己决定怎么做
+   * - AI 可以随时通过进度文件汇报状态
+   * - 简化错误处理，信任 AI 的自主判断
    */
   async execute(task: SmartTask, context: WorkerContext): Promise<TaskResult> {
     const decisions: WorkerDecision[] = [];
-    let attempt = 0;
-    let lastError: Error | null = null;
+    const writtenFiles: FileChange[] = [];
 
     this.log(`开始执行任务: ${task.name}`);
 
-    while (attempt < this.maxRetries) {
-        attempt++;
-        this.log(`执行尝试 ${attempt}/${this.maxRetries}`);
-
-        try {
-          // 步骤1: 决定执行策略
-          const strategy = await this.decideStrategy(task, context);
-          decisions.push({
-            type: 'strategy',
-            description: `选择策略: ${strategy.shouldWriteTests ? '需要测试' : '跳过测试'}, 原因: ${strategy.testReason}`,
-            timestamp: new Date(),
-          });
-          this.emit('strategy:decided', { workerId: this.workerId, task, strategy });
-
-          // 步骤2: 编写代码
-          this.emit('code:writing', { workerId: this.workerId, task });
-          const codeChanges = await this.writeCode(task, context, lastError);
-          this.emit('code:written', { workerId: this.workerId, task, changes: codeChanges });
-
-          // 步骤3: 可选编写测试
-          let testChanges: FileChange[] = [];
-          if (strategy.shouldWriteTests) {
-            this.emit('test:writing', { workerId: this.workerId, task });
-            testChanges = await this.writeTests(task, codeChanges, context);
-            this.emit('test:written', { workerId: this.workerId, task, changes: testChanges });
-
-            // 步骤4: 运行测试
-            this.emit('test:running', { workerId: this.workerId, task });
-            const testResult = await this.runTests(
-              testChanges.map(c => c.filePath),
-              context
-            );
-
-            if (!testResult.passed) {
-              this.emit('test:failed', { workerId: this.workerId, task, result: testResult });
-
-              // 测试失败，记录错误并重试
-              lastError = new Error(`测试失败: ${testResult.errorMessage || testResult.output}`);
-              const errorAction = await this.handleError(lastError, task, attempt, context);
-
-              decisions.push({
-                type: 'retry',
-                description: `测试失败，${errorAction.action}: ${errorAction.reason}`,
-                timestamp: new Date(),
-              });
-
-              if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
-                // 跳过或升级，返回失败结果
-                return this.createFailureResult(task, codeChanges.concat(testChanges), decisions, lastError);
-              }
-
-              // 继续重试
-              continue;
-            }
-
-            this.emit('test:passed', { workerId: this.workerId, task, result: testResult });
-          } else {
-            decisions.push({
-              type: 'skip_test',
-              description: `跳过测试: ${strategy.testReason}`,
-              timestamp: new Date(),
-            });
-          }
-
-          // 成功完成
-          this.emit('task:completed', { workerId: this.workerId, task });
-          return {
-            success: true,
-            changes: codeChanges.concat(testChanges),
-            testsRan: strategy.shouldWriteTests,
-            testsPassed: strategy.shouldWriteTests ? true : undefined,
-            decisions,
-          };
-
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          this.emit('error:occurred', { workerId: this.workerId, task, error: lastError });
-
-          const errorAction = await this.handleError(lastError, task, attempt, context);
-          decisions.push({
-            type: 'retry',
-            description: `执行错误 (尝试 ${attempt}): ${lastError.message}, 动作: ${errorAction.action}`,
-            timestamp: new Date(),
-          });
-
-          if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
-            break;
-          }
-
-          this.emit('error:retrying', { workerId: this.workerId, task, attempt, action: errorAction });
-        }
-      }
-
-    // 所有重试都失败了
-    this.emit('task:failed', { workerId: this.workerId, task, error: lastError });
-    return this.createFailureResult(task, [], decisions, lastError);
-  }
-
-  // --------------------------------------------------------------------------
-  // 策略决定
-  // --------------------------------------------------------------------------
-
-  /**
-   * 决定执行策略
-   * v2.0: 先用 Agent 分析目标文件，再做策略决策
-   * v2.1: 分析结果改为直接返回文本
-   */
-  private async decideStrategy(task: SmartTask, context: WorkerContext): Promise<ExecutionStrategy> {
-    // v2.0 新增：先用 Agent 分析目标文件
-    // v2.1 改进：直接返回文本摘要
-    let analysisText = '';
-    if (this.analyzeEnabled && task.files.length > 0) {
-      this.emit('worker:analyzing', { workerId: this.workerId, task });
-      analysisText = await this.analyzeTargetFiles(task, context);
-      // 为了兼容 websocket.ts 的日志，保持 analysis 对象格式
-      this.emit('worker:analyzed', {
-        workerId: this.workerId,
-        task,
-        analysis: { targetFiles: task.files, text: analysisText },
-      });
-    }
-
-    // 基于分析结果构建策略提示
-    const prompt = this.buildStrategyPrompt(task, context, analysisText);
-
-    try {
-      const response = await this.client.createMessage(
-        [{ role: 'user', content: prompt }],
-        undefined, // 不使用工具
-        this.getStrategySystemPrompt()
-      );
-
-      // 解析 AI 响应
-      const textContent = response.content.find(c => c.type === 'text');
-      if (!textContent || textContent.type !== 'text') {
-        // 返回默认策略
-        return this.getDefaultStrategy(task);
-      }
-
-      const strategy = this.parseStrategyResponse(textContent.text, task);
-      this.emit('worker:strategy_decided', { workerId: this.workerId, task, strategy });
-      return strategy;
-
-    } catch (error) {
-      this.log(`策略决定失败: ${error}`);
-      return this.getDefaultStrategy(task);
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // v2.0 新增：Agent 模式分析目标文件
-  // v2.1 改进：直接返回文本摘要，不再从响应中提取 JSON
-  // --------------------------------------------------------------------------
-
-  /**
-   * 使用 Agent 模式分析目标文件
-   * 在策略决策前先了解目标文件的内容和结构
-   *
-   * v2.1 改进：直接返回文本摘要，不再需要 JSON 提取
-   * 原因：FileAnalysis 最终只是转成文本作为策略上下文，无需中间结构化数据
-   */
-  private async analyzeTargetFiles(
-    task: SmartTask,
-    context: WorkerContext
-  ): Promise<string> {
-    const systemPrompt = `你是一个代码分析助手。你的任务是分析目标文件，为后续的任务执行提供上下文。
-
-你可以使用以下工具：
-- Read: 读取文件内容
-- Glob: 搜索相关文件
-- Grep: 搜索代码模式
-
-请分析目标文件并收集以下信息：
-1. 文件是否存在
-2. 文件内容摘要（关键函数、类、接口等）
-3. 相关的测试文件
-4. 依赖关系（导入/导出）
-
-分析完成后，请直接输出格式化好的文本摘要，格式如下：
-
-## 文件分析结果
-
-### 文件摘要
-- **文件路径**: 存在/不存在
-  摘要: 简要描述文件内容
-  行数: N
-  测试文件: 相关测试文件路径（如有）
-
-### 依赖关系
-- 导入: 列出主要依赖
-- 导出: 列出主要导出
-- 相关文件: 列出相关文件
-
-### 修改建议
-- 列出修改建议（如有）
-
-注意：直接输出文本摘要即可，不需要 JSON 格式。`;
-
-    const userPrompt = `请分析以下任务涉及的文件：
-
-任务：${task.name}
-描述：${task.description}
-
-目标文件：
-${task.files.map(f => `- ${f}`).join('\n')}
-
-项目路径：${context.projectPath}
-
-请使用工具读取和分析这些文件，然后总结你的发现。`;
-
-    try {
-      const loop = new ConversationLoop({
-        model: this.client.getModel(),
-        maxTurns: this.analyzeMaxTurns,
-        verbose: false,
-        permissionMode: 'bypassPermissions',
-        workingDir: context.projectPath,
-        systemPrompt,
-        isSubAgent: true,
-      });
-
-      const result = await loop.processMessage(userPrompt);
-
-      if (!result || result.trim().length === 0) {
-        this.log(`文件分析: AI 响应为空`);
-        return this.getDefaultAnalysisText(task.files);
-      }
-
-      return result;
-    } catch (error: any) {
-      this.log(`文件分析失败: ${error.message}`);
-      return this.getDefaultAnalysisText(task.files, error.message);
-    }
-  }
-
-  /**
-   * 获取默认的分析文本（当分析失败时使用）
-   */
-  private getDefaultAnalysisText(files: string[], errorMsg?: string): string {
-    const lines: string[] = [];
-    lines.push('\n## 文件分析结果\n');
-    lines.push('### 文件摘要');
-    for (const file of files) {
-      lines.push(`- **${file}**: （未能分析）`);
-    }
-    if (errorMsg) {
-      lines.push(`\n### 注意\n分析过程发生错误: ${errorMsg}`);
-    }
-    return lines.join('\n');
-  }
-
-  /**
-   * 构建策略决定的提示词
-   * v2.0: 添加文件分析结果参数
-   * v2.1: 改为直接接收分析文本
-   */
-  private buildStrategyPrompt(
-    task: SmartTask,
-    context: WorkerContext,
-    analysisText: string
-  ): string {
-    return `# 任务策略分析
-
-## 任务信息
-- 名称: ${task.name}
-- 类型: ${task.type}
-- 复杂度: ${task.complexity}
-- 描述: ${task.description}
-
-## 涉及文件
-${task.files.map(f => `- ${f}`).join('\n')}
-${analysisText}
-
-## 项目技术栈
-- 语言: ${context.techStack.language}
-- 框架: ${context.techStack.framework || '无'}
-- 测试框架: ${context.techStack.testFramework || '无'}
-
-## 约束条件
-${context.constraints?.map(c => `- ${c}`).join('\n') || '无特殊约束'}
-
-## 请分析并回答
-
-请以 JSON 格式回答以下问题：
-
-\`\`\`json
-{
-  "shouldWriteTests": true/false,
-  "testReason": "测试决策的原因",
-  "steps": ["步骤1", "步骤2", "..."],
-  "estimatedMinutes": 数字,
-  "model": "sonnet" 或 "opus" 或 "haiku"
-}
-\`\`\`
-
-判断标准：
-1. 是否需要测试：
-   - 核心业务逻辑 → 需要测试
-   - 配置文件修改 → 通常不需要
-   - 简单的 UI 调整 → 通常不需要
-   - 有复杂算法 → 需要测试
-   - 已有相关测试文件 → 需要更新测试
-
-2. 模型选择：
-   - 简单任务（配置、文档、小改动）→ haiku
-   - 常规任务（功能实现、bug修复）→ sonnet
-   - 复杂任务（架构设计、算法优化）→ opus`;
-  }
-
-  /**
-   * 获取策略决定的系统提示词
-   */
-  private getStrategySystemPrompt(): string {
-    return `你是一个软件开发策略专家。
-你的任务是分析开发任务并决定最佳执行策略。
-你必须以 JSON 格式回答，确保 JSON 格式正确。
-不要输出 JSON 以外的内容。`;
-  }
-
-  /**
-   * 解析策略响应
-   */
-  private parseStrategyResponse(response: string, task: SmartTask): ExecutionStrategy {
-    try {
-      // 提取 JSON 块
-      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-      const jsonStr = jsonMatch ? jsonMatch[1] : response;
-      const parsed = JSON.parse(jsonStr.trim());
-
-      return {
-        shouldWriteTests: Boolean(parsed.shouldWriteTests),
-        testReason: String(parsed.testReason || '默认理由'),
-        steps: Array.isArray(parsed.steps) ? parsed.steps : ['执行任务'],
-        estimatedMinutes: Number(parsed.estimatedMinutes) || 5,
-        model: this.validateModel(parsed.model),
-      };
-    } catch {
-      return this.getDefaultStrategy(task);
-    }
-  }
-
-  /**
-   * 获取默认策略
-   */
-  private getDefaultStrategy(task: SmartTask): ExecutionStrategy {
-    // 根据任务类型和复杂度决定默认策略
-    const shouldWriteTests = task.type === 'code' && task.complexity !== 'trivial';
-    const model: ModelType = task.complexity === 'complex' ? 'opus' : 'sonnet';
-
-    return {
-      shouldWriteTests,
-      testReason: shouldWriteTests ? '代码任务需要测试保证质量' : '任务简单，跳过测试',
-      steps: ['分析需求', '编写代码', shouldWriteTests ? '编写测试' : '验证结果'].filter(Boolean),
-      estimatedMinutes: task.complexity === 'complex' ? 15 : task.complexity === 'moderate' ? 8 : 3,
-      model,
-    };
-  }
-
-  /**
-   * 验证模型类型
-   */
-  private validateModel(model: any): ModelType {
-    if (model === 'opus' || model === 'sonnet' || model === 'haiku') {
-      return model;
-    }
-    return 'sonnet';
-  }
-
-  // --------------------------------------------------------------------------
-  // 代码编写
-  // --------------------------------------------------------------------------
-
-  /**
-   * 编写代码
-   * 使用 ConversationLoop 让 AI 直接写入文件
-   */
-  private async writeCode(
-    task: SmartTask,
-    context: WorkerContext,
-    lastError: Error | null
-  ): Promise<FileChange[]> {
-    // 动态导入 ConversationLoop 避免循环依赖
-    const { ConversationLoop } = await import('../core/loop.js');
-
-    const prompt = this.buildCodePrompt(task, context, lastError);
-    const systemPrompt = this.getCodeWriterSystemPrompt(context);
-
-    const writtenFiles: FileChange[] = [];
-
-    const loop = new ConversationLoop({
-      model: this.client.getModel(),
-      maxTurns: 25, // 给予足够的轮次来完成任务
-      verbose: false,
-      permissionMode: 'bypassPermissions', // Worker 执行时跳过权限提示
-      workingDir: context.projectPath,
-      systemPrompt,
-      isSubAgent: true,
+    // 初始化进度
+    this.updateProgress(context.projectPath, {
+      taskId: task.id,
+      phase: 'analyzing',
+      percent: 0,
+      currentAction: '分析任务需求',
+      completedSteps: [],
+      updatedAt: new Date().toISOString(),
+    });
+
+    // 选择模型：复杂任务用 Opus，简单任务用 Sonnet
+    const model = this.selectModel(task);
+    decisions.push({
+      type: 'strategy',
+      description: `选择模型: ${model}，任务复杂度: ${task.complexity}`,
+      timestamp: new Date(),
     });
 
     try {
-      for await (const event of loop.processMessageStream(prompt)) {
-        // v2.1: 发出流式事件供前端实时显示
-        if (event.type === 'text' && event.content) {
-          // 检测是否是思考内容
-          if (event.content.startsWith('[Thinking:')) {
-            const thinkingContent = event.content.replace(/^\[Thinking:\s*/, '').replace(/\]$/, '');
-            this.emit('stream:thinking', { workerId: this.workerId, task, content: thinkingContent });
-          } else {
-            this.emit('stream:text', { workerId: this.workerId, task, content: event.content });
-          }
-        } else if (event.type === 'tool_start' && event.toolName) {
-          this.emit('stream:tool_start', {
-            workerId: this.workerId,
-            task,
-            toolName: event.toolName,
-            toolInput: event.toolInput,
-          });
-        } else if (event.type === 'tool_end' && event.toolName) {
-          this.emit('stream:tool_end', {
-            workerId: this.workerId,
-            task,
-            toolName: event.toolName,
-            toolInput: event.toolInput,  // 添加 toolInput 供前端显示
-            toolResult: event.toolResult,
-            toolError: event.toolError,
-          });
+      // 创建统一的 Agent Loop - 让 AI 完全自主
+      const loop = new ConversationLoop({
+        model,
+        maxTurns: this.maxTurns,
+        verbose: false,
+        permissionMode: 'bypassPermissions',
+        workingDir: context.projectPath,
+        systemPrompt: this.buildSystemPrompt(task, context),
+        isSubAgent: true,
+      });
 
-          // 追踪 Write 和 Edit 工具的执行
-          if ((event.toolName === 'Write' || event.toolName === 'Edit') && event.toolInput) {
-            const input = event.toolInput as { file_path?: string; filePath?: string };
-            const filePath = input.file_path || input.filePath;
+      // 构建任务提示
+      const taskPrompt = this.buildTaskPrompt(task, context);
 
-            if (filePath && !event.toolError) {
-              // 读取写入后的文件内容
-              try {
-                const absolutePath = path.isAbsolute(filePath)
-                  ? filePath
-                  : path.join(context.projectPath, filePath);
-
-                if (fs.existsSync(absolutePath)) {
-                  const content = fs.readFileSync(absolutePath, 'utf-8');
-                  writtenFiles.push({
-                    filePath: absolutePath,
-                    type: event.toolName === 'Write' ? 'create' : 'modify',
-                    content,
-                  });
-                }
-              } catch {
-                // 忽略读取错误
-              }
-            }
-          }
-        } else if (event.type === 'done' || event.type === 'interrupted') {
-          break;
-        }
+      // 执行 Agent Loop，追踪文件变更
+      for await (const event of loop.processMessageStream(taskPrompt)) {
+        // 转发流式事件
+        this.handleStreamEvent(event, task, writtenFiles, context);
       }
-    } catch (error) {
-      this.log(`代码编写失败: ${error}`);
-      throw error;
-    }
 
-    return writtenFiles;
+      // 更新进度为完成
+      this.updateProgress(context.projectPath, {
+        taskId: task.id,
+        phase: 'completed',
+        percent: 100,
+        currentAction: '任务完成',
+        completedSteps: ['分析需求', '实现代码', '验证结果'],
+        updatedAt: new Date().toISOString(),
+      });
+
+      this.emit('task:completed', { workerId: this.workerId, task });
+
+      return {
+        success: true,
+        changes: writtenFiles,
+        testsRan: false, // AI 自己决定是否运行测试
+        decisions,
+      };
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.log(`任务执行失败: ${errorMsg}`);
+
+      // 更新进度为失败
+      this.updateProgress(context.projectPath, {
+        taskId: task.id,
+        phase: 'failed',
+        percent: 0,
+        currentAction: '任务失败',
+        completedSteps: [],
+        issues: [errorMsg],
+        updatedAt: new Date().toISOString(),
+      });
+
+      this.emit('task:failed', { workerId: this.workerId, task, error });
+
+      return {
+        success: false,
+        changes: writtenFiles,
+        error: errorMsg,
+        decisions,
+      };
+    }
   }
 
+  // --------------------------------------------------------------------------
+  // 模型选择
+  // --------------------------------------------------------------------------
+
   /**
-   * 构建代码编写提示词
+   * 根据任务复杂度选择模型
+   * 复杂任务使用 Opus，充分发挥其智能优势
    */
-  private buildCodePrompt(task: SmartTask, context: WorkerContext, lastError: Error | null): string {
-    let prompt = `# 任务：${task.name}
+  private selectModel(task: SmartTask): ModelType {
+    // 复杂任务 → Opus（架构设计、算法优化等需要深度思考）
+    if (task.complexity === 'complex') {
+      return 'opus';
+    }
+    // 中等任务 → Sonnet（功能实现、bug 修复）
+    if (task.complexity === 'moderate') {
+      return 'sonnet';
+    }
+    // 简单任务 → Sonnet（配置、文档等）
+    return this.defaultModel;
+  }
 
-## 任务描述
-${task.description}
+  // --------------------------------------------------------------------------
+  // 提示词构建
+  // --------------------------------------------------------------------------
 
-## 需要修改的文件
-${task.files.map(f => `- ${f}`).join('\n')}
+  /**
+   * 构建系统提示词
+   * 核心：告诉 AI 它有完全的自主权
+   */
+  private buildSystemPrompt(task: SmartTask, context: WorkerContext): string {
+    return `你是一个高度自治的软件开发 Worker，拥有完整的决策权和执行权限。
 
-## 项目信息
+## 你的身份
+- Worker ID: ${this.workerId}
+- 当前任务: ${task.name}
 - 项目路径: ${context.projectPath}
+
+## 核心原则
+1. **完全自主** - 你可以自己决定如何完成任务，不需要请示
+2. **直接执行** - 使用工具直接写入代码，不要只是讨论
+3. **自主判断** - 自己决定是否需要测试、是否需要安装依赖
+4. **高效完成** - 专注任务本身，不要过度设计
+
+## 进度汇报（重要）
+使用 **UpdateTaskStatus** 工具来汇报任务状态：
+
+\`\`\`
+// 开始任务
+UpdateTaskStatus({ taskId: "${task.id}", status: "running", percent: 0, currentAction: "分析代码结构" })
+
+// 汇报进度
+UpdateTaskStatus({ taskId: "${task.id}", status: "running", percent: 50, currentAction: "实现核心功能" })
+
+// 完成任务
+UpdateTaskStatus({ taskId: "${task.id}", status: "completed", percent: 100, notes: "已实现并验证" })
+
+// 失败时
+UpdateTaskStatus({ taskId: "${task.id}", status: "failed", error: "错误原因" })
+\`\`\`
+
+**关键时刻必须汇报**：
+1. 开始执行时 → status="running"
+2. 重要进展时 → 更新 percent 和 currentAction
+3. 完成时 → status="completed"
+4. 失败时 → status="failed" + error
+
+## 技术环境
 - 语言: ${context.techStack.language}
 - 框架: ${context.techStack.framework || '无'}
+- 测试框架: ${context.techStack.testFramework || '无'}
 - 包管理器: ${context.techStack.packageManager}
-`;
-
-    if (context.constraints && context.constraints.length > 0) {
-      prompt += `\n## 约束条件\n${context.constraints.map(c => `- ${c}`).join('\n')}\n`;
-    }
-
-    if (lastError) {
-      prompt += `\n## 上次执行错误
-\`\`\`
-${lastError.message}
-\`\`\`
-
-请修复上述错误。
-`;
-    }
-
-    if (context.relatedFiles && context.relatedFiles.length > 0) {
-      prompt += `\n## 相关文件参考\n`;
-      for (const file of context.relatedFiles.slice(0, 3)) { // 最多3个
-        prompt += `\n### ${file.path}\n\`\`\`\n${file.content.slice(0, 2000)}\n\`\`\`\n`;
-      }
-    }
-
-    prompt += `
-## 重要提示
-1. 使用 Write 工具创建新文件，Edit 工具修改现有文件
-2. **必须**使用工具写入文件，不要只输出代码块
-3. 遵循项目现有的代码风格和约定
-4. 确保代码可以正常运行`;
-
-    return prompt;
-  }
-
-  /**
-   * 获取代码编写的系统提示词
-   */
-  private getCodeWriterSystemPrompt(context: WorkerContext): string {
-    return `你是一个高效的软件开发 Worker，负责编写高质量的代码。
-
-## 工作环境
-- 项目路径: ${context.projectPath}
-- 语言: ${context.techStack.language}
-- 你拥有完整的工具权限
-
-## 工作原则
-1. **直接执行** - 使用工具直接写入代码，不要只是讨论
-2. **遵循约定** - 使用项目已有的代码风格
-3. **高效完成** - 专注任务，不要过度设计
-4. **自主解决** - 遇到问题（如缺少依赖）自己解决
 
 ## 可用工具
 - Read: 读取文件
 - Write: 创建新文件
 - Edit: 修改现有文件
 - Bash: 执行命令（安装依赖、运行测试等）
-- Glob/Grep: 搜索文件和内容`;
-  }
+- Glob/Grep: 搜索文件和内容
 
-  // --------------------------------------------------------------------------
-  // 测试编写
-  // --------------------------------------------------------------------------
+## 严禁行为
+- **禁止生成文档文件** - 不要创建 README、总结文档
+- **禁止废话** - 完成编码后立即停止
+- **只做被要求的事** - 严格按照任务描述执行
 
-  /**
-   * 编写测试
-   */
-  private async writeTests(
-    task: SmartTask,
-    codeChanges: FileChange[],
-    context: WorkerContext
-  ): Promise<FileChange[]> {
-    const { ConversationLoop } = await import('../core/loop.js');
-
-    const prompt = this.buildTestPrompt(task, codeChanges, context);
-    const systemPrompt = this.getTestWriterSystemPrompt(context);
-
-    const testFiles: FileChange[] = [];
-
-    const loop = new ConversationLoop({
-      model: this.client.getModel(),
-      maxTurns: 10,
-      verbose: false,
-      permissionMode: 'bypassPermissions',
-      workingDir: context.projectPath,
-      systemPrompt,
-      isSubAgent: true,
-    });
-
-    try {
-      for await (const event of loop.processMessageStream(prompt)) {
-        if (event.type === 'tool_end' && event.toolName === 'Write' && event.toolInput) {
-          const input = event.toolInput as { file_path?: string };
-          const filePath = input.file_path;
-
-          if (filePath && !event.toolError) {
-            try {
-              const absolutePath = path.isAbsolute(filePath)
-                ? filePath
-                : path.join(context.projectPath, filePath);
-
-              if (fs.existsSync(absolutePath)) {
-                const content = fs.readFileSync(absolutePath, 'utf-8');
-                testFiles.push({
-                  filePath: absolutePath,
-                  type: 'create',
-                  content,
-                });
-              }
-            } catch {
-              // 忽略错误
-            }
-          }
-        } else if (event.type === 'done' || event.type === 'interrupted') {
-          break;
-        }
-      }
-    } catch (error) {
-      this.log(`测试编写失败: ${error}`);
-      throw error;
-    }
-
-    return testFiles;
+## 任务完成标准
+完成任务描述中要求的代码修改后，直接结束。`;
   }
 
   /**
-   * 构建测试编写提示词
+   * 构建任务提示词
    */
-  private buildTestPrompt(task: SmartTask, codeChanges: FileChange[], context: WorkerContext): string {
-    let prompt = `# 任务：为以下代码编写测试
+  private buildTaskPrompt(task: SmartTask, context: WorkerContext): string {
+    let prompt = `# 任务：${task.name}
 
 ## 任务描述
 ${task.description}
 
-## 已编写的代码
+## 任务类型
+${task.type} (复杂度: ${task.complexity})
+
+## 需要修改的文件
+${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（根据任务需求自行确定）'}
 `;
 
-    for (const change of codeChanges) {
-      prompt += `\n### ${change.filePath}\n\`\`\`\n${change.content?.slice(0, 3000) || '(无内容)'}\n\`\`\`\n`;
+    if (context.constraints && context.constraints.length > 0) {
+      prompt += `
+## 约束条件
+${context.constraints.map(c => `- ${c}`).join('\n')}
+`;
     }
 
-    const testFramework = context.techStack.testFramework || 'vitest';
+    if (context.relatedFiles && context.relatedFiles.length > 0) {
+      prompt += `
+## 相关文件参考
+`;
+      for (const file of context.relatedFiles.slice(0, 3)) {
+        prompt += `
+### ${file.path}
+\`\`\`
+${file.content.slice(0, 2000)}
+\`\`\`
+`;
+      }
+    }
+
     prompt += `
-## 测试要求
-1. 使用 ${testFramework} 测试框架
-2. 测试主要功能和边界情况
-3. 使用描述性的测试名称
-4. 确保测试可以独立运行
+## 开始执行
+请直接开始执行任务。你可以：
+1. 先用 Read/Glob/Grep 了解代码结构（如果需要）
+2. 用 Write/Edit 直接修改代码
+3. 用 Bash 运行测试或安装依赖（如果需要）
+4. 随时更新进度文件汇报状态
 
-## 测试文件路径建议
-- 单元测试: src/__tests__/xxx.test.ts
-- 或与源文件同目录: src/xxx.test.ts
-
-## 重要
-使用 Write 工具直接写入测试文件，不要只输出代码块。`;
+记住：你有完全的自主权，自己判断最佳执行方式。`;
 
     return prompt;
   }
 
-  /**
-   * 获取测试编写的系统提示词
-   */
-  private getTestWriterSystemPrompt(context: WorkerContext): string {
-    const testFramework = context.techStack.testFramework || 'vitest';
-    return `你是一个专业的测试工程师。
-
-## 测试原则
-1. **测试真实实现** - 不要 mock 被测模块本身
-2. **只 mock 外部依赖** - 如数据库、网络请求、文件系统等
-3. **覆盖边界情况** - 包括正常情况和异常情况
-4. **可读性** - 测试名称应该描述预期行为
-
-## 技术要求
-- 测试框架: ${testFramework}
-- 项目路径: ${context.projectPath}
-
-## 工具使用
-必须使用 Write 工具将测试代码写入文件。`;
-  }
-
   // --------------------------------------------------------------------------
-  // 测试运行
+  // 流式事件处理
   // --------------------------------------------------------------------------
 
   /**
-   * 运行测试
+   * 处理流式事件
    */
-  private async runTests(testFiles: string[], context: WorkerContext): Promise<TestRunResult> {
-    if (testFiles.length === 0) {
-      return {
-        passed: true,
-        output: '没有测试文件',
-        duration: 0,
-      };
-    }
+  private handleStreamEvent(
+    event: any,
+    task: SmartTask,
+    writtenFiles: FileChange[],
+    context: WorkerContext
+  ): void {
+    if (event.type === 'text' && event.content) {
+      // 检测思考内容
+      if (event.content.startsWith('[Thinking:')) {
+        const thinkingContent = event.content.replace(/^\[Thinking:\s*/, '').replace(/\]$/, '');
+        this.emit('stream:thinking', { workerId: this.workerId, task, content: thinkingContent });
+      } else {
+        this.emit('stream:text', { workerId: this.workerId, task, content: event.content });
+      }
+    } else if (event.type === 'tool_start' && event.toolName) {
+      this.emit('stream:tool_start', {
+        workerId: this.workerId,
+        task,
+        toolName: event.toolName,
+        toolInput: event.toolInput,
+      });
+    } else if (event.type === 'tool_end' && event.toolName) {
+      this.emit('stream:tool_end', {
+        workerId: this.workerId,
+        task,
+        toolName: event.toolName,
+        toolInput: event.toolInput,
+        toolResult: event.toolResult,
+        toolError: event.toolError,
+      });
 
-    const startTime = Date.now();
-    const testFramework = context.techStack.testFramework || 'vitest';
-    const testCommands = this.getTestCommands(testFramework, testFiles, context.projectPath);
+      // 追踪文件写入
+      if ((event.toolName === 'Write' || event.toolName === 'Edit') && event.toolInput) {
+        const input = event.toolInput as { file_path?: string; filePath?: string };
+        const filePath = input.file_path || input.filePath;
 
-    try {
-      const results: string[] = [];
-      let allPassed = true;
-
-      for (const command of testCommands) {
-        const result = await this.executeCommand(command, context.projectPath);
-        results.push(result.output);
-
-        if (!result.success) {
-          allPassed = false;
+        if (filePath && !event.toolError) {
+          this.trackFileChange(filePath, event.toolName, writtenFiles, context.projectPath);
         }
       }
 
-      const duration = Date.now() - startTime;
-      const output = results.join('\n\n');
+      // 检测 UpdateTaskStatus 工具调用
+      if (event.toolName === 'UpdateTaskStatus' && event.toolInput && !event.toolError) {
+        const statusInput = event.toolInput as {
+          taskId: string;
+          status: string;
+          percent?: number;
+          currentAction?: string;
+          error?: string;
+          notes?: string;
+        };
 
-      return {
-        passed: allPassed,
-        output,
-        errorMessage: allPassed ? undefined : this.extractErrorMessage(output),
-        duration,
-      };
-
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      const errorMsg = error instanceof Error ? error.message : String(error);
-
-      return {
-        passed: false,
-        output: errorMsg,
-        errorMessage: errorMsg,
-        duration,
-      };
+        // 发出状态变更事件
+        this.emit('task:status_change', {
+          workerId: this.workerId,
+          taskId: statusInput.taskId,
+          status: statusInput.status,
+          percent: statusInput.percent,
+          currentAction: statusInput.currentAction,
+          error: statusInput.error,
+          notes: statusInput.notes,
+          timestamp: new Date(),
+        });
+      }
     }
   }
 
   /**
-   * 获取测试命令
+   * 追踪文件变更
    */
-  private getTestCommands(
-    framework: string,
-    testFiles: string[],
+  private trackFileChange(
+    filePath: string,
+    toolName: string,
+    writtenFiles: FileChange[],
     projectPath: string
-  ): string[] {
-    const commands: string[] = [];
+  ): void {
+    try {
+      const absolutePath = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(projectPath, filePath);
 
-    for (const file of testFiles) {
-      const relativePath = path.relative(projectPath, file);
-
-      switch (framework) {
-        case 'vitest':
-          commands.push(`npx vitest run ${relativePath}`);
-          break;
-        case 'jest':
-          commands.push(`npx jest ${relativePath}`);
-          break;
-        case 'pytest':
-          commands.push(`python -m pytest ${relativePath}`);
-          break;
-        case 'go_test':
-          commands.push(`go test ${relativePath}`);
-          break;
-        case 'cargo_test':
-          commands.push(`cargo test`);
-          break;
-        default:
-          commands.push(`npm test -- ${relativePath}`);
+      if (fs.existsSync(absolutePath)) {
+        const content = fs.readFileSync(absolutePath, 'utf-8');
+        // 检查是否已存在
+        const existingIndex = writtenFiles.findIndex(f => f.filePath === absolutePath);
+        if (existingIndex >= 0) {
+          writtenFiles[existingIndex].content = content;
+        } else {
+          writtenFiles.push({
+            filePath: absolutePath,
+            type: toolName === 'Write' ? 'create' : 'modify',
+            content,
+          });
+        }
       }
+    } catch {
+      // 忽略读取错误
     }
-
-    return commands;
-  }
-
-  /**
-   * 执行命令
-   */
-  private executeCommand(
-    command: string,
-    cwd: string
-  ): Promise<{ success: boolean; output: string }> {
-    return new Promise((resolve) => {
-      const proc = spawn(command, {
-        cwd,
-        shell: true,
-        timeout: this.testTimeout,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      proc.on('close', (code) => {
-        const output = stdout + (stderr ? '\n' + stderr : '');
-        resolve({
-          success: code === 0,
-          output,
-        });
-      });
-
-      proc.on('error', (error) => {
-        resolve({
-          success: false,
-          output: error.message,
-        });
-      });
-    });
-  }
-
-  /**
-   * 从输出中提取错误信息
-   */
-  private extractErrorMessage(output: string): string {
-    const lines = output.split('\n');
-    const errorLines: string[] = [];
-    let inError = false;
-
-    for (const line of lines) {
-      if (line.includes('Error:') || line.includes('FAIL') || line.includes('✖') || line.includes('AssertionError')) {
-        inError = true;
-      }
-
-      if (inError) {
-        errorLines.push(line);
-        if (errorLines.length >= 15) break;
-      }
-    }
-
-    return errorLines.length > 0 ? errorLines.join('\n') : output.slice(0, 500);
   }
 
   // --------------------------------------------------------------------------
-  // 错误处理
+  // 进度管理
   // --------------------------------------------------------------------------
 
   /**
-   * 处理错误
-   * 自动分析错误并决定如何处理
+   * 更新进度
    */
-  private async handleError(
-    error: Error,
-    task: SmartTask,
-    attempt: number,
-    context: WorkerContext
-  ): Promise<ErrorAction> {
-    // 分析错误类型
-    const analysis = this.analyzeError(error);
-
-    // 如果是最后一次尝试，直接升级
-    if (attempt >= this.maxRetries) {
-      return {
-        action: 'escalate',
-        reason: `达到最大重试次数 (${this.maxRetries})`,
-      };
-    }
-
-    // 根据错误类型决定动作
-    switch (analysis.type) {
-      case 'syntax':
-      case 'type':
-        return {
-          action: 'retry',
-          strategy: '修复语法/类型错误',
-          reason: analysis.suggestion,
-        };
-
-      case 'import':
-        // 可能需要安装依赖
-        return {
-          action: 'fix',
-          strategy: '检查并安装缺失的依赖',
-          reason: analysis.suggestion,
-        };
-
-      case 'test_fail':
-        return {
-          action: 'retry',
-          strategy: '根据测试错误修复代码',
-          reason: analysis.suggestion,
-        };
-
-      case 'timeout':
-        return {
-          action: 'skip',
-          reason: '任务超时，可能需要拆分',
-        };
-
-      default:
-        return {
-          action: analysis.canAutoFix ? 'retry' : 'escalate',
-          strategy: analysis.canAutoFix ? analysis.suggestion : undefined,
-          reason: analysis.message,
-        };
-    }
-  }
-
-  /**
-   * 分析错误
-   */
-  private analyzeError(error: Error): ErrorAnalysis {
-    const message = error.message.toLowerCase();
-
-    // 语法错误
-    if (message.includes('syntaxerror') || message.includes('unexpected token')) {
-      return {
-        type: 'syntax',
-        message: error.message,
-        suggestion: '检查代码语法，特别是括号、引号等',
-        canAutoFix: true,
-      };
-    }
-
-    // 类型错误
-    if (message.includes('typeerror') || message.includes('type error')) {
-      return {
-        type: 'type',
-        message: error.message,
-        suggestion: '检查变量类型和函数参数',
-        canAutoFix: true,
-      };
-    }
-
-    // 导入错误
-    if (message.includes('cannot find module') || message.includes('import') || message.includes('require')) {
-      const moduleMatch = error.message.match(/['"]([^'"]+)['"]/);
-      return {
-        type: 'import',
-        message: error.message,
-        suggestion: moduleMatch
-          ? `安装缺失的模块: npm install ${moduleMatch[1]}`
-          : '检查模块导入路径',
-        canAutoFix: true,
-      };
-    }
-
-    // 测试失败
-    if (message.includes('test') || message.includes('expect') || message.includes('assert')) {
-      return {
-        type: 'test_fail',
-        message: error.message,
-        suggestion: '根据测试断言错误修复实现代码',
-        canAutoFix: true,
-      };
-    }
-
-    // 超时
-    if (message.includes('timeout') || message.includes('timed out')) {
-      return {
-        type: 'timeout',
-        message: error.message,
-        suggestion: '任务执行超时，考虑优化或拆分',
-        canAutoFix: false,
-      };
-    }
-
-    // 运行时错误
-    return {
-      type: 'runtime',
-      message: error.message,
-      suggestion: '检查代码逻辑和运行时条件',
-      canAutoFix: true,
-    };
+  private updateProgress(projectPath: string, progress: TaskProgress): void {
+    writeTaskProgress(projectPath, progress);
+    this.emit('progress:update', { workerId: this.workerId, progress });
   }
 
   // --------------------------------------------------------------------------
   // 辅助方法
   // --------------------------------------------------------------------------
-
-  /**
-   * 创建失败结果
-   */
-  private createFailureResult(
-    task: SmartTask,
-    changes: FileChange[],
-    decisions: WorkerDecision[],
-    error: Error | null
-  ): TaskResult {
-    return {
-      success: false,
-      changes,
-      testsRan: false,
-      error: error?.message || '任务执行失败',
-      decisions,
-    };
-  }
 
   /**
    * 日志输出

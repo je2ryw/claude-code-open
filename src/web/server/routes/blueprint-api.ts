@@ -418,7 +418,7 @@ class RealTaskExecutor implements TaskExecutor {
       worker = createAutonomousWorker({
         maxRetries: 3,
         testTimeout: 60000,
-        defaultModel: task.complexity === 'complex' ? 'opus' : task.complexity === 'simple' ? 'haiku' : 'sonnet',
+        defaultModel: task.complexity === 'complex' ? 'opus' : 'sonnet',
       });
 
       // v2.0: 监听 Worker 分析事件并转发到 WebSocket
@@ -607,7 +607,7 @@ class RealTaskExecutor implements TaskExecutor {
           workerTimeout: 600000,  // 10分钟
           defaultModel: 'sonnet' as const,
           complexTaskModel: 'opus' as const,
-          simpleTaskModel: 'haiku' as const,
+          simpleTaskModel: 'sonnet' as const,
           autoTest: true,
           testTimeout: 60000,
           maxRetries: 3,

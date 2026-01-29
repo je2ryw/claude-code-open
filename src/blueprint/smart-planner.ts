@@ -288,17 +288,23 @@ export class SmartPlanner extends EventEmitter {
   }
 
   /**
-   * 处理问候阶段输入
+   * 处理问候阶段输入 - v2.0 智能版本
+   *
+   * 改进：
+   * 1. 先快速确认理解
+   * 2. 根据需求关键词针对性探索代码库
+   * 3. 基于代码上下文生成智能追问
    */
   private async processGreetingInput(
     state: DialogState,
     input: string
   ): Promise<{ response: string; nextPhase: DialogPhase }> {
-    // 使用 AI 提取核心需求
+    // Step 1: 快速提取需求关键词（秒级响应）
     const extracted = await this.extractWithAI<{
       projectGoal: string;
       coreFeatures: string[];
-      suggestedName: string;
+      keywords: string[];  // 用于搜索代码库的关键词
+      complexity: 'simple' | 'moderate' | 'complex';
     }>(
       `用户描述了他想要构建的功能：
 "${input}"
@@ -306,15 +312,17 @@ export class SmartPlanner extends EventEmitter {
 请提取：
 1. 项目目标（一句话总结）
 2. 可能的核心功能列表（2-5个）
-3. 建议的项目名称
+3. 用于搜索代码库的关键词（英文，2-5个，如 auth, login, user, cart, checkout）
+4. 需求复杂度判断
 
 以 JSON 格式返回：
 {
   "projectGoal": "项目目标",
   "coreFeatures": ["功能1", "功能2"],
-  "suggestedName": "项目名"
+  "keywords": ["auth", "login", "user"],
+  "complexity": "simple/moderate/complex"
 }`,
-      { projectGoal: input, coreFeatures: [], suggestedName: '' }
+      { projectGoal: input, coreFeatures: [], keywords: [], complexity: 'moderate' as const }
     );
 
     // 保存提取的需求
@@ -323,13 +331,275 @@ export class SmartPlanner extends EventEmitter {
       state.collectedRequirements.push(...extracted.coreFeatures);
     }
 
-    // 生成下一步问题
-    const response = `好的，我理解你想要：**${extracted.projectGoal}**
+    // Step 2: 根据需求关键词针对性探索代码库
+    let codebaseContext = '';
+    if (this.projectPath && extracted.keywords.length > 0) {
+      this.emit('dialog:exploring', { keywords: extracted.keywords });
+      const exploration = await this.exploreForRequirement(
+        this.projectPath,
+        extracted.keywords,
+        extracted.projectGoal
+      );
+      codebaseContext = exploration;
+    }
 
-${extracted.coreFeatures.length > 0 ? `检测到的核心功能：\n${extracted.coreFeatures.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n` : ''}
-${DIALOG_PROMPTS.requirements}`;
+    // Step 3: 基于代码上下文生成智能追问
+    const smartQuestions = await this.generateSmartQuestions(
+      extracted.projectGoal,
+      extracted.coreFeatures,
+      codebaseContext,
+      extracted.complexity
+    );
 
-    return { response, nextPhase: 'requirements' };
+    // 构建响应
+    const response = this.buildSmartResponse(
+      extracted.projectGoal,
+      extracted.coreFeatures,
+      codebaseContext,
+      smartQuestions
+    );
+
+    // 根据复杂度决定下一阶段
+    // 简单需求可以跳过 clarification 直接到 tech_choice
+    const nextPhase: DialogPhase = extracted.complexity === 'simple'
+      ? 'tech_choice'
+      : 'requirements';
+
+    return { response, nextPhase };
+  }
+
+  /**
+   * 根据需求关键词探索代码库
+   * 不是盲目全量扫描，而是针对性搜索
+   */
+  private async exploreForRequirement(
+    projectPath: string,
+    keywords: string[],
+    goal: string
+  ): Promise<string> {
+    const findings: string[] = [];
+
+    // 记录探索目标，用于后续分析
+    this.emit('dialog:explore_goal', { goal, keywords });
+
+    try {
+      // 1. 检测项目基本信息
+      const techStack = this.detectExistingTechStack();
+      if (techStack.language) {
+        findings.push(`**项目类型**: ${techStack.language}${techStack.framework ? ` + ${techStack.framework}` : ''}`);
+      }
+      if (techStack.testFramework) {
+        findings.push(`**测试框架**: ${techStack.testFramework}`);
+      }
+
+      // 2. 搜索与需求相关的现有代码
+      const searchPattern = keywords.join('|');
+      const relatedFiles = await this.searchRelatedCode(projectPath, searchPattern);
+
+      if (relatedFiles.length > 0) {
+        findings.push(`\n**发现相关代码** (${relatedFiles.length} 个文件):`);
+        for (const file of relatedFiles.slice(0, 5)) {
+          findings.push(`  · \`${file.path}\` - ${file.summary}`);
+        }
+        if (relatedFiles.length > 5) {
+          findings.push(`  · ... 还有 ${relatedFiles.length - 5} 个文件`);
+        }
+      } else {
+        findings.push(`\n**未发现相关代码**: 这将是一个新功能模块`);
+      }
+
+      // 3. 检查项目结构
+      const structure = await this.getProjectStructure(projectPath);
+      if (structure) {
+        findings.push(`\n**项目结构**: ${structure}`);
+      }
+
+      // 4. 检查依赖中是否有相关库
+      const relatedDeps = await this.checkRelatedDependencies(projectPath, keywords);
+      if (relatedDeps.length > 0) {
+        findings.push(`\n**相关依赖**: ${relatedDeps.join(', ')}`);
+      }
+
+    } catch (error) {
+      // 探索失败不阻塞流程
+      console.warn('[SmartPlanner] 代码库探索失败:', error);
+    }
+
+    return findings.length > 0 ? findings.join('\n') : '';
+  }
+
+  /**
+   * 搜索与需求相关的代码
+   */
+  private async searchRelatedCode(
+    projectPath: string,
+    pattern: string
+  ): Promise<Array<{ path: string; summary: string }>> {
+    const results: Array<{ path: string; summary: string }> = [];
+
+    try {
+      // 使用 Agent 模式搜索
+      const loop = new ConversationLoop({
+        model: this.getClient().getModel(),
+        maxTurns: 2,
+        verbose: false,
+        permissionMode: 'bypassPermissions',
+        workingDir: projectPath,
+        systemPrompt: `你是代码搜索助手。使用 Grep 和 Glob 工具搜索代码，返回简洁结果。
+只返回 JSON 数组，格式：[{"path": "文件路径", "summary": "文件摘要"}]`,
+        isSubAgent: true,
+      });
+
+      const searchResult = await loop.processMessage(
+        `搜索包含 "${pattern}" 的代码文件，返回最相关的5个文件及其摘要（10字以内）。
+只返回 JSON 数组，不要其他内容。`
+      );
+
+      if (searchResult) {
+        try {
+          const jsonMatch = searchResult.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed.slice(0, 5);
+          }
+        } catch {
+          // 解析失败，返回空
+        }
+      }
+    } catch (error) {
+      console.warn('[SmartPlanner] 代码搜索失败:', error);
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取项目结构概要
+   */
+  private async getProjectStructure(projectPath: string): Promise<string> {
+    try {
+      const dirs: string[] = [];
+      const entries = fs.readdirSync(projectPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          dirs.push(entry.name);
+        }
+      }
+
+      if (dirs.length > 0) {
+        return dirs.slice(0, 8).join(', ') + (dirs.length > 8 ? '...' : '');
+      }
+    } catch {
+      // 忽略错误
+    }
+    return '';
+  }
+
+  /**
+   * 检查相关依赖
+   */
+  private async checkRelatedDependencies(
+    projectPath: string,
+    keywords: string[]
+  ): Promise<string[]> {
+    const related: string[] = [];
+
+    try {
+      const pkgPath = path.join(projectPath, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+        for (const [dep] of Object.entries(allDeps)) {
+          for (const keyword of keywords) {
+            if (dep.toLowerCase().includes(keyword.toLowerCase())) {
+              related.push(dep);
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      // 忽略错误
+    }
+
+    return related.slice(0, 5);
+  }
+
+  /**
+   * 基于代码上下文生成智能问题
+   */
+  private async generateSmartQuestions(
+    goal: string,
+    features: string[],
+    codebaseContext: string,
+    complexity: 'simple' | 'moderate' | 'complex'
+  ): Promise<string[]> {
+    // 简单需求不需要太多问题
+    if (complexity === 'simple' && !codebaseContext) {
+      return ['确认以上理解正确吗？有什么需要补充的吗？'];
+    }
+
+    const questions = await this.extractWithAI<{ questions: string[] }>(
+      `基于以下信息，生成 2-3 个针对性的追问问题：
+
+用户目标：${goal}
+可能的功能：${features.join(', ')}
+代码库分析：
+${codebaseContext || '新项目，无现有代码'}
+
+要求：
+1. 问题要基于代码库现状，不要问笼统的问题
+2. 如果发现相关代码，问是否基于现有代码扩展
+3. 如果没有相关代码，问技术选型偏好
+4. 问题要具体，不要"有什么约束"这种空泛问题
+
+返回 JSON：{"questions": ["问题1", "问题2"]}`,
+      { questions: ['确认以上理解正确吗？有什么需要补充的吗？'] }
+    );
+
+    return questions.questions;
+  }
+
+  /**
+   * 构建智能响应
+   */
+  private buildSmartResponse(
+    goal: string,
+    features: string[],
+    codebaseContext: string,
+    questions: string[]
+  ): string {
+    const lines: string[] = [];
+
+    // 1. 确认理解
+    lines.push(`好的，我理解你想要：**${goal}**`);
+    lines.push('');
+
+    // 2. 展示检测到的功能
+    if (features.length > 0) {
+      lines.push('**可能涉及的功能点：**');
+      features.forEach((f, i) => lines.push(`${i + 1}. ${f}`));
+      lines.push('');
+    }
+
+    // 3. 展示代码库分析结果（这是关键差异点！）
+    if (codebaseContext) {
+      lines.push('---');
+      lines.push('📂 **代码库分析：**');
+      lines.push(codebaseContext);
+      lines.push('---');
+      lines.push('');
+    }
+
+    // 4. 智能追问
+    if (questions.length > 0) {
+      lines.push('**我需要确认几个问题：**');
+      questions.forEach((q, i) => lines.push(`${i + 1}. ${q}`));
+    }
+
+    return lines.join('\n');
   }
 
   /**

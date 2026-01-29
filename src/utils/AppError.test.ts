@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AppError } from './AppError';
+import { AppError } from './AppError.js';
 
 describe('AppError', () => {
   describe('基本创建', () => {

@@ -40,9 +40,10 @@ export {
 export {
   AutonomousWorkerExecutor,
   createAutonomousWorker,
+  readTaskProgress,
+  writeTaskProgress,
   type WorkerContext,
-  type ExecutionStrategy,
-  type TestRunResult,
+  type TaskProgress,
   type WorkerEventType,
 } from './autonomous-worker.js';
 

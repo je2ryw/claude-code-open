@@ -171,7 +171,7 @@ class LocalTFIDFEmbedder implements IEmbedder {
     const words: string[] = [];
 
     // 英文单词
-    const englishWords = lower.match(/[a-z]+/g) || [];
+    const englishWords: string[] = lower.match(/[a-z]+/g) || [];
     words.push(...englishWords.filter(w => w.length > 1));
 
     // 中文字符（按字分割，也可以按词）

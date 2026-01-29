@@ -2,8 +2,7 @@
  * 蜂群架构 v2.0 - 模型选择器
  *
  * 根据任务复杂度智能选择最佳模型：
- * - trivial/simple → haiku（最便宜，适合简单任务）
- * - moderate → sonnet（平衡性能和成本）
+ * - trivial/simple/moderate → sonnet（平衡性能和成本）
  * - complex → opus（最强大，适合复杂任务）
  *
  * 核心功能：
@@ -111,7 +110,7 @@ export class ModelSelector {
    * 根据任务选择最佳模型
    *
    * 选择策略：
-   * - trivial/simple → haiku（或配置中的 simpleTaskModel）
+   * - trivial/simple → sonnet（或配置中的 simpleTaskModel）
    * - moderate → sonnet（或配置中的 defaultModel）
    * - complex → opus（或配置中的 complexTaskModel）
    *
@@ -184,7 +183,8 @@ export class ModelSelector {
     taskType: TaskType,
     config: SwarmConfig
   ): ModelType {
-    // 集成任务和重构任务，如果当前选择的是 haiku，升级到 sonnet
+    // 集成任务和重构任务需要更强的推理能力，确保使用 sonnet 或更高
+    // 注：现在简单任务也默认使用 sonnet，此逻辑保留作为安全保障
     if ((taskType === 'integrate' || taskType === 'refactor') && baseModel === 'haiku') {
       return config.defaultModel;
     }
@@ -239,7 +239,7 @@ export class ModelSelector {
       workerTimeout: 600000,  // 10分钟
       defaultModel: 'sonnet',
       complexTaskModel: 'opus',
-      simpleTaskModel: 'haiku',
+      simpleTaskModel: 'sonnet',
       autoTest: true,
       testTimeout: 60000,
       maxRetries: 3,
