@@ -236,7 +236,7 @@ export class ModelSelector {
     // 使用传入的配置或默认配置
     const effectiveConfig: SwarmConfig = config || {
       maxWorkers: 5,
-      workerTimeout: 300000,
+      workerTimeout: 600000,  // 10分钟
       defaultModel: 'sonnet',
       complexTaskModel: 'opus',
       simpleTaskModel: 'haiku',

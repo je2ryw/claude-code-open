@@ -17,6 +17,7 @@ import { processGitCommitCommand } from '../utils/git-helper.js';
 import { configManager } from '../config/index.js';
 import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import { escapePathForShell } from '../utils/platform.js';
+import { getCurrentCwd } from '../core/cwd-context.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 
 const execAsync = promisify(exec);
@@ -552,7 +553,7 @@ Important:
         const auditLog: AuditLog = {
           timestamp: Date.now(),
           command,
-          cwd: process.cwd(),
+          cwd: getCurrentCwd(),
           sandboxed: false,
           success: false,
           duration: 0,
@@ -577,7 +578,7 @@ Important:
       const auditLog: AuditLog = {
         timestamp: Date.now(),
         command,
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         sandboxed: false,
         success: false,
         duration: 0,
@@ -626,7 +627,7 @@ Important:
       // 统一使用 executeInSandbox 来执行命令
       // 它会根据各种条件自动决定是否真正使用沙箱
       const sandboxResult = await executeInSandbox(command, {
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         timeout: maxTimeout,
         disableSandbox: dangerouslyDisableSandbox,
         command, // 传递命令用于特殊处理（如 MCP 检测）
@@ -656,7 +657,7 @@ Important:
       const auditLog: AuditLog = {
         timestamp: Date.now(),
         command,
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         sandboxed: sandboxResult.sandboxed, // 从 sandboxResult 中获取实际的沙箱状态
         success: result.success,
         exitCode: result.exitCode,
@@ -688,7 +689,7 @@ Important:
       const auditLog: AuditLog = {
         timestamp: Date.now(),
         command,
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         sandboxed: false, // 发生错误时默认为 false
         success: false,
         exitCode,
@@ -737,7 +738,7 @@ Important:
     }
 
     // 获取当前工作目录，确保路径在 Windows 上是安全的
-    const safeCwd = IS_WINDOWS ? escapePathForShell(process.cwd()) : process.cwd();
+    const safeCwd = IS_WINDOWS ? escapePathForShell(getCurrentCwd()) : getCurrentCwd();
 
     // 跨平台命令执行
     let proc;
@@ -752,7 +753,7 @@ Important:
     } else {
       // Unix: 使用 bash -c
       proc = spawn('bash', ['-c', command], {
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         env: safeEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -851,7 +852,7 @@ Important:
       const auditLog: AuditLog = {
         timestamp: Date.now(),
         command,
-        cwd: process.cwd(),
+        cwd: getCurrentCwd(),
         sandboxed: false,
         success: code === 0,
         exitCode: code ?? undefined,

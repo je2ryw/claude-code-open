@@ -792,6 +792,66 @@ export function setupWebSocket(
     });
   });
 
+  // ============================================================================
+  // v2.1 新增：Worker 日志事件（实时推送执行日志到前端）
+  // ============================================================================
+
+  executionEventEmitter.on('worker:log', (data: {
+    blueprintId: string;
+    workerId: string;
+    taskId?: string;
+    log: {
+      id: string;
+      timestamp: string;
+      level: 'info' | 'warn' | 'error' | 'debug';
+      type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+      message: string;
+      details?: any;
+    };
+  }) => {
+    console.log(`[Swarm v2.1] Worker log: ${data.workerId} - ${data.log.message.slice(0, 50)}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_log',
+      payload: {
+        workerId: data.workerId,
+        taskId: data.taskId,
+        log: data.log,
+      },
+    });
+  });
+
+  // ============================================================================
+  // v2.1 新增：Worker 流式输出事件（实时推送 Claude 的思考和输出）
+  // ============================================================================
+
+  executionEventEmitter.on('worker:stream', (data: {
+    blueprintId: string;
+    workerId: string;
+    taskId?: string;
+    streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+    content?: string;
+    toolName?: string;
+    toolInput?: any;
+    toolResult?: string;
+    toolError?: string;
+  }) => {
+    // console.log(`[Swarm v2.1] Worker stream: ${data.workerId} - ${data.streamType}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:worker_stream',
+      payload: {
+        workerId: data.workerId,
+        taskId: data.taskId,
+        streamType: data.streamType,
+        content: data.content,
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+        toolResult: data.toolResult,
+        toolError: data.toolError,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  });
+
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
   });

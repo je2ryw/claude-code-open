@@ -1056,7 +1056,10 @@ export function createClientWithModel(model: string): ClaudeClient {
   initAuth();
   const auth = getAuth();
 
-  const config: ClientConfig = { model };
+  const config: ClientConfig = {
+    model,
+    timeout: 300000,  // 5分钟 API 请求超时
+  };
 
   if (auth) {
     if (auth.type === 'api_key' && auth.apiKey) {

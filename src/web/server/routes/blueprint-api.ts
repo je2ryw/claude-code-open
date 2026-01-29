@@ -401,6 +401,8 @@ class RealTaskExecutor implements TaskExecutor {
   private gitConcurrency: GitConcurrency;
   private blueprint: Blueprint;
   private workerPool: Map<string, AutonomousWorkerExecutor> = new Map();
+  // v2.1: 跟踪每个 Worker 当前执行的任务 ID（用于正确的日志路由）
+  private currentTaskMap: Map<string, SmartTask> = new Map();
 
   constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
     this.gitConcurrency = gitConcurrency;
@@ -445,24 +447,163 @@ class RealTaskExecutor implements TaskExecutor {
         });
       });
 
+      // v2.1: 监听详细执行日志事件并转发到前端
+      // 使用 currentTaskMap 获取当前任务，解决 Worker 复用时的闭包问题
+      const emitWorkerLog = (level: 'info' | 'warn' | 'error' | 'debug', type: 'tool' | 'decision' | 'status' | 'output' | 'error', message: string, details?: any) => {
+        const currentTask = this.currentTaskMap.get(workerId);
+        executionEventEmitter.emit('worker:log', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: currentTask?.id,
+          log: {
+            id: `${workerId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: new Date().toISOString(),
+            level,
+            type,
+            message,
+            details,
+          },
+        });
+      };
+
+      // 策略决定
+      worker.on('strategy:decided', (data: any) => {
+        emitWorkerLog('info', 'decision', `策略决定: ${data.strategy?.approach || '自动选择'}`, { strategy: data.strategy });
+      });
+
+      // 代码编写
+      worker.on('code:writing', (data: any) => {
+        emitWorkerLog('info', 'tool', `正在编写代码...`, { task: data.task?.name });
+      });
+
+      worker.on('code:written', (data: any) => {
+        const fileCount = data.changes?.length || 0;
+        emitWorkerLog('info', 'output', `代码编写完成，修改了 ${fileCount} 个文件`, { changes: data.changes });
+      });
+
+      // 测试编写
+      worker.on('test:writing', (data: any) => {
+        emitWorkerLog('info', 'tool', `正在编写测试...`, { task: data.task?.name });
+      });
+
+      worker.on('test:written', (data: any) => {
+        const fileCount = data.changes?.length || 0;
+        emitWorkerLog('info', 'output', `测试编写完成，添加了 ${fileCount} 个测试文件`, { changes: data.changes });
+      });
+
+      // 测试运行
+      worker.on('test:running', (data: any) => {
+        emitWorkerLog('info', 'tool', `正在运行测试...`, { task: data.task?.name });
+      });
+
+      worker.on('test:passed', (data: any) => {
+        emitWorkerLog('info', 'status', `✅ 测试通过`, { result: data.result });
+      });
+
+      worker.on('test:failed', (data: any) => {
+        emitWorkerLog('warn', 'error', `❌ 测试失败: ${data.result?.error || '未知错误'}`, { result: data.result });
+      });
+
+      // 任务完成
+      worker.on('task:completed', (data: any) => {
+        emitWorkerLog('info', 'status', `✅ 任务完成: ${data.task?.name || task.name}`, { task: data.task });
+      });
+
+      // 错误处理
+      worker.on('error:occurred', (data: any) => {
+        emitWorkerLog('error', 'error', `❌ 发生错误: ${data.error}`, { task: data.task, error: data.error });
+      });
+
+      worker.on('error:retrying', (data: any) => {
+        emitWorkerLog('warn', 'status', `🔄 重试中 (尝试 ${data.attempt})...`, { attempt: data.attempt, action: data.action });
+      });
+
+      // v2.1: 监听流式事件（实时显示 Claude 的思考和输出）
+      worker.on('stream:thinking', (data: any) => {
+        // 发送思考增量到前端
+        executionEventEmitter.emit('worker:stream', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: this.currentTaskMap.get(workerId)?.id,
+          streamType: 'thinking',
+          content: data.content,
+        });
+      });
+
+      worker.on('stream:text', (data: any) => {
+        // 发送文本增量到前端
+        executionEventEmitter.emit('worker:stream', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: this.currentTaskMap.get(workerId)?.id,
+          streamType: 'text',
+          content: data.content,
+        });
+      });
+
+      worker.on('stream:tool_start', (data: any) => {
+        // 发送工具开始到前端
+        executionEventEmitter.emit('worker:stream', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: this.currentTaskMap.get(workerId)?.id,
+          streamType: 'tool_start',
+          toolName: data.toolName,
+          toolInput: data.toolInput,
+        });
+      });
+
+      worker.on('stream:tool_end', (data: any) => {
+        // 发送工具结束到前端
+        executionEventEmitter.emit('worker:stream', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: this.currentTaskMap.get(workerId)?.id,
+          streamType: 'tool_end',
+          toolName: data.toolName,
+          toolResult: data.toolResult,
+          toolError: data.toolError,
+        });
+      });
+
       this.workerPool.set(workerId, worker);
     }
 
+    // v2.1: 设置当前任务（用于事件监听器获取正确的 taskId）
+    this.currentTaskMap.set(workerId, task);
+
+    // v2.1: 发送任务开始日志
+    executionEventEmitter.emit('worker:log', {
+      blueprintId: this.blueprint.id,
+      workerId,
+      taskId: task.id,
+      log: {
+        id: `${workerId}-${Date.now()}-start`,
+        timestamp: new Date().toISOString(),
+        level: 'info' as const,
+        type: 'status' as const,
+        message: `🚀 开始执行任务: ${task.name}`,
+        details: { taskId: task.id, taskName: task.name, complexity: task.complexity },
+      },
+    });
+
     try {
-      // 为 Worker 创建独立的 Git 分支
+      // 为 Worker 创建独立的 Worktree（包含独立分支和工作目录）
       const branchName = await this.gitConcurrency.createWorkerBranch(workerId);
-      console.log(`[RealTaskExecutor] 创建分支: ${branchName}`);
+      const workerWorkingDir = this.gitConcurrency.getWorkerWorkingDir(workerId);
+      console.log(`[RealTaskExecutor] 创建分支: ${branchName}, 工作目录: ${workerWorkingDir}`);
 
       // 构建 Worker 上下文
+      // 使用 worktree 路径作为工作目录，实现真正的并发隔离
       const context = {
-        projectPath: this.blueprint.projectPath,
+        projectPath: workerWorkingDir || this.blueprint.projectPath,
         techStack: this.blueprint.techStack || {
           language: 'typescript' as const,
           packageManager: 'npm' as const,
         },
         config: {
           maxWorkers: 5,
-          workerTimeout: 300000,
+          workerTimeout: 600000,  // 10分钟
           defaultModel: 'sonnet' as const,
           complexTaskModel: 'opus' as const,
           simpleTaskModel: 'haiku' as const,
@@ -510,10 +651,47 @@ class RealTaskExecutor implements TaskExecutor {
       }
 
       console.log(`[RealTaskExecutor] 任务完成: ${task.name}, 成功: ${result.success}`);
+
+      // v2.1: 发送任务完成日志
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: this.blueprint.id,
+        workerId,
+        taskId: task.id,
+        log: {
+          id: `${workerId}-${Date.now()}-end`,
+          timestamp: new Date().toISOString(),
+          level: result.success ? 'info' as const : 'error' as const,
+          type: 'status' as const,
+          message: result.success ? `✅ 任务执行完成: ${task.name}` : `❌ 任务执行失败: ${result.error || '未知错误'}`,
+          details: { success: result.success, changesCount: result.changes?.length || 0 },
+        },
+      });
+
+      // 清理当前任务映射
+      this.currentTaskMap.delete(workerId);
+
       return result;
 
     } catch (error: any) {
       console.error(`[RealTaskExecutor] 任务执行失败: ${task.name}`, error);
+
+      // v2.1: 发送错误日志
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: this.blueprint.id,
+        workerId,
+        taskId: task.id,
+        log: {
+          id: `${workerId}-${Date.now()}-error`,
+          timestamp: new Date().toISOString(),
+          level: 'error' as const,
+          type: 'error' as const,
+          message: `❌ 任务执行出错: ${error.message || '未知错误'}`,
+          details: { error: error.message, stack: error.stack },
+        },
+      });
+
+      // 清理当前任务映射
+      this.currentTaskMap.delete(workerId);
 
       // 清理分支
       try {
@@ -651,7 +829,7 @@ class ExecutionManager {
     // 创建协调器
     const coordinator = createRealtimeCoordinator({
       maxWorkers: 5,
-      workerTimeout: 300000,
+      workerTimeout: 600000,  // 10分钟
       skipOnFailure: true,
       stopOnGroupFailure: true, // 当并行组全部失败时停止
       useGitBranches: true,
@@ -722,6 +900,25 @@ class ExecutionManager {
         currentTaskName: data.taskName,
       });
 
+      // 建立任务和 Worker 的关联
+      workerTracker.setTaskWorker(data.taskId, data.workerId);
+
+      // 添加日志条目
+      const logEntry = workerTracker.addLog(data.workerId, {
+        level: 'info',
+        type: 'status',
+        message: `开始执行任务: ${data.taskName || data.taskId}`,
+        details: { taskId: data.taskId, taskName: data.taskName },
+      });
+
+      // 发送日志事件
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        taskId: data.taskId,
+        log: logEntry,
+      });
+
       executionEventEmitter.emit('task:update', {
         blueprintId: blueprint.id,
         taskId: data.taskId,
@@ -744,6 +941,23 @@ class ExecutionManager {
 
     // 任务完成事件
     coordinator.on('task:completed', (data: any) => {
+      // 添加日志条目
+      const workerId = workerTracker.getWorkerByTaskId(data.taskId);
+      if (workerId) {
+        const logEntry = workerTracker.addLog(workerId, {
+          level: 'info',
+          type: 'status',
+          message: `任务完成: ${data.taskName || data.taskId}`,
+          details: { taskId: data.taskId, success: true },
+        });
+        executionEventEmitter.emit('worker:log', {
+          blueprintId: blueprint.id,
+          workerId,
+          taskId: data.taskId,
+          log: logEntry,
+        });
+      }
+
       executionEventEmitter.emit('task:update', {
         blueprintId: blueprint.id,
         taskId: data.taskId,
@@ -756,6 +970,23 @@ class ExecutionManager {
 
     // 任务失败事件
     coordinator.on('task:failed', (data: any) => {
+      // 添加日志条目
+      const workerId = workerTracker.getWorkerByTaskId(data.taskId);
+      if (workerId) {
+        const logEntry = workerTracker.addLog(workerId, {
+          level: 'error',
+          type: 'error',
+          message: `任务失败: ${data.error || '未知错误'}`,
+          details: { taskId: data.taskId, error: data.error },
+        });
+        executionEventEmitter.emit('worker:log', {
+          blueprintId: blueprint.id,
+          workerId,
+          taskId: data.taskId,
+          log: logEntry,
+        });
+      }
+
       executionEventEmitter.emit('task:update', {
         blueprintId: blueprint.id,
         taskId: data.taskId,
@@ -798,6 +1029,22 @@ class ExecutionManager {
         error: data.reason,
         groupIndex: data.groupIndex,
         failedCount: data.failedCount,
+      });
+    });
+
+    // v2.1: 任务重试开始事件 - 立即通知前端刷新状态
+    coordinator.on('task:retry_started', (data: any) => {
+      console.log(`[Swarm v2.0] Task retry started: ${data.taskId} (${data.taskName})`);
+      // 立即发送任务状态更新为 pending，让前端立即刷新
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: {
+          status: 'pending',
+          startedAt: undefined,
+          completedAt: undefined,
+          error: undefined,
+        },
       });
     });
 
@@ -1006,7 +1253,7 @@ class ExecutionManager {
     // 创建协调器
     const coordinator = createRealtimeCoordinator({
       maxWorkers: 5,
-      workerTimeout: 300000,
+      workerTimeout: 600000,  // 10分钟
       skipOnFailure: true,
       stopOnGroupFailure: true,
       useGitBranches: true,
@@ -1587,8 +1834,20 @@ router.post('/execution/recover', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
+ * Worker 日志条目类型
+ */
+export interface WorkerLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+  message: string;
+  details?: any;
+}
+
+/**
  * Worker 状态追踪器
- * 管理当前活跃的 Worker 状态
+ * 管理当前活跃的 Worker 状态和执行日志
  */
 class WorkerStateTracker {
   private workers: Map<string, {
@@ -1605,7 +1864,11 @@ class WorkerStateTracker {
     errorCount: number;
     createdAt: string;
     lastActiveAt: string;
+    logs: WorkerLogEntry[];  // 新增：执行日志
   }> = new Map();
+
+  // 任务到 Worker 的映射（用于通过任务 ID 找到 Worker）
+  private taskWorkerMap: Map<string, string> = new Map();
 
   /**
    * 获取所有 Workers
@@ -1627,9 +1890,70 @@ class WorkerStateTracker {
         errorCount: 0,
         createdAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
+        logs: [],  // 初始化日志数组
       });
     }
     return this.workers.get(workerId)!;
+  }
+
+  /**
+   * 设置任务和 Worker 的关联
+   */
+  setTaskWorker(taskId: string, workerId: string) {
+    this.taskWorkerMap.set(taskId, workerId);
+  }
+
+  /**
+   * 通过任务 ID 获取 Worker ID
+   */
+  getWorkerByTaskId(taskId: string): string | undefined {
+    return this.taskWorkerMap.get(taskId);
+  }
+
+  /**
+   * 添加日志条目
+   */
+  addLog(workerId: string, entry: Omit<WorkerLogEntry, 'id' | 'timestamp'>): WorkerLogEntry {
+    const worker = this.getOrCreate(workerId);
+    const logEntry: WorkerLogEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    worker.logs.push(logEntry);
+    // 只保留最近 100 条日志
+    if (worker.logs.length > 100) {
+      worker.logs = worker.logs.slice(-100);
+    }
+    return logEntry;
+  }
+
+  /**
+   * 获取 Worker 日志
+   */
+  getLogs(workerId: string, limit: number = 50): WorkerLogEntry[] {
+    const worker = this.workers.get(workerId);
+    if (!worker) return [];
+    return worker.logs.slice(-limit);
+  }
+
+  /**
+   * 通过任务 ID 获取日志
+   */
+  getLogsByTaskId(taskId: string, limit: number = 50): WorkerLogEntry[] {
+    const workerId = this.taskWorkerMap.get(taskId);
+    if (!workerId) return [];
+    return this.getLogs(workerId, limit);
+  }
+
+  /**
+   * 清除 Worker 日志
+   */
+  clearLogs(workerId: string) {
+    const worker = this.workers.get(workerId);
+    if (worker) {
+      worker.logs = [];
+    }
   }
 
   /**
@@ -1691,6 +2015,51 @@ router.get('/coordinator/workers', (_req: Request, res: Response) => {
     res.json({
       success: true,
       data: workers,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/workers/:workerId/logs
+ * 获取 Worker 执行日志
+ */
+router.get('/coordinator/workers/:workerId/logs', (req: Request, res: Response) => {
+  try {
+    const { workerId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const logs = workerTracker.getLogs(workerId, limit);
+    res.json({
+      success: true,
+      data: logs,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/tasks/:taskId/logs
+ * 通过任务 ID 获取关联的 Worker 执行日志
+ */
+router.get('/coordinator/tasks/:taskId/logs', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const workerId = workerTracker.getWorkerByTaskId(taskId);
+    if (!workerId) {
+      return res.json({
+        success: true,
+        data: [],
+        message: '该任务尚未分配 Worker',
+      });
+    }
+    const logs = workerTracker.getLogs(workerId, limit);
+    res.json({
+      success: true,
+      data: logs,
+      workerId,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

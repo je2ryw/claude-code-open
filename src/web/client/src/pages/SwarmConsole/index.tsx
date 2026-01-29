@@ -246,6 +246,13 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   }, [state.stats]);
 
+  // v2.1: 同步 WebSocket 更新的 executionPlan 到本地状态（解决界面不刷新问题）
+  useEffect(() => {
+    if (state.executionPlan) {
+      setExecutionPlan(state.executionPlan as ExecutionPlan);
+    }
+  }, [state.executionPlan]);
+
   // 转换数据
   const taskTreeRoot: ComponentTaskNode | null = useMemo(() => {
     if (!state.taskTree) return null;
@@ -281,6 +288,18 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       dependencies: task.dependencies,
     };
   }, [selectedTaskId, executionPlan]);
+
+  // v2.1: 获取选中任务的日志
+  const selectedTaskLogs = useMemo(() => {
+    if (!selectedTaskId) return [];
+    return state.taskLogs[selectedTaskId] || [];
+  }, [selectedTaskId, state.taskLogs]);
+
+  // v2.1: 获取选中任务的流式内容
+  const selectedTaskStream = useMemo(() => {
+    if (!selectedTaskId) return null;
+    return state.taskStreams[selectedTaskId] || null;
+  }, [selectedTaskId, state.taskStreams]);
 
   // 开始/恢复执行
   const handleStartOrResumeExecution = async () => {
@@ -796,7 +815,13 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               </div>
             ) : (
               <FadeIn>
-                <WorkerPanel queen={null} workers={workers} selectedTask={selectedTask} />
+                <WorkerPanel
+                  queen={null}
+                  workers={workers}
+                  selectedTask={selectedTask}
+                  taskLogs={selectedTaskLogs}
+                  taskStream={selectedTaskStream}
+                />
               </FadeIn>
             )}
           </div>

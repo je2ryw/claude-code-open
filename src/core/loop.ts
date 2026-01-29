@@ -6,6 +6,7 @@
 import { ClaudeClient, type ClientConfig } from './client.js';
 import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
+import { runWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
 import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
 
@@ -1618,6 +1619,7 @@ export class ConversationLoop {
       fallbackModel: options.fallbackModel,
       thinking: options.thinking,
       debug: options.debug,
+      timeout: 300000,  // 5分钟 API 请求超时
     };
 
     // 根据认证类型设置凭据
@@ -1721,6 +1723,7 @@ export class ConversationLoop {
       fallbackModel: this.options.fallbackModel,
       thinking: this.options.thinking,
       debug: this.options.debug,
+      timeout: 300000,  // 5分钟 API 请求超时
     };
 
     // 根据认证类型设置凭据
@@ -1790,6 +1793,7 @@ export class ConversationLoop {
           fallbackModel: this.options.fallbackModel,
           thinking: this.options.thinking,
           debug: this.options.debug,
+          timeout: 300000,  // 5分钟 API 请求超时
           apiKey: apiKey,
         });
         return true;
@@ -1828,6 +1832,17 @@ export class ConversationLoop {
   }
 
   async processMessage(userInput: string): Promise<string> {
+    // 使用工作目录上下文包裹整个消息处理过程
+    // 确保所有工具执行都在正确的工作目录上下文中
+    return runWithCwd(this.promptContext.workingDir, async () => {
+      return this.processMessageInternal(userInput);
+    });
+  }
+
+  /**
+   * 内部消息处理逻辑（在工作目录上下文中执行）
+   */
+  private async processMessageInternal(userInput: string): Promise<string> {
     // 确保认证已完成（处理 OAuth API Key 创建）
     await this.ensureAuthenticated();
 
@@ -2082,6 +2097,24 @@ Guidelines:
   }
 
   async *processMessageStream(userInput: string): AsyncGenerator<{
+    type: 'text' | 'tool_start' | 'tool_end' | 'done' | 'interrupted';
+    content?: string;
+    toolName?: string;
+    toolInput?: unknown;
+    toolResult?: string;
+    toolError?: string;
+  }> {
+    // 使用工作目录上下文包裹整个流式处理过程
+    // 注意：AsyncGenerator 需要特殊处理，使用 yield* 委托给内部方法
+    yield* runWithCwd(this.promptContext.workingDir, () => {
+      return this.processMessageStreamInternal(userInput);
+    });
+  }
+
+  /**
+   * 内部流式消息处理逻辑（在工作目录上下文中执行）
+   */
+  private async *processMessageStreamInternal(userInput: string): AsyncGenerator<{
     type: 'text' | 'tool_start' | 'tool_end' | 'done' | 'interrupted';
     content?: string;
     toolName?: string;

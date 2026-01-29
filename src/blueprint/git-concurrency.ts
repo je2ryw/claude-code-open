@@ -1,8 +1,9 @@
 /**
  * 蜂群架构 v2.0 - Git并发控制
  *
- * 核心理念：用Git分支代替文件锁
- * - 每个Worker有独立分支，互不干扰
+ * 核心理念：Git Worktree 实现真正的并发隔离
+ * - 每个 Worker 有独立的 worktree 目录，完全物理隔离
+ * - 无需切换分支，无冲突问题
  * - 完成任务后自动合并到主分支
  * - 冲突时先尝试自动解决，解决不了标记人工review
  */
@@ -61,8 +62,33 @@ class AsyncLock {
 // 分支前缀
 const BRANCH_PREFIX = 'swarm/worker-';
 
+// Worktree 目录名
+const WORKTREE_DIR = '.swarm-worktrees';
+
 // 合并时的默认消息前缀
 const MERGE_MESSAGE_PREFIX = '[Swarm]';
+
+// 需要链接到 worktree 的目录/文件（这些通常在 .gitignore 中）
+const LINK_TARGETS = [
+  'node_modules',
+  '.env',
+  '.env.local',
+  'dist',
+  '.cache',
+  '.next',
+  '.nuxt',
+  'vendor', // PHP composer
+  'venv',   // Python virtualenv
+  '__pycache__',
+];
+
+/**
+ * Worker 工作区信息
+ */
+interface WorkerWorkspace {
+  branchName: string;
+  worktreePath: string;
+}
 
 /**
  * 冲突解决结果
@@ -85,13 +111,14 @@ interface GitExecResult {
 
 /**
  * Git并发控制器
- * 管理Worker分支的创建、合并、冲突解决
+ * 使用 Git Worktree 实现 Worker 的完全隔离
  */
 export class GitConcurrency extends EventEmitter {
   private projectPath: string;
   private mainBranch: string;
-  private workerBranches: Map<string, string>; // workerId -> branchName
-  private gitLock: AsyncLock; // Git 操作互斥锁
+  private workerWorkspaces: Map<string, WorkerWorkspace>; // workerId -> workspace
+  private gitLock: AsyncLock; // Git 操作互斥锁（仅用于需要串行的操作如合并）
+  private worktreeBasePath: string; // Worktree 根目录
 
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -100,8 +127,9 @@ export class GitConcurrency extends EventEmitter {
     super();
     this.projectPath = path.resolve(projectPath);
     this.mainBranch = 'main'; // 默认主分支
-    this.workerBranches = new Map();
+    this.workerWorkspaces = new Map();
     this.gitLock = new AsyncLock();
+    this.worktreeBasePath = path.join(this.projectPath, WORKTREE_DIR);
 
     // 启动异步初始化（但不阻塞构造函数）
     this.initPromise = this.detectMainBranch().then(() => {
@@ -192,6 +220,25 @@ export class GitConcurrency extends EventEmitter {
   }
 
   /**
+   * 在指定目录执行Git命令
+   */
+  private async execGitInDir(command: string, cwd: string): Promise<GitExecResult> {
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd,
+        maxBuffer: 1024 * 1024 * 10, // 10MB buffer
+      });
+      return { stdout, stderr, success: true };
+    } catch (error: any) {
+      return {
+        stdout: error.stdout || '',
+        stderr: error.stderr || error.message,
+        success: false,
+      };
+    }
+  }
+
+  /**
    * 检查Git仓库是否已初始化，并确保主分支存在
    */
   private async ensureGitRepo(): Promise<void> {
@@ -200,44 +247,69 @@ export class GitConcurrency extends EventEmitter {
 
     const gitDir = path.join(this.projectPath, '.git');
     if (!fs.existsSync(gitDir)) {
-      // 初始化Git仓库
-      await this.execGit('git init');
-      // 创建初始提交
+      // 初始化Git仓库（尝试使用 -b main，旧版本 Git 不支持）
+      const initResult = await this.execGit('git init -b main');
+      if (!initResult.success) {
+        // 旧版本 Git 不支持 -b 参数，使用传统方式
+        await this.execGit('git init');
+      }
+      // 创建初始提交（确保分支真正存在）
       await this.execGit('git add -A');
       await this.execGit('git commit -m "Initial commit" --allow-empty');
+
+      // 获取实际创建的分支名
+      const currentBranch = await this.getCurrentBranch();
+      if (currentBranch) {
+        this.mainBranch = currentBranch;
+      } else {
+        // 如果获取不到（极少情况），强制重命名为 main
+        await this.execGit('git branch -M main');
+        this.mainBranch = 'main';
+      }
+
       this.emit('git:initialized', { projectPath: this.projectPath });
-      // 新初始化的仓库，设置主分支为 main
-      this.mainBranch = 'main';
       console.log(`[Git] 新仓库已初始化，主分支: ${this.mainBranch}`);
       return;
     }
 
-    // 确保主分支存在
-    const mainExists = await this.branchExists(this.mainBranch);
-    if (!mainExists) {
-      // 检查是否有任何提交
+    // 验证主分支是否是有效的 git 对象（即是否有提交）
+    const verifyResult = await this.execGit(`git rev-parse --verify ${this.mainBranch}`);
+    if (!verifyResult.success) {
+      // 主分支不是有效对象，可能是空仓库或分支名不匹配
+
+      // 首先检查是否有任何提交
       const hasCommits = await this.execGit('git rev-parse HEAD');
       if (!hasCommits.success) {
         // 没有任何提交，创建初始提交
         await this.execGit('git add -A');
-        await this.execGit('git commit -m "Initial commit" --allow-empty');
-      }
-      // 创建主分支
-      const currentBranch = await this.getCurrentBranch();
-      if (currentBranch && currentBranch !== this.mainBranch) {
-        // 如果当前分支是 main 或 master，直接使用它作为主分支
-        if (currentBranch === 'main' || currentBranch === 'master') {
-          this.mainBranch = currentBranch;
-          console.log(`[Git] 使用当前分支作为主分支: ${this.mainBranch}`);
-        } else {
-          // 基于当前分支创建主分支
-          await this.execGit(`git branch ${this.mainBranch}`);
-          console.log(`[Git] 创建主分支: ${this.mainBranch}`);
+        const commitResult = await this.execGit('git commit -m "Initial commit" --allow-empty');
+        if (!commitResult.success) {
+          console.warn(`[Git] 创建初始提交失败: ${commitResult.stderr}`);
         }
-      } else if (!currentBranch) {
-        // 如果没有当前分支（detached HEAD 或空仓库），创建并切换到 main
-        await this.execGit(`git checkout -b ${this.mainBranch}`);
-        console.log(`[Git] 创建并切换到主分支: ${this.mainBranch}`);
+      }
+
+      // 现在再次检查当前分支
+      const currentBranch = await this.getCurrentBranch();
+      if (currentBranch) {
+        // 有当前分支，使用它作为主分支
+        this.mainBranch = currentBranch;
+        console.log(`[Git] 使用当前分支作为主分支: ${this.mainBranch}`);
+      } else {
+        // 还是没有当前分支（可能是 detached HEAD），尝试创建 main 分支
+        // 先检查 HEAD 是否指向有效提交
+        const headCheck = await this.execGit('git rev-parse HEAD');
+        if (headCheck.success) {
+          // HEAD 有效，基于它创建 main 分支
+          await this.execGit(`git checkout -b main`);
+          this.mainBranch = 'main';
+          console.log(`[Git] 创建并切换到主分支: main`);
+        } else {
+          // 仍然没有有效提交，强制创建
+          await this.execGit('git checkout -b main');
+          await this.execGit('git commit -m "Initial commit" --allow-empty');
+          this.mainBranch = 'main';
+          console.log(`[Git] 强制创建主分支: main`);
+        }
       }
     }
   }
@@ -259,165 +331,206 @@ export class GitConcurrency extends EventEmitter {
   }
 
   /**
-   * 检查工作区是否干净
+   * 确保 worktree 基础目录存在
    */
-  private async isWorkingTreeClean(): Promise<boolean> {
-    const result = await this.execGit('git status --porcelain');
-    return result.stdout.trim().length === 0;
+  private ensureWorktreeDir(): void {
+    if (!fs.existsSync(this.worktreeBasePath)) {
+      fs.mkdirSync(this.worktreeBasePath, { recursive: true });
+      // 添加到 .gitignore（如果不存在）
+      const gitignorePath = path.join(this.projectPath, '.gitignore');
+      const ignoreEntry = `\n# Swarm worktrees\n${WORKTREE_DIR}/\n`;
+      if (fs.existsSync(gitignorePath)) {
+        const content = fs.readFileSync(gitignorePath, 'utf-8');
+        if (!content.includes(WORKTREE_DIR)) {
+          fs.appendFileSync(gitignorePath, ignoreEntry);
+        }
+      } else {
+        fs.writeFileSync(gitignorePath, ignoreEntry);
+      }
+    }
   }
 
   /**
-   * 暂存当前更改
+   * 为 worktree 创建必要的链接（node_modules, .env 等）
+   *
+   * 问题：worktree 只复制 Git 跟踪的文件，.gitignore 中的文件不会复制
+   * 解决：创建链接指向主仓库的这些目录/文件
+   *
+   * Windows: 使用 Junction (mklink /J)，不需要管理员权限
+   * Unix: 使用符号链接 (symlink)
    */
-  private async stashChanges(): Promise<boolean> {
-    const result = await this.execGit('git stash push -m "swarm-auto-stash"');
-    return result.success && result.stdout.includes('Saved working directory');
+  private async linkWorktreeDependencies(worktreePath: string): Promise<void> {
+    const isWindows = process.platform === 'win32';
+
+    for (const target of LINK_TARGETS) {
+      const sourcePath = path.join(this.projectPath, target);
+      const linkPath = path.join(worktreePath, target);
+
+      // 检查源是否存在
+      if (!fs.existsSync(sourcePath)) {
+        continue;
+      }
+
+      // 如果链接目标已存在，跳过
+      if (fs.existsSync(linkPath)) {
+        continue;
+      }
+
+      try {
+        const stat = fs.statSync(sourcePath);
+
+        if (stat.isDirectory()) {
+          // 目录：Windows 用 Junction，Unix 用 symlink
+          if (isWindows) {
+            // mklink /J 创建 Junction，不需要管理员权限
+            await execAsync(`mklink /J "${linkPath}" "${sourcePath}"`, {
+              shell: 'cmd.exe',
+            });
+          } else {
+            fs.symlinkSync(sourcePath, linkPath, 'dir');
+          }
+        } else {
+          // 文件：直接复制（符号链接文件在某些情况下有问题）
+          fs.copyFileSync(sourcePath, linkPath);
+        }
+
+        console.log(`[Git] 已链接: ${target}`);
+      } catch (error: any) {
+        // 链接失败不影响主流程，只记录警告
+        console.warn(`[Git] 链接 ${target} 失败: ${error.message}`);
+      }
+    }
   }
 
   /**
-   * 恢复暂存的更改
-   */
-  private async popStash(): Promise<void> {
-    await this.execGit('git stash pop');
-  }
-
-  /**
-   * 为Worker创建独立分支
+   * 为 Worker 创建独立的 Worktree
+   *
+   * 使用 Git Worktree 实现完全隔离：
+   * - 每个 Worker 有独立的物理目录
+   * - 无需切换分支，无冲突问题
+   * - 支持真正的并发执行
+   *
    * @param workerId Worker的唯一标识
    * @returns 创建的分支名称
    */
   async createWorkerBranch(workerId: string): Promise<string> {
-    // 使用锁确保 Git 操作串行执行，防止并发竞态条件
-    return this.gitLock.withLock(async () => {
-      await this.ensureGitRepo();
+    await this.ensureGitRepo();
+    this.ensureWorktreeDir();
 
-      const branchName = `${BRANCH_PREFIX}${workerId}`;
+    const branchName = `${BRANCH_PREFIX}${workerId}`;
+    const worktreePath = path.join(this.worktreeBasePath, workerId);
 
-      // 检查分支是否已存在
-      if (await this.branchExists(branchName)) {
-        // 如果已存在，先删除旧分支（不通过 deleteWorkerBranch，避免重复获取锁）
-        const currentBranch = await this.getCurrentBranch();
-        if (currentBranch === branchName) {
-          await this.execGit(`git checkout ${this.mainBranch}`);
-        }
-        await this.execGit(`git branch -D "${branchName}"`);
-        this.workerBranches.delete(workerId);
+    // 如果已存在，先清理
+    if (this.workerWorkspaces.has(workerId)) {
+      await this.deleteWorkerBranch(workerId);
+    }
+
+    // 清理可能残留的 worktree 目录
+    if (fs.existsSync(worktreePath)) {
+      // 先尝试用 git worktree remove 清理
+      await this.execGit(`git worktree remove "${worktreePath}" --force`);
+      // 如果目录还存在，手动删除
+      if (fs.existsSync(worktreePath)) {
+        fs.rmSync(worktreePath, { recursive: true, force: true });
       }
+    }
 
-      // 确保工作区干净
-      let hasStash = false;
-      if (!(await this.isWorkingTreeClean())) {
-        hasStash = await this.stashChanges();
-      }
+    // 清理可能残留的分支
+    if (await this.branchExists(branchName)) {
+      await this.execGit(`git branch -D "${branchName}"`);
+    }
 
-      try {
-        // 先检查主分支是否存在
-        const mainExists = await this.branchExists(this.mainBranch);
+    // 拉取最新代码（在主仓库执行，失败不影响）
+    await this.execGit('git pull --rebase');
 
-        if (!mainExists) {
-          // 主分支不存在，检查是否已经在另一个标准分支上
-          const currentBranch = await this.getCurrentBranch();
-          if (currentBranch === 'main' || currentBranch === 'master') {
-            // 当前分支是标准分支，直接使用它
-            this.mainBranch = currentBranch;
-            console.log(`[Git] 切换主分支为当前分支: ${this.mainBranch}`);
-          } else {
-            // 需要创建主分支
-            console.log(`[Git] 主分支 ${this.mainBranch} 不存在，尝试创建...`);
-            const createMainResult = await this.execGit(`git checkout -b ${this.mainBranch}`);
-            if (!createMainResult.success) {
-              // 创建失败，检查是否因为分支已存在（可能是 main/master 混淆）
-              const mainExistsNow = await this.branchExists('main');
-              const masterExistsNow = await this.branchExists('master');
-              if (mainExistsNow) {
-                this.mainBranch = 'main';
-              } else if (masterExistsNow) {
-                this.mainBranch = 'master';
-              } else {
-                throw new Error(`无法创建主分支 ${this.mainBranch}: ${createMainResult.stderr}`);
-              }
-            }
-          }
-        }
+    // 创建 worktree（会自动创建分支）
+    // git worktree add <path> -b <branch> <start-point>
+    const createResult = await this.execGit(
+      `git worktree add "${worktreePath}" -b "${branchName}" ${this.mainBranch}`
+    );
 
-        // 切换到主分支
-        const checkoutResult = await this.execGit(`git checkout ${this.mainBranch}`);
-        if (!checkoutResult.success) {
-          // 切换失败，可能是因为有未提交的更改
-          const errorMsg = checkoutResult.stderr.toLowerCase();
-          if (errorMsg.includes('would be overwritten') || errorMsg.includes('changes')) {
-            throw new Error(`切换到主分支失败：工作区有未提交的更改。请先提交或暂存更改。\n${checkoutResult.stderr}`);
-          }
-          throw new Error(`切换到主分支 ${this.mainBranch} 失败: ${checkoutResult.stderr}`);
-        }
+    if (!createResult.success) {
+      throw new Error(`创建 Worktree 失败: ${createResult.stderr}`);
+    }
 
-        // 拉取最新代码（如果有远程，失败也不影响）
-        await this.execGit('git pull --rebase');
+    // 链接 node_modules、.env 等依赖（这些在 .gitignore 中，不会被 worktree 复制）
+    await this.linkWorktreeDependencies(worktreePath);
 
-        // 创建新分支
-        const createResult = await this.execGit(`git checkout -b "${branchName}"`);
-        if (!createResult.success) {
-          throw new Error(`创建分支失败: ${createResult.stderr}`);
-        }
-
-        // 记录分支
-        this.workerBranches.set(workerId, branchName);
-
-        this.emit('branch:created', {
-          workerId,
-          branchName,
-          baseBranch: this.mainBranch,
-        });
-
-        console.log(`[Git] 分支已创建: ${branchName}`);
-        return branchName;
-      } finally {
-        // 如果有暂存，恢复
-        if (hasStash) {
-          await this.popStash();
-        }
-      }
+    // 记录工作区
+    this.workerWorkspaces.set(workerId, {
+      branchName,
+      worktreePath,
     });
+
+    this.emit('branch:created', {
+      workerId,
+      branchName,
+      worktreePath,
+      baseBranch: this.mainBranch,
+    });
+
+    console.log(`[Git] Worktree 已创建: ${worktreePath} (分支: ${branchName})`);
+    return branchName;
   }
 
   /**
-   * 删除Worker分支
+   * 获取 Worker 的工作目录路径
+   * @param workerId Worker的唯一标识
+   * @returns 工作目录路径，如果不存在返回 undefined
+   */
+  getWorkerWorkingDir(workerId: string): string | undefined {
+    return this.workerWorkspaces.get(workerId)?.worktreePath;
+  }
+
+  /**
+   * 删除 Worker 的 Worktree 和分支
    * @param workerId Worker的唯一标识
    */
   async deleteWorkerBranch(workerId: string): Promise<void> {
-    // 使用锁确保 Git 操作串行执行
-    return this.gitLock.withLock(async () => {
-      const branchName = this.workerBranches.get(workerId) || `${BRANCH_PREFIX}${workerId}`;
+    const workspace = this.workerWorkspaces.get(workerId);
+    const branchName = workspace?.branchName || `${BRANCH_PREFIX}${workerId}`;
+    const worktreePath = workspace?.worktreePath || path.join(this.worktreeBasePath, workerId);
 
-      // 检查分支是否存在
-      if (!(await this.branchExists(branchName))) {
-        this.workerBranches.delete(workerId);
-        return;
+    // 删除 worktree
+    if (fs.existsSync(worktreePath)) {
+      const removeResult = await this.execGit(`git worktree remove "${worktreePath}" --force`);
+      if (!removeResult.success) {
+        // 如果 git worktree remove 失败，尝试手动清理
+        console.warn(`[Git] Worktree remove 失败，尝试手动清理: ${removeResult.stderr}`);
+        try {
+          fs.rmSync(worktreePath, { recursive: true, force: true });
+        } catch (e) {
+          console.error(`[Git] 手动删除 worktree 目录失败:`, e);
+        }
       }
+    }
 
-      // 确保不在要删除的分支上
-      const currentBranch = await this.getCurrentBranch();
-      if (currentBranch === branchName) {
-        await this.execGit(`git checkout ${this.mainBranch}`);
-      }
+    // 清理 worktree 注册信息
+    await this.execGit('git worktree prune');
 
-      // 删除分支
+    // 删除分支
+    if (await this.branchExists(branchName)) {
       const result = await this.execGit(`git branch -D "${branchName}"`);
       if (!result.success) {
-        throw new Error(`删除分支失败: ${result.stderr}`);
+        console.warn(`[Git] 删除分支失败: ${result.stderr}`);
       }
+    }
 
-      this.workerBranches.delete(workerId);
+    this.workerWorkspaces.delete(workerId);
 
-      this.emit('branch:deleted', {
-        workerId,
-        branchName,
-      });
+    this.emit('branch:deleted', {
+      workerId,
+      branchName,
     });
+
+    console.log(`[Git] Worktree 已删除: ${worktreePath}`);
   }
 
   /**
-   * 在Worker分支上提交更改
+   * 在 Worker 的 Worktree 中提交更改
+   *
+   * 注意：使用 Worktree 后无需切换分支，直接在 worktree 目录中操作
+   *
    * @param workerId Worker的唯一标识
    * @param changes 文件变更列表
    * @param message 提交消息
@@ -427,118 +540,102 @@ export class GitConcurrency extends EventEmitter {
     changes: FileChange[],
     message: string
   ): Promise<void> {
-    // 使用锁确保 Git 操作串行执行
-    return this.gitLock.withLock(async () => {
-      const branchName = this.workerBranches.get(workerId);
-      if (!branchName) {
-        throw new Error(`Worker ${workerId} 没有关联的分支`);
-      }
+    const workspace = this.workerWorkspaces.get(workerId);
+    if (!workspace) {
+      throw new Error(`Worker ${workerId} 没有关联的工作区`);
+    }
 
-      // 切换到Worker分支
-      const currentBranch = await this.getCurrentBranch();
-      if (currentBranch !== branchName) {
-        await this.execGit(`git checkout "${branchName}"`);
-      }
+    const { branchName, worktreePath } = workspace;
 
-      try {
-        // 应用文件变更
-        for (const change of changes) {
-          const filePath = path.isAbsolute(change.filePath)
-            ? change.filePath
-            : path.join(this.projectPath, change.filePath);
+    // 应用文件变更（在 worktree 目录中）
+    for (const change of changes) {
+      const filePath = path.isAbsolute(change.filePath)
+        ? change.filePath
+        : path.join(worktreePath, change.filePath);
 
-          switch (change.type) {
-            case 'create':
-            case 'modify':
-              // 确保目录存在
-              const dir = path.dirname(filePath);
-              if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-              }
-              // 写入内容
-              if (change.content !== undefined) {
-                fs.writeFileSync(filePath, change.content, 'utf-8');
-              }
-              // 添加到暂存区
-              await this.execGit(`git add "${change.filePath}"`);
-              break;
-
-            case 'delete':
-              if (fs.existsSync(filePath)) {
-                await this.execGit(`git rm -f "${change.filePath}"`);
-              }
-              break;
+      switch (change.type) {
+        case 'create':
+        case 'modify':
+          // 确保目录存在
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
           }
-        }
+          // 写入内容
+          if (change.content !== undefined) {
+            fs.writeFileSync(filePath, change.content, 'utf-8');
+          }
+          // 添加到暂存区
+          await this.execGitInDir(`git add "${change.filePath}"`, worktreePath);
+          break;
 
-        // 检查是否有变更需要提交
-        if (await this.isWorkingTreeClean()) {
-          // 没有变更，跳过提交
-          return;
-        }
-
-        // 提交 - 避免重复前缀，并处理 Windows 换行符问题
-        const hasPrefix = message.startsWith(MERGE_MESSAGE_PREFIX);
-        const title = hasPrefix ? message : `${MERGE_MESSAGE_PREFIX} ${message}`;
-        // 使用单行提交信息，避免换行符在 Windows 上的问题
-        // 将 Worker ID 和文件数放在同一行
-        const commitMessage = `${title} (Worker: ${workerId.slice(0, 8)}, Files: ${changes.length})`;
-        // 转义双引号和特殊字符
-        const escapedMessage = commitMessage.replace(/"/g, '\\"').replace(/\$/g, '\\$');
-        const commitResult = await this.execGit(`git commit -m "${escapedMessage}"`);
-
-        if (!commitResult.success && !commitResult.stderr.includes('nothing to commit')) {
-          throw new Error(`提交失败: ${commitResult.stderr}`);
-        }
-
-        this.emit('commit:created', {
-          workerId,
-          branchName,
-          message,
-          filesChanged: changes.length,
-        });
-      } finally {
-        // 切回原分支
-        if (currentBranch !== branchName) {
-          await this.execGit(`git checkout "${currentBranch}"`);
-        }
+        case 'delete':
+          if (fs.existsSync(filePath)) {
+            await this.execGitInDir(`git rm -f "${change.filePath}"`, worktreePath);
+          }
+          break;
       }
+    }
+
+    // 检查是否有变更需要提交
+    const statusResult = await this.execGitInDir('git status --porcelain', worktreePath);
+    if (statusResult.stdout.trim().length === 0) {
+      // 没有变更，跳过提交
+      return;
+    }
+
+    // 提交
+    const hasPrefix = message.startsWith(MERGE_MESSAGE_PREFIX);
+    const title = hasPrefix ? message : `${MERGE_MESSAGE_PREFIX} ${message}`;
+    const commitMessage = `${title} (Worker: ${workerId.slice(0, 8)}, Files: ${changes.length})`;
+    const escapedMessage = commitMessage.replace(/"/g, '\\"').replace(/\$/g, '\\$');
+    const commitResult = await this.execGitInDir(`git commit -m "${escapedMessage}"`, worktreePath);
+
+    if (!commitResult.success && !commitResult.stderr.includes('nothing to commit')) {
+      throw new Error(`提交失败: ${commitResult.stderr}`);
+    }
+
+    this.emit('commit:created', {
+      workerId,
+      branchName,
+      message,
+      filesChanged: changes.length,
     });
   }
 
   /**
-   * 合并Worker分支到主分支
+   * 合并 Worker 分支到主分支
+   *
+   * 合并操作在主仓库执行（不是在 worktree 中）
+   * 使用锁确保合并操作串行执行，避免冲突
+   *
    * @param workerId Worker的唯一标识
    * @returns 合并结果
    */
   async mergeWorkerBranch(workerId: string): Promise<MergeResult> {
-    // 使用锁确保 Git 操作串行执行
+    // 使用锁确保合并操作串行执行
     return this.gitLock.withLock(async () => {
-      const branchName = this.workerBranches.get(workerId);
-      if (!branchName) {
-        throw new Error(`Worker ${workerId} 没有关联的分支`);
-      }
+      const workspace = this.workerWorkspaces.get(workerId);
+      const branchName = workspace?.branchName || `${BRANCH_PREFIX}${workerId}`;
 
       // 先验证分支是否存在
       if (!(await this.branchExists(branchName))) {
         throw new Error(`分支 ${branchName} 不存在，可能已被删除`);
       }
 
-      // 保存当前分支
+      // 确保主仓库在主分支上
       const currentBranch = await this.getCurrentBranch();
-
-      // 切换到主分支
-      await this.execGit(`git checkout ${this.mainBranch}`);
+      if (currentBranch !== this.mainBranch) {
+        await this.execGit(`git checkout ${this.mainBranch}`);
+      }
 
       try {
         // 尝试合并
         const mergeResult = await this.execGit(`git merge "${branchName}" --no-edit`);
 
         if (mergeResult.success) {
-          // 合并成功，直接删除Worker分支（不通过 deleteWorkerBranch 避免死锁）
-          await this.execGit(`git branch -D "${branchName}"`);
-          this.workerBranches.delete(workerId);
-          this.emit('branch:deleted', { workerId, branchName });
+          // 合并成功，删除 worktree 和分支
+          await this.deleteWorkerBranch(workerId);
 
           const result: MergeResult = {
             success: true,
@@ -565,10 +662,8 @@ export class GitConcurrency extends EventEmitter {
             await this.execGit('git add -A');
             await this.execGit(`git commit -m "${MERGE_MESSAGE_PREFIX} Auto-resolved merge conflict for ${workerId}"`);
 
-            // 直接删除Worker分支（不通过 deleteWorkerBranch 避免死锁）
-            await this.execGit(`git branch -D "${branchName}"`);
-            this.workerBranches.delete(workerId);
-            this.emit('branch:deleted', { workerId, branchName });
+            // 删除 worktree 和分支
+            await this.deleteWorkerBranch(workerId);
 
             const result: MergeResult = {
               success: true,
@@ -601,9 +696,10 @@ export class GitConcurrency extends EventEmitter {
         // 其他合并错误
         throw new Error(`合并失败: ${mergeResult.stderr}`);
       } finally {
-        // 切回原分支
-        if (currentBranch !== this.mainBranch) {
-          await this.execGit(`git checkout "${currentBranch}"`);
+        // 确保回到主分支
+        const finalBranch = await this.getCurrentBranch();
+        if (finalBranch !== this.mainBranch) {
+          await this.execGit(`git checkout ${this.mainBranch}`);
         }
       }
     });
@@ -809,33 +905,19 @@ export class GitConcurrency extends EventEmitter {
    * @param workerId Worker的唯一标识
    */
   async rollbackWorkerBranch(workerId: string): Promise<void> {
-    // 使用锁确保 Git 操作串行执行
-    return this.gitLock.withLock(async () => {
-      const branchName = this.workerBranches.get(workerId);
-      if (!branchName) {
-        throw new Error(`Worker ${workerId} 没有关联的分支`);
-      }
+    const workspace = this.workerWorkspaces.get(workerId);
+    if (!workspace) {
+      throw new Error(`Worker ${workerId} 没有关联的工作区`);
+    }
 
-      // 保存当前分支
-      const currentBranch = await this.getCurrentBranch();
+    const { branchName, worktreePath } = workspace;
 
-      try {
-        // 切换到Worker分支
-        await this.execGit(`git checkout "${branchName}"`);
+    // 在 worktree 中重置到主分支的状态
+    await this.execGitInDir(`git reset --hard ${this.mainBranch}`, worktreePath);
 
-        // 重置到主分支的状态
-        await this.execGit(`git reset --hard ${this.mainBranch}`);
-
-        this.emit('branch:rollback', {
-          workerId,
-          branchName,
-        });
-      } finally {
-        // 切回原分支
-        if (currentBranch !== branchName) {
-          await this.execGit(`git checkout "${currentBranch}"`);
-        }
-      }
+    this.emit('branch:rollback', {
+      workerId,
+      branchName,
     });
   }
 
@@ -845,11 +927,13 @@ export class GitConcurrency extends EventEmitter {
   async getWorkerBranchStatus(workerId: string): Promise<{
     exists: boolean;
     branchName: string;
+    worktreePath?: string;
     commitCount: number;
     lastCommit?: string;
     filesChanged: number;
   }> {
-    const branchName = this.workerBranches.get(workerId) || `${BRANCH_PREFIX}${workerId}`;
+    const workspace = this.workerWorkspaces.get(workerId);
+    const branchName = workspace?.branchName || `${BRANCH_PREFIX}${workerId}`;
     const exists = await this.branchExists(branchName);
 
     if (!exists) {
@@ -938,7 +1022,7 @@ export class GitConcurrency extends EventEmitter {
         }
       }
 
-      this.workerBranches.clear();
+      this.workerWorkspaces.clear();
 
       this.emit('branches:cleanup', {
         cleanedCount: cleaned,
@@ -950,45 +1034,32 @@ export class GitConcurrency extends EventEmitter {
   }
 
   /**
-   * 同步Worker分支到最新的主分支
-   * 使用rebase策略
+   * 同步 Worker 分支到最新的主分支
+   * 在 worktree 中使用 rebase 策略
    */
   async syncWorkerBranch(workerId: string): Promise<boolean> {
-    // 使用锁确保 Git 操作串行执行
-    return this.gitLock.withLock(async () => {
-      const branchName = this.workerBranches.get(workerId);
-      if (!branchName) {
-        throw new Error(`Worker ${workerId} 没有关联的分支`);
-      }
+    const workspace = this.workerWorkspaces.get(workerId);
+    if (!workspace) {
+      throw new Error(`Worker ${workerId} 没有关联的工作区`);
+    }
 
-      const currentBranch = await this.getCurrentBranch();
+    const { branchName, worktreePath } = workspace;
 
-      try {
-        // 切换到Worker分支
-        await this.execGit(`git checkout "${branchName}"`);
+    // 在 worktree 中执行 rebase
+    const rebaseResult = await this.execGitInDir(`git rebase ${this.mainBranch}`, worktreePath);
 
-        // 尝试rebase到主分支
-        const rebaseResult = await this.execGit(`git rebase ${this.mainBranch}`);
+    if (!rebaseResult.success) {
+      // rebase 失败，中止并恢复
+      await this.execGitInDir('git rebase --abort', worktreePath);
+      return false;
+    }
 
-        if (!rebaseResult.success) {
-          // rebase失败，中止并恢复
-          await this.execGit('git rebase --abort');
-          return false;
-        }
-
-        this.emit('branch:synced', {
-          workerId,
-          branchName,
-        });
-
-        return true;
-      } finally {
-        // 切回原分支
-        if (currentBranch !== branchName) {
-          await this.execGit(`git checkout "${currentBranch}"`);
-        }
-      }
+    this.emit('branch:synced', {
+      workerId,
+      branchName,
     });
+
+    return true;
   }
 
   /**
@@ -1013,8 +1084,9 @@ export class GitConcurrency extends EventEmitter {
       conflictFiles?: string[];
     }> = [];
 
-    for (const [workerId, branchName] of this.workerBranches.entries()) {
+    for (const [workerId, workspace] of this.workerWorkspaces.entries()) {
       try {
+        const { branchName } = workspace;
         const status = await this.getWorkerBranchStatus(workerId);
         if (status.exists) {
           // 获取最后提交时间

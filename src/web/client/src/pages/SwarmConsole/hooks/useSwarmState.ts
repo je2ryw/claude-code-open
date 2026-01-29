@@ -20,6 +20,7 @@ import type {
   GitBranchStatus,
   CostEstimate,
   PlannerUpdatePayload,
+  WorkerLogEntry,
 } from '../types';
 
 const initialState: SwarmState = {
@@ -38,6 +39,10 @@ const initialState: SwarmState = {
     phase: 'idle',
     message: '',
   },
+  // v2.1: 任务日志
+  taskLogs: {},
+  // v2.1: 任务流式内容
+  taskStreams: {},
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -72,30 +77,44 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         break;
 
       case 'swarm:task_update':
-        // 任务更新
+        // 任务更新 - 同时更新 taskTree 和 executionPlan
         setState(prev => {
-          if (!prev.taskTree) return prev;
+          let newState = { ...prev };
 
-          const updateTaskNode = (node: TaskNode): TaskNode => {
-            if (node.id === message.payload.taskId) {
-              return { ...node, ...message.payload.updates };
-            }
-            if (node.children && node.children.length > 0) {
-              return {
-                ...node,
-                children: node.children.map(updateTaskNode),
-              };
-            }
-            return node;
-          };
+          // 更新 taskTree
+          if (prev.taskTree) {
+            const updateTaskNode = (node: TaskNode): TaskNode => {
+              if (node.id === message.payload.taskId) {
+                return { ...node, ...message.payload.updates };
+              }
+              if (node.children && node.children.length > 0) {
+                return {
+                  ...node,
+                  children: node.children.map(updateTaskNode),
+                };
+              }
+              return node;
+            };
 
-          return {
-            ...prev,
-            taskTree: {
+            newState.taskTree = {
               ...prev.taskTree,
               root: updateTaskNode(prev.taskTree.root),
-            },
-          };
+            };
+          }
+
+          // v2.1: 同时更新 executionPlan 中的任务状态（解决界面不刷新问题）
+          if (prev.executionPlan) {
+            newState.executionPlan = {
+              ...prev.executionPlan,
+              tasks: prev.executionPlan.tasks.map(task =>
+                task.id === message.payload.taskId
+                  ? { ...task, ...message.payload.updates }
+                  : task
+              ),
+            };
+          }
+
+          return newState;
         });
         break;
 
@@ -201,6 +220,102 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
           },
         }));
         console.log(`[SwarmState] Planner phase: ${message.payload.phase} - ${message.payload.message}`);
+        break;
+
+      case 'swarm:worker_log':
+        // v2.1: Worker 日志消息
+        setState(prev => {
+          const { taskId, log } = message.payload;
+          if (!taskId) return prev;
+
+          const existingLogs = prev.taskLogs[taskId] || [];
+          // 避免重复添加同一日志
+          if (existingLogs.some(l => l.id === log.id)) {
+            return prev;
+          }
+
+          // 最多保留 100 条日志
+          const newLogs = [...existingLogs, log].slice(-100);
+          return {
+            ...prev,
+            taskLogs: {
+              ...prev.taskLogs,
+              [taskId]: newLogs,
+            },
+          };
+        });
+        break;
+
+      case 'swarm:worker_stream':
+        // v2.1: Worker 流式输出（参考 App.tsx 的实现方式）
+        setState(prev => {
+          const { taskId, streamType, content, toolName, toolInput, toolResult, toolError, timestamp } = message.payload;
+          if (!taskId) return prev;
+
+          const existingStream = prev.taskStreams[taskId] || { content: [], lastUpdated: timestamp };
+          const newContent = [...existingStream.content];
+
+          switch (streamType) {
+            case 'thinking':
+              if (content) {
+                const lastIdx = newContent.length - 1;
+                const last = newContent[lastIdx];
+                if (last?.type === 'thinking') {
+                  // 创建新对象替换，避免引用修改导致 React 重复追加
+                  newContent[lastIdx] = { type: 'thinking', text: last.text + content };
+                } else {
+                  newContent.push({ type: 'thinking', text: content });
+                }
+              }
+              break;
+
+            case 'text':
+              if (content) {
+                const lastIdx = newContent.length - 1;
+                const last = newContent[lastIdx];
+                if (last?.type === 'text') {
+                  newContent[lastIdx] = { type: 'text', text: last.text + content };
+                } else {
+                  newContent.push({ type: 'text', text: content });
+                }
+              }
+              break;
+
+            case 'tool_start':
+              newContent.push({
+                type: 'tool',
+                id: `tool-${Date.now()}`,
+                name: toolName || 'unknown',
+                input: toolInput,
+                status: 'running',
+              });
+              break;
+
+            case 'tool_end':
+              for (let i = newContent.length - 1; i >= 0; i--) {
+                const block = newContent[i];
+                if (block.type === 'tool' && block.status === 'running') {
+                  // 创建新对象替换
+                  newContent[i] = {
+                    ...block,
+                    status: toolError ? 'error' as const : 'completed' as const,
+                    result: toolResult,
+                    error: toolError,
+                  };
+                  break;
+                }
+              }
+              break;
+          }
+
+          return {
+            ...prev,
+            taskStreams: {
+              ...prev.taskStreams,
+              [taskId]: { content: newContent.slice(-100), lastUpdated: timestamp },
+            },
+          };
+        });
         break;
 
       default:

@@ -109,6 +109,11 @@ export type WorkerEventType =
 // 自治 Worker Executor
 // ============================================================================
 
+// 注意：工作目录问题已通过 AsyncLocalStorage 解决
+// ConversationLoop 在 processMessage 中会自动设置工作目录上下文
+// 所有工具（如 Bash）通过 getCurrentCwd() 获取正确的工作目录
+// 这样多个 Worker 可以并发执行，每个都有独立的工作目录上下文
+
 export class AutonomousWorkerExecutor extends EventEmitter {
   private client: ClaudeClient;
   private workerId: string;
@@ -157,6 +162,10 @@ export class AutonomousWorkerExecutor extends EventEmitter {
    * 3. 可选：编写测试
    * 4. 可选：运行测试
    * 5. 错误处理（自动重试）
+   *
+   * 注意：工作目录通过 AsyncLocalStorage 管理
+   * ConversationLoop 会在执行时自动设置正确的工作目录上下文
+   * 多个 Worker 可以并发执行，不需要全局锁
    */
   async execute(task: SmartTask, context: WorkerContext): Promise<TaskResult> {
     const decisions: WorkerDecision[] = [];
@@ -166,97 +175,97 @@ export class AutonomousWorkerExecutor extends EventEmitter {
     this.log(`开始执行任务: ${task.name}`);
 
     while (attempt < this.maxRetries) {
-      attempt++;
-      this.log(`执行尝试 ${attempt}/${this.maxRetries}`);
+        attempt++;
+        this.log(`执行尝试 ${attempt}/${this.maxRetries}`);
 
-      try {
-        // 步骤1: 决定执行策略
-        const strategy = await this.decideStrategy(task, context);
-        decisions.push({
-          type: 'strategy',
-          description: `选择策略: ${strategy.shouldWriteTests ? '需要测试' : '跳过测试'}, 原因: ${strategy.testReason}`,
-          timestamp: new Date(),
-        });
-        this.emit('strategy:decided', { workerId: this.workerId, task, strategy });
-
-        // 步骤2: 编写代码
-        this.emit('code:writing', { workerId: this.workerId, task });
-        const codeChanges = await this.writeCode(task, context, lastError);
-        this.emit('code:written', { workerId: this.workerId, task, changes: codeChanges });
-
-        // 步骤3: 可选编写测试
-        let testChanges: FileChange[] = [];
-        if (strategy.shouldWriteTests) {
-          this.emit('test:writing', { workerId: this.workerId, task });
-          testChanges = await this.writeTests(task, codeChanges, context);
-          this.emit('test:written', { workerId: this.workerId, task, changes: testChanges });
-
-          // 步骤4: 运行测试
-          this.emit('test:running', { workerId: this.workerId, task });
-          const testResult = await this.runTests(
-            testChanges.map(c => c.filePath),
-            context
-          );
-
-          if (!testResult.passed) {
-            this.emit('test:failed', { workerId: this.workerId, task, result: testResult });
-
-            // 测试失败，记录错误并重试
-            lastError = new Error(`测试失败: ${testResult.errorMessage || testResult.output}`);
-            const errorAction = await this.handleError(lastError, task, attempt, context);
-
-            decisions.push({
-              type: 'retry',
-              description: `测试失败，${errorAction.action}: ${errorAction.reason}`,
-              timestamp: new Date(),
-            });
-
-            if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
-              // 跳过或升级，返回失败结果
-              return this.createFailureResult(task, codeChanges.concat(testChanges), decisions, lastError);
-            }
-
-            // 继续重试
-            continue;
-          }
-
-          this.emit('test:passed', { workerId: this.workerId, task, result: testResult });
-        } else {
+        try {
+          // 步骤1: 决定执行策略
+          const strategy = await this.decideStrategy(task, context);
           decisions.push({
-            type: 'skip_test',
-            description: `跳过测试: ${strategy.testReason}`,
+            type: 'strategy',
+            description: `选择策略: ${strategy.shouldWriteTests ? '需要测试' : '跳过测试'}, 原因: ${strategy.testReason}`,
             timestamp: new Date(),
           });
+          this.emit('strategy:decided', { workerId: this.workerId, task, strategy });
+
+          // 步骤2: 编写代码
+          this.emit('code:writing', { workerId: this.workerId, task });
+          const codeChanges = await this.writeCode(task, context, lastError);
+          this.emit('code:written', { workerId: this.workerId, task, changes: codeChanges });
+
+          // 步骤3: 可选编写测试
+          let testChanges: FileChange[] = [];
+          if (strategy.shouldWriteTests) {
+            this.emit('test:writing', { workerId: this.workerId, task });
+            testChanges = await this.writeTests(task, codeChanges, context);
+            this.emit('test:written', { workerId: this.workerId, task, changes: testChanges });
+
+            // 步骤4: 运行测试
+            this.emit('test:running', { workerId: this.workerId, task });
+            const testResult = await this.runTests(
+              testChanges.map(c => c.filePath),
+              context
+            );
+
+            if (!testResult.passed) {
+              this.emit('test:failed', { workerId: this.workerId, task, result: testResult });
+
+              // 测试失败，记录错误并重试
+              lastError = new Error(`测试失败: ${testResult.errorMessage || testResult.output}`);
+              const errorAction = await this.handleError(lastError, task, attempt, context);
+
+              decisions.push({
+                type: 'retry',
+                description: `测试失败，${errorAction.action}: ${errorAction.reason}`,
+                timestamp: new Date(),
+              });
+
+              if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
+                // 跳过或升级，返回失败结果
+                return this.createFailureResult(task, codeChanges.concat(testChanges), decisions, lastError);
+              }
+
+              // 继续重试
+              continue;
+            }
+
+            this.emit('test:passed', { workerId: this.workerId, task, result: testResult });
+          } else {
+            decisions.push({
+              type: 'skip_test',
+              description: `跳过测试: ${strategy.testReason}`,
+              timestamp: new Date(),
+            });
+          }
+
+          // 成功完成
+          this.emit('task:completed', { workerId: this.workerId, task });
+          return {
+            success: true,
+            changes: codeChanges.concat(testChanges),
+            testsRan: strategy.shouldWriteTests,
+            testsPassed: strategy.shouldWriteTests ? true : undefined,
+            decisions,
+          };
+
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          this.emit('error:occurred', { workerId: this.workerId, task, error: lastError });
+
+          const errorAction = await this.handleError(lastError, task, attempt, context);
+          decisions.push({
+            type: 'retry',
+            description: `执行错误 (尝试 ${attempt}): ${lastError.message}, 动作: ${errorAction.action}`,
+            timestamp: new Date(),
+          });
+
+          if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
+            break;
+          }
+
+          this.emit('error:retrying', { workerId: this.workerId, task, attempt, action: errorAction });
         }
-
-        // 成功完成
-        this.emit('task:completed', { workerId: this.workerId, task });
-        return {
-          success: true,
-          changes: codeChanges.concat(testChanges),
-          testsRan: strategy.shouldWriteTests,
-          testsPassed: strategy.shouldWriteTests ? true : undefined,
-          decisions,
-        };
-
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        this.emit('error:occurred', { workerId: this.workerId, task, error: lastError });
-
-        const errorAction = await this.handleError(lastError, task, attempt, context);
-        decisions.push({
-          type: 'retry',
-          description: `执行错误 (尝试 ${attempt}): ${lastError.message}, 动作: ${errorAction.action}`,
-          timestamp: new Date(),
-        });
-
-        if (errorAction.action === 'skip' || errorAction.action === 'escalate') {
-          break;
-        }
-
-        this.emit('error:retrying', { workerId: this.workerId, task, attempt, action: errorAction });
       }
-    }
 
     // 所有重试都失败了
     this.emit('task:failed', { workerId: this.workerId, task, error: lastError });
@@ -566,7 +575,31 @@ ${context.constraints?.map(c => `- ${c}`).join('\n') || '无特殊约束'}
 
     try {
       for await (const event of loop.processMessageStream(prompt)) {
-        if (event.type === 'tool_end' && event.toolName) {
+        // v2.1: 发出流式事件供前端实时显示
+        if (event.type === 'text' && event.content) {
+          // 检测是否是思考内容
+          if (event.content.startsWith('[Thinking:')) {
+            const thinkingContent = event.content.replace(/^\[Thinking:\s*/, '').replace(/\]$/, '');
+            this.emit('stream:thinking', { workerId: this.workerId, task, content: thinkingContent });
+          } else {
+            this.emit('stream:text', { workerId: this.workerId, task, content: event.content });
+          }
+        } else if (event.type === 'tool_start' && event.toolName) {
+          this.emit('stream:tool_start', {
+            workerId: this.workerId,
+            task,
+            toolName: event.toolName,
+            toolInput: event.toolInput,
+          });
+        } else if (event.type === 'tool_end' && event.toolName) {
+          this.emit('stream:tool_end', {
+            workerId: this.workerId,
+            task,
+            toolName: event.toolName,
+            toolResult: event.toolResult,
+            toolError: event.toolError,
+          });
+
           // 追踪 Write 和 Edit 工具的执行
           if ((event.toolName === 'Write' || event.toolName === 'Edit') && event.toolInput) {
             const input = event.toolInput as { file_path?: string; filePath?: string };

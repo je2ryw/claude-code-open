@@ -301,7 +301,50 @@ export type SwarmServerMessage =
   | { type: 'swarm:stats_update'; payload: StatsUpdatePayload }
   // v2.0 新增：Planner 探索/分解状态
   | { type: 'swarm:planner_update'; payload: PlannerUpdatePayload }
+  // v2.1 新增：Worker 日志消息
+  | { type: 'swarm:worker_log'; payload: WorkerLogPayload }
+  // v2.1 新增：Worker 流式输出（思考、文本、工具调用）
+  | { type: 'swarm:worker_stream'; payload: WorkerStreamPayload }
   | { type: 'pong' };
+
+// ============= v2.1 新增：Worker 日志类型 =============
+
+/**
+ * Worker 日志条目
+ */
+export interface WorkerLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+  message: string;
+  details?: any;
+}
+
+/**
+ * Worker 日志消息 Payload
+ */
+export interface WorkerLogPayload {
+  workerId: string;
+  taskId?: string;
+  log: WorkerLogEntry;
+}
+
+/**
+ * v2.1 新增：Worker 流式输出 Payload
+ * 用于实时显示 Claude 的思考和输出
+ */
+export interface WorkerStreamPayload {
+  workerId: string;
+  taskId?: string;
+  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolResult?: string;
+  toolError?: string;
+  timestamp: string;
+}
 
 // ============= WebSocket Payload 类型 =============
 
@@ -397,6 +440,31 @@ export interface SwarmState {
     message: string;
     exploration?: PlannerUpdatePayload['exploration'];
   };
+
+  // v2.1: 任务日志（按任务 ID 存储）
+  taskLogs: Record<string, WorkerLogEntry[]>;
+
+  // v2.1: 任务流式内容（实时显示思考和输出，按任务 ID 存储）
+  taskStreams: Record<string, TaskStreamContent>;
+}
+
+/**
+ * v2.1 新增：流式内容块（参考 App.tsx 的消息结构）
+ */
+export type StreamContentBlock =
+  | { type: 'thinking'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; input?: any; result?: string; error?: string; status: 'running' | 'completed' | 'error' };
+
+/**
+ * v2.1 新增：任务流式内容
+ * 类似聊天界面的消息结构，content 数组按顺序存储内容块
+ */
+export interface TaskStreamContent {
+  /** 内容块数组（思考、文本、工具按顺序排列） */
+  content: StreamContentBlock[];
+  /** 最后更新时间 */
+  lastUpdated: string;
 }
 
 // ============= Hook 返回类型 =============

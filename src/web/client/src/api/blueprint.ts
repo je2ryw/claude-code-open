@@ -456,6 +456,46 @@ export const coordinatorApi = {
     });
     return handleResponse(response);
   },
+
+  // ============ v2.1 日志功能 ============
+
+  /**
+   * 获取 Worker 执行日志
+   */
+  getWorkerLogs: async (workerId: string, limit: number = 50): Promise<Array<{
+    id: string;
+    timestamp: string;
+    level: 'info' | 'warn' | 'error' | 'debug';
+    type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+    message: string;
+    details?: any;
+  }>> => {
+    const response = await fetch(`/api/blueprint/coordinator/workers/${workerId}/logs?limit=${limit}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 通过任务 ID 获取关联的 Worker 执行日志
+   */
+  getTaskLogs: async (taskId: string, limit: number = 50): Promise<{
+    logs: Array<{
+      id: string;
+      timestamp: string;
+      level: 'info' | 'warn' | 'error' | 'debug';
+      type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+      message: string;
+      details?: any;
+    }>;
+    workerId?: string;
+  }> => {
+    const response = await fetch(`/api/blueprint/coordinator/tasks/${taskId}/logs?limit=${limit}`);
+    const result = await handleResponse<{ logs?: any[]; workerId?: string }>(response);
+    // API 返回的是 data 数组而非对象
+    if (Array.isArray(result)) {
+      return { logs: result };
+    }
+    return { logs: result.logs || result || [], workerId: result.workerId };
+  },
 };
 
 /**

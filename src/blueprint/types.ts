@@ -670,7 +670,7 @@ export interface SwarmEvent {
 export interface SwarmConfig {
   // Worker配置
   maxWorkers: number;           // 最大并发Worker数（默认5）
-  workerTimeout: number;        // Worker超时（毫秒，默认300000）
+  workerTimeout: number;        // Worker超时（毫秒，默认600000）
 
   // 模型配置
   defaultModel: ModelType;      // 默认模型（默认sonnet）
@@ -712,7 +712,7 @@ export interface SwarmConfig {
  */
 export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
   maxWorkers: 5,
-  workerTimeout: 300000,
+  workerTimeout: 600000,  // 10分钟（从5分钟增加）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
   simpleTaskModel: 'haiku',
