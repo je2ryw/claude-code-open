@@ -1,0 +1,491 @@
+/**
+ * Jupyter Notebook 输出渲染器样式
+ */
+
+.notebook-renderer {
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: var(--bg-secondary, #f8f9fa);
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+/* 头部 */
+.notebook-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.notebook-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.notebook-icon {
+  font-size: 1.2em;
+}
+
+.notebook-path {
+  font-family: monospace;
+  font-size: 0.9em;
+  color: var(--text-secondary, #666);
+}
+
+.notebook-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notebook-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--bg-secondary, #f8f9fa);
+  color: var(--text-primary, #333);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.notebook-btn:hover {
+  background: var(--bg-tertiary, #e9ecef);
+}
+
+/* 元数据 */
+.notebook-metadata {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  background: var(--bg-tertiary, #e9ecef);
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.metadata-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metadata-label {
+  font-weight: 500;
+  color: var(--text-tertiary, #999);
+}
+
+/* 单元格列表 */
+.notebook-cells {
+  padding: 8px;
+}
+
+/* 单元格 */
+.notebook-cell {
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  background: var(--bg-primary, #fff);
+  overflow: hidden;
+}
+
+.notebook-cell.code {
+  border-left: 3px solid #3498db;
+}
+
+.notebook-cell.markdown {
+  border-left: 3px solid #2ecc71;
+}
+
+.notebook-cell.raw {
+  border-left: 3px solid #95a5a6;
+}
+
+/* 单元格头部 */
+.cell-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #f8f9fa);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cell-header:hover {
+  background: var(--bg-tertiary, #e9ecef);
+}
+
+.cell-icon {
+  font-size: 1em;
+}
+
+.cell-label {
+  font-family: monospace;
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text-primary, #333);
+}
+
+.cell-type {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary, #e9ecef);
+  color: var(--text-secondary, #666);
+}
+
+.cell-has-output {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #e8f4fd;
+  color: #3498db;
+}
+
+.expand-icon {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-tertiary, #999);
+}
+
+/* 单元格内容 */
+.cell-content {
+  padding: 12px;
+}
+
+/* 源代码 */
+.cell-source {
+  margin-bottom: 12px;
+}
+
+.source-code {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-code, #282c34);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.source-code code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #abb2bf;
+}
+
+/* 输出区域 */
+.cell-outputs {
+  border-top: 1px dashed var(--border-color, #e0e0e0);
+  padding-top: 12px;
+}
+
+/* 输出结果 */
+.output-result {
+  margin-bottom: 8px;
+}
+
+.output-label {
+  display: block;
+  font-family: monospace;
+  font-size: 12px;
+  color: #e74c3c;
+  margin-bottom: 4px;
+}
+
+.output-content {
+  padding: 8px;
+  background: var(--bg-secondary, #f8f9fa);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+/* 图片输出 */
+.output-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.output-image.svg {
+  background: #fff;
+  padding: 8px;
+}
+
+/* HTML 输出 */
+.output-html {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.output-html table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.output-html th,
+.output-html td {
+  border: 1px solid var(--border-color, #e0e0e0);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.output-html th {
+  background: var(--bg-tertiary, #e9ecef);
+  font-weight: 600;
+}
+
+.output-html tr:hover {
+  background: var(--bg-secondary, #f8f9fa);
+}
+
+/* 文本输出 */
+.output-text {
+  margin: 0;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* JSON 输出 */
+.output-json {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-code, #282c34);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.output-json code {
+  font-family: monospace;
+  font-size: 12px;
+  color: #abb2bf;
+}
+
+/* LaTeX 输出 */
+.output-latex {
+  padding: 8px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* 流输出 */
+.output-stream {
+  margin-bottom: 8px;
+}
+
+.output-stream pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-secondary, #f8f9fa);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.output-stream.stderr {
+  background: #fdf2f2;
+}
+
+.output-stream.stderr pre {
+  color: #e74c3c;
+}
+
+.stream-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #e74c3c;
+  margin-bottom: 4px;
+}
+
+/* 错误输出 */
+.output-error {
+  padding: 12px;
+  background: #fdf2f2;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+.error-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.error-name {
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.error-value {
+  color: #721c24;
+}
+
+.error-traceback {
+  margin: 0;
+  padding: 8px;
+  background: #fff5f5;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-x: auto;
+}
+
+.error-traceback div {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Plotly/Vega 占位符 */
+.output-plotly,
+.output-vega {
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  text-align: center;
+  color: #fff;
+}
+
+.plotly-placeholder,
+.vega-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.plotly-icon,
+.vega-icon {
+  font-size: 2em;
+}
+
+.plotly-placeholder details,
+.vega-placeholder details {
+  margin-top: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.plotly-placeholder summary,
+.vega-placeholder summary {
+  cursor: pointer;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.plotly-placeholder pre,
+.vega-placeholder pre {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+/* 未知输出 */
+.output-unknown pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-secondary, #f8f9fa);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* 暗色主题适配 */
+@media (prefers-color-scheme: dark) {
+  .notebook-renderer {
+    background: #1e1e1e;
+    border-color: #333;
+  }
+
+  .notebook-header {
+    background: #252526;
+    border-color: #333;
+  }
+
+  .notebook-path {
+    color: #9cdcfe;
+  }
+
+  .notebook-btn {
+    background: #333;
+    border-color: #444;
+    color: #ccc;
+  }
+
+  .notebook-btn:hover {
+    background: #444;
+  }
+
+  .notebook-metadata {
+    background: #2d2d2d;
+    color: #999;
+  }
+
+  .notebook-cell {
+    background: #252526;
+    border-color: #333;
+  }
+
+  .cell-header {
+    background: #2d2d2d;
+  }
+
+  .cell-header:hover {
+    background: #333;
+  }
+
+  .cell-label {
+    color: #ccc;
+  }
+
+  .cell-type {
+    background: #333;
+    color: #999;
+  }
+
+  .output-content {
+    background: #2d2d2d;
+  }
+
+  .output-stream pre {
+    background: #2d2d2d;
+  }
+
+  .output-stream.stderr {
+    background: #3d2020;
+  }
+
+  .output-error {
+    background: #3d2020;
+    border-color: #5a2020;
+  }
+
+  .error-traceback {
+    background: #2d1515;
+  }
+
+  .output-html th {
+    background: #333;
+  }
+
+  .output-html th,
+  .output-html td {
+    border-color: #444;
+  }
+}

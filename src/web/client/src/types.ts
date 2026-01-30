@@ -92,7 +92,90 @@ export type ChatContent =
         recommendations?: string[];
         rollbackSuggestion?: { recommended: boolean; targetCheckpoint?: string; reason?: string };
       };
+    }
+    | {
+      type: 'notebook_output';
+      data: NotebookOutputData;
     };
+
+// ============ Jupyter Notebook 输出类型 ============
+
+/**
+ * Notebook 输出数据
+ */
+export interface NotebookOutputData {
+  /** 文件路径 */
+  filePath: string;
+  /** 单元格列表 */
+  cells: NotebookCellData[];
+  /** 元数据 */
+  metadata?: {
+    kernelspec?: {
+      name: string;
+      displayName: string;
+      language?: string;
+    };
+    languageInfo?: {
+      name: string;
+      version?: string;
+    };
+  };
+}
+
+/**
+ * Notebook 单元格数据
+ */
+export interface NotebookCellData {
+  /** 单元格索引 */
+  index: number;
+  /** 单元格类型 */
+  cellType: 'code' | 'markdown' | 'raw';
+  /** 源代码 */
+  source: string;
+  /** 执行计数 */
+  executionCount?: number | null;
+  /** 输出列表 */
+  outputs?: NotebookCellOutput[];
+}
+
+/**
+ * Notebook 单元格输出
+ */
+export interface NotebookCellOutput {
+  /** 输出类型 */
+  outputType: 'execute_result' | 'display_data' | 'stream' | 'error';
+  /** 执行计数 */
+  executionCount?: number;
+  /** MIME bundle 数据 */
+  data?: NotebookMimeBundle;
+  /** 流名称 */
+  streamName?: 'stdout' | 'stderr';
+  /** 流文本 */
+  text?: string;
+  /** 错误名称 */
+  ename?: string;
+  /** 错误值 */
+  evalue?: string;
+  /** 错误回溯 */
+  traceback?: string[];
+}
+
+/**
+ * MIME Bundle 数据
+ */
+export interface NotebookMimeBundle {
+  'text/plain'?: string;
+  'text/html'?: string;
+  'text/markdown'?: string;
+  'text/latex'?: string;
+  'image/png'?: string;
+  'image/jpeg'?: string;
+  'image/gif'?: string;
+  'image/svg+xml'?: string;
+  'application/json'?: any;
+  'application/vnd.plotly.v1+json'?: any;
+  [mimeType: string]: any;
+}
 
 // 媒体源（图片和文档通用）
 export interface MediaSource {
