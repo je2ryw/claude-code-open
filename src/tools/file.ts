@@ -595,6 +595,23 @@ Usage:
     };
   }
 
+  /**
+   * 读取 Jupyter Notebook 文件
+   * 完整支持单元格输出的 MIME bundles 处理
+   *
+   * 支持的输出类型：
+   * - execute_result: 代码执行结果
+   * - display_data: 显示数据（图表、HTML 等）
+   * - stream: stdout/stderr 流
+   * - error: 错误信息和 traceback
+   *
+   * 支持的 MIME 类型：
+   * - text/plain: 纯文本
+   * - text/html: HTML 内容
+   * - text/markdown: Markdown 内容
+   * - image/png, image/jpeg, image/gif, image/svg+xml: 图片
+   * - application/json: JSON 数据
+   */
   private readNotebook(filePath: string): FileResult {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
@@ -602,16 +619,282 @@ Usage:
       const cells = notebook.cells || [];
 
       let output = '';
+      const imageMessages: Array<{
+        role: 'user';
+        content: Array<{
+          type: 'text' | 'image';
+          text?: string;
+          source?: {
+            type: 'base64';
+            media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+            data: string;
+          };
+        }>;
+      }> = [];
+
       cells.forEach((cell: any, idx: number) => {
         const cellType = cell.cell_type || 'unknown';
-        const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
-        output += `\n--- Cell ${idx + 1} (${cellType}) ---\n${source}\n`;
+        const source = Array.isArray(cell.source) ? cell.source.join('') : (cell.source || '');
+        const executionCount = cell.execution_count;
+
+        // 单元格头部
+        const cellHeader = executionCount
+          ? `In [${executionCount}]`
+          : `Cell ${idx + 1}`;
+        output += `\n${'═'.repeat(60)}\n`;
+        output += `📝 ${cellHeader} (${cellType})\n`;
+        output += `${'─'.repeat(60)}\n`;
+        output += `${source}\n`;
+
+        // 处理单元格输出（仅 code 类型有输出）
+        if (cellType === 'code' && cell.outputs && Array.isArray(cell.outputs)) {
+          const cellOutputs = this.processCellOutputs(cell.outputs, idx);
+
+          if (cellOutputs.text) {
+            output += `\n${'─'.repeat(40)}\n`;
+            output += `📤 Output:\n`;
+            output += cellOutputs.text;
+          }
+
+          // 收集图片消息
+          if (cellOutputs.images.length > 0) {
+            for (const img of cellOutputs.images) {
+              imageMessages.push({
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `[Jupyter Notebook 图片输出 - Cell ${idx + 1}]`,
+                  },
+                  {
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: img.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                      data: img.data,
+                    },
+                  },
+                ],
+              });
+            }
+            output += `\n🖼️ [${cellOutputs.images.length} 张图片输出 - 请查看下方图片]\n`;
+          }
+        }
       });
 
-      return { success: true, output, content };
+      output += `\n${'═'.repeat(60)}\n`;
+      output += `📊 Notebook 统计: ${cells.length} 个单元格\n`;
+
+      // 构建结果
+      const result: FileResult = {
+        success: true,
+        output,
+        content,
+      };
+
+      // 如果有图片，添加到 newMessages
+      if (imageMessages.length > 0) {
+        result.newMessages = imageMessages;
+      }
+
+      return result;
     } catch (err) {
       return { success: false, error: `Error reading notebook: ${err}` };
     }
+  }
+
+  /**
+   * 处理单元格输出
+   * 解析 MIME bundles 并提取可显示的内容
+   */
+  private processCellOutputs(outputs: any[], cellIndex: number): {
+    text: string;
+    images: Array<{ mimeType: string; data: string }>;
+  } {
+    let textOutput = '';
+    const images: Array<{ mimeType: string; data: string }> = [];
+
+    for (const output of outputs) {
+      const outputType = output.output_type;
+
+      switch (outputType) {
+        case 'execute_result':
+        case 'display_data': {
+          // MIME bundle 输出
+          const data = output.data || {};
+          const executionCount = output.execution_count;
+
+          // 优先处理图片
+          const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+          let hasImage = false;
+
+          for (const mimeType of imageTypes) {
+            if (data[mimeType]) {
+              const imgData = Array.isArray(data[mimeType])
+                ? data[mimeType].join('')
+                : data[mimeType];
+
+              // SVG 特殊处理（转为 base64）
+              if (mimeType === 'image/svg+xml') {
+                const svgBase64 = Buffer.from(imgData).toString('base64');
+                images.push({ mimeType: 'image/svg+xml', data: svgBase64 });
+              } else {
+                // PNG/JPEG/GIF 已经是 base64
+                images.push({ mimeType, data: imgData });
+              }
+              hasImage = true;
+              break;
+            }
+          }
+
+          // 如果没有图片，显示其他内容
+          if (!hasImage) {
+            // 优先显示 HTML
+            if (data['text/html']) {
+              const html = Array.isArray(data['text/html'])
+                ? data['text/html'].join('')
+                : data['text/html'];
+              textOutput += `[HTML 输出]\n${this.sanitizeHtmlForTerminal(html)}\n`;
+            }
+            // 其次显示 Markdown
+            else if (data['text/markdown']) {
+              const md = Array.isArray(data['text/markdown'])
+                ? data['text/markdown'].join('')
+                : data['text/markdown'];
+              textOutput += `${md}\n`;
+            }
+            // 显示 JSON
+            else if (data['application/json']) {
+              const json = data['application/json'];
+              textOutput += `[JSON]\n${JSON.stringify(json, null, 2)}\n`;
+            }
+            // 最后显示纯文本
+            else if (data['text/plain']) {
+              const text = Array.isArray(data['text/plain'])
+                ? data['text/plain'].join('')
+                : data['text/plain'];
+              if (executionCount) {
+                textOutput += `Out[${executionCount}]: ${text}\n`;
+              } else {
+                textOutput += `${text}\n`;
+              }
+            }
+          }
+          break;
+        }
+
+        case 'stream': {
+          // stdout/stderr 流输出
+          const name = output.name || 'stdout';
+          const text = Array.isArray(output.text)
+            ? output.text.join('')
+            : (output.text || '');
+
+          if (name === 'stderr') {
+            textOutput += `⚠️ stderr:\n${text}`;
+          } else {
+            textOutput += text;
+          }
+          break;
+        }
+
+        case 'error': {
+          // 错误输出
+          const ename = output.ename || 'Error';
+          const evalue = output.evalue || '';
+          const traceback = output.traceback || [];
+
+          textOutput += `❌ ${ename}: ${evalue}\n`;
+          if (traceback.length > 0) {
+            // 清理 ANSI 转义码
+            const cleanTraceback = traceback
+              .map((line: string) => this.stripAnsiCodes(line))
+              .join('\n');
+            textOutput += `${cleanTraceback}\n`;
+          }
+          break;
+        }
+
+        default:
+          // 未知输出类型
+          if (output.text) {
+            const text = Array.isArray(output.text)
+              ? output.text.join('')
+              : output.text;
+            textOutput += `${text}\n`;
+          }
+      }
+    }
+
+    return { text: textOutput, images };
+  }
+
+  /**
+   * 清理 HTML 以便在终端显示
+   * 保留基本结构，移除复杂标签
+   */
+  private sanitizeHtmlForTerminal(html: string): string {
+    // 移除 script 和 style 标签
+    let clean = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+    clean = clean.replace(/<style[\s\S]*?<\/style>/gi, '');
+
+    // 将表格转为简单格式
+    clean = clean.replace(/<table[\s\S]*?>/gi, '\n┌────────────────────────────────────┐\n');
+    clean = clean.replace(/<\/table>/gi, '\n└────────────────────────────────────┘\n');
+    clean = clean.replace(/<tr[\s\S]*?>/gi, '│ ');
+    clean = clean.replace(/<\/tr>/gi, ' │\n');
+    clean = clean.replace(/<th[\s\S]*?>/gi, '');
+    clean = clean.replace(/<\/th>/gi, ' | ');
+    clean = clean.replace(/<td[\s\S]*?>/gi, '');
+    clean = clean.replace(/<\/td>/gi, ' | ');
+
+    // 处理常见标签
+    clean = clean.replace(/<br\s*\/?>/gi, '\n');
+    clean = clean.replace(/<p[\s\S]*?>/gi, '\n');
+    clean = clean.replace(/<\/p>/gi, '\n');
+    clean = clean.replace(/<div[\s\S]*?>/gi, '\n');
+    clean = clean.replace(/<\/div>/gi, '\n');
+    clean = clean.replace(/<h[1-6][\s\S]*?>/gi, '\n### ');
+    clean = clean.replace(/<\/h[1-6]>/gi, '\n');
+    clean = clean.replace(/<li[\s\S]*?>/gi, '\n• ');
+    clean = clean.replace(/<\/li>/gi, '');
+    clean = clean.replace(/<ul[\s\S]*?>/gi, '\n');
+    clean = clean.replace(/<\/ul>/gi, '\n');
+    clean = clean.replace(/<ol[\s\S]*?>/gi, '\n');
+    clean = clean.replace(/<\/ol>/gi, '\n');
+    clean = clean.replace(/<strong[\s\S]*?>/gi, '**');
+    clean = clean.replace(/<\/strong>/gi, '**');
+    clean = clean.replace(/<em[\s\S]*?>/gi, '_');
+    clean = clean.replace(/<\/em>/gi, '_');
+    clean = clean.replace(/<code[\s\S]*?>/gi, '`');
+    clean = clean.replace(/<\/code>/gi, '`');
+    clean = clean.replace(/<pre[\s\S]*?>/gi, '\n```\n');
+    clean = clean.replace(/<\/pre>/gi, '\n```\n');
+
+    // 移除所有剩余标签
+    clean = clean.replace(/<[^>]+>/g, '');
+
+    // 解码 HTML 实体
+    clean = clean.replace(/&nbsp;/g, ' ');
+    clean = clean.replace(/&lt;/g, '<');
+    clean = clean.replace(/&gt;/g, '>');
+    clean = clean.replace(/&amp;/g, '&');
+    clean = clean.replace(/&quot;/g, '"');
+    clean = clean.replace(/&#39;/g, "'");
+
+    // 清理多余空行
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+
+    return clean.trim();
+  }
+
+  /**
+   * 移除 ANSI 转义码
+   * 用于清理 Jupyter traceback 中的颜色代码
+   */
+  private stripAnsiCodes(str: string): string {
+    // 移除 ANSI 转义序列
+    return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
   }
 }
 

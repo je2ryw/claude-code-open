@@ -434,7 +434,8 @@ export type ToolResultData =
   | WebSearchResultData
   | TodoResultData
   | DiffResultData
-  | TaskResultData;
+  | TaskResultData
+  | NotebookResultData;
 
 export interface BashResultData {
   tool: 'Bash';
@@ -547,6 +548,112 @@ export interface TaskResultData {
   description: string;
   status: 'running' | 'completed' | 'error';
   output?: string;
+}
+
+// ============ Jupyter Notebook 相关类型 ============
+
+/**
+ * Notebook 读取结果数据
+ * 用于 WebUI 中渲染 Jupyter notebook 内容
+ */
+export interface NotebookResultData {
+  tool: 'NotebookRead';
+  filePath: string;
+  cells: NotebookCell[];
+  metadata: NotebookMetadata;
+}
+
+/**
+ * Notebook 单元格
+ */
+export interface NotebookCell {
+  /** 单元格索引 */
+  index: number;
+  /** 单元格类型 */
+  cellType: 'code' | 'markdown' | 'raw';
+  /** 源代码内容 */
+  source: string;
+  /** 执行计数（仅 code 类型） */
+  executionCount?: number | null;
+  /** 单元格输出列表（仅 code 类型） */
+  outputs?: NotebookOutput[];
+}
+
+/**
+ * Notebook 单元格输出
+ * 支持 MIME bundle 格式
+ */
+export interface NotebookOutput {
+  /** 输出类型 */
+  outputType: 'execute_result' | 'display_data' | 'stream' | 'error';
+  /** 执行计数（仅 execute_result） */
+  executionCount?: number;
+  /** MIME bundle 数据 */
+  data?: NotebookMimeBundle;
+  /** 流输出名称（stdout/stderr） */
+  streamName?: 'stdout' | 'stderr';
+  /** 流输出文本 */
+  text?: string;
+  /** 错误名称（仅 error 类型） */
+  ename?: string;
+  /** 错误值（仅 error 类型） */
+  evalue?: string;
+  /** 错误回溯（仅 error 类型） */
+  traceback?: string[];
+}
+
+/**
+ * MIME Bundle 数据
+ * 键为 MIME 类型，值为对应格式的数据
+ */
+export interface NotebookMimeBundle {
+  /** 纯文本 */
+  'text/plain'?: string;
+  /** HTML 内容 */
+  'text/html'?: string;
+  /** Markdown 内容 */
+  'text/markdown'?: string;
+  /** LaTeX 内容 */
+  'text/latex'?: string;
+  /** PNG 图片（base64） */
+  'image/png'?: string;
+  /** JPEG 图片（base64） */
+  'image/jpeg'?: string;
+  /** GIF 图片（base64） */
+  'image/gif'?: string;
+  /** SVG 图片 */
+  'image/svg+xml'?: string;
+  /** JSON 数据 */
+  'application/json'?: any;
+  /** Plotly 图表 */
+  'application/vnd.plotly.v1+json'?: any;
+  /** Vega 可视化 */
+  'application/vnd.vega.v5+json'?: any;
+  /** Vega-Lite 可视化 */
+  'application/vnd.vegalite.v4+json'?: any;
+  /** 其他 MIME 类型 */
+  [mimeType: string]: any;
+}
+
+/**
+ * Notebook 元数据
+ */
+export interface NotebookMetadata {
+  /** 内核信息 */
+  kernelspec?: {
+    name: string;
+    displayName: string;
+    language?: string;
+  };
+  /** 语言信息 */
+  languageInfo?: {
+    name: string;
+    version?: string;
+    mimeType?: string;
+    fileExtension?: string;
+  };
+  /** 其他元数据 */
+  [key: string]: any;
 }
 
 // ============ 会话信息 ============
