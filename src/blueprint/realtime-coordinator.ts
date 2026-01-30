@@ -381,6 +381,47 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   /**
+   * 获取暂停状态
+   */
+  get paused(): boolean {
+    return this.isPaused;
+  }
+
+  /**
+   * 检查执行是否还在活跃状态
+   * 用于判断会话是否为"僵尸"状态（completedAt 未设置但执行已结束）
+   */
+  isActive(): boolean {
+    // 如果没有计划，肯定不活跃
+    if (!this.currentPlan) {
+      return false;
+    }
+
+    // 如果被取消了，不活跃
+    if (this.isCancelled) {
+      return false;
+    }
+
+    // 如果处于暂停状态，认为是活跃的（等待恢复）
+    if (this.isPaused) {
+      return true;
+    }
+
+    // 检查是否有活跃的 worker
+    if (this.activeWorkers.size > 0) {
+      return true;
+    }
+
+    // 检查是否所有任务都已完成
+    const completedTasks = Array.from(this.taskResults.values()).length;
+    const totalTasks = this.currentPlan.tasks.length;
+
+    // 如果还有未完成的任务且没有活跃 worker，可能是卡住了
+    // 但如果所有任务都完成了，说明执行已经结束
+    return completedTasks < totalTasks;
+  }
+
+  /**
    * 运行时修改任务描述
    * 下次执行该任务时生效
    */
@@ -1233,8 +1274,9 @@ export class RealtimeCoordinator extends EventEmitter {
 
   /**
    * 从保存的状态恢复（包含完整的 ExecutionPlan）
+   * v2.2: 改为 public，支持外部恢复会话
    */
-  private restoreFromState(state: ExecutionState): void {
+  public restoreFromState(state: ExecutionState): void {
     // 反序列化 ExecutionPlan
     const plan = this.deserializePlan(state.plan);
 

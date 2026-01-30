@@ -339,6 +339,12 @@ export type TestStrategy =
   | 'skip';       // 跳过测试（配置类/文档类）
 
 /**
+ * 任务领域/分类
+ * SmartPlanner 在拆分任务时直接标记，Worker 无需猜测
+ */
+export type TaskCategory = 'frontend' | 'backend' | 'database' | 'shared' | 'other';
+
+/**
  * 智能任务
  * Worker自主决策如何执行
  */
@@ -350,6 +356,8 @@ export interface SmartTask {
   description: string;
   type: TaskType;
   complexity: TaskComplexity;
+  /** 任务领域：前端/后端/数据库/共享/其他 - SmartPlanner 拆分时标记 */
+  category?: TaskCategory;
 
   // 关联
   blueprintId: string;
@@ -940,6 +948,7 @@ export interface SerializableSmartTask {
   description: string;
   type: TaskType;
   complexity: TaskComplexity;
+  category?: TaskCategory;   // 任务领域
   blueprintId: string;
   moduleId?: string;
   files: string[];

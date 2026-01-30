@@ -45,6 +45,7 @@ import type {
 } from './types.js';
 import { ClaudeClient, getDefaultClient } from '../core/client.js';
 import { ConversationLoop } from '../core/loop.js';
+import { PlannerSession, type SessionStreamEvent } from './planner-session.js';
 
 // ============================================================================
 // 配置和常量
@@ -151,11 +152,36 @@ export class SmartPlanner extends EventEmitter {
   private client: ClaudeClient | null = null;
   private sessions: Map<string, DialogState> = new Map();
   private projectPath: string | null = null;
+  /** Multi-turn AI 会话（替代分散的 extractWithAI 调用） */
+  private aiSession: PlannerSession | null = null;
 
   constructor(config?: Partial<SmartPlannerConfig>) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.loadSessions();
+  }
+
+  /**
+   * 获取或创建 AI 会话
+   */
+  private getAISession(): PlannerSession {
+    if (!this.aiSession) {
+      this.aiSession = new PlannerSession(this.getClient(), {
+        debug: false,
+        maxHistoryLength: 20,
+      });
+    }
+    return this.aiSession;
+  }
+
+  /**
+   * 重置 AI 会话（新对话时调用）
+   */
+  private resetAISession(): void {
+    if (this.aiSession) {
+      this.aiSession.clear();
+    }
+    this.aiSession = null;
   }
 
   // --------------------------------------------------------------------------
@@ -176,6 +202,9 @@ export class SmartPlanner extends EventEmitter {
     if (existing && !existing.isComplete) {
       return existing;
     }
+
+    // v3.0: 重置 AI 会话（确保新对话有干净的上下文）
+    this.resetAISession();
 
     // 创建新对话
     const state: DialogState = {
@@ -288,42 +317,42 @@ export class SmartPlanner extends EventEmitter {
   }
 
   /**
-   * 处理问候阶段输入 - v2.0 智能版本
+   * 处理问候阶段输入 - v3.0 Multi-turn 版本
    *
    * 改进：
-   * 1. 先快速确认理解
-   * 2. 根据需求关键词针对性探索代码库
-   * 3. 基于代码上下文生成智能追问
+   * 1. 使用 PlannerSession 维护对话上下文
+   * 2. 合并"提取关键词"和"生成问题"为一次 API 调用
+   * 3. 支持流式渲染
    */
   private async processGreetingInput(
     state: DialogState,
     input: string
   ): Promise<{ response: string; nextPhase: DialogPhase }> {
-    // Step 1: 快速提取需求关键词（秒级响应）
-    const extracted = await this.extractWithAI<{
-      projectGoal: string;
-      coreFeatures: string[];
-      keywords: string[];  // 用于搜索代码库的关键词
-      complexity: 'simple' | 'moderate' | 'complex';
-    }>(
-      `用户描述了他想要构建的功能：
-"${input}"
+    const session = this.getAISession();
 
-请提取：
-1. 项目目标（一句话总结）
-2. 可能的核心功能列表（2-5个）
-3. 用于搜索代码库的关键词（英文，2-5个，如 auth, login, user, cart, checkout）
-4. 需求复杂度判断
+    // Step 1: 一次性分析用户输入（合并原来的2次调用）
+    // 同时提取：关键词、功能、复杂度、追问问题
+    let extracted = {
+      projectGoal: input,
+      coreFeatures: [] as string[],
+      keywords: [] as string[],
+      complexity: 'moderate' as 'simple' | 'moderate' | 'complex',
+      questions: ['确认以上理解正确吗？'] as string[],
+    };
 
-以 JSON 格式返回：
-{
-  "projectGoal": "项目目标",
-  "coreFeatures": ["功能1", "功能2"],
-  "keywords": ["auth", "login", "user"],
-  "complexity": "simple/moderate/complex"
-}`,
-      { projectGoal: input, coreFeatures: [], keywords: [], complexity: 'moderate' as const }
-    );
+    // 流式处理 AI 响应
+    for await (const event of session.analyzeUserInput(input)) {
+      // 发送流式事件供 UI 渲染
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        extracted = { ...extracted, ...event.result };
+      } else if (event.type === 'error') {
+        console.error('[SmartPlanner] AI 分析失败:', event.error);
+      }
+    }
 
     // 保存提取的需求
     state.collectedRequirements.push(extracted.projectGoal);
@@ -341,26 +370,22 @@ export class SmartPlanner extends EventEmitter {
         extracted.projectGoal
       );
       codebaseContext = exploration;
+
+      // 将代码库上下文添加到 AI 会话中（让后续对话有上下文）
+      if (codebaseContext) {
+        session.addContext(`代码库分析结果:\n${codebaseContext}`);
+      }
     }
 
-    // Step 3: 基于代码上下文生成智能追问
-    const smartQuestions = await this.generateSmartQuestions(
-      extracted.projectGoal,
-      extracted.coreFeatures,
-      codebaseContext,
-      extracted.complexity
-    );
-
-    // 构建响应
+    // 构建响应（使用 AI 返回的问题，不需要再调用 generateSmartQuestions）
     const response = this.buildSmartResponse(
       extracted.projectGoal,
       extracted.coreFeatures,
       codebaseContext,
-      smartQuestions
+      extracted.questions
     );
 
     // 根据复杂度决定下一阶段
-    // 简单需求可以跳过 clarification 直接到 tech_choice
     const nextPhase: DialogPhase = extracted.complexity === 'simple'
       ? 'tech_choice'
       : 'requirements';
@@ -527,40 +552,8 @@ export class SmartPlanner extends EventEmitter {
     return related.slice(0, 5);
   }
 
-  /**
-   * 基于代码上下文生成智能问题
-   */
-  private async generateSmartQuestions(
-    goal: string,
-    features: string[],
-    codebaseContext: string,
-    complexity: 'simple' | 'moderate' | 'complex'
-  ): Promise<string[]> {
-    // 简单需求不需要太多问题
-    if (complexity === 'simple' && !codebaseContext) {
-      return ['确认以上理解正确吗？有什么需要补充的吗？'];
-    }
-
-    const questions = await this.extractWithAI<{ questions: string[] }>(
-      `基于以下信息，生成 2-3 个针对性的追问问题：
-
-用户目标：${goal}
-可能的功能：${features.join(', ')}
-代码库分析：
-${codebaseContext || '新项目，无现有代码'}
-
-要求：
-1. 问题要基于代码库现状，不要问笼统的问题
-2. 如果发现相关代码，问是否基于现有代码扩展
-3. 如果没有相关代码，问技术选型偏好
-4. 问题要具体，不要"有什么约束"这种空泛问题
-
-返回 JSON：{"questions": ["问题1", "问题2"]}`,
-      { questions: ['确认以上理解正确吗？有什么需要补充的吗？'] }
-    );
-
-    return questions.questions;
-  }
+  // v3.0: generateSmartQuestions 已被移除
+  // 问题生成现在由 PlannerSession.analyzeUserInput 一次性完成
 
   /**
    * 构建智能响应
@@ -603,53 +596,38 @@ ${codebaseContext || '新项目，无现有代码'}
   }
 
   /**
-   * 处理需求收集阶段输入
+   * 处理需求收集阶段输入 - v3.0 Multi-turn 版本
+   * 使用 PlannerSession 保持上下文，AI 已记住之前的对话
    */
   private async processRequirementsInput(
     state: DialogState,
     input: string
   ): Promise<{ response: string; nextPhase: DialogPhase }> {
-    // 使用 AI 提取需求细节
-    const extracted = await this.extractWithAI<{
-      coreFeatures: string[];
-      constraints: string[];
-      timeframe: string;
-      needsClarification: boolean;
-      clarificationQuestions: string[];
-    }>(
-      `用户回答了需求确认问题：
-"${input}"
+    const session = this.getAISession();
 
-已收集的需求：
-${state.collectedRequirements.join('\n')}
+    // 使用 session 提取需求（AI 已有上下文，不需要重发 collectedRequirements）
+    let extracted = {
+      newFeatures: [] as string[],
+      constraints: [] as string[],
+      needsClarification: false,
+      clarificationQuestions: [] as string[],
+    };
 
-请提取：
-1. 核心功能（新提到的或确认的）
-2. 技术约束
-3. 时间预期
-4. 是否还需要澄清
-5. 如果需要澄清，列出1-2个关键问题
-
-以 JSON 格式返回：
-{
-  "coreFeatures": ["功能1", "功能2"],
-  "constraints": ["约束1"],
-  "timeframe": "时间预期",
-  "needsClarification": true/false,
-  "clarificationQuestions": ["问题1", "问题2"]
-}`,
-      {
-        coreFeatures: [],
-        constraints: [],
-        timeframe: '',
-        needsClarification: false,
-        clarificationQuestions: [],
+    for await (const event of session.extractRequirements(input)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        extracted = { ...extracted, ...event.result };
+      } else if (event.type === 'error') {
+        console.error('[SmartPlanner] 需求提取失败:', event.error);
       }
-    );
+    }
 
     // 更新收集的信息
-    if (extracted.coreFeatures.length > 0) {
-      state.collectedRequirements.push(...extracted.coreFeatures);
+    if (extracted.newFeatures.length > 0) {
+      state.collectedRequirements.push(...extracted.newFeatures);
     }
     if (extracted.constraints.length > 0) {
       state.collectedConstraints.push(...extracted.constraints);
@@ -676,33 +654,38 @@ ${state.collectedRequirements.join('\n')}
   }
 
   /**
-   * 处理澄清阶段输入
+   * 处理澄清阶段输入 - v3.0 Multi-turn 版本
+   * 复用 extractRequirements，AI 已有完整上下文
    */
   private async processClarificationInput(
     state: DialogState,
     input: string
   ): Promise<{ response: string; nextPhase: DialogPhase }> {
-    // 提取澄清答案
-    const extracted = await this.extractWithAI<{
-      newRequirements: string[];
-      newConstraints: string[];
-    }>(
-      `用户回答了澄清问题：
-"${input}"
+    const session = this.getAISession();
 
-请提取新的需求和约束，以 JSON 格式返回：
-{
-  "newRequirements": ["需求1"],
-  "newConstraints": ["约束1"]
-}`,
-      { newRequirements: [], newConstraints: [] }
-    );
+    // 复用 extractRequirements（AI 记得之前的澄清问题）
+    let extracted = {
+      newFeatures: [] as string[],
+      constraints: [] as string[],
+      needsClarification: false,
+      clarificationQuestions: [] as string[],
+    };
 
-    if (extracted.newRequirements.length > 0) {
-      state.collectedRequirements.push(...extracted.newRequirements);
+    for await (const event of session.extractRequirements(input)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        extracted = { ...extracted, ...event.result };
+      }
     }
-    if (extracted.newConstraints.length > 0) {
-      state.collectedConstraints.push(...extracted.newConstraints);
+
+    if (extracted.newFeatures.length > 0) {
+      state.collectedRequirements.push(...extracted.newFeatures);
+    }
+    if (extracted.constraints.length > 0) {
+      state.collectedConstraints.push(...extracted.constraints);
     }
 
     // 进入技术选择
@@ -717,7 +700,7 @@ ${state.collectedRequirements.join('\n')}
   }
 
   /**
-   * 处理技术选择阶段输入
+   * 处理技术选择阶段输入 - v3.0 Multi-turn 版本
    */
   private async processTechChoiceInput(
     state: DialogState,
@@ -732,28 +715,40 @@ ${state.collectedRequirements.join('\n')}
       return { response, nextPhase: 'confirmation' };
     }
 
-    // 处理技术栈修改
-    const modified = await this.extractWithAI<Partial<TechStack>>(
-      `用户想修改技术栈：
-"${input}"
+    // 处理技术栈修改（使用 session，AI 已知当前技术栈上下文）
+    const session = this.getAISession();
+    let modResult = {
+      type: 'modify_tech' as const,
+      target: '',
+      newValue: '',
+      message: '已更新',
+    };
 
-当前技术栈：
-${JSON.stringify(state.techStack, null, 2)}
+    for await (const event of session.parseModification(input)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        modResult = { ...modResult, ...event.result };
+      }
+    }
 
-请返回修改后的技术栈（只返回需要修改的字段），以 JSON 格式：
-{
-  "language": "...",
-  "framework": "...",
-  ...
-}`,
-      {}
-    );
-
-    // 合并修改
-    state.techStack = { ...state.techStack, ...modified };
+    // 如果是技术修改，尝试解析 newValue 为技术栈字段
+    if (modResult.type === 'modify_tech' && modResult.newValue) {
+      try {
+        const techMod = JSON.parse(modResult.newValue);
+        state.techStack = { ...state.techStack, ...techMod };
+      } catch {
+        // 如果不是 JSON，尝试作为单字段修改
+        if (modResult.target && state.techStack) {
+          (state.techStack as any)[modResult.target] = modResult.newValue;
+        }
+      }
+    }
 
     // 再次显示技术选择
-    const response = `已更新技术栈：\n\n${this.formatTechStack(state.techStack as TechStack)}\n\n确认使用此技术栈吗？输入"确认"继续。`;
+    const response = `${modResult.message}\n\n${this.formatTechStack(state.techStack as TechStack)}\n\n确认使用此技术栈吗？输入"确认"继续。`;
     return { response, nextPhase: 'tech_choice' };
   }
 
@@ -816,48 +811,40 @@ ${JSON.stringify(state.techStack, null, 2)}
   }
 
   /**
-   * 处理修改请求
+   * 处理修改请求 - v3.0 Multi-turn 版本
+   * AI 已有完整上下文（需求、约束、技术栈），不需要重复发送
    */
   private async processModification(
     state: DialogState,
     modification: string
   ): Promise<{ message: string }> {
-    const result = await this.extractWithAI<{
-      type: 'add_requirement' | 'remove_requirement' | 'modify_tech' | 'add_constraint' | 'other';
-      target?: string;
-      newValue?: string;
-      message: string;
-    }>(
-      `用户请求修改蓝图：
-"${modification}"
+    const session = this.getAISession();
 
-当前需求：
-${state.collectedRequirements.join('\n')}
+    let result = {
+      type: 'other' as 'add_feature' | 'remove_feature' | 'modify_tech' | 'add_constraint' | 'other',
+      target: '',
+      newValue: '',
+      message: '已记录修改意见',
+    };
 
-当前约束：
-${state.collectedConstraints.join('\n')}
-
-当前技术栈：
-${JSON.stringify(state.techStack, null, 2)}
-
-请分析修改类型并返回 JSON：
-{
-  "type": "add_requirement/remove_requirement/modify_tech/add_constraint/other",
-  "target": "目标项",
-  "newValue": "新值",
-  "message": "修改说明"
-}`,
-      { type: 'other', message: '已记录修改意见' }
-    );
+    for await (const event of session.parseModification(modification)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        result = { ...result, ...event.result };
+      }
+    }
 
     // 应用修改
     switch (result.type) {
-      case 'add_requirement':
+      case 'add_feature':
         if (result.newValue) {
           state.collectedRequirements.push(result.newValue);
         }
         break;
-      case 'remove_requirement':
+      case 'remove_feature':
         if (result.target) {
           state.collectedRequirements = state.collectedRequirements.filter(
             (r) => !r.includes(result.target!)
@@ -890,6 +877,7 @@ ${JSON.stringify(state.techStack, null, 2)}
 
   /**
    * 从对话状态生成蓝图（完整格式，包含业务流程、模块、NFR）
+   * v3.0: 使用 PlannerSession 的 multi-turn 上下文，AI 已有完整的需求理解
    *
    * @param state 完成的对话状态
    * @returns 生成的蓝图
@@ -906,187 +894,106 @@ ${JSON.stringify(state.techStack, null, 2)}
     // 发送进度事件：开始分析需求
     this.emit('blueprint:progress', { step: 1, total: 5, message: '正在分析需求...' });
 
-    // 使用 AI 生成完整的蓝图结构（包含业务流程、模块、NFR）
-    // 发送进度事件：AI 正在思考
+    // v3.0: 使用 PlannerSession（AI 已有完整对话上下文）
     this.emit('blueprint:progress', { step: 2, total: 5, message: '正在设计项目结构...' });
+    const session = this.getAISession();
 
-    const blueprintData = await this.extractWithAI<{
-      name: string;
-      description: string;
-      version: string;
-      businessProcesses: Array<{
-        id: string;
-        name: string;
-        description: string;
-        type: 'as-is' | 'to-be';
-        steps: Array<{
-          id: string;
-          order: number;
-          name: string;
-          description: string;
-          actor: string;
-          inputs?: string[];
-          outputs?: string[];
-        }>;
-        actors: string[];
-        inputs: string[];
-        outputs: string[];
-      }>;
-      modules: Array<{
-        id: string;
-        name: string;
-        description: string;
-        type: 'frontend' | 'backend' | 'database' | 'service' | 'shared' | 'other';
-        responsibilities: string[];
-        techStack: string[];
-        interfaces: Array<{
-          name: string;
-          type: 'api' | 'event' | 'function' | 'class';
-          description: string;
-          signature?: string;
-        }>;
-        dependencies: string[];
-        rootPath: string;
-        source: 'requirement' | 'existing' | 'ai_generated';
-        files: string[];
-      }>;
-      nfrs: Array<{
-        id: string;
-        category: 'performance' | 'security' | 'reliability' | 'scalability' | 'maintainability' | 'usability' | 'other';
-        name: string;
-        description: string;
-        priority: 'high' | 'medium' | 'low';
-        metrics?: string[];
-      }>;
-    }>(
-      `基于以下需求生成完整的项目蓝图：
+    // 定义蓝图 schema（用于 AI tool use）
+    const blueprintSchema = {
+      name: { type: 'string', description: '项目名称' },
+      description: { type: 'string', description: '项目描述' },
+      version: { type: 'string', description: '版本号' },
+      businessProcesses: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            type: { type: 'string', enum: ['as-is', 'to-be'] },
+            steps: { type: 'array', items: { type: 'object' } },
+            actors: { type: 'array', items: { type: 'string' } },
+            inputs: { type: 'array', items: { type: 'string' } },
+            outputs: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        description: '业务流程列表',
+      },
+      modules: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            type: { type: 'string', enum: ['frontend', 'backend', 'database', 'service', 'shared', 'other'] },
+            responsibilities: { type: 'array', items: { type: 'string' } },
+            techStack: { type: 'array', items: { type: 'string' } },
+            interfaces: { type: 'array', items: { type: 'object' } },
+            dependencies: { type: 'array', items: { type: 'string' } },
+            rootPath: { type: 'string' },
+            source: { type: 'string', enum: ['requirement', 'existing', 'ai_generated'] },
+            files: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        description: '模块列表',
+      },
+      nfrs: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            category: { type: 'string', enum: ['performance', 'security', 'reliability', 'scalability', 'maintainability', 'usability', 'other'] },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+            metrics: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        description: '非功能需求列表',
+      },
+    };
 
-需求列表：
-${state.collectedRequirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+    // 使用 session.interact 进行流式蓝图生成
+    // AI 已有完整对话上下文（需求、约束、技术栈），指令可以很简洁
+    const instruction = `基于我们整个对话中收集的需求信息，请生成完整的项目蓝图。
 
-约束条件：
-${state.collectedConstraints.length > 0 ? state.collectedConstraints.join('\n') : '无'}
-
-技术栈：
-${JSON.stringify(state.techStack, null, 2)}
-
-请生成完整的蓝图结构，包含业务流程、模块划分和非功能需求。以 JSON 格式返回：
-{
-  "name": "项目名称",
-  "description": "项目描述（2-3句话）",
-  "version": "1.0.0",
-  "businessProcesses": [
-    {
-      "id": "bp-1",
-      "name": "业务流程名称",
-      "description": "流程描述",
-      "type": "to-be",
-      "steps": [
-        {
-          "id": "step-1",
-          "order": 1,
-          "name": "步骤名称",
-          "description": "步骤描述",
-          "actor": "执行角色",
-          "inputs": ["输入"],
-          "outputs": ["输出"]
-        }
-      ],
-      "actors": ["参与者列表"],
-      "inputs": ["流程输入"],
-      "outputs": ["流程输出"]
-    }
-  ],
-  "modules": [
-    {
-      "id": "mod-1",
-      "name": "模块名称",
-      "description": "模块描述",
-      "type": "frontend/backend/database/service/shared/other",
-      "responsibilities": ["职责1", "职责2"],
-      "techStack": ["React", "TypeScript"],
-      "interfaces": [
-        {
-          "name": "接口名称",
-          "type": "api/event/function/class",
-          "description": "接口描述",
-          "signature": "方法签名（可选）"
-        }
-      ],
-      "dependencies": ["依赖的模块ID"],
-      "rootPath": "src/modules/xxx",
-      "source": "ai_generated",
-      "files": ["涉及的文件路径"]
-    }
-  ],
-  "nfrs": [
-    {
-      "id": "nfr-1",
-      "category": "performance/security/reliability/scalability/maintainability/usability/other",
-      "name": "需求名称",
-      "description": "需求描述",
-      "priority": "high/medium/low",
-      "metrics": ["可量化指标"]
-    }
-  ]
-}
+包括：
+1. 项目名称和描述
+2. 业务流程（每个流程包含步骤、参与者、输入输出）
+3. 模块划分（前端、后端、数据库等，每个模块有职责和接口）
+4. 非功能需求（性能、安全、可靠性等）
 
 注意：
-- 业务流程要清晰描述系统要做什么，每个步骤要有明确的输入输出
-- 模块划分要合理，每个模块有明确的职责边界和接口定义
-- 非功能需求要考虑性能、安全、可靠性等方面
-- 文件路径使用相对于项目根目录的路径`,
-      {
-        name: '新项目',
-        description: state.collectedRequirements[0] || '项目描述',
-        version: '1.0.0',
-        // 提供包含示例对象的数组，以便 schema 推断能正确识别嵌套对象结构
-        businessProcesses: [{
-          id: 'bp-example',
-          name: '示例流程',
-          description: '流程描述',
-          type: 'to-be' as const,
-          steps: [{
-            id: 'step-example',
-            order: 1,
-            name: '步骤名称',
-            description: '步骤描述',
-            actor: '执行者',
-            inputs: ['输入'],
-            outputs: ['输出'],
-          }],
-          actors: ['参与者'],
-          inputs: ['输入'],
-          outputs: ['输出'],
-        }],
-        modules: [{
-          id: 'mod-example',
-          name: '示例模块',
-          description: '模块描述',
-          type: 'backend' as const,
-          responsibilities: ['职责'],
-          techStack: ['TypeScript'],
-          interfaces: [{
-            name: '接口名',
-            type: 'api' as const,
-            description: '接口描述',
-            signature: 'GET /api/example',
-          }],
-          dependencies: [],
-          rootPath: 'src/modules/example',
-          source: 'ai_generated' as const,
-          files: [],
-        }],
-        nfrs: [{
-          id: 'nfr-example',
-          category: 'performance' as const,
-          name: '性能要求',
-          description: '响应时间 < 1s',
-          priority: 'high' as const,
-          metrics: ['响应时间'],
-        }],
+- 业务流程要清晰描述系统要做什么
+- 模块划分要合理，有明确的职责边界
+- 文件路径使用相对于项目根目录的路径`;
+
+    // 默认值
+    let blueprintData: any = {
+      name: '新项目',
+      description: state.collectedRequirements[0] || '项目描述',
+      version: '1.0.0',
+      businessProcesses: [],
+      modules: [],
+      nfrs: [],
+    };
+
+    // 流式调用
+    for await (const event of session.interact(instruction, blueprintSchema)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        blueprintData = { ...blueprintData, ...event.result };
+      } else if (event.type === 'error') {
+        console.error('[SmartPlanner] 蓝图生成失败:', event.error);
       }
-    );
+    }
 
     // 发送进度事件：AI 响应完成，开始构建蓝图
     this.emit('blueprint:progress', { step: 3, total: 5, message: '正在构建蓝图结构...' });
@@ -1254,125 +1161,21 @@ ${JSON.stringify(state.techStack, null, 2)}
       ).join('\n')}`;
     };
 
-    // 使用 AI 分解任务
-    const taskData = await this.extractWithAI<{
-      tasks: Array<{
-        id: string;
-        name: string;
-        description: string;
-        type: TaskType;
-        moduleId?: string;
-        files: string[];
-        dependencies: string[];
-        needsTest: boolean;
-        estimatedMinutes: number;
-        complexity: TaskComplexity;
-      }>;
-      decisions: Array<{
-        type: 'task_split' | 'parallel' | 'dependency' | 'tech_choice' | 'other';
-        description: string;
-        reasoning?: string;
-      }>;
-    }>(
-      `基于以下蓝图分解执行任务：
-
-蓝图名称：${blueprint.name}
-蓝图描述：${blueprint.description}
-${blueprint.version ? `版本：${blueprint.version}` : ''}
-${explorationContext ? `\n${explorationContext}\n` : ''}${formatProcesses()}
-
-需求列表：
-${(blueprint.requirements || []).map((r, i) => `${i + 1}. ${r}`).join('\n') || '无'}
-
-模块划分：
-${formatModules()}
-${formatNFRs()}
-
-技术栈：
-${JSON.stringify(blueprint.techStack, null, 2)}
-
-约束条件：
-${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') : '无'}
-
-请将需求分解为具体的执行任务，每个任务应该：
-1. 能在5分钟内完成
-2. 有明确的输入和输出
-3. 可以独立验证
-
-任务类型说明：
-- code: 编写功能代码
-- config: 配置文件
-- test: 编写测试
-- refactor: 重构
-- docs: 文档
-- integrate: 集成
-
-以 JSON 格式返回：
-{
-  "tasks": [
-    {
-      "id": "task-1",
-      "name": "任务名称",
-      "description": "详细描述",
-      "type": "code/config/test/refactor/docs/integrate",
-      "moduleId": "关联的模块ID（可选）",
-      "files": ["涉及的文件路径"],
-      "dependencies": ["依赖的任务ID"],
-      "needsTest": true/false,
-      "testStrategy": "unit/integration/e2e/mock/vcr/skip",
-      "estimatedMinutes": 5,
-      "complexity": "trivial/simple/moderate/complex"
-    }
-  ],
-  "decisions": [
-    {
-      "type": "task_split/parallel/dependency/tech_choice/other",
-      "description": "决策描述",
-      "reasoning": "决策理由"
-    }
-  ]
-}
-
-测试策略说明：
-- unit: 纯单元测试，使用 mock 隔离依赖（默认）
-- integration: 集成测试，需要测试数据库（如 SQLite 内存）
-- e2e: 端到端测试，需要完整环境
-- mock: 使用 mock/stub 替代外部 API
-- vcr: 录制回放模式（HTTP 请求录制）
-- skip: 跳过测试（配置类/文档类）
-
-任务分解原则：
-1. 配置类任务通常不需要测试（needsTest: false, testStrategy: skip）
-2. 文档类任务不需要测试
-3. 核心业务逻辑必须有测试
-4. 涉及数据库的代码使用 integration 策略
-5. 涉及外部 API 的代码使用 mock 或 vcr 策略
-6. 工具函数建议有测试（unit 策略）
-7. 相互独立的任务可以并行执行
-8. 参考业务流程的步骤顺序来安排任务依赖
-9. 参考模块的接口定义来确定集成任务`,
-      {
-        // 提供示例对象以便 schema 推断能正确识别嵌套对象结构
-        tasks: [{
-          id: 'task-example',
-          name: '示例任务',
-          description: '任务描述',
-          type: 'code' as TaskType,
-          moduleId: 'mod-1',
-          files: ['src/example.ts'],
-          dependencies: [],
-          needsTest: true,
-          testStrategy: 'unit' as const,
-          estimatedMinutes: 5,
-          complexity: 'simple' as TaskComplexity,
-        }],
-        decisions: [{
-          type: 'task_split' as const,
-          description: '决策描述',
-          reasoning: '决策理由',
-        }],
-      }
+    // 使用专门的任务分解方法（不依赖 extractWithAI）
+    const taskData = await this.decomposeTasksWithAI(
+      blueprint,
+      explorationContext,
+      formatModules(),
+      formatProcesses(),
+      formatNFRs()
     );
+
+    // 验证 AI 返回的数据结构
+    if (!taskData || !Array.isArray(taskData.tasks)) {
+      console.error('[SmartPlanner] AI 返回的数据无效，缺少 tasks 数组');
+      console.error('[SmartPlanner] taskData:', JSON.stringify(taskData, null, 2));
+      throw new Error('任务分解失败：AI 未能返回有效的任务列表。请检查蓝图描述是否足够详细，或稍后重试。');
+    }
 
     // 构建智能任务列表（过滤掉无效任务）
     const tasks: SmartTask[] = taskData.tasks
@@ -1389,6 +1192,8 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
         description: t.description || t.name,
         type: t.type || 'code',
         complexity: t.complexity || 'simple',
+        // v3.5: 任务领域，由 AI 直接标记，Worker 无需猜测
+        category: t.category || 'other',
         blueprintId: blueprint.id,
         moduleId: t.moduleId,
         files: Array.isArray(t.files) ? t.files : [],
@@ -1534,7 +1339,8 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
   private async extractWithAI<T>(
     prompt: string,
     defaultValue: T,
-    schema?: Record<string, any>
+    schema?: Record<string, any>,
+    customSystemPrompt?: string
   ): Promise<T> {
     try {
       const client = this.getClient();
@@ -1553,32 +1359,78 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
         },
       };
 
-      const response = await client.createMessage(
+      // 默认 system prompt
+      const defaultSystemPrompt = '你是一个数据提取助手。分析用户的输入，使用 submit_extracted_data 工具返回结构化数据。不要输出任何文本，直接调用工具提交数据。';
+      const systemPrompt = customSystemPrompt || defaultSystemPrompt;
+
+      console.log('[SmartPlanner] extractWithAI 开始流式调用...');
+      console.log('[SmartPlanner] 推断的 schema keys:', Object.keys(inferredSchema));
+      console.log('[SmartPlanner] Prompt 长度:', prompt.length, '字符');
+      console.log('[SmartPlanner] 发送的 prompt（前1000字符）:\n', prompt.slice(0, 1000));
+
+      // 使用流式 API 以便打印完整输出
+      let fullText = '';
+      let toolInputJson = '';
+      let currentToolName = '';
+      let hasToolUse = false;
+
+      for await (const event of client.createMessageStream(
         [{ role: 'user', content: prompt }],
         [extractTool],
-        '你是一个数据提取助手。分析用户的输入，然后使用 submit_extracted_data 工具返回结构化数据。必须调用工具，不要直接回复文本。'
-      );
+        systemPrompt,
+        {
+          enableThinking: false,
+          // 强制 AI 必须调用 submit_extracted_data 工具
+          toolChoice: { type: 'tool', name: 'submit_extracted_data' },
+        }
+      )) {
+        // 打印每个流式事件
+        if (event.type === 'text' && event.text) {
+          fullText += event.text;
+          console.log('[SmartPlanner][Stream] 文本:', event.text);
+        } else if (event.type === 'thinking' && event.thinking) {
+          console.log('[SmartPlanner][Stream] 思考:', event.thinking);
+        } else if (event.type === 'tool_use_start') {
+          hasToolUse = true;
+          currentToolName = event.name || '';
+          console.log('[SmartPlanner][Stream] 工具调用开始:', currentToolName);
+        } else if (event.type === 'tool_use_delta' && event.input) {
+          toolInputJson += event.input;
+          // 每收到增量就打印（但不打印换行，避免日志过多）
+          process.stdout.write(event.input);
+        } else if (event.type === 'stop') {
+          console.log('\n[SmartPlanner][Stream] 流结束，原因:', event.stopReason);
+        } else if (event.type === 'error') {
+          console.error('[SmartPlanner][Stream] 错误:', event.error);
+        } else if (event.type === 'usage') {
+          console.log('[SmartPlanner][Stream] Token 使用:', JSON.stringify(event.usage));
+        }
+      }
 
-      // 从 tool_use block 中提取数据
-      for (const block of response.content) {
-        if (block.type === 'tool_use' && block.name === 'submit_extracted_data') {
-          console.log('[SmartPlanner] extractWithAI 成功，AI 调用了工具');
-          return block.input as T;
+      console.log('[SmartPlanner] 流式调用完成');
+      console.log('[SmartPlanner] 收到文本长度:', fullText.length);
+      console.log('[SmartPlanner] 收到工具输入长度:', toolInputJson.length);
+
+      // 如果有工具调用，解析工具输入
+      if (hasToolUse && toolInputJson) {
+        console.log('[SmartPlanner] extractWithAI 成功，AI 调用了工具:', currentToolName);
+        console.log('[SmartPlanner] 工具输入 JSON（完整）:\n', toolInputJson);
+
+        try {
+          const inputData = JSON.parse(toolInputJson) as T;
+          console.log('[SmartPlanner] 工具返回数据的 keys:', Object.keys(inputData || {}));
+          return inputData;
+        } catch (parseError) {
+          console.error('[SmartPlanner] 工具输入 JSON 解析失败:', parseError);
+          console.error('[SmartPlanner] 原始 JSON:', toolInputJson);
         }
       }
 
       // 如果AI没有调用工具，尝试从文本中解析（降级方案）
-      let text = '';
-      for (const block of response.content) {
-        if (block.type === 'text') {
-          text += (block as any).text;
-        }
-      }
-
-      if (text) {
+      if (fullText) {
         console.log('[SmartPlanner] AI 返回文本，尝试解析 JSON...');
-        console.log('[SmartPlanner] 文本内容（前500字符）:', text.slice(0, 500));
-        const parsed = this.tryParseJSON<T>(text);
+        console.log('[SmartPlanner] 文本内容（完整）:\n', fullText);
+        const parsed = this.tryParseJSON<T>(fullText);
         if (parsed !== null) {
           console.log('[SmartPlanner] JSON 解析成功');
           return parsed;
@@ -1587,7 +1439,6 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       }
 
       console.warn('[SmartPlanner] AI未调用工具且无法解析文本，使用默认值');
-      console.warn('[SmartPlanner] response.content:', JSON.stringify(response.content).slice(0, 500));
       return defaultValue;
     } catch (error) {
       console.error('[SmartPlanner] AI extraction failed:', error);
@@ -1621,6 +1472,10 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
 
   /**
    * 推断单个值的类型 schema
+   *
+   * 关键改进：
+   * - 对于对象类型，添加 required 字段，确保 AI 必须填充所有属性
+   * - 对于数组类型，设置 description 提示 AI 生成内容
    */
   private inferTypeSchema(val: any): Record<string, any> {
     if (val === null || val === undefined) {
@@ -1639,12 +1494,17 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       return {
         type: 'array',
         items: val.length > 0 ? this.inferTypeSchema(val[0]) : { type: 'string' },
+        // 提示 AI 这个数组应该有元素
+        description: '请根据需求生成完整的数组内容',
       };
     }
     if (typeof val === 'object') {
+      const properties = this.inferSchemaFromValue(val);
       return {
         type: 'object',
-        properties: this.inferSchemaFromValue(val),
+        properties,
+        // 关键修复：添加 required 字段，确保 AI 必须填充所有属性
+        required: Object.keys(properties),
       };
     }
     return { type: 'string' };
@@ -1812,6 +1672,157 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
   }
 
   /**
+   * 专用的任务分解方法 - 使用 Agent 分解任务
+   * 不依赖 extractWithAI，有独立的实现逻辑
+   */
+  private async decomposeTasksWithAI(
+    blueprint: Blueprint,
+    explorationContext: string,
+    modulesText: string,
+    processesText: string,
+    nfrsText: string
+  ): Promise<{
+    tasks: Array<{
+      id: string;
+      name: string;
+      description: string;
+      type: TaskType;
+      category: 'frontend' | 'backend' | 'database' | 'shared' | 'other';
+      moduleId?: string;
+      files: string[];
+      dependencies: string[];
+      needsTest: boolean;
+      testStrategy?: 'unit' | 'integration' | 'e2e' | 'mock' | 'vcr' | 'skip';
+      estimatedMinutes: number;
+      complexity: TaskComplexity;
+    }>;
+    decisions: Array<{
+      type: 'task_split' | 'parallel' | 'dependency' | 'tech_choice' | 'other';
+      description: string;
+      reasoning?: string;
+    }>;
+  }> {
+    const systemPrompt = `你是一个专业的任务分解专家。你的职责是将软件项目蓝图分解为具体可执行的开发任务。
+
+分解原则：
+1. 每个任务应该能在5分钟内完成
+2. 任务要有明确的输入和输出
+3. 任务可以独立验证
+4. 相互独立的任务可以并行执行
+5. 配置类/文档类任务不需要测试
+6. 核心业务逻辑必须有测试
+
+任务类型：code(功能代码), config(配置), test(测试), refactor(重构), docs(文档), integrate(集成)
+任务领域：frontend(前端), backend(后端), database(数据库), shared(共享代码), other(其他)
+测试策略：unit(单元测试), integration(集成测试), e2e(端到端), mock(Mock), vcr(录制回放), skip(跳过)
+复杂度：trivial, simple, moderate, complex
+
+完成分析后，你必须输出一个 JSON 代码块，不要包含其他说明文字，格式如下：
+\`\`\`json
+{
+  "tasks": [
+    {
+      "id": "task-1",
+      "name": "任务名称",
+      "description": "详细描述",
+      "type": "code",
+      "category": "backend",
+      "moduleId": "模块ID",
+      "files": ["src/example.ts"],
+      "dependencies": [],
+      "needsTest": true,
+      "testStrategy": "unit",
+      "estimatedMinutes": 5,
+      "complexity": "simple"
+    }
+  ],
+  "decisions": [
+    {
+      "type": "task_split",
+      "description": "决策描述",
+      "reasoning": "决策理由"
+    }
+  ]
+}
+\`\`\`
+
+【重要】你的响应必须包含上述格式的 JSON 代码块。`;
+
+    const userPrompt = `请分解以下项目蓝图为具体的执行任务：
+
+## 蓝图信息
+- 名称：${blueprint.name}
+- 描述：${blueprint.description}
+${blueprint.version ? `- 版本：${blueprint.version}` : ''}
+
+## 需求列表
+${(blueprint.requirements || []).map((r, i) => `${i + 1}. ${r}`).join('\n') || '无'}
+
+## 模块划分
+${modulesText}
+${processesText}
+${nfrsText}
+
+## 技术栈
+${JSON.stringify(blueprint.techStack, null, 2)}
+
+## 约束条件
+${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') : '无'}
+${explorationContext ? `\n## 代码库探索结果\n${explorationContext}` : ''}
+
+请分析以上信息，将需求分解为具体的开发任务，并以 JSON 格式输出。`;
+
+    console.log('[SmartPlanner] 开始任务分解 Agent...');
+    console.log('[SmartPlanner] Prompt 长度:', userPrompt.length, '字符');
+
+    try {
+      // 使用 ConversationLoop 作为 Agent 进行任务分解
+      const loop = new ConversationLoop({
+        model: this.getClient().getModel(),
+        maxTurns: 9, // 任务分解不需要太多轮次
+        verbose: false,
+        permissionMode: 'bypassPermissions',
+        workingDir: blueprint.projectPath,
+        systemPrompt,
+        isSubAgent: true,
+      });
+
+      const result = await loop.processMessage(userPrompt);
+
+      console.log('[SmartPlanner] Agent 响应长度:', result?.length || 0);
+      console.log('[SmartPlanner] Agent 响应预览:', result?.slice(0, 500));
+
+      if (!result) {
+        throw new Error('Agent 返回空响应');
+      }
+
+      // 从响应中提取 JSON
+      const jsonMatch = result.match(/```json\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[1]);
+        console.log('[SmartPlanner] 成功解析 JSON，tasks 数量:', parsed.tasks?.length || 0);
+        return parsed;
+      }
+
+      // 尝试直接匹配 JSON 对象
+      const directMatch = result.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
+      if (directMatch) {
+        const parsed = JSON.parse(directMatch[0]);
+        console.log('[SmartPlanner] 直接匹配 JSON，tasks 数量:', parsed.tasks?.length || 0);
+        return parsed;
+      }
+
+      console.error('[SmartPlanner] 无法从响应中提取 JSON');
+      console.error('[SmartPlanner] 完整响应:', result);
+      throw new Error('无法从 Agent 响应中提取任务数据');
+
+    } catch (error: any) {
+      console.error('[SmartPlanner] 任务分解 Agent 失败:', error.message);
+      throw new Error(`任务分解失败: ${error.message}`);
+    }
+  }
+
+  /**
    * 格式化探索结果为上下文字符串
    */
   private formatExplorationContext(exploration: CodebaseExploration | null): string {
@@ -1879,7 +1890,7 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
   }
 
   /**
-   * 生成技术栈建议
+   * 生成技术栈建议 - v3.0 Multi-turn 版本
    */
   private async generateTechSuggestion(state: DialogState): Promise<TechStack> {
     // 检测项目现有技术栈
@@ -1890,31 +1901,32 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
       return this.ensureCompleteTechStack(existingTech);
     }
 
-    // 使用 AI 推荐技术栈
-    const aiSuggestion = await this.extractWithAI<Partial<TechStack>>(
-      `基于以下需求推荐技术栈：
+    // 使用 AI 推荐技术栈（AI 已有需求上下文，不需要重发）
+    const session = this.getAISession();
+    let aiSuggestion: Partial<TechStack> = {
+      language: 'typescript' as ProjectLanguage,
+      packageManager: 'npm' as PackageManagerType,
+      testFramework: 'vitest' as TestFrameworkType,
+    };
 
-需求：
-${state.collectedRequirements.join('\n')}
-
-约束：
-${state.collectedConstraints.join('\n')}
-
-请推荐合适的技术栈，以 JSON 格式返回：
-{
-  "language": "typescript/javascript/python/go/rust/java",
-  "framework": "框架名称（可选）",
-  "packageManager": "npm/yarn/pnpm/pip/etc",
-  "testFramework": "vitest/jest/pytest/etc",
-  "buildTool": "构建工具（可选）",
-  "additionalTools": ["其他工具"]
-}`,
-      {
-        language: 'typescript' as ProjectLanguage,
-        packageManager: 'npm' as PackageManagerType,
-        testFramework: 'vitest' as TestFrameworkType,
+    for await (const event of session.suggestTechStack(existingTech)) {
+      if (event.type === 'text' || event.type === 'thinking') {
+        this.emit('dialog:ai_streaming', { type: event.type, content: event.text || event.thinking });
+      } else if (event.type === 'tool_delta') {
+        this.emit('dialog:ai_streaming', { type: 'tool_input', content: event.toolInput });
+      } else if (event.type === 'tool_result' && event.result) {
+        // 映射返回结果到 TechStack 格式
+        const result = event.result;
+        aiSuggestion = {
+          language: result.language as ProjectLanguage,
+          framework: result.framework,
+          packageManager: result.packageManager as PackageManagerType,
+          testFramework: result.testFramework as TestFrameworkType,
+          buildTool: result.buildTool,
+          additionalTools: result.additionalTools,
+        };
       }
-    );
+    }
 
     // 确保返回完整的技术栈
     return this.ensureCompleteTechStack(aiSuggestion);
@@ -2333,4 +2345,349 @@ export const smartPlanner = new SmartPlanner();
  */
 export function createSmartPlanner(config?: Partial<SmartPlannerConfig>): SmartPlanner {
   return new SmartPlanner(config);
+}
+
+// ============================================================================
+// 流式蓝图生成支持 (Chat 模式)
+// ============================================================================
+
+/**
+ * 流式事件类型
+ */
+export interface StreamingEvent {
+  type: 'text' | 'thinking' | 'progress' | 'complete' | 'error';
+  /** 流式文本片段 */
+  text?: string;
+  /** AI 思考内容 */
+  thinking?: string;
+  /** 进度信息 */
+  step?: number;
+  total?: number;
+  message?: string;
+  /** 完成时的蓝图 */
+  blueprint?: Blueprint;
+  /** 错误信息 */
+  error?: string;
+}
+
+/**
+ * 流式蓝图生成器
+ *
+ * 用于在 UI 中以 chat 模式流式渲染 AI 的思考和生成过程
+ */
+export class StreamingBlueprintGenerator extends EventEmitter {
+  private planner: SmartPlanner;
+  private client: ClaudeClient;
+
+  constructor(planner: SmartPlanner) {
+    super();
+    this.planner = planner;
+    this.client = getDefaultClient();
+  }
+
+  /**
+   * 流式生成蓝图
+   *
+   * @param state 完成的对话状态
+   * @param projectPath 项目路径
+   * @yields StreamingEvent 流式事件
+   */
+  async *generateBlueprintStreaming(
+    state: DialogState,
+    projectPath: string
+  ): AsyncGenerator<StreamingEvent> {
+    console.log('[StreamingBlueprintGenerator] 开始流式生成蓝图...');
+
+    if (!state.isComplete) {
+      console.log('[StreamingBlueprintGenerator] 错误：对话未完成');
+      yield { type: 'error', error: '对话未完成，无法生成蓝图' };
+      return;
+    }
+
+    // Step 1: 发送开始信号
+    console.log('[StreamingBlueprintGenerator] Step 1: 发送开始信号');
+    yield { type: 'progress', step: 1, total: 5, message: '正在分析需求...' };
+    yield { type: 'text', text: '🔍 **开始分析需求...**\n\n' };
+
+    // 构建蓝图生成的提示词
+    console.log('[StreamingBlueprintGenerator] 构建提示词...');
+    const prompt = this.buildBlueprintPrompt(state);
+    console.log('[StreamingBlueprintGenerator] 提示词长度:', prompt.length);
+
+    // Step 2: 流式调用 AI
+    console.log('[StreamingBlueprintGenerator] Step 2: 开始调用 AI API...');
+    yield { type: 'progress', step: 2, total: 5, message: 'AI 正在设计项目结构...' };
+
+    let fullResponse = '';
+    let blueprintData: any = null;
+
+    try {
+      // 使用流式 API
+      console.log('[StreamingBlueprintGenerator] 调用 createMessageStream...');
+      for await (const event of this.client.createMessageStream(
+        [{ role: 'user', content: prompt }],
+        [],
+        '你是一个专业的软件架构师。请根据用户的需求设计完整的项目蓝图。先用中文描述你的设计思路，然后输出 JSON 格式的蓝图数据。',
+        { enableThinking: false }
+      )) {
+        if (event.type === 'text' && event.text) {
+          fullResponse += event.text;
+          // 流式发送文本片段
+          console.log('[StreamingBlueprintGenerator] 收到 AI 文本片段，长度:', event.text.length);
+          yield { type: 'text', text: event.text };
+        } else if (event.type === 'thinking' && event.thinking) {
+          console.log('[StreamingBlueprintGenerator] 收到 AI 思考内容');
+          yield { type: 'thinking', thinking: event.thinking };
+        } else if (event.type === 'error') {
+          console.error('[StreamingBlueprintGenerator] AI 返回错误:', event.error);
+          yield { type: 'error', error: event.error };
+          return;
+        } else if (event.type === 'stop') {
+          console.log('[StreamingBlueprintGenerator] AI 流结束，原因:', event.stopReason);
+        }
+      }
+      console.log('[StreamingBlueprintGenerator] AI 响应完成，总长度:', fullResponse.length);
+
+      // Step 3: 解析 JSON
+      yield { type: 'progress', step: 3, total: 5, message: '正在构建蓝图结构...' };
+      yield { type: 'text', text: '\n\n📋 **正在解析蓝图数据...**\n' };
+
+      blueprintData = this.extractBlueprintFromResponse(fullResponse);
+
+      if (!blueprintData) {
+        yield { type: 'error', error: '无法从 AI 响应中解析蓝图数据' };
+        return;
+      }
+
+      // Step 4: 构建蓝图对象
+      yield { type: 'progress', step: 4, total: 5, message: '正在保存蓝图...' };
+      yield { type: 'text', text: '💾 **正在保存蓝图...**\n' };
+
+      const blueprint = this.buildBlueprint(blueprintData, state, projectPath);
+
+      // 保存蓝图
+      this.saveBlueprint(blueprint);
+
+      // Step 5: 完成
+      yield { type: 'progress', step: 5, total: 5, message: '蓝图生成完成！' };
+      yield { type: 'text', text: `\n✅ **蓝图生成完成！**\n\n蓝图 ID: \`${blueprint.id}\`\n` };
+      yield { type: 'complete', blueprint };
+
+    } catch (error: any) {
+      yield { type: 'error', error: error.message || '蓝图生成失败' };
+    }
+  }
+
+  /**
+   * 构建蓝图生成的提示词
+   */
+  private buildBlueprintPrompt(state: DialogState): string {
+    return `基于以下需求生成完整的项目蓝图：
+
+需求列表：
+${state.collectedRequirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+约束条件：
+${state.collectedConstraints.length > 0 ? state.collectedConstraints.join('\n') : '无'}
+
+技术栈：
+${JSON.stringify(state.techStack, null, 2)}
+
+请先用中文简要描述你的设计思路（2-3段），然后输出 JSON 格式的蓝图数据。
+
+JSON 格式要求：
+\`\`\`json
+{
+  "name": "项目名称",
+  "description": "项目描述（2-3句话）",
+  "version": "1.0.0",
+  "businessProcesses": [
+    {
+      "id": "bp-1",
+      "name": "业务流程名称",
+      "description": "流程描述",
+      "type": "to-be",
+      "steps": [
+        {
+          "id": "step-1",
+          "order": 1,
+          "name": "步骤名称",
+          "description": "步骤描述",
+          "actor": "执行角色",
+          "inputs": ["输入"],
+          "outputs": ["输出"]
+        }
+      ],
+      "actors": ["参与者列表"],
+      "inputs": ["流程输入"],
+      "outputs": ["流程输出"]
+    }
+  ],
+  "modules": [
+    {
+      "id": "mod-1",
+      "name": "模块名称",
+      "description": "模块描述",
+      "type": "frontend/backend/database/service/shared/other",
+      "responsibilities": ["职责1", "职责2"],
+      "techStack": ["React", "TypeScript"],
+      "interfaces": [
+        {
+          "name": "接口名称",
+          "type": "api/event/function/class",
+          "description": "接口描述",
+          "signature": "方法签名（可选）"
+        }
+      ],
+      "dependencies": ["依赖的模块ID"],
+      "rootPath": "src/modules/xxx",
+      "source": "ai_generated",
+      "files": ["涉及的文件路径"]
+    }
+  ],
+  "nfrs": [
+    {
+      "id": "nfr-1",
+      "category": "performance/security/reliability/scalability/maintainability/usability/other",
+      "name": "需求名称",
+      "description": "需求描述",
+      "priority": "high/medium/low",
+      "metrics": ["可量化指标"]
+    }
+  ]
+}
+\`\`\`
+
+注意：
+- 业务流程要清晰描述系统要做什么，每个步骤要有明确的输入输出
+- 模块划分要合理，每个模块有明确的职责边界和接口定义
+- 非功能需求要考虑性能、安全、可靠性等方面`;
+  }
+
+  /**
+   * 从 AI 响应中提取蓝图数据
+   */
+  private extractBlueprintFromResponse(response: string): any {
+    // 尝试匹配 ```json ... ``` 格式
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1]);
+      } catch (e) {
+        console.error('[StreamingBlueprintGenerator] JSON 解析失败 (代码块):', e);
+      }
+    }
+
+    // 尝试直接匹配 JSON 对象
+    const directMatch = response.match(/\{[\s\S]*\}/);
+    if (directMatch) {
+      try {
+        return JSON.parse(directMatch[0]);
+      } catch (e) {
+        console.error('[StreamingBlueprintGenerator] JSON 解析失败 (直接匹配):', e);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 构建蓝图对象
+   */
+  private buildBlueprint(
+    data: any,
+    state: DialogState,
+    projectPath: string
+  ): Blueprint {
+    return {
+      id: uuidv4(),
+      name: data.name || '新项目',
+      description: data.description || '',
+      version: data.version || '1.0.0',
+      projectPath,
+      status: 'confirmed',
+
+      businessProcesses: (data.businessProcesses || []).map((bp: any) => ({
+        id: bp.id || uuidv4(),
+        name: bp.name || '',
+        description: bp.description || '',
+        type: bp.type || 'to-be',
+        steps: (bp.steps || []).map((step: any) => ({
+          id: step.id || uuidv4(),
+          order: step.order || 0,
+          name: step.name || '',
+          description: step.description || '',
+          actor: step.actor || '',
+          inputs: step.inputs || [],
+          outputs: step.outputs || [],
+        })),
+        actors: bp.actors || [],
+        inputs: bp.inputs || [],
+        outputs: bp.outputs || [],
+      })) as BusinessProcess[],
+
+      modules: (data.modules || []).map((m: any) => ({
+        id: m.id || uuidv4(),
+        name: m.name,
+        description: m.description,
+        type: m.type,
+        responsibilities: m.responsibilities || [],
+        techStack: m.techStack || [],
+        interfaces: (m.interfaces || []).map((iface: any) => ({
+          name: iface.name,
+          type: iface.type,
+          description: iface.description,
+          signature: iface.signature,
+        })) as ModuleInterface[],
+        dependencies: m.dependencies || [],
+        rootPath: m.rootPath || '',
+        source: m.source || 'ai_generated',
+        files: m.files || [],
+      })) as BlueprintModule[],
+
+      nfrs: (data.nfrs || []).map((nfr: any) => ({
+        id: nfr.id || uuidv4(),
+        category: nfr.category || 'other',
+        name: nfr.name || '',
+        description: nfr.description || '',
+        priority: nfr.priority || 'medium',
+        metrics: nfr.metrics || [],
+      })) as NFR[],
+
+      requirements: state.collectedRequirements,
+      techStack: state.techStack as TechStack,
+      constraints: state.collectedConstraints,
+      designImages: state.designImages || [],
+
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      confirmedAt: new Date(),
+    };
+  }
+
+  /**
+   * 保存蓝图
+   */
+  private saveBlueprint(blueprint: Blueprint): void {
+    try {
+      const dir = path.join(blueprint.projectPath, '.blueprint');
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const filePath = path.join(dir, `${blueprint.id}.json`);
+      const toISO = (d: Date | string | undefined) => {
+        if (!d) return undefined;
+        return d instanceof Date ? d.toISOString() : d;
+      };
+      const data = {
+        ...blueprint,
+        createdAt: toISO(blueprint.createdAt),
+        updatedAt: toISO(blueprint.updatedAt),
+        confirmedAt: toISO(blueprint.confirmedAt),
+      };
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('[StreamingBlueprintGenerator] Failed to save blueprint:', error);
+    }
+  }
 }

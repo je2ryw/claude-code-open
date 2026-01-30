@@ -824,3 +824,99 @@
     opacity: 0.3;
   }
 }
+
+/* ==================== 流式 Chat 模式样式 ==================== */
+
+.streamingChat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 280px;
+  max-width: 100%;
+}
+
+.streamingContent {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* 流式 Markdown 内容 */
+.streamingMarkdown {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary, #e5e5e5);
+}
+
+.streamingMarkdown p {
+  margin: 0 0 8px 0;
+}
+
+.streamingMarkdown p:last-of-type {
+  margin-bottom: 0;
+  display: inline;
+}
+
+/* 流式光标动画 */
+.streamingCursor {
+  display: inline-block;
+  color: #4CAF50;
+  font-weight: normal;
+  animation: cursorBlink 0.8s steps(1) infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+/* 加载占位符 */
+.streamingPlaceholder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary, #888);
+  font-size: 14px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.streamingPlaceholder .spinnerIcon {
+  font-size: 20px;
+  animation: spinnerRotate 3s linear infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 底部进度指示 */
+.streamingFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #333);
+  font-size: 12px;
+}
+
+.streamingStep {
+  color: #4CAF50;
+  font-weight: 600;
+}
+
+.streamingStatus {
+  color: var(--text-tertiary, #666);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

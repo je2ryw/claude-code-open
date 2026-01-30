@@ -31,6 +31,9 @@ export {
   smartPlanner,
   createSmartPlanner,
   type SmartPlannerConfig,
+  // 流式蓝图生成
+  StreamingBlueprintGenerator,
+  type StreamingEvent,
 } from './smart-planner.js';
 
 // ============================================================================

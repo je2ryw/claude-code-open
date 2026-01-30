@@ -18,8 +18,10 @@ import type {
   ModelType,
   SwarmConfig,
   TechStack,
+  DesignImage,
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
+import type { AnyContentBlock, ImageBlockParam, TextBlockParam } from '../types/index.js';
 
 // ============================================================================
 // 类型定义
@@ -44,6 +46,8 @@ export interface WorkerContext {
   /** 依赖任务的产出（前置任务写的代码） */
   dependencyOutputs?: DependencyOutput[];
   constraints?: string[];
+  /** UI 设计图（作为端到端验收标准） */
+  designImages?: DesignImage[];
 }
 
 export type WorkerEventType =
@@ -101,7 +105,18 @@ export class AutonomousWorkerExecutor extends EventEmitter {
         isSubAgent: true,
       });
 
-      const taskPrompt = this.buildTaskPrompt(task, context);
+      // v3.5: 使用多模态任务提示（当是 UI 任务且有设计图时）
+      const taskPrompt = this.buildMultimodalTaskPrompt(task, context);
+
+      // 记录是否使用了设计图
+      if (Array.isArray(taskPrompt) && context.designImages?.length) {
+        this.log(`使用设计图参考: ${context.designImages.length} 张`);
+        decisions.push({
+          type: 'strategy',
+          description: `使用 ${context.designImages.length} 张 UI 设计图作为参考`,
+          timestamp: new Date(),
+        });
+      }
 
       for await (const event of loop.processMessageStream(taskPrompt)) {
         // v3.2: 统计工具调用
@@ -381,6 +396,17 @@ ${testStrategyGuide}` : '';
 3. 确保测试通过后再标记完成
 ${testStrategyGuide}` : '';
 
+    // v3.5: UI 任务设计图指导
+    const uiGuidance = this.isUITask(task) && context.designImages?.length ? `
+## UI 设计图验收标准（重要！）
+你将收到 UI 设计图作为参考，这是验收标准。请：
+1. **仔细观察设计图**：注意布局、颜色、间距、字体大小
+2. **严格还原设计**：界面效果必须与设计图一致
+3. **使用项目现有样式系统**：优先使用已有的 CSS 变量、组件库
+4. **保持响应式**：确保在不同屏幕尺寸下正常显示
+5. **代码质量**：组件结构清晰、样式模块化
+` : '';
+
     return `你是一个高度自治的软件开发 Worker。
 
 ## 身份
@@ -392,7 +418,7 @@ ${testStrategyGuide}` : '';
 1. 完全自主决策，不需要请示
 2. 直接使用工具执行，不要只讨论
 3. 专注任务本身，不要过度设计
-${testGuidance}${needsTestGuidance}
+${testGuidance}${needsTestGuidance}${uiGuidance}
 ## 完成汇报
 任务完成后调用 UpdateTaskStatus 工具：
 - 成功: status="completed"
@@ -463,6 +489,116 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
 直接使用工具执行任务。`;
 
     return prompt;
+  }
+
+  /**
+   * v3.5: 判断任务是否是 UI/前端任务
+   * 直接读取 task.category，SmartPlanner 拆分任务时已标记好
+   */
+  private isUITask(task: SmartTask): boolean {
+    // 直接使用 SmartPlanner 标记的 category，不再用关键词猜测
+    return task.category === 'frontend';
+  }
+
+  /**
+   * v3.5: 构建多模态任务提示（包含设计图）
+   * 当任务是 UI 任务且有设计图时，返回多模态内容
+   */
+  private buildMultimodalTaskPrompt(
+    task: SmartTask,
+    context: WorkerContext
+  ): string | AnyContentBlock[] {
+    const textPrompt = this.buildTaskPrompt(task, context);
+
+    // 如果不是 UI 任务或没有设计图，直接返回文本提示
+    if (!this.isUITask(task) || !context.designImages?.length) {
+      return textPrompt;
+    }
+
+    // 获取已接受的设计图，如果没有则使用所有设计图
+    const acceptedImages = context.designImages.filter(img => img.isAccepted);
+    const imagesToUse = acceptedImages.length > 0 ? acceptedImages : context.designImages;
+
+    // 构建多模态内容
+    const contentBlocks: AnyContentBlock[] = [];
+
+    // 添加任务文本提示
+    const textBlock: TextBlockParam = {
+      type: 'text',
+      text: textPrompt,
+    };
+    contentBlocks.push(textBlock);
+
+    // 添加设计图说明
+    const designIntro: TextBlockParam = {
+      type: 'text',
+      text: `
+## UI 设计图参考（重要！这是验收标准）
+
+以下是需要还原的 UI 设计图，请仔细查看并按照设计图实现界面：
+- 布局结构：请严格按照设计图的布局
+- 颜色方案：使用设计图中的颜色
+- 组件样式：按照设计图的视觉效果实现
+- 间距比例：尽可能还原设计图的间距和比例
+
+${imagesToUse.length > 1 ? `共有 ${imagesToUse.length} 张设计图，请逐一查看。` : ''}
+`,
+    };
+    contentBlocks.push(designIntro);
+
+    // 添加每张设计图
+    for (const img of imagesToUse) {
+      // 添加设计图标题
+      const imgTitle: TextBlockParam = {
+        type: 'text',
+        text: `### 设计图: ${img.name}${img.description ? ` - ${img.description}` : ''} (风格: ${img.style})`,
+      };
+      contentBlocks.push(imgTitle);
+
+      // 解析 base64 图片数据
+      // imageData 格式: data:image/png;base64,xxxxx
+      let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/png';
+      let base64Data = img.imageData;
+
+      if (img.imageData.startsWith('data:')) {
+        const matches = img.imageData.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (matches) {
+          const detectedType = matches[1];
+          if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detectedType)) {
+            mediaType = detectedType as typeof mediaType;
+          }
+          base64Data = matches[2];
+        }
+      }
+
+      // 添加图片内容块
+      const imageBlock: ImageBlockParam = {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: mediaType,
+          data: base64Data,
+        },
+      };
+      contentBlocks.push(imageBlock);
+    }
+
+    // 添加实现提示
+    const implementationHint: TextBlockParam = {
+      type: 'text',
+      text: `
+## 实现提示
+
+请根据上面的设计图实现界面，确保：
+1. 视觉效果与设计图一致
+2. 响应式布局（如适用）
+3. 使用项目现有的 UI 框架和样式系统
+4. 代码结构清晰、可维护
+`,
+    };
+    contentBlocks.push(implementationHint);
+
+    return contentBlocks;
   }
 
   private handleStreamEvent(

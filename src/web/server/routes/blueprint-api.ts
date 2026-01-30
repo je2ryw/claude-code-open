@@ -34,10 +34,14 @@ import {
   type SerializableSmartTask,
   type VerificationResult,
   type VerificationStatus,
+  type StreamingEvent,
+  type ExecutionState,
   // 智能规划器
   SmartPlanner,
   smartPlanner,
   createSmartPlanner,
+  // 流式蓝图生成
+  StreamingBlueprintGenerator,
   // 实时协调器
   RealtimeCoordinator,
   createRealtimeCoordinator,
@@ -692,6 +696,8 @@ class RealTaskExecutor implements TaskExecutor {
         // v3.4: 注入上下文
         relatedFiles: collectedContext.relatedFiles,
         dependencyOutputs: collectedContext.dependencyOutputs,
+        // v3.5: 传递 UI 设计图（作为端到端验收标准）
+        designImages: this.blueprint.designImages,
       };
 
       // 执行任务
@@ -1159,6 +1165,12 @@ class ExecutionManager {
     // 异步执行
     this.runExecution(session, blueprint, executor).catch(error => {
       console.error('[ExecutionManager] 执行失败:', error);
+      // v2.2: 确保外层异常也设置 completedAt，避免僵尸会话
+      if (!session.completedAt) {
+        session.completedAt = new Date();
+        blueprint.status = 'failed';
+        blueprintStore.save(blueprint);
+      }
     });
 
     return session;
@@ -1451,19 +1463,43 @@ class ExecutionManager {
    * @returns 重试结果
    */
   async retryTask(blueprintId: string, taskId: string): Promise<{ success: boolean; error?: string }> {
+    console.log(`[ExecutionManager] retryTask 开始: blueprintId=${blueprintId}, taskId=${taskId}`);
+
     // 查找会话
-    const session = this.getSessionByBlueprint(blueprintId);
+    let session = this.getSessionByBlueprint(blueprintId);
+
+    // 如果会话不存在，尝试从保存的状态恢复
     if (!session) {
-      return { success: false, error: '找不到该蓝图的执行会话' };
+      console.log(`[ExecutionManager] 会话不存在，尝试从保存的状态恢复...`);
+
+      try {
+        session = await this.restoreSessionFromState(blueprintId);
+        if (session) {
+          console.log(`[ExecutionManager] 会话恢复成功`);
+        }
+      } catch (restoreError: any) {
+        console.error(`[ExecutionManager] 恢复会话失败:`, restoreError);
+      }
     }
 
+    if (!session) {
+      console.log(`[ExecutionManager] 找不到会话且无法恢复，当前会话列表:`, Array.from(this.sessions.keys()));
+      return { success: false, error: '找不到该蓝图的执行会话，请重新开始执行' };
+    }
+
+    console.log(`[ExecutionManager] 找到会话，检查协调器...`);
+
     if (!session.coordinator) {
+      console.log(`[ExecutionManager] 协调器不存在`);
       return { success: false, error: '执行协调器不可用' };
     }
+
+    console.log(`[ExecutionManager] 协调器存在，开始重试任务...`);
 
     try {
       // 调用协调器的重试方法
       const result = await session.coordinator.retryTask(taskId);
+      console.log(`[ExecutionManager] 协调器重试结果: ${result}`);
 
       // 发送事件通知前端
       executionEventEmitter.emit('task:update', {
@@ -1479,6 +1515,250 @@ class ExecutionManager {
       console.error(`[ExecutionManager] 重试任务失败:`, error);
       return { success: false, error: error.message || '重试任务时发生错误' };
     }
+  }
+
+  /**
+   * v2.2: 从保存的状态恢复会话
+   * 当服务重启后会话丢失时，从 execution-state.json 恢复
+   */
+  private async restoreSessionFromState(blueprintId: string): Promise<ExecutionSession | null> {
+    // 获取蓝图
+    const blueprint = blueprintStore.get(blueprintId);
+    if (!blueprint) {
+      console.log(`[ExecutionManager] 恢复失败：找不到蓝图 ${blueprintId}`);
+      return null;
+    }
+
+    if (!blueprint.projectPath) {
+      console.log(`[ExecutionManager] 恢复失败：蓝图没有项目路径`);
+      return null;
+    }
+
+    // 检查是否有保存的状态
+    const stateFilePath = path.join(blueprint.projectPath, '.claude', 'execution-state.json');
+    if (!fs.existsSync(stateFilePath)) {
+      console.log(`[ExecutionManager] 恢复失败：状态文件不存在 ${stateFilePath}`);
+      return null;
+    }
+
+    console.log(`[ExecutionManager] 从状态文件恢复: ${stateFilePath}`);
+
+    // 创建 Git 并发控制器
+    const gitConcurrency = new GitConcurrency(blueprint.projectPath);
+
+    // 创建协调器
+    const coordinator = createRealtimeCoordinator({
+      maxWorkers: 5,
+      workerTimeout: 600000,
+      skipOnFailure: true,
+      stopOnGroupFailure: true,
+      useGitBranches: true,
+      autoMerge: true,
+    });
+
+    // 设置任务执行器
+    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
+    coordinator.setTaskExecutor(executor);
+
+    // 设置项目路径（用于加载状态）
+    coordinator.setProjectPath(blueprint.projectPath);
+
+    // 从文件加载状态并恢复到协调器
+    try {
+      // 读取状态文件
+      const stateContent = fs.readFileSync(stateFilePath, 'utf-8');
+      const savedState = JSON.parse(stateContent) as ExecutionState;
+
+      // 验证蓝图 ID 匹配
+      if (savedState.plan.blueprintId !== blueprintId) {
+        console.log(`[ExecutionManager] 状态文件蓝图 ID 不匹配`);
+        return null;
+      }
+
+      // 恢复协调器状态
+      coordinator.restoreFromState(savedState);
+
+      // 监听事件（复用 startExecution 中的事件监听逻辑）
+      this.setupCoordinatorEvents(coordinator, blueprint, gitConcurrency);
+
+      // 从协调器获取反序列化后的计划
+      const restoredPlan = coordinator.getCurrentPlan();
+      if (!restoredPlan) {
+        console.log(`[ExecutionManager] 恢复失败：协调器没有计划`);
+        return null;
+      }
+
+      // 创建会话
+      const session: ExecutionSession = {
+        id: `session-${Date.now()}`,
+        blueprintId: blueprint.id,
+        plan: restoredPlan,
+        coordinator,
+        gitConcurrency,
+        startedAt: new Date(savedState.startedAt),
+      };
+
+      // 保存会话
+      this.sessions.set(session.id, session);
+
+      console.log(`[ExecutionManager] 会话恢复成功，包含 ${savedState.plan.tasks.length} 个任务`);
+      return session;
+
+    } catch (error: any) {
+      console.error(`[ExecutionManager] 解析状态文件失败:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * v2.2: 设置协调器事件监听
+   * 抽取公共的事件监听逻辑
+   */
+  private setupCoordinatorEvents(
+    coordinator: RealtimeCoordinator,
+    blueprint: Blueprint,
+    gitConcurrency: GitConcurrency
+  ): void {
+    // Worker 创建事件
+    coordinator.on('worker:created', (data: any) => {
+      workerTracker.update(data.workerId, { status: 'working' });
+      executionEventEmitter.emit('worker:created', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+      });
+    });
+
+    // Worker 空闲事件
+    coordinator.on('worker:idle', (data: any) => {
+      workerTracker.update(data.workerId, {
+        status: 'idle',
+        currentTaskId: undefined,
+        currentTaskName: undefined,
+      });
+      executionEventEmitter.emit('worker:update', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        updates: { status: 'idle', currentTaskId: undefined, currentTaskName: undefined },
+      });
+    });
+
+    // 任务开始事件
+    coordinator.on('task:started', (data: any) => {
+      workerTracker.update(data.workerId, {
+        status: 'working',
+        currentTaskId: data.taskId,
+        currentTaskName: data.taskName,
+      });
+      workerTracker.setTaskWorker(data.taskId, data.workerId);
+
+      const logEntry = workerTracker.addLog(data.workerId, {
+        level: 'info',
+        type: 'status',
+        message: `开始执行任务: ${data.taskName || data.taskId}`,
+        details: { taskId: data.taskId, taskName: data.taskName },
+      });
+
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        taskId: data.taskId,
+        log: logEntry,
+      });
+
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: { status: 'running', startedAt: new Date().toISOString() },
+      });
+    });
+
+    // 任务完成事件
+    coordinator.on('task:completed', (data: any) => {
+      const logEntry = workerTracker.addLog(data.workerId, {
+        level: 'info',
+        type: 'status',
+        message: `✅ 任务完成: ${data.taskName || data.taskId}`,
+        details: { taskId: data.taskId },
+      });
+
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        taskId: data.taskId,
+        log: logEntry,
+      });
+
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: { status: 'completed', completedAt: new Date().toISOString() },
+      });
+    });
+
+    // 任务失败事件
+    coordinator.on('task:failed', (data: any) => {
+      const logEntry = workerTracker.addLog(data.workerId, {
+        level: 'error',
+        type: 'status',
+        message: `❌ 任务执行出错: ${data.error || '未知错误'}`,
+        details: { taskId: data.taskId, error: data.error },
+      });
+
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: blueprint.id,
+        workerId: data.workerId,
+        taskId: data.taskId,
+        log: logEntry,
+      });
+
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: { status: 'failed', error: data.error, completedAt: new Date().toISOString() },
+      });
+    });
+
+    // 任务重试开始事件
+    coordinator.on('task:retry_started', (data: any) => {
+      console.log(`[Swarm v2.0] Task retry started: ${data.taskId} (${data.taskName})`);
+      executionEventEmitter.emit('task:update', {
+        blueprintId: blueprint.id,
+        taskId: data.taskId,
+        updates: { status: 'pending', startedAt: undefined, completedAt: undefined, error: undefined },
+      });
+    });
+
+    // 进度更新事件
+    coordinator.on('progress:update', (data: any) => {
+      executionEventEmitter.emit('progress:update', {
+        blueprintId: blueprint.id,
+        stats: {
+          totalTasks: data.totalTasks,
+          completedTasks: data.completedTasks,
+          failedTasks: data.failedTasks,
+          runningTasks: data.runningTasks,
+          pendingTasks: data.totalTasks - data.completedTasks - data.failedTasks - data.runningTasks,
+          progressPercentage: data.totalTasks > 0 ? Math.round((data.completedTasks / data.totalTasks) * 100) : 0,
+        },
+      });
+    });
+
+    // 计划失败事件
+    coordinator.on('plan:failed', (data: any) => {
+      executionEventEmitter.emit('execution:failed', {
+        blueprintId: blueprint.id,
+        error: data.error || '执行失败',
+      });
+    });
+
+    coordinator.on('plan:group_failed', (data: any) => {
+      executionEventEmitter.emit('execution:failed', {
+        blueprintId: blueprint.id,
+        error: data.reason,
+        groupIndex: data.groupIndex,
+        failedCount: data.failedCount,
+      });
+    });
   }
 
   /**
@@ -2538,18 +2818,29 @@ router.post('/coordinator/start', async (req: Request, res: Response) => {
       // 检查是否有现有会话
       const existingSession = executionManager.getSessionByBlueprint(blueprintId);
       if (existingSession && !existingSession.completedAt) {
-        // 取消暂停现有会话
-        console.log('[coordinator/start] 恢复现有会话:', existingSession.id);
-        existingSession.coordinator.unpause();
-        return res.json({
-          success: true,
-          data: {
-            resumed: true,
-            blueprintId,
-            executionId: existingSession.id,
-            planId: existingSession.plan.id,
-          },
-        });
+        // v2.2: 检查会话是否真的还在活跃状态
+        const isActive = existingSession.coordinator.isActive();
+
+        if (isActive) {
+          // 会话还在运行中，取消暂停
+          console.log('[coordinator/start] 恢复活跃会话:', existingSession.id, '暂停状态:', existingSession.coordinator.paused);
+          existingSession.coordinator.unpause();
+          return res.json({
+            success: true,
+            data: {
+              resumed: true,
+              blueprintId,
+              executionId: existingSession.id,
+              planId: existingSession.plan.id,
+            },
+          });
+        } else {
+          // 会话处于僵尸状态（completedAt 未设置但执行已结束）
+          console.log('[coordinator/start] 检测到僵尸会话，清理并重新开始:', existingSession.id);
+          // 标记会话为已完成
+          existingSession.completedAt = new Date();
+          // 继续后面的逻辑（检查文件状态或创建新执行）
+        }
       }
 
       // 没有现有会话，检查是否有可恢复的文件状态
@@ -3180,6 +3471,145 @@ router.post('/dialog/:sessionId/message', async (req: Request, res: Response) =>
 });
 
 /**
+ * POST /dialog/:sessionId/message/stream
+ * 发送消息并流式返回回复（SSE）
+ *
+ * 流程：
+ * 1. 接收用户输入
+ * 2. 处理消息（调用 AI）
+ * 3. 以流式方式返回 AI 的回复文本
+ *
+ * 事件类型：
+ * - start: 开始处理
+ * - thinking: AI 正在思考（处理中）
+ * - text: 流式文本片段
+ * - state: 最终状态更新
+ * - error: 错误
+ */
+router.post('/dialog/:sessionId/message/stream', async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const { input } = req.body;
+
+  // 验证参数
+  if (!input) {
+    return res.status(400).json({
+      success: false,
+      error: '缺少必填字段: input',
+    });
+  }
+
+  const session = dialogManager.getSession(sessionId);
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      error: '对话会话不存在',
+    });
+  }
+
+  // 设置 SSE 响应头
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // 发送开始事件
+  res.write(`data: ${JSON.stringify({ type: 'start', message: '正在处理...' })}\n\n`);
+
+  try {
+    // 发送思考中状态
+    res.write(`data: ${JSON.stringify({ type: 'thinking', message: 'AI 正在分析您的需求...' })}\n\n`);
+
+    // 处理消息（这会调用 AI 并返回完整状态）
+    const state = await dialogManager.processInput(sessionId, input);
+
+    if (!state) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: '处理消息失败' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // 获取最新的助手消息
+    const lastMessage = state.messages[state.messages.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant') {
+      const content = lastMessage.content;
+
+      // 流式发送回复文本（逐字符或逐词）
+      // 这里使用逐段发送，模拟流式效果
+      const chunks = splitIntoChunks(content);
+      for (const chunk of chunks) {
+        res.write(`data: ${JSON.stringify({ type: 'text', text: chunk })}\n\n`);
+        // 添加小延迟模拟打字效果
+        await sleep(10 + Math.random() * 20);
+      }
+    }
+
+    // 发送最终状态
+    res.write(`data: ${JSON.stringify({
+      type: 'state',
+      phase: state.phase,
+      isComplete: state.isComplete,
+      collectedRequirements: state.collectedRequirements,
+      collectedConstraints: state.collectedConstraints,
+      techStack: state.techStack,
+    })}\n\n`);
+
+    // 发送完成事件
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+
+  } catch (error: any) {
+    console.error('[Blueprint API] Stream message error:', error);
+    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    res.end();
+  }
+});
+
+/**
+ * 将文本分割成小块用于流式传输
+ * 策略：按标点、空格、换行分割，保持语义完整
+ */
+function splitIntoChunks(text: string): string[] {
+  const chunks: string[] = [];
+  // 按换行分割，保留换行符
+  const lines = text.split(/(\n)/);
+
+  for (const line of lines) {
+    if (line === '\n') {
+      chunks.push(line);
+      continue;
+    }
+
+    // 对于非换行行，按词组分割
+    // 匹配：中文字符、英文单词、标点符号、空格等
+    const parts = line.match(/[\u4e00-\u9fa5]+|[a-zA-Z0-9]+|\*{1,2}|[^\u4e00-\u9fa5a-zA-Z0-9\s]+|\s+/g) || [];
+
+    // 将小部分合并成适当大小的 chunk
+    let currentChunk = '';
+    for (const part of parts) {
+      currentChunk += part;
+      // 每 3-8 个字符作为一个 chunk
+      if (currentChunk.length >= 3 + Math.floor(Math.random() * 5)) {
+        chunks.push(currentChunk);
+        currentChunk = '';
+      }
+    }
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+  }
+
+  return chunks;
+}
+
+/**
+ * 延迟函数
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * GET /dialog/:sessionId
  * 获取对话状态
  */
@@ -3256,10 +3686,18 @@ router.post('/dialog/:sessionId/confirm', async (req: Request, res: Response) =>
 
 /**
  * GET /dialog/:sessionId/confirm/stream
- * 确认对话并生成蓝图（SSE 流式进度）
+ * 确认对话并生成蓝图（SSE 流式进度 + 流式文本）
+ *
+ * 支持两种模式：
+ * 1. 默认模式：发送进度事件 (progress) + 完成事件 (complete)
+ * 2. Chat 模式：发送流式文本事件 (text) + 进度事件 (progress) + 完成事件 (complete)
+ *
+ * Query 参数：
+ * - mode: 'chat' | 'progress'（默认 'progress'）
  */
 router.get('/dialog/:sessionId/confirm/stream', async (req: Request, res: Response) => {
   const { sessionId } = req.params;
+  const mode = (req.query.mode as string) || 'progress';
   const session = dialogManager.getSession(sessionId);
 
   if (!session) {
@@ -3286,7 +3724,57 @@ router.get('/dialog/:sessionId/confirm/stream', async (req: Request, res: Respon
   // 发送初始事件
   res.write(`data: ${JSON.stringify({ type: 'start', message: '开始生成蓝图...' })}\n\n`);
 
-  // 从 session 获取 planner 实例来监听进度事件
+  // Chat 模式：使用流式生成器
+  if (mode === 'chat') {
+    try {
+      console.log('[Blueprint API] 开始 Chat 模式流式生成...');
+      const generator = new StreamingBlueprintGenerator(session.planner);
+
+      for await (const event of generator.generateBlueprintStreaming(
+        session.state,
+        session.projectPath
+      )) {
+        // 调试日志
+        console.log('[Blueprint API] 发送事件:', event.type, event.type === 'text' ? event.text?.slice(0, 50) : event.message || '');
+
+        // 转发所有事件到前端
+        const data = `data: ${JSON.stringify(event)}\n\n`;
+        res.write(data);
+
+        // 显式刷新缓冲区（某些代理可能会缓冲数据）
+        if (typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+
+        // 如果是完成或错误事件，结束流
+        if (event.type === 'complete') {
+          console.log('[Blueprint API] 蓝图生成完成:', event.blueprint?.id);
+          // 保存蓝图到 store
+          if (event.blueprint) {
+            blueprintStore.save(event.blueprint);
+          }
+          // 清理会话
+          dialogManager.deleteSession(sessionId);
+          res.end();
+          return;
+        } else if (event.type === 'error') {
+          console.error('[Blueprint API] 生成错误:', event.error);
+          res.end();
+          return;
+        }
+      }
+
+      console.log('[Blueprint API] 流式生成结束');
+      res.end();
+    } catch (error: any) {
+      console.error('[Blueprint API] Chat 模式异常:', error);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    }
+    return;
+  }
+
+  // Progress 模式（原有逻辑）：使用事件监听
   const { planner } = session;
   const progressHandler = (data: { step: number; total: number; message: string }) => {
     res.write(`data: ${JSON.stringify({ type: 'progress', ...data })}\n\n`);
@@ -3397,12 +3885,22 @@ router.post('/dialog/:sessionId/generate-design', async (req: Request, res: Resp
     const projectName = session.projectPath?.split(/[/\\]/).pop() || '新项目';
 
     // 调用 Gemini 生成设计图
+    // 简化 techStack，只保留字符串类型的字段
+    const simpleTechStack: Record<string, string | string[] | undefined> = {};
+    if (state.techStack) {
+      for (const [key, value] of Object.entries(state.techStack)) {
+        if (typeof value === 'string' || Array.isArray(value)) {
+          simpleTechStack[key] = value;
+        }
+      }
+    }
+
     const result = await geminiImageService.generateDesign({
       projectName,
       projectDescription: state.collectedRequirements[0] || '',
       requirements: state.collectedRequirements,
       constraints: state.collectedConstraints,
-      techStack: state.techStack,
+      techStack: simpleTechStack,
       style: designStyle,
     });
 

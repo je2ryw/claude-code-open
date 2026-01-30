@@ -8,7 +8,7 @@ import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import { runWithCwd, runGeneratorWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
-import type { Message, ContentBlock, ToolDefinition, PermissionMode } from '../types/index.js';
+import type { Message, ContentBlock, ToolDefinition, PermissionMode, AnyContentBlock } from '../types/index.js';
 
 // ============================================================================
 // 官方 v2.1.2 AppState 类型定义 - 响应式状态管理
@@ -2096,7 +2096,11 @@ Guidelines:
     }
   }
 
-  async *processMessageStream(userInput: string): AsyncGenerator<{
+  /**
+   * 流式处理用户消息
+   * @param userInput 用户输入（文本或多模态内容数组）
+   */
+  async *processMessageStream(userInput: string | AnyContentBlock[]): AsyncGenerator<{
     type: 'text' | 'tool_start' | 'tool_end' | 'done' | 'interrupted';
     content?: string;
     toolName?: string;
@@ -2115,8 +2119,9 @@ Guidelines:
 
   /**
    * 内部流式消息处理逻辑（在工作目录上下文中执行）
+   * @param userInput 用户输入（文本或多模态内容数组）
    */
-  private async *processMessageStreamInternal(userInput: string): AsyncGenerator<{
+  private async *processMessageStreamInternal(userInput: string | AnyContentBlock[]): AsyncGenerator<{
     type: 'text' | 'tool_start' | 'tool_end' | 'done' | 'interrupted';
     content?: string;
     toolName?: string;

@@ -635,12 +635,19 @@ export class GitConcurrency extends EventEmitter {
         await this.execGit(`git checkout ${this.mainBranch}`);
       }
 
+      // 预防性处理：在合并前暂存未跟踪文件和本地修改
+      // 这是最彻底的方案，避免"untracked working tree files would be overwritten"错误
+      const stashResult = await this.stashLocalChanges();
+
       try {
         // 尝试合并
         const mergeResult = await this.execGit(`git merge "${branchName}" --no-edit`);
 
         if (mergeResult.success) {
-          // 合并成功，删除 worktree 和分支
+          // 合并成功，恢复暂存的文件（如果有）
+          await this.restoreStashedChanges(stashResult);
+
+          // 删除 worktree 和分支
           await this.deleteWorkerBranch(workerId);
 
           const result: MergeResult = {
@@ -653,6 +660,86 @@ export class GitConcurrency extends EventEmitter {
 
           this.emit('merge:success', result);
           return result;
+        }
+
+        // 检查是否是未跟踪文件会被覆盖的错误（理论上已被 stash 预防，但保留兜底逻辑）
+        if (mergeResult.stderr.includes('untracked working tree files would be overwritten')) {
+          // 提取会被覆盖的文件列表
+          const untrackedFiles = this.extractUntrackedFiles(mergeResult.stderr);
+
+          if (untrackedFiles.length > 0) {
+            console.log(`[Git] 检测到未跟踪文件会被覆盖: ${untrackedFiles.join(', ')}`);
+            console.log(`[Git] 将使用分支中的版本替换这些文件`);
+
+            // 备份并删除未跟踪文件（使用 Buffer 支持二进制文件）
+            const backups: Array<{ file: string; content: Buffer | null }> = [];
+            for (const file of untrackedFiles) {
+              try {
+                const fullPath = path.join(this.projectPath, file);
+                if (fs.existsSync(fullPath)) {
+                  try {
+                    const content = fs.readFileSync(fullPath); // 读取为 Buffer
+                    backups.push({ file, content });
+                  } catch {
+                    backups.push({ file, content: null });
+                  }
+                  fs.unlinkSync(fullPath);
+                  console.log(`[Git] 已临时删除未跟踪文件: ${file}`);
+                }
+              } catch (err) {
+                console.error(`[Git] 无法删除未跟踪文件 ${file}:`, err);
+              }
+            }
+
+            // 重试合并
+            const retryResult = await this.execGit(`git merge "${branchName}" --no-edit`);
+
+            if (retryResult.success) {
+              // 合并成功，恢复暂存的文件
+              await this.restoreStashedChanges(stashResult);
+
+              // 删除 worktree 和分支
+              await this.deleteWorkerBranch(workerId);
+
+              const result: MergeResult = {
+                success: true,
+                workerId,
+                branchName,
+                autoResolved: true,
+                needsHumanReview: false,
+              };
+
+              this.emit('merge:success', result);
+              return result;
+            }
+
+            // 如果重试仍然失败，恢复备份的文件
+            for (const backup of backups) {
+              if (backup.content !== null) {
+                try {
+                  const fullPath = path.join(this.projectPath, backup.file);
+                  // 确保父目录存在
+                  const dir = path.dirname(fullPath);
+                  if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                  }
+                  fs.writeFileSync(fullPath, backup.content);
+                  console.log(`[Git] 已恢复未跟踪文件: ${backup.file}`);
+                } catch (err) {
+                  console.error(`[Git] 无法恢复文件 ${backup.file}:`, err);
+                }
+              }
+            }
+
+            // 继续检查其他错误类型
+            if (!retryResult.stderr.includes('CONFLICT') && !retryResult.stdout.includes('CONFLICT')) {
+              // 恢复暂存的文件
+              await this.restoreStashedChanges(stashResult);
+              throw new Error(`合并失败: ${retryResult.stderr}`);
+            }
+
+            // 如果是冲突错误，继续到下面的冲突处理逻辑
+          }
         }
 
         // 检查是否有冲突
@@ -700,6 +787,8 @@ export class GitConcurrency extends EventEmitter {
         }
 
         // 其他合并错误
+        // 恢复暂存的文件
+        await this.restoreStashedChanges(stashResult);
         throw new Error(`合并失败: ${mergeResult.stderr}`);
       } finally {
         // 确保回到主分支
@@ -707,8 +796,114 @@ export class GitConcurrency extends EventEmitter {
         if (finalBranch !== this.mainBranch) {
           await this.execGit(`git checkout ${this.mainBranch}`);
         }
+        // 确保暂存的文件被恢复（幂等操作，多次调用安全）
+        await this.restoreStashedChanges(stashResult);
       }
     });
+  }
+
+  /**
+   * 暂存本地修改和未跟踪文件
+   * 使用 git stash 预防合并时的文件冲突
+   */
+  private async stashLocalChanges(): Promise<{ hasStash: boolean; stashRef: string | null }> {
+    try {
+      // 检查是否有需要暂存的内容
+      const statusResult = await this.execGit('git status --porcelain');
+      if (!statusResult.success || !statusResult.stdout.trim()) {
+        return { hasStash: false, stashRef: null };
+      }
+
+      // 使用 git stash push --include-untracked 暂存所有内容
+      const stashMessage = `swarm-merge-stash-${Date.now()}`;
+      const stashResult = await this.execGit(
+        `git stash push --include-untracked -m "${stashMessage}"`
+      );
+
+      if (stashResult.success && !stashResult.stdout.includes('No local changes')) {
+        console.log(`[Git] 已暂存本地修改: ${stashMessage}`);
+        return { hasStash: true, stashRef: stashMessage };
+      }
+
+      return { hasStash: false, stashRef: null };
+    } catch (err) {
+      console.warn(`[Git] 暂存本地修改失败:`, err);
+      return { hasStash: false, stashRef: null };
+    }
+  }
+
+  /**
+   * 恢复暂存的文件
+   * 幂等操作，多次调用安全
+   */
+  private async restoreStashedChanges(
+    stashResult: { hasStash: boolean; stashRef: string | null }
+  ): Promise<void> {
+    if (!stashResult.hasStash || !stashResult.stashRef) {
+      return;
+    }
+
+    try {
+      // 检查 stash 是否还存在
+      const listResult = await this.execGit('git stash list');
+      if (!listResult.success || !listResult.stdout.includes(stashResult.stashRef)) {
+        // stash 已经被恢复或不存在
+        stashResult.hasStash = false;
+        return;
+      }
+
+      // 尝试恢复 stash
+      const popResult = await this.execGit('git stash pop');
+      stashResult.hasStash = false; // 标记为已恢复
+
+      if (popResult.success) {
+        console.log(`[Git] 已恢复暂存的本地修改`);
+      } else if (popResult.stderr.includes('CONFLICT')) {
+        // 恢复时有冲突，保留合并后的版本，丢弃 stash
+        console.warn(`[Git] 恢复暂存内容时发现冲突，将使用合并后的版本`);
+        await this.execGit('git checkout --theirs .');
+        await this.execGit('git add -A');
+      }
+    } catch (err) {
+      console.warn(`[Git] 恢复暂存内容失败:`, err);
+      stashResult.hasStash = false;
+    }
+  }
+
+  /**
+   * 从错误信息中提取会被覆盖的未跟踪文件列表
+   * Git 错误格式:
+   * error: The following untracked working tree files would be overwritten by merge:
+   *         .gitignore
+   *         some/other/file.txt
+   * Please move or remove them before you merge.
+   */
+  private extractUntrackedFiles(stderr: string): string[] {
+    const files: string[] = [];
+    const lines = stderr.split('\n');
+
+    let inFileList = false;
+    for (const line of lines) {
+      if (line.includes('untracked working tree files would be overwritten')) {
+        inFileList = true;
+        continue;
+      }
+
+      if (inFileList) {
+        // 文件列表结束的标志
+        if (line.includes('Please move or remove') || line.includes('Aborting')) {
+          break;
+        }
+
+        // 提取文件名（通常有缩进）
+        const trimmed = line.trim();
+        if (trimmed.length > 0 && !trimmed.startsWith('error:')) {
+          files.push(trimmed);
+        }
+      }
+    }
+
+    return files;
   }
 
   /**

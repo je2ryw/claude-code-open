@@ -27,6 +27,7 @@ export interface DialogMessage {
   content: string;
   timestamp: string;
   phase: DialogPhase;
+  isStreaming?: boolean; // 是否正在流式输出
 }
 
 // 后端收集的数据
@@ -76,6 +77,7 @@ export function BlueprintRequirementDialog({
   const [confirming, setConfirming] = useState(false); // 确认中状态
   const [generationStep, setGenerationStep] = useState(0); // 生成进度步骤
   const [generationMessage, setGenerationMessage] = useState(''); // 真实的进度消息
+  const [streamingText, setStreamingText] = useState(''); // Chat 模式：流式文本内容
   const [error, setError] = useState<string | null>(null);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
 
@@ -83,6 +85,7 @@ export function BlueprintRequirementDialog({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const confirmCalledRef = useRef(false); // 防止重复调用 confirm API
+  const streamingContentRef = useRef<HTMLDivElement>(null); // 流式内容容器
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -92,6 +95,13 @@ export function BlueprintRequirementDialog({
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // 流式文本自动滚动到底部
+  useEffect(() => {
+    if (streamingContentRef.current && streamingText) {
+      streamingContentRef.current.scrollTop = streamingContentRef.current.scrollHeight;
+    }
+  }, [streamingText]);
 
   // 聚焦输入框
   useEffect(() => {
@@ -216,7 +226,7 @@ export function BlueprintRequirementDialog({
     '即将完成...',
   ];
 
-  // 确认生成蓝图（使用 SSE 接收真实进度）
+  // 确认生成蓝图（使用 SSE 接收流式文本 - Chat 模式）
   const confirmBlueprint = useCallback(async () => {
     if (!sessionId) return;
 
@@ -233,19 +243,35 @@ export function BlueprintRequirementDialog({
     }
     setError(null);
     setGenerationStep(0);
+    setStreamingText(''); // 重置流式文本
 
-    // 使用 SSE 接收流式进度
-    const eventSource = new EventSource(`/api/blueprint/dialog/${sessionId}/confirm/stream`);
+    // 使用 SSE 接收流式进度 + 流式文本（Chat 模式）
+    const eventSource = new EventSource(`/api/blueprint/dialog/${sessionId}/confirm/stream?mode=chat`);
+
+    console.log('[Blueprint] 开始 SSE 连接: confirm/stream?mode=chat');
 
     eventSource.onmessage = (event) => {
+      console.log('[Blueprint] 收到 SSE 消息:', event.data.slice(0, 100));
       try {
         const data = JSON.parse(event.data);
+        console.log('[Blueprint] 解析事件类型:', data.type);
 
-        if (data.type === 'progress') {
+        if (data.type === 'text') {
+          // Chat 模式：追加流式文本
+          console.log('[Blueprint] 收到 text 事件，长度:', data.text?.length || 0);
+          setStreamingText((prev) => {
+            const newText = prev + (data.text || '');
+            console.log('[Blueprint] 更新 streamingText，新长度:', newText.length);
+            return newText;
+          });
+        } else if (data.type === 'thinking') {
+          // AI 思考内容（可选显示）
+          console.log('[Blueprint] AI 思考:', data.thinking?.slice(0, 100));
+        } else if (data.type === 'progress') {
           // 更新真实进度
           setGenerationStep(data.step - 1); // 转换为 0-based index
           setGenerationMessage(data.message); // 设置真实的进度消息
-          console.log(`[Blueprint] 进度: ${data.step}/${data.total} - ${data.message}`);
+          console.log(`[Blueprint] 进度事件: ${data.step}/${data.total} - ${data.message}`);
         } else if (data.type === 'complete') {
           // 完成
           eventSource.close();
@@ -278,6 +304,7 @@ export function BlueprintRequirementDialog({
           eventSource.close();
           setConfirming(false);
           setGenerationStep(0);
+          setStreamingText(''); // 清空流式文本
           setError(data.error);
           confirmCalledRef.current = false; // 重置，允许用户重试
 
@@ -302,12 +329,13 @@ export function BlueprintRequirementDialog({
       eventSource.close();
       setConfirming(false);
       setGenerationStep(0);
+      setStreamingText(''); // 清空流式文本
       setError('连接中断，请重试');
       confirmCalledRef.current = false; // 重置，允许用户重试
     };
   }, [sessionId, confirming, onComplete]);
 
-  // 发送消息
+  // 发送消息（流式版本）
   const sendMessage = useCallback(async () => {
     if (!sessionId || !inputValue.trim() || loading || confirming) return;
 
@@ -340,61 +368,130 @@ export function BlueprintRequirementDialog({
         setLoading(true);
       }
       setError(null);
+      setStreamingText(''); // 重置流式文本
 
-      const res = await fetch(`/api/blueprint/dialog/${sessionId}/message`, {
+      // 使用流式 API
+      const res = await fetch(`/api/blueprint/dialog/${sessionId}/message/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: userMessage }),
       });
 
-      const data = await res.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '发送消息失败');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || '发送消息失败');
       }
 
-      const { phase, messages: msgs, collectedRequirements, collectedConstraints, techStack, isComplete } = data.data;
+      // 读取 SSE 流
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error('无法读取响应流');
+      }
 
-      // 更新阶段
-      const mappedPhase = mapPhase(phase);
-      setCurrentPhase(mappedPhase);
-      updateProgress(mappedPhase);
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedText = '';
+      let finalState: {
+        phase?: string;
+        isComplete?: boolean;
+        collectedRequirements?: string[];
+        collectedConstraints?: string[];
+        techStack?: Record<string, unknown>;
+      } | null = null;
 
-      // 更新收集的数据
-      setCollectedData((prev) => ({
-        ...prev,
-        requirements: collectedRequirements || prev.requirements,
-        constraints: collectedConstraints || prev.constraints,
-        techStack: techStack || prev.techStack,
-      }));
+      // 创建一个临时的助手消息 ID
+      const assistantMsgId = `assistant-${Date.now()}`;
 
-      // 添加助手回复
-      if (msgs && msgs.length > 0) {
-        const assistantMsgs = msgs.filter((m: { role: string }) => m.role === 'assistant');
-        if (assistantMsgs.length > 0) {
-          const lastAssistantMsg = assistantMsgs[assistantMsgs.length - 1];
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              role: 'assistant',
-              content: lastAssistantMsg.content,
-              timestamp: new Date().toISOString(),
-              phase: mappedPhase,
-            },
-          ]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 解析 SSE 数据
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留未完成的行
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'thinking') {
+                // AI 正在思考（可选：显示思考状态）
+                console.log('[Blueprint] AI 思考中:', data.message);
+              } else if (data.type === 'text') {
+                // 流式文本片段
+                accumulatedText += data.text || '';
+                setStreamingText(accumulatedText);
+
+                // 更新消息列表中的助手消息
+                setMessages((prev) => {
+                  const existing = prev.find((m) => m.id === assistantMsgId);
+                  if (existing) {
+                    return prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, content: accumulatedText } : m
+                    );
+                  } else {
+                    return [
+                      ...prev,
+                      {
+                        id: assistantMsgId,
+                        role: 'assistant' as const,
+                        content: accumulatedText,
+                        timestamp: new Date().toISOString(),
+                        phase: currentPhase,
+                        isStreaming: true, // 标记为流式消息
+                      },
+                    ];
+                  }
+                });
+              } else if (data.type === 'state') {
+                // 最终状态更新
+                finalState = data;
+              } else if (data.type === 'done') {
+                // 完成
+                console.log('[Blueprint] 流式消息完成');
+              } else if (data.type === 'error') {
+                throw new Error(data.error || '处理消息失败');
+              }
+            } catch (parseError) {
+              console.error('[Blueprint] 解析 SSE 数据失败:', parseError);
+            }
+          }
         }
       }
 
-      // 如果对话完成（后端返回 done 状态且 isComplete），调用 confirm API 获取蓝图
-      if (isComplete && mappedPhase === 'complete') {
-        // 保持 confirming 状态，继续调用 confirm API
-        await confirmBlueprint();
+      // 流结束后，移除流式标记
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? { ...m, isStreaming: false } : m))
+      );
+
+      // 应用最终状态
+      if (finalState) {
+        const mappedPhase = mapPhase(finalState.phase || currentPhase);
+        setCurrentPhase(mappedPhase);
+        updateProgress(mappedPhase);
+
+        setCollectedData((prev) => ({
+          ...prev,
+          requirements: finalState!.collectedRequirements || prev.requirements,
+          constraints: finalState!.collectedConstraints || prev.constraints,
+          techStack: finalState!.techStack || prev.techStack,
+        }));
+
+        // 如果对话完成，调用 confirm API 获取蓝图
+        if (finalState.isComplete && mappedPhase === 'complete') {
+          await confirmBlueprint();
+        }
       }
+
+      // 清空流式文本状态
+      setStreamingText('');
     } catch (err) {
       setError(err instanceof Error ? err.message : '发送消息失败');
-      // 出错时重置所有加载状态
       setConfirming(false);
+      setStreamingText('');
     } finally {
       setLoading(false);
     }
@@ -521,17 +618,30 @@ export function BlueprintRequirementDialog({
                   <div className={styles.messageRole}>AI</div>
                   <div className={styles.messageContent}>
                     {confirming ? (
-                      <div className={styles.generationProgress}>
-                        <div className={styles.generationSpinner}>
-                          <span className={styles.spinnerIcon}>⚙️</span>
+                      <div className={styles.streamingChat}>
+                        {/* 流式文本内容 */}
+                        <div className={styles.streamingContent} ref={streamingContentRef}>
+                          {streamingText ? (
+                            <div className={styles.streamingMarkdown}>
+                              {streamingText.split('\n').map((line, i) => (
+                                <p key={i}>{line || '\u00A0'}</p>
+                              ))}
+                              <span className={styles.streamingCursor}>▌</span>
+                            </div>
+                          ) : (
+                            <div className={styles.streamingPlaceholder}>
+                              <span className={styles.spinnerIcon}>⚙️</span>
+                              <span>{generationMessage || generationSteps[generationStep]}</span>
+                            </div>
+                          )}
                         </div>
-                        <div className={styles.generationText}>
-                          <span className={styles.generationStep}>
-                            {/* 优先使用真实进度消息，否则使用预设步骤 */}
-                            {generationMessage || generationSteps[generationStep]}
+                        {/* 进度指示 */}
+                        <div className={styles.streamingFooter}>
+                          <span className={styles.streamingStep}>
+                            步骤 {generationStep + 1}/5
                           </span>
-                          <span className={styles.generationHint}>
-                            步骤 {generationStep + 1}/5 - AI 正在努力工作中...
+                          <span className={styles.streamingStatus}>
+                            {generationMessage || 'AI 正在思考...'}
                           </span>
                         </div>
                       </div>
@@ -560,14 +670,21 @@ export function BlueprintRequirementDialog({
               >
                 <div className={styles.messageRole}>{msg.role === 'user' ? '你' : 'AI'}</div>
                 <div className={styles.messageContent}>
-                  {msg.content.split('\n').map((line, i) => (
-                    <p key={i}>{line || '\u00A0'}</p>
+                  {msg.content.split('\n').map((line, i, arr) => (
+                    <p key={i}>
+                      {line || '\u00A0'}
+                      {/* 为流式消息的最后一行添加光标 */}
+                      {msg.isStreaming && i === arr.length - 1 && (
+                        <span className={styles.streamingCursor}>▌</span>
+                      )}
+                    </p>
                   ))}
                 </div>
               </div>
             ))}
 
-            {loading && (
+            {/* 只在非流式消息且正在加载时显示打字动画 */}
+            {loading && !messages.some((m) => m.isStreaming) && (
               <div className={`${styles.message} ${styles.assistantMessage}`}>
                 <div className={styles.messageRole}>AI</div>
                 <div className={styles.messageContent}>

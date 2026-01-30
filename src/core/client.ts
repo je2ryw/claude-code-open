@@ -569,6 +569,7 @@ export class ClaudeClient {
     options?: {
       enableThinking?: boolean;
       thinkingBudget?: number;
+      toolChoice?: { type: 'auto' } | { type: 'any' } | { type: 'tool'; name: string };
     }
   ): Promise<{
     content: ContentBlock[];
@@ -616,6 +617,8 @@ export class ClaudeClient {
             content: m.content,
           })),
           tools: apiTools,
+          // 添加 tool_choice 参数（强制 AI 使用工具）
+          ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),
           // 添加 betas 参数（官方 Claude Code 的关键）
           ...(betas.length > 0 ? { betas } : {}),
           // 添加 metadata（官方 Claude Code 的 Ja 函数）
@@ -708,6 +711,7 @@ export class ClaudeClient {
       enableThinking?: boolean;
       thinkingBudget?: number;
       signal?: AbortSignal;
+      toolChoice?: { type: 'auto' } | { type: 'any' } | { type: 'tool'; name: string };
     }
   ): AsyncGenerator<{
     type: 'text' | 'thinking' | 'tool_use_start' | 'tool_use_delta' | 'server_tool_use_start' | 'web_search_result' | 'stop' | 'usage' | 'error' | 'response_headers';
@@ -780,6 +784,8 @@ export class ClaudeClient {
           content: m.content,
         })) as any,
         tools: apiTools as any,
+        // 添加 toolChoice 支持（强制 AI 调用特定工具）
+        ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),
         // 添加 betas 参数（官方 Claude Code 的关键）
         ...(betas.length > 0 ? { betas } : {}),
         // 添加 metadata（官方 Claude Code 的 Ja 函数）

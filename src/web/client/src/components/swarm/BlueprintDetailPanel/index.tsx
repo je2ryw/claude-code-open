@@ -50,6 +50,19 @@ interface NonFunctionalRequirement {
 }
 
 /**
+ * UI 设计图类型
+ */
+interface DesignImage {
+  id: string;
+  name: string;
+  description?: string;
+  imageData: string;  // base64 data URL
+  style: 'modern' | 'minimal' | 'corporate' | 'creative';
+  createdAt: string;
+  isAccepted?: boolean;  // 是否被接受为验收标准
+}
+
+/**
  * 蓝图详情数据类型
  */
 interface BlueprintDetail {
@@ -61,6 +74,7 @@ interface BlueprintDetail {
   businessProcesses: BusinessProcess[];
   modules: SystemModule[];
   nfrs: NonFunctionalRequirement[];
+  designImages?: DesignImage[];  // UI 设计图
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
@@ -103,7 +117,11 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
     toBeProcesses: true,
     modules: true,
     nfrs: true,
+    designImages: true,  // UI 设计图默认展开
   });
+
+  // 设计图预览模态框状态
+  const [previewImage, setPreviewImage] = useState<DesignImage | null>(null);
 
   // 获取蓝图详情
   useEffect(() => {
@@ -259,6 +277,14 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
     maintainability: '可维护性',
     usability: '可用性',
     other: '其他',
+  };
+
+  // 设计风格映射
+  const styleTexts: Record<string, string> = {
+    modern: '现代',
+    minimal: '极简',
+    corporate: '企业',
+    creative: '创意',
   };
 
   // 渲染加载状态
@@ -510,7 +536,102 @@ export const BlueprintDetailPanel: React.FC<BlueprintDetailPanelProps> = ({
             </section>
           </FadeIn>
         )}
+
+        {/* UI 设计图 */}
+        {blueprint.designImages && blueprint.designImages.length > 0 && (
+          <FadeIn delay={500}>
+            <section className={styles.section}>
+              <button
+                className={styles.sectionHeader}
+                onClick={() => toggleSection('designImages')}
+              >
+                <span className={styles.sectionIcon}>🎨</span>
+                <h3 className={styles.sectionTitle}>
+                  UI 设计图 ({blueprint.designImages.length})
+                </h3>
+                <span className={styles.expandIcon}>
+                  {expandedSections.designImages ? '▼' : '▶'}
+                </span>
+              </button>
+              {expandedSections.designImages && (
+                <div className={styles.sectionContent}>
+                  <div className={styles.designImageGrid}>
+                    {blueprint.designImages.map(img => (
+                      <div
+                        key={img.id}
+                        className={`${styles.designImageCard} ${img.isAccepted ? styles.accepted : ''}`}
+                        onClick={() => setPreviewImage(img)}
+                      >
+                        <div className={styles.designImageWrapper}>
+                          <img
+                            src={img.imageData}
+                            alt={img.name}
+                            className={styles.designImageThumb}
+                          />
+                          {img.isAccepted && (
+                            <div className={styles.acceptedBadge}>
+                              ✓ 验收标准
+                            </div>
+                          )}
+                        </div>
+                        <div className={styles.designImageInfo}>
+                          <h4 className={styles.designImageName}>{img.name}</h4>
+                          <div className={styles.designImageMeta}>
+                            <span className={styles.designImageStyle}>
+                              {styleTexts[img.style] || img.style}
+                            </span>
+                            <span className={styles.designImageDate}>
+                              {new Date(img.createdAt).toLocaleDateString('zh-CN')}
+                            </span>
+                          </div>
+                          {img.description && (
+                            <p className={styles.designImageDesc}>{img.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          </FadeIn>
+        )}
       </div>
+
+      {/* 设计图预览模态框 */}
+      {previewImage && (
+        <div className={styles.imageModal} onClick={() => setPreviewImage(null)}>
+          <div className={styles.imageModalContent} onClick={e => e.stopPropagation()}>
+            <button
+              className={styles.imageModalClose}
+              onClick={() => setPreviewImage(null)}
+            >
+              ✕
+            </button>
+            <img
+              src={previewImage.imageData}
+              alt={previewImage.name}
+              className={styles.imageModalImage}
+            />
+            <div className={styles.imageModalInfo}>
+              <h3 className={styles.imageModalTitle}>{previewImage.name}</h3>
+              <div className={styles.imageModalMeta}>
+                <span className={styles.imageModalStyle}>
+                  风格: {styleTexts[previewImage.style] || previewImage.style}
+                </span>
+                {previewImage.isAccepted && (
+                  <span className={styles.imageModalAccepted}>
+                    ✓ 已设为验收标准
+                  </span>
+                )}
+              </div>
+              {previewImage.description && (
+                <p className={styles.imageModalDesc}>{previewImage.description}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 底部操作按钮 */}
       <div className={styles.footer}>
