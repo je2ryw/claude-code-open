@@ -2356,6 +2356,13 @@ Guidelines:
         for (const newMsg of allNewMessages) {
           this.session.addMessage(newMsg);
         }
+      } else if (this.options.isSubAgent && turns === 1) {
+        // v3.4: Worker 子任务模式下，第一轮没有工具调用时不直接退出
+        // 模型可能只是在"思考"或"规划"，追加提醒让它使用工具执行
+        this.session.addMessage({
+          role: 'user',
+          content: '你必须使用工具来完成任务（如 Read、Write、Edit、Bash 等），不能只输出文本。请立即开始使用工具执行任务。',
+        });
       } else {
         break;
       }

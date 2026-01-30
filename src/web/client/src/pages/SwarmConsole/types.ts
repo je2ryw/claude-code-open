@@ -305,6 +305,8 @@ export type SwarmServerMessage =
   | { type: 'swarm:worker_log'; payload: WorkerLogPayload }
   // v2.1 新增：Worker 流式输出（思考、文本、工具调用）
   | { type: 'swarm:worker_stream'; payload: WorkerStreamPayload }
+  // v3.4 新增：验收测试状态更新
+  | { type: 'swarm:verification_update'; payload: VerificationUpdatePayload }
   | { type: 'pong' };
 
 // ============= v2.1 新增：Worker 日志类型 =============
@@ -446,6 +448,9 @@ export interface SwarmState {
 
   // v2.1: 任务流式内容（实时显示思考和输出，按任务 ID 存储）
   taskStreams: Record<string, TaskStreamContent>;
+
+  // v3.4: 验收测试状态
+  verification: VerificationState;
 }
 
 /**
@@ -495,4 +500,31 @@ export interface UseSwarmStateReturn {
   refresh: () => void;
   // v2.1: 任务重试
   retryTask: (blueprintId: string, taskId: string) => void;
+}
+
+// ============= v3.4 新增：验收测试类型 =============
+
+export type VerificationStatus = 'idle' | 'checking_env' | 'running_tests' | 'fixing' | 'passed' | 'failed';
+
+export interface VerificationState {
+  status: VerificationStatus;
+  result?: {
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    testOutput: string;
+    failures: { name: string; error: string }[];
+    fixAttempts: { description: string; success: boolean }[];
+    envIssues: string[];
+    startedAt: string;
+    completedAt?: string;
+  };
+}
+
+export interface VerificationUpdatePayload {
+  blueprintId: string;
+  status: VerificationStatus;
+  result?: VerificationState['result'];
+  error?: string;
 }

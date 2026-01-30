@@ -1800,3 +1800,174 @@
   opacity: 0.7;
   margin-top: 4px;
 }
+
+/* ============================================================================
+ * v3.4: 验收测试面板
+ * ============================================================================ */
+
+.verificationPanel {
+  margin-top: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bg-secondary);
+}
+
+.verificationHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.verificationIcon {
+  font-size: 20px;
+}
+
+.verificationTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.verificationStatus {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.verify_idle {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+}
+
+.verify_checking_env,
+.verify_running_tests,
+.verify_fixing {
+  background: rgba(33, 150, 243, 0.15);
+  color: #42a5f5;
+}
+
+.verify_passed {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+}
+
+.verify_failed {
+  background: rgba(244, 67, 54, 0.15);
+  color: #ef5350;
+}
+
+.verificationAction {
+  text-align: center;
+  padding: 12px 0;
+}
+
+.verificationButton {
+  padding: 10px 24px;
+  border-radius: 6px;
+  border: none;
+  background: linear-gradient(135deg, #42a5f5, #1e88e5);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.verificationButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.verificationButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.verificationHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.verificationProgress {
+  padding: 8px 0;
+}
+
+.verificationProgressBar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.verificationProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #42a5f5, #1e88e5);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.verificationProgressText {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.verificationResult {
+  padding: 8px 0;
+}
+
+.verificationStats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.verificationStatItem {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.verificationStatItem[data-type="passed"] { color: #66bb6a; }
+.verificationStatItem[data-type="failed"] { color: #ef5350; }
+.verificationStatItem[data-type="skipped"] { color: var(--text-muted); }
+
+.verificationFailures,
+.verificationFixes {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.verificationFailuresTitle,
+.verificationFixesTitle {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+}
+
+.verificationFailureItem {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.failureName {
+  color: #ef5350;
+  display: block;
+}
+
+.failureError {
+  color: var(--text-muted);
+  font-size: 11px;
+  display: block;
+  margin-top: 2px;
+}
+
+.verificationFixItem {
+  padding: 2px 0;
+}

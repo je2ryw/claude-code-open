@@ -14,6 +14,7 @@ import type {
   GitBranchStatus,
   CostEstimate,
   PlanDecision,
+  VerificationStatus,
 } from './types';
 
 // 获取 WebSocket URL
@@ -373,6 +374,20 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       alert('恢复执行失败: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsRecovering(false);
+    }
+  };
+
+  // v3.4: 启动验收测试
+  const [isStartingVerification, setIsStartingVerification] = useState(false);
+  const handleStartVerification = async () => {
+    if (!selectedBlueprintId || isStartingVerification) return;
+    setIsStartingVerification(true);
+    try {
+      await coordinatorApi.startVerification(selectedBlueprintId);
+    } catch (err) {
+      alert('启动验收测试失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsStartingVerification(false);
     }
   };
 
@@ -738,7 +753,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                                      task.type === 'test' ? '🧪' :
                                      task.type === 'config' ? '⚙️' :
                                      task.type === 'refactor' ? '🔧' :
-                                     task.type === 'docs' ? '📄' : '🔗'}
+                                     task.type === 'docs' ? '📄' :
+                                     task.type === 'verify' ? '🔬' : '🔗'}
                                     {task.type}
                                   </span>
                                   <span className={`${styles.taskComplexity} ${styles[task.complexity]}`}>
@@ -772,6 +788,117 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                       </div>
                     </div>
                   ))}
+
+                  {/* v3.4: 验收测试面板 - 所有任务完成后显示 */}
+                  {executionPlan.status === 'completed' && (
+                    <div className={styles.verificationPanel}>
+                      <div className={styles.verificationHeader}>
+                        <span className={styles.verificationIcon}>
+                          {state.verification.status === 'idle' ? '🧪' :
+                           state.verification.status === 'checking_env' ? '🔍' :
+                           state.verification.status === 'running_tests' ? '🔄' :
+                           state.verification.status === 'fixing' ? '🔧' :
+                           state.verification.status === 'passed' ? '✅' : '❌'}
+                        </span>
+                        <span className={styles.verificationTitle}>验收测试</span>
+                        <span className={`${styles.verificationStatus} ${styles[`verify_${state.verification.status}`]}`}>
+                          {state.verification.status === 'idle' ? '等待运行' :
+                           state.verification.status === 'checking_env' ? '检查环境...' :
+                           state.verification.status === 'running_tests' ? '运行测试中...' :
+                           state.verification.status === 'fixing' ? 'AI 修复中...' :
+                           state.verification.status === 'passed' ? '全部通过' : '测试失败'}
+                        </span>
+                      </div>
+
+                      {/* 未开始：显示启动按钮 */}
+                      {state.verification.status === 'idle' && (
+                        <div className={styles.verificationAction}>
+                          <button
+                            className={styles.verificationButton}
+                            onClick={handleStartVerification}
+                            disabled={isStartingVerification}
+                          >
+                            {isStartingVerification ? '启动中...' : '🧪 运行验收测试'}
+                          </button>
+                          <div className={styles.verificationHint}>
+                            AI 将自动检查环境、运行测试、失败时尝试修复
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 进行中：显示进度 */}
+                      {(state.verification.status === 'checking_env' ||
+                        state.verification.status === 'running_tests' ||
+                        state.verification.status === 'fixing') && (
+                        <div className={styles.verificationProgress}>
+                          <div className={styles.verificationProgressBar}>
+                            <div
+                              className={styles.verificationProgressFill}
+                              style={{
+                                width: state.verification.status === 'checking_env' ? '20%' :
+                                       state.verification.status === 'running_tests' ? '60%' :
+                                       '80%',
+                              }}
+                            />
+                          </div>
+                          <div className={styles.verificationProgressText}>
+                            {state.verification.status === 'checking_env' && '正在分析项目依赖，检查数据库、Docker 等环境...'}
+                            {state.verification.status === 'running_tests' && '正在执行测试命令...'}
+                            {state.verification.status === 'fixing' && 'AI 正在分析失败原因并尝试修复...'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 完成：显示结果 */}
+                      {(state.verification.status === 'passed' || state.verification.status === 'failed') && state.verification.result && (
+                        <div className={styles.verificationResult}>
+                          <div className={styles.verificationStats}>
+                            <span className={styles.verificationStatItem} data-type="passed">
+                              ✅ {state.verification.result.passedTests} 通过
+                            </span>
+                            <span className={styles.verificationStatItem} data-type="failed">
+                              ❌ {state.verification.result.failedTests} 失败
+                            </span>
+                            <span className={styles.verificationStatItem} data-type="skipped">
+                              ⏭ {state.verification.result.skippedTests} 跳过
+                            </span>
+                          </div>
+                          {state.verification.result.failures.length > 0 && (
+                            <div className={styles.verificationFailures}>
+                              <div className={styles.verificationFailuresTitle}>失败详情：</div>
+                              {state.verification.result.failures.map((f, i) => (
+                                <div key={i} className={styles.verificationFailureItem}>
+                                  <span className={styles.failureName}>{f.name}</span>
+                                  <span className={styles.failureError}>{f.error}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {state.verification.result.fixAttempts.length > 0 && (
+                            <div className={styles.verificationFixes}>
+                              <div className={styles.verificationFixesTitle}>修复尝试：</div>
+                              {state.verification.result.fixAttempts.map((fix, i) => (
+                                <div key={i} className={styles.verificationFixItem}>
+                                  {fix.success ? '✅' : '❌'} {fix.description}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* 失败时可以重新运行 */}
+                          {state.verification.status === 'failed' && (
+                            <button
+                              className={styles.verificationButton}
+                              onClick={handleStartVerification}
+                              disabled={isStartingVerification}
+                              style={{ marginTop: '12px' }}
+                            >
+                              {isStartingVerification ? '启动中...' : '🔄 重新运行验收测试'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </FadeIn>
             )}

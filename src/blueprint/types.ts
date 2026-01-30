@@ -234,6 +234,38 @@ export interface TechStack {
   testFramework?: TestFrameworkType;
   buildTool?: string;
   additionalTools?: string[];
+  // v3.3: 测试环境配置
+  testEnvironment?: TestEnvironmentConfig;
+}
+
+/**
+ * v3.3: 测试环境配置
+ * 定义如何连接测试数据库、外部服务等
+ */
+export interface TestEnvironmentConfig {
+  // 数据库配置
+  database?: {
+    type: 'sqlite-memory' | 'docker' | 'remote' | 'none';
+    // Docker 模式：使用 docker-compose 启动
+    dockerComposePath?: string;  // 如 './docker-compose.test.yml'
+    // 远程模式：使用远程测试数据库
+    connectionString?: string;   // 如 'postgresql://test:test@localhost:5433/testdb'
+    // 环境变量名：从环境变量读取连接字符串
+    envVar?: string;             // 如 'TEST_DATABASE_URL'
+  };
+  // 外部服务配置
+  externalServices?: {
+    // Mock 服务器地址（用于 mock 策略）
+    mockServerUrl?: string;      // 如 'http://localhost:3001'
+    // VCR 录制文件目录
+    vcrCassettesDir?: string;    // 如 './tests/fixtures/cassettes'
+  };
+  // 环境变量文件
+  envFile?: string;               // 如 '.env.test'
+  // 启动前命令（如启动 Docker 容器）
+  setupCommand?: string;          // 如 'docker-compose -f docker-compose.test.yml up -d'
+  // 清理命令
+  teardownCommand?: string;       // 如 'docker-compose -f docker-compose.test.yml down'
 }
 
 // ============================================================================
@@ -276,7 +308,8 @@ export type TaskType =
   | 'test'      // 写测试
   | 'refactor'  // 重构
   | 'docs'      // 文档
-  | 'integrate';// 集成
+  | 'integrate' // 集成
+  | 'verify';   // 验收测试（蜂群完成后的端到端验证）
 
 /**
  * 任务复杂度
@@ -292,6 +325,18 @@ export type TaskStatus =
   | 'completed'   // 完成
   | 'failed'      // 失败
   | 'skipped';    // 跳过
+
+/**
+ * 测试策略类型
+ * v3.3: 支持不同的测试方式
+ */
+export type TestStrategy =
+  | 'unit'        // 纯单元测试，使用 mock 隔离依赖
+  | 'integration' // 集成测试，需要测试数据库（如 SQLite 内存）
+  | 'e2e'         // 端到端测试，需要完整环境
+  | 'mock'        // 使用 mock/stub 替代外部 API
+  | 'vcr'         // 录制回放模式（HTTP 请求录制）
+  | 'skip';       // 跳过测试（配置类/文档类）
 
 /**
  * 智能任务
@@ -318,6 +363,7 @@ export interface SmartTask {
 
   // AI决策
   needsTest: boolean;        // AI判断是否需要测试
+  testStrategy?: TestStrategy; // v3.3: 测试策略
   estimatedMinutes: number;  // 预估时间
 
   // 状态
@@ -668,7 +714,11 @@ export type SwarmEventType =
   | 'merge:success'
   | 'merge:conflict'
   // 进度事件
-  | 'progress:update';
+  | 'progress:update'
+  // v3.4 验收测试事件
+  | 'verification:started'      // 验收测试开始
+  | 'verification:progress'     // 验收进度更新（环境检查、测试运行、修复等）
+  | 'verification:completed';   // 验收测试完成
 
 /**
  * 蜂群事件
@@ -948,4 +998,43 @@ export interface ExecutionState {
 
   // 版本信息（用于兼容性检查）
   version: string;
+}
+
+// ============================================================================
+// v3.4: 验收测试类型
+// ============================================================================
+
+/**
+ * 验收测试状态
+ */
+export type VerificationStatus =
+  | 'idle'           // 未开始
+  | 'checking_env'   // 检查环境依赖
+  | 'running_tests'  // 运行测试
+  | 'fixing'         // AI 自动修复中
+  | 'passed'         // 全部通过
+  | 'failed';        // 最终失败
+
+/**
+ * 验收测试结果
+ * AI Worker 执行完毕后返回的结构化结果
+ */
+export interface VerificationResult {
+  status: VerificationStatus;
+  // 测试统计
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  // 测试输出（原始终端输出）
+  testOutput: string;
+  // 失败的测试详情
+  failures: { name: string; error: string }[];
+  // AI 修复尝试记录
+  fixAttempts: { description: string; success: boolean }[];
+  // 环境问题（如果有）
+  envIssues: string[];
+  // 时间
+  startedAt: string;
+  completedAt?: string;
 }

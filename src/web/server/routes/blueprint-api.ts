@@ -32,6 +32,8 @@ import {
   type TaskResult,
   type SerializableExecutionPlan,
   type SerializableSmartTask,
+  type VerificationResult,
+  type VerificationStatus,
   // 智能规划器
   SmartPlanner,
   smartPlanner,
@@ -50,6 +52,8 @@ import {
   ErrorHandler,
   createErrorHandler,
 } from '../../../blueprint/index.js';
+
+import { TaskContextCollector, createContextCollector } from '../../../blueprint/context-collector.js';
 
 // ============================================================================
 // 分析缓存（简单内存实现）
@@ -391,6 +395,12 @@ interface ExecutionSession {
   result?: ExecutionResult;
   startedAt: Date;
   completedAt?: Date;
+  // v3.4: 验收测试状态
+  verification?: {
+    status: VerificationStatus;
+    result?: VerificationResult;
+    taskId?: string;  // 验收任务的 ID
+  };
 }
 
 /**
@@ -403,10 +413,13 @@ class RealTaskExecutor implements TaskExecutor {
   private workerPool: Map<string, AutonomousWorkerExecutor> = new Map();
   // v2.1: 跟踪每个 Worker 当前执行的任务 ID（用于正确的日志路由）
   private currentTaskMap: Map<string, SmartTask> = new Map();
+  // v3.4: 智能上下文收集器
+  private contextCollector: TaskContextCollector;
 
   constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
     this.gitConcurrency = gitConcurrency;
     this.blueprint = blueprint;
+    this.contextCollector = createContextCollector(blueprint.projectPath, blueprint);
   }
 
   async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
@@ -639,10 +652,23 @@ class RealTaskExecutor implements TaskExecutor {
       const workerWorkingDir = this.gitConcurrency.getWorkerWorkingDir(workerId);
       console.log(`[RealTaskExecutor] 创建分支: ${branchName}, 工作目录: ${workerWorkingDir}`);
 
+      // v3.4: 收集任务上下文（相关代码 + 依赖任务产出）
+      const effectiveProjectPath = workerWorkingDir || this.blueprint.projectPath;
+      let collectedContext: { relatedFiles: Array<{ path: string; content: string }>; dependencyOutputs: any[] } = {
+        relatedFiles: [],
+        dependencyOutputs: [],
+      };
+      try {
+        collectedContext = await this.contextCollector.collectContext(task);
+        console.log(`[RealTaskExecutor] 上下文收集完成: ${collectedContext.relatedFiles.length} 个相关文件, ${collectedContext.dependencyOutputs.length} 个依赖产出`);
+      } catch (e: any) {
+        console.warn(`[RealTaskExecutor] 上下文收集失败(不影响执行): ${e.message}`);
+      }
+
       // 构建 Worker 上下文
       // 使用 worktree 路径作为工作目录，实现真正的并发隔离
       const context = {
-        projectPath: workerWorkingDir || this.blueprint.projectPath,
+        projectPath: effectiveProjectPath,
         techStack: this.blueprint.techStack || {
           language: 'typescript' as const,
           packageManager: 'npm' as const,
@@ -663,10 +689,18 @@ class RealTaskExecutor implements TaskExecutor {
           costWarningThreshold: 0.8,
         },
         constraints: this.blueprint.constraints,
+        // v3.4: 注入上下文
+        relatedFiles: collectedContext.relatedFiles,
+        dependencyOutputs: collectedContext.dependencyOutputs,
       };
 
       // 执行任务
       const result = await worker.execute(task, context);
+
+      // v3.4: 记录任务产出（供后续依赖任务使用）
+      if (result.success) {
+        this.contextCollector.recordTaskOutput(task.id, result);
+      }
 
       // 如果任务成功，提交并合并分支
       if (result.success && Array.isArray(result.changes) && result.changes.length > 0) {
@@ -1446,6 +1480,275 @@ class ExecutionManager {
       return { success: false, error: error.message || '重试任务时发生错误' };
     }
   }
+
+  /**
+   * v3.4: 启动验收测试
+   * 创建一个 verify 类型的 SmartTask，用现有 AutonomousWorkerExecutor 执行
+   */
+  async startVerification(blueprintId: string): Promise<{ success: boolean; error?: string }> {
+    const session = this.getSessionByBlueprint(blueprintId);
+    if (!session) {
+      return { success: false, error: '找不到该蓝图的执行会话' };
+    }
+
+    // 验证蜂群已执行完毕
+    if (!session.completedAt) {
+      return { success: false, error: '蜂群尚未执行完毕，请等待执行完成后再运行验收测试' };
+    }
+
+    // 防止重复触发
+    if (session.verification?.status === 'checking_env' ||
+        session.verification?.status === 'running_tests' ||
+        session.verification?.status === 'fixing') {
+      return { success: false, error: '验收测试正在进行中' };
+    }
+
+    const blueprint = blueprintStore.get(blueprintId);
+    if (!blueprint) {
+      return { success: false, error: '蓝图不存在' };
+    }
+
+    // 初始化验收状态
+    session.verification = { status: 'checking_env' };
+
+    // 发送验收开始事件
+    executionEventEmitter.emit('verification:update', {
+      blueprintId,
+      status: 'checking_env',
+    });
+
+    // 构建验收任务的描述（包含测试环境信息）
+    const testEnvConfig = blueprint.techStack?.testEnvironment;
+    let envDescription = '';
+    if (testEnvConfig) {
+      const parts: string[] = [];
+      if (testEnvConfig.database) {
+        parts.push(`数据库配置: type=${testEnvConfig.database.type}${testEnvConfig.database.dockerComposePath ? `, docker-compose=${testEnvConfig.database.dockerComposePath}` : ''}${testEnvConfig.database.envVar ? `, 环境变量=${testEnvConfig.database.envVar}` : ''}`);
+      }
+      if (testEnvConfig.externalServices) {
+        parts.push(`外部服务: mockServerUrl=${testEnvConfig.externalServices.mockServerUrl || '无'}`);
+      }
+      if (testEnvConfig.envFile) {
+        parts.push(`环境变量文件: ${testEnvConfig.envFile}`);
+      }
+      if (testEnvConfig.setupCommand) {
+        parts.push(`环境启动命令: ${testEnvConfig.setupCommand}`);
+      }
+      if (testEnvConfig.teardownCommand) {
+        parts.push(`环境清理命令: ${testEnvConfig.teardownCommand}`);
+      }
+      if (parts.length > 0) {
+        envDescription = `\n\n已知的测试环境配置：\n${parts.join('\n')}`;
+      }
+    }
+
+    // 创建验收 SmartTask
+    const verifyTaskId = `verify-${blueprintId}-${Date.now()}`;
+    const verifyTask: SmartTask = {
+      id: verifyTaskId,
+      name: '验收测试：运行全部测试并验证',
+      description: `你是一个验收测试工程师。蜂群已完成所有开发任务，现在需要你验证代码是否正确。
+
+请按以下步骤执行：
+
+1. **分析项目**：读取项目配置文件（package.json、pyproject.toml 等），确定测试框架和测试命令
+2. **检查环境依赖**：
+   - 查看项目是否需要数据库（检查 .env、docker-compose.yml、数据库相关配置）
+   - 查看是否需要外部服务
+   - 如果有 docker-compose.test.yml 或类似文件，运行 docker-compose up -d 启动服务
+   - 如果有 .env.test，确保环境变量已加载
+3. **运行测试**：执行项目的测试命令（npm test、pytest 等）
+4. **分析结果**：
+   - 如果全部通过，报告成功
+   - 如果有失败，分析失败原因
+5. **自动修复**（如果测试失败）：
+   - 分析失败的测试和相关代码
+   - 修复代码中的问题
+   - 重新运行测试
+   - 最多尝试修复 3 轮${envDescription}
+
+重要：你必须实际运行测试命令，不要只是读代码。最终请在完成时明确报告测试结果统计（通过/失败/跳过数量）。`,
+      type: 'verify',
+      complexity: 'moderate',
+      blueprintId,
+      files: [],
+      dependencies: [],
+      needsTest: true,
+      testStrategy: 'e2e',
+      estimatedMinutes: 10,
+      status: 'running',
+    };
+
+    session.verification.taskId = verifyTaskId;
+
+    // 使用现有的 AutonomousWorkerExecutor 执行验收任务
+    const worker = createAutonomousWorker({
+      maxRetries: 3,
+      testTimeout: 120000,  // 验收测试给更多时间
+      defaultModel: 'sonnet',
+    });
+
+    // 监听 Worker 流式事件，转发到前端
+    worker.on('stream:text', (data: any) => {
+      executionEventEmitter.emit('worker:stream', {
+        blueprintId,
+        workerId: 'verify-worker',
+        taskId: verifyTaskId,
+        streamType: 'text',
+        content: data.content,
+      });
+    });
+
+    worker.on('stream:thinking', (data: any) => {
+      executionEventEmitter.emit('worker:stream', {
+        blueprintId,
+        workerId: 'verify-worker',
+        taskId: verifyTaskId,
+        streamType: 'thinking',
+        content: data.content,
+      });
+    });
+
+    worker.on('stream:tool_start', (data: any) => {
+      executionEventEmitter.emit('worker:stream', {
+        blueprintId,
+        workerId: 'verify-worker',
+        taskId: verifyTaskId,
+        streamType: 'tool_start',
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+      });
+    });
+
+    worker.on('stream:tool_end', (data: any) => {
+      executionEventEmitter.emit('worker:stream', {
+        blueprintId,
+        workerId: 'verify-worker',
+        taskId: verifyTaskId,
+        streamType: 'tool_end',
+        toolName: data.toolName,
+        toolResult: data.toolResult,
+        toolError: data.toolError,
+      });
+    });
+
+    // 异步执行验收任务
+    (async () => {
+      try {
+        // 更新状态为 running_tests
+        session.verification!.status = 'running_tests';
+        executionEventEmitter.emit('verification:update', {
+          blueprintId,
+          status: 'running_tests',
+        });
+
+        const context = {
+          projectPath: blueprint.projectPath,
+          techStack: blueprint.techStack || {
+            language: 'typescript' as const,
+            packageManager: 'npm' as const,
+          },
+          config: {
+            maxWorkers: 1,
+            workerTimeout: 600000,
+            defaultModel: 'sonnet' as const,
+            complexTaskModel: 'opus' as const,
+            simpleTaskModel: 'sonnet' as const,
+            autoTest: true,
+            testTimeout: 120000,
+            maxRetries: 3,
+            skipOnFailure: false,
+            useGitBranches: false,
+            autoMerge: false,
+            maxCost: 5,
+            costWarningThreshold: 0.8,
+          },
+        };
+
+        const result = await worker.execute(verifyTask, context);
+
+        // 解析结果
+        const verificationResult: VerificationResult = {
+          status: result.success ? 'passed' : 'failed',
+          totalTests: 0,
+          passedTests: 0,
+          failedTests: 0,
+          skippedTests: 0,
+          testOutput: result.error || '',
+          failures: [],
+          fixAttempts: [],
+          envIssues: [],
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        };
+
+        // 从 Worker decisions 提取信息
+        if (result.decisions) {
+          for (const decision of result.decisions) {
+            if (decision.type === 'retry') {
+              verificationResult.fixAttempts.push({
+                description: decision.description,
+                success: false,
+              });
+            }
+          }
+        }
+
+        session.verification = {
+          status: result.success ? 'passed' : 'failed',
+          result: verificationResult,
+          taskId: verifyTaskId,
+        };
+
+        // 发送完成事件
+        executionEventEmitter.emit('verification:update', {
+          blueprintId,
+          status: result.success ? 'passed' : 'failed',
+          result: verificationResult,
+        });
+
+      } catch (error: any) {
+        console.error('[ExecutionManager] 验收测试执行失败:', error);
+        session.verification = {
+          status: 'failed',
+          result: {
+            status: 'failed',
+            totalTests: 0,
+            passedTests: 0,
+            failedTests: 0,
+            skippedTests: 0,
+            testOutput: error.message || '验收测试执行出错',
+            failures: [],
+            fixAttempts: [],
+            envIssues: [error.message || '未知错误'],
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+          },
+          taskId: verifyTaskId,
+        };
+
+        executionEventEmitter.emit('verification:update', {
+          blueprintId,
+          status: 'failed',
+          error: error.message,
+        });
+      }
+    })();
+
+    return { success: true };
+  }
+
+  /**
+   * v3.4: 获取验收测试状态
+   */
+  getVerificationStatus(blueprintId: string): { status: VerificationStatus; result?: VerificationResult } | null {
+    const session = this.getSessionByBlueprint(blueprintId);
+    if (!session?.verification) return null;
+    return {
+      status: session.verification.status,
+      result: session.verification.result,
+    };
+  }
 }
 
 // 全局执行管理器实例（导出供 WebSocket 使用）
@@ -1777,6 +2080,47 @@ router.post('/execution/:id/cancel', (req: Request, res: Response) => {
     res.json({
       success: true,
       message: '执行已取消',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/:blueprintId/verify
+ * v3.4: 启动验收测试
+ */
+router.post('/execution/:blueprintId/verify', async (req: Request, res: Response) => {
+  try {
+    const result = await executionManager.startVerification(req.params.blueprintId);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '验收测试已启动',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /execution/:blueprintId/verification
+ * v3.4: 获取验收测试状态
+ */
+router.get('/execution/:blueprintId/verification', (req: Request, res: Response) => {
+  try {
+    const status = executionManager.getVerificationStatus(req.params.blueprintId);
+
+    res.json({
+      success: true,
+      data: status || { status: 'idle' },
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -2701,7 +3045,11 @@ class DialogSessionManager {
     // 检查该项目路径是否已存在蓝图（防止重复创建）
     const existingBlueprint = blueprintStore.getByProjectPath(session.projectPath);
     if (existingBlueprint) {
-      throw new Error(`该项目路径已存在蓝图: "${existingBlueprint.name}" (ID: ${existingBlueprint.id})`);
+      // 直接返回已有蓝图，而不是报错（提升用户体验）
+      console.log(`[Blueprint] 项目路径已存在蓝图，直接返回: ${existingBlueprint.id}`);
+      // 清理会话
+      this.sessions.delete(sessionId);
+      return existingBlueprint;
     }
 
     // 优先使用已生成的蓝图（在用户确认时生成）
@@ -2866,7 +3214,7 @@ router.get('/dialog/:sessionId', (req: Request, res: Response) => {
 
 /**
  * POST /dialog/:sessionId/confirm
- * 确认对话并生成蓝图
+ * 确认对话并生成蓝图（支持流式进度）
  */
 router.post('/dialog/:sessionId/confirm', async (req: Request, res: Response) => {
   try {
@@ -2903,6 +3251,69 @@ router.post('/dialog/:sessionId/confirm', async (req: Request, res: Response) =>
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /dialog/:sessionId/confirm/stream
+ * 确认对话并生成蓝图（SSE 流式进度）
+ */
+router.get('/dialog/:sessionId/confirm/stream', async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const session = dialogManager.getSession(sessionId);
+
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      error: '对话会话不存在',
+    });
+  }
+
+  if (!session.state.isComplete) {
+    return res.status(400).json({
+      success: false,
+      error: '对话未完成，请先完成对话流程',
+    });
+  }
+
+  // 设置 SSE 响应头
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // 发送初始事件
+  res.write(`data: ${JSON.stringify({ type: 'start', message: '开始生成蓝图...' })}\n\n`);
+
+  // 从 session 获取 planner 实例来监听进度事件
+  const { planner } = session;
+  const progressHandler = (data: { step: number; total: number; message: string }) => {
+    res.write(`data: ${JSON.stringify({ type: 'progress', ...data })}\n\n`);
+  };
+
+  planner.on('blueprint:progress', progressHandler);
+
+  try {
+    const blueprint = await dialogManager.generateBlueprint(sessionId);
+
+    // 移除监听器
+    planner.off('blueprint:progress', progressHandler);
+
+    if (!blueprint) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: '生成蓝图失败' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // 发送完成事件
+    res.write(`data: ${JSON.stringify({ type: 'complete', blueprint })}\n\n`);
+    res.end();
+  } catch (error: any) {
+    // 移除监听器
+    planner.off('blueprint:progress', progressHandler);
+    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    res.end();
   }
 });
 

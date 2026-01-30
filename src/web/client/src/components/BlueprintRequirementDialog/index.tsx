@@ -75,12 +75,14 @@ export function BlueprintRequirementDialog({
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false); // 确认中状态
   const [generationStep, setGenerationStep] = useState(0); // 生成进度步骤
+  const [generationMessage, setGenerationMessage] = useState(''); // 真实的进度消息
   const [error, setError] = useState<string | null>(null);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const confirmCalledRef = useRef(false); // 防止重复调用 confirm API
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -214,80 +216,95 @@ export function BlueprintRequirementDialog({
     '即将完成...',
   ];
 
-  // 确认生成蓝图
-  // 注意：此函数可能在 confirming 已经为 true 的情况下被调用（从 sendMessage 中）
-  // 所以检查条件不再包含 confirming
+  // 确认生成蓝图（使用 SSE 接收真实进度）
   const confirmBlueprint = useCallback(async () => {
     if (!sessionId) return;
 
-    // 启动进度动画
+    // 防止重复调用（使用 ref 确保即使组件重渲染也不会重复）
+    if (confirmCalledRef.current) {
+      console.log('[Blueprint] confirmBlueprint 已调用过，跳过重复请求');
+      return;
+    }
+    confirmCalledRef.current = true;
+
+    // 只在未设置时才设置 confirming
+    if (!confirming) {
+      setConfirming(true);
+    }
+    setError(null);
     setGenerationStep(0);
-    const stepInterval = setInterval(() => {
-      setGenerationStep((prev) => {
-        if (prev < generationSteps.length - 1) {
-          return prev + 1;
+
+    // 使用 SSE 接收流式进度
+    const eventSource = new EventSource(`/api/blueprint/dialog/${sessionId}/confirm/stream`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'progress') {
+          // 更新真实进度
+          setGenerationStep(data.step - 1); // 转换为 0-based index
+          setGenerationMessage(data.message); // 设置真实的进度消息
+          console.log(`[Blueprint] 进度: ${data.step}/${data.total} - ${data.message}`);
+        } else if (data.type === 'complete') {
+          // 完成
+          eventSource.close();
+          setConfirming(false);
+          setGenerationStep(0);
+
+          // 添加成功消息
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `complete-${Date.now()}`,
+              role: 'assistant',
+              content: `🎉 蓝图已成功创建！\n\nID: ${data.blueprint.id}\n\n正在跳转到蓝图详情...`,
+              timestamp: new Date().toISOString(),
+              phase: 'complete',
+            },
+          ]);
+
+          setCurrentPhase('complete');
+          updateProgress('complete');
+
+          // 通知父组件
+          if (onComplete) {
+            setTimeout(() => {
+              onComplete(data.blueprint.id);
+            }, 1500);
+          }
+        } else if (data.type === 'error') {
+          // 错误
+          eventSource.close();
+          setConfirming(false);
+          setGenerationStep(0);
+          setError(data.error);
+          confirmCalledRef.current = false; // 重置，允许用户重试
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: `❌ 蓝图生成失败：${data.error}\n\n请重试或调整需求后再试。`,
+              timestamp: new Date().toISOString(),
+              phase: 'summary',
+            },
+          ]);
         }
-        return prev;
-      });
-    }, 2500); // 每 2.5 秒更新一次步骤
-
-    try {
-      // 只在未设置时才设置 confirming（避免重复设置）
-      if (!confirming) {
-        setConfirming(true);
+      } catch (e) {
+        console.error('[Blueprint] 解析 SSE 数据失败:', e);
       }
-      setError(null);
+    };
 
-      const confirmRes = await fetch(`/api/blueprint/dialog/${sessionId}/confirm`, {
-        method: 'POST',
-      });
-      const confirmData = await confirmRes.json();
-
-      clearInterval(stepInterval); // 清除进度动画
-
-      if (confirmData.success && confirmData.data) {
-        // 添加成功消息
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `complete-${Date.now()}`,
-            role: 'assistant',
-            content: `🎉 蓝图已成功创建！\n\nID: ${confirmData.data.id}\n\n正在跳转到蓝图详情...`,
-            timestamp: new Date().toISOString(),
-            phase: 'complete',
-          },
-        ]);
-
-        setCurrentPhase('complete');
-        updateProgress('complete');
-
-        // 通知父组件
-        if (onComplete) {
-          setTimeout(() => {
-            onComplete(confirmData.data.id);
-          }, 1500);
-        }
-      } else {
-        throw new Error(confirmData.error || '生成蓝图失败');
-      }
-    } catch (err) {
-      clearInterval(stepInterval); // 出错时也要清除
-      setError(err instanceof Error ? err.message : '确认蓝图失败');
-      // 添加错误消息
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: `❌ 蓝图生成失败：${err instanceof Error ? err.message : '未知错误'}\n\n请重试或调整需求后再试。`,
-          timestamp: new Date().toISOString(),
-          phase: 'summary',
-        },
-      ]);
-    } finally {
+    eventSource.onerror = (err) => {
+      console.error('[Blueprint] SSE 连接错误:', err);
+      eventSource.close();
       setConfirming(false);
       setGenerationStep(0);
-    }
+      setError('连接中断，请重试');
+      confirmCalledRef.current = false; // 重置，允许用户重试
+    };
   }, [sessionId, confirming, onComplete]);
 
   // 发送消息
@@ -316,7 +333,7 @@ export function BlueprintRequirementDialog({
 
     // 发送消息到后端
     try {
-      // 如果是确认命令，显示特殊的加载状态
+      // 如果在汇总阶段确认，显示蓝图生成进度动画
       if (isSummaryPhase && isConfirmCommand) {
         setConfirming(true);
       } else {
@@ -510,10 +527,11 @@ export function BlueprintRequirementDialog({
                         </div>
                         <div className={styles.generationText}>
                           <span className={styles.generationStep}>
-                            {generationSteps[generationStep]}
+                            {/* 优先使用真实进度消息，否则使用预设步骤 */}
+                            {generationMessage || generationSteps[generationStep]}
                           </span>
                           <span className={styles.generationHint}>
-                            AI 正在努力工作中，请稍候...
+                            步骤 {generationStep + 1}/5 - AI 正在努力工作中...
                           </span>
                         </div>
                       </div>

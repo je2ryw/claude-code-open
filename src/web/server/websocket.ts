@@ -852,6 +852,25 @@ export function setupWebSocket(
     });
   });
 
+  // v3.4: 验收测试状态更新
+  executionEventEmitter.on('verification:update', (data: {
+    blueprintId: string;
+    status: string;
+    result?: any;
+    error?: string;
+  }) => {
+    console.log(`[Swarm v3.4] Verification update: ${data.blueprintId} - ${data.status}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:verification_update',
+      payload: {
+        blueprintId: data.blueprintId,
+        status: data.status,
+        result: data.result,
+        error: data.error,
+      },
+    });
+  });
+
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
   });

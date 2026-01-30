@@ -38,6 +38,8 @@ const initialState: SwarmState = {
   taskLogs: {},
   // v2.1: 任务流式内容
   taskStreams: {},
+  // v3.4: 验收测试
+  verification: { status: 'idle' },
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -319,6 +321,18 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             },
           };
         });
+        break;
+
+      case 'swarm:verification_update':
+        // v3.4: 验收测试状态更新
+        setState(prev => ({
+          ...prev,
+          verification: {
+            status: message.payload.status,
+            result: message.payload.result || prev.verification.result,
+          },
+        }));
+        console.log(`[SwarmState] Verification status: ${message.payload.status}`);
         break;
 
       default:

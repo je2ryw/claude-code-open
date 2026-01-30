@@ -457,6 +457,41 @@ export const coordinatorApi = {
     return handleResponse(response);
   },
 
+  // ============ v3.4 验收测试 ============
+
+  /**
+   * 启动验收测试
+   */
+  startVerification: async (blueprintId: string): Promise<{ success: boolean; error?: string }> => {
+    const response = await fetch(`/api/blueprint/execution/${blueprintId}/verify`, {
+      method: 'POST',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取验收测试状态
+   */
+  getVerificationStatus: async (blueprintId: string): Promise<{
+    status: 'idle' | 'checking_env' | 'running_tests' | 'fixing' | 'passed' | 'failed';
+    result?: {
+      status: string;
+      totalTests: number;
+      passedTests: number;
+      failedTests: number;
+      skippedTests: number;
+      testOutput: string;
+      failures: { name: string; error: string }[];
+      fixAttempts: { description: string; success: boolean }[];
+      envIssues: string[];
+      startedAt: string;
+      completedAt?: string;
+    };
+  }> => {
+    const response = await fetch(`/api/blueprint/execution/${blueprintId}/verification`);
+    return handleResponse(response);
+  },
+
   // ============ v2.1 日志功能 ============
 
   /**

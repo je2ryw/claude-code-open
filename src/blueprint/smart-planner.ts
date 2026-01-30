@@ -722,25 +722,14 @@ ${state.collectedRequirements.join('\n')}
   private async processTechChoiceInput(
     state: DialogState,
     input: string
-  ): Promise<{ response: string; nextPhase: DialogPhase; generatedBlueprint?: Blueprint }> {
+  ): Promise<{ response: string; nextPhase: DialogPhase }> {
     const normalizedInput = input.trim().toLowerCase();
 
     if (normalizedInput === '确认' || normalizedInput === 'confirm' || normalizedInput === 'yes') {
-      // 在进入确认阶段前就生成蓝图（用户等待时间前移，确认时秒回）
-      try {
-        state.isComplete = true; // 临时标记以便生成蓝图
-        const blueprint = await this.generateBlueprint(state);
-        state.generatedBlueprint = blueprint; // 存储预生成的蓝图
-
-        // 生成蓝图摘要用于展示
-        const summary = this.generateBlueprintSummary(state);
-        const response = DIALOG_PROMPTS.confirmation.replace('{{blueprintSummary}}', summary);
-        return { response, nextPhase: 'confirmation', generatedBlueprint: blueprint };
-      } catch (error: any) {
-        state.isComplete = false;
-        const errorMsg = `蓝图预生成失败: ${error.message}\n\n请调整需求后重试。`;
-        return { response: errorMsg, nextPhase: 'tech_choice' };
-      }
+      // 生成蓝图摘要进入确认阶段（蓝图在用户最终确认后才生成）
+      const summary = this.generateBlueprintSummary(state);
+      const response = DIALOG_PROMPTS.confirmation.replace('{{blueprintSummary}}', summary);
+      return { response, nextPhase: 'confirmation' };
     }
 
     // 处理技术栈修改
@@ -778,44 +767,27 @@ ${JSON.stringify(state.techStack, null, 2)}
     const normalizedInput = input.trim().toLowerCase();
 
     if (normalizedInput === '确认' || normalizedInput === 'confirm' || normalizedInput === 'yes') {
-      // 使用预生成的蓝图（在 tech_choice 阶段已生成），秒速响应
-      const blueprint = state.generatedBlueprint;
-      if (!blueprint) {
-        // 兜底：如果没有预生成的蓝图，现场生成
-        try {
-          state.isComplete = true;
-          const newBlueprint = await this.generateBlueprint(state);
-          state.generatedBlueprint = newBlueprint;
+      // 用户最终确认，生成蓝图
+      try {
+        state.isComplete = true;
+        const blueprint = await this.generateBlueprint(state);
+        state.generatedBlueprint = blueprint;
 
-          const moduleCount = newBlueprint.modules?.length || 0;
-          const estimatedTasks = Math.max(moduleCount * 2, 5);
-          const estimatedMinutes = Math.ceil(estimatedTasks * 3);
+        const moduleCount = blueprint.modules?.length || 0;
+        const estimatedTasks = Math.max(moduleCount * 2, 5);
+        const estimatedMinutes = Math.ceil(estimatedTasks * 3);
 
-          const response = DIALOG_PROMPTS.done
-            .replace('{{blueprintId}}', newBlueprint.id)
-            .replace('{{taskCount}}', `约 ${estimatedTasks}`)
-            .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
+        const response = DIALOG_PROMPTS.done
+          .replace('{{blueprintId}}', blueprint.id)
+          .replace('{{taskCount}}', `约 ${estimatedTasks}`)
+          .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
 
-          return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: newBlueprint };
-        } catch (error: any) {
-          state.isComplete = false;
-          const errorMsg = `蓝图生成失败: ${error.message}\n\n请重试或输入"修改"调整需求。`;
-          return { response: errorMsg, nextPhase: 'confirmation' };
-        }
+        return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: blueprint };
+      } catch (error: any) {
+        state.isComplete = false;
+        const errorMsg = `蓝图生成失败: ${error.message}\n\n请重试或输入"修改"调整需求。`;
+        return { response: errorMsg, nextPhase: 'confirmation' };
       }
-
-      // 有预生成的蓝图，直接返回（秒速响应）
-      state.isComplete = true;
-      const moduleCount = blueprint.modules?.length || 0;
-      const estimatedTasks = Math.max(moduleCount * 2, 5);
-      const estimatedMinutes = Math.ceil(estimatedTasks * 3);
-
-      const response = DIALOG_PROMPTS.done
-        .replace('{{blueprintId}}', blueprint.id)
-        .replace('{{taskCount}}', `约 ${estimatedTasks}`)
-        .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
-
-      return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: blueprint };
     }
 
     if (normalizedInput === '重来' || normalizedInput === 'restart') {
@@ -931,7 +903,13 @@ ${JSON.stringify(state.techStack, null, 2)}
       throw new Error('项目路径未设置');
     }
 
+    // 发送进度事件：开始分析需求
+    this.emit('blueprint:progress', { step: 1, total: 5, message: '正在分析需求...' });
+
     // 使用 AI 生成完整的蓝图结构（包含业务流程、模块、NFR）
+    // 发送进度事件：AI 正在思考
+    this.emit('blueprint:progress', { step: 2, total: 5, message: '正在设计项目结构...' });
+
     const blueprintData = await this.extractWithAI<{
       name: string;
       description: string;
@@ -1062,43 +1040,98 @@ ${JSON.stringify(state.techStack, null, 2)}
         name: '新项目',
         description: state.collectedRequirements[0] || '项目描述',
         version: '1.0.0',
-        businessProcesses: [],
-        modules: [],
-        nfrs: [],
+        // 提供包含示例对象的数组，以便 schema 推断能正确识别嵌套对象结构
+        businessProcesses: [{
+          id: 'bp-example',
+          name: '示例流程',
+          description: '流程描述',
+          type: 'to-be' as const,
+          steps: [{
+            id: 'step-example',
+            order: 1,
+            name: '步骤名称',
+            description: '步骤描述',
+            actor: '执行者',
+            inputs: ['输入'],
+            outputs: ['输出'],
+          }],
+          actors: ['参与者'],
+          inputs: ['输入'],
+          outputs: ['输出'],
+        }],
+        modules: [{
+          id: 'mod-example',
+          name: '示例模块',
+          description: '模块描述',
+          type: 'backend' as const,
+          responsibilities: ['职责'],
+          techStack: ['TypeScript'],
+          interfaces: [{
+            name: '接口名',
+            type: 'api' as const,
+            description: '接口描述',
+            signature: 'GET /api/example',
+          }],
+          dependencies: [],
+          rootPath: 'src/modules/example',
+          source: 'ai_generated' as const,
+          files: [],
+        }],
+        nfrs: [{
+          id: 'nfr-example',
+          category: 'performance' as const,
+          name: '性能要求',
+          description: '响应时间 < 1s',
+          priority: 'high' as const,
+          metrics: ['响应时间'],
+        }],
       }
     );
 
-    // 构建完整的蓝图对象
+    // 发送进度事件：AI 响应完成，开始构建蓝图
+    this.emit('blueprint:progress', { step: 3, total: 5, message: '正在构建蓝图结构...' });
+
+    // 调试日志：检查 AI 返回的数据
+    console.log('[SmartPlanner] AI 返回的蓝图数据:');
+    console.log('  - businessProcesses:', blueprintData.businessProcesses?.length || 0, '个');
+    console.log('  - modules:', blueprintData.modules?.length || 0, '个');
+    console.log('  - nfrs:', blueprintData.nfrs?.length || 0, '个');
+    if (!blueprintData.businessProcesses?.length && !blueprintData.modules?.length && !blueprintData.nfrs?.length) {
+      console.warn('[SmartPlanner] ⚠️ AI 返回的数据为空！可能是 AI 调用失败或未正确生成结构。');
+      console.log('[SmartPlanner] blueprintData:', JSON.stringify(blueprintData, null, 2).slice(0, 500));
+    }
+
+    // 构建完整的蓝图对象（添加空数组防护，防止 AI 返回不完整数据）
     const blueprint: Blueprint = {
       id: uuidv4(),
-      name: blueprintData.name,
-      description: blueprintData.description,
+      name: blueprintData.name || '新项目',
+      description: blueprintData.description || '',
       version: blueprintData.version || '1.0.0',
       projectPath: this.projectPath,
       status: 'confirmed',
 
-      // 业务流程
-      businessProcesses: blueprintData.businessProcesses.map((bp) => ({
+      // 业务流程（防护空数组）
+      businessProcesses: (blueprintData.businessProcesses || []).map((bp) => ({
         id: bp.id || uuidv4(),
-        name: bp.name,
-        description: bp.description,
+        name: bp.name || '',
+        description: bp.description || '',
         type: bp.type || 'to-be',
-        steps: bp.steps.map((step) => ({
+        steps: (bp.steps || []).map((step) => ({
           id: step.id || uuidv4(),
-          order: step.order,
-          name: step.name,
-          description: step.description,
-          actor: step.actor,
-          inputs: step.inputs,
-          outputs: step.outputs,
+          order: step.order || 0,
+          name: step.name || '',
+          description: step.description || '',
+          actor: step.actor || '',
+          inputs: step.inputs || [],
+          outputs: step.outputs || [],
         })),
         actors: bp.actors || [],
         inputs: bp.inputs || [],
         outputs: bp.outputs || [],
       })) as BusinessProcess[],
 
-      // 模块（完整格式）
-      modules: blueprintData.modules.map((m) => ({
+      // 模块（完整格式，防护空数组）
+      modules: (blueprintData.modules || []).map((m) => ({
         id: m.id || uuidv4(),
         name: m.name,
         description: m.description,
@@ -1117,14 +1150,14 @@ ${JSON.stringify(state.techStack, null, 2)}
         files: m.files || [],
       })) as BlueprintModule[],
 
-      // 非功能需求
-      nfrs: blueprintData.nfrs.map((nfr) => ({
+      // 非功能需求（防护空数组）
+      nfrs: (blueprintData.nfrs || []).map((nfr) => ({
         id: nfr.id || uuidv4(),
-        category: nfr.category,
-        name: nfr.name,
-        description: nfr.description,
-        priority: nfr.priority,
-        metrics: nfr.metrics,
+        category: nfr.category || 'other',
+        name: nfr.name || '',
+        description: nfr.description || '',
+        priority: nfr.priority || 'medium',
+        metrics: nfr.metrics || [],
       })) as NFR[],
 
       // 兼容字段（从对话收集的原始信息）
@@ -1141,8 +1174,14 @@ ${JSON.stringify(state.techStack, null, 2)}
       confirmedAt: new Date(),
     };
 
+    // 发送进度事件：保存蓝图
+    this.emit('blueprint:progress', { step: 4, total: 5, message: '正在保存蓝图...' });
+
     // 保存蓝图
     this.saveBlueprint(blueprint);
+
+    // 发送进度事件：完成
+    this.emit('blueprint:progress', { step: 5, total: 5, message: '蓝图生成完成！' });
 
     this.emit('blueprint:created', blueprint);
 
@@ -1280,6 +1319,7 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       "files": ["涉及的文件路径"],
       "dependencies": ["依赖的任务ID"],
       "needsTest": true/false,
+      "testStrategy": "unit/integration/e2e/mock/vcr/skip",
       "estimatedMinutes": 5,
       "complexity": "trivial/simple/moderate/complex"
     }
@@ -1293,15 +1333,45 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
   ]
 }
 
+测试策略说明：
+- unit: 纯单元测试，使用 mock 隔离依赖（默认）
+- integration: 集成测试，需要测试数据库（如 SQLite 内存）
+- e2e: 端到端测试，需要完整环境
+- mock: 使用 mock/stub 替代外部 API
+- vcr: 录制回放模式（HTTP 请求录制）
+- skip: 跳过测试（配置类/文档类）
+
 任务分解原则：
-1. 配置类任务通常不需要测试（needsTest: false）
+1. 配置类任务通常不需要测试（needsTest: false, testStrategy: skip）
 2. 文档类任务不需要测试
 3. 核心业务逻辑必须有测试
-4. 工具函数建议有测试
-5. 相互独立的任务可以并行执行
-6. 参考业务流程的步骤顺序来安排任务依赖
-7. 参考模块的接口定义来确定集成任务`,
-      { tasks: [], decisions: [] }
+4. 涉及数据库的代码使用 integration 策略
+5. 涉及外部 API 的代码使用 mock 或 vcr 策略
+6. 工具函数建议有测试（unit 策略）
+7. 相互独立的任务可以并行执行
+8. 参考业务流程的步骤顺序来安排任务依赖
+9. 参考模块的接口定义来确定集成任务`,
+      {
+        // 提供示例对象以便 schema 推断能正确识别嵌套对象结构
+        tasks: [{
+          id: 'task-example',
+          name: '示例任务',
+          description: '任务描述',
+          type: 'code' as TaskType,
+          moduleId: 'mod-1',
+          files: ['src/example.ts'],
+          dependencies: [],
+          needsTest: true,
+          testStrategy: 'unit' as const,
+          estimatedMinutes: 5,
+          complexity: 'simple' as TaskComplexity,
+        }],
+        decisions: [{
+          type: 'task_split' as const,
+          description: '决策描述',
+          reasoning: '决策理由',
+        }],
+      }
     );
 
     // 构建智能任务列表（过滤掉无效任务）
@@ -1324,6 +1394,8 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
         files: Array.isArray(t.files) ? t.files : [],
         dependencies: t.dependencies || [],
         needsTest: this.config.autoTestDecision ? t.needsTest : true,
+        // v3.3: 测试策略，默认使用 unit
+        testStrategy: (t as any).testStrategy || (t.needsTest === false ? 'skip' : 'unit'),
         estimatedMinutes: Math.min(t.estimatedMinutes || 5, this.config.maxTaskMinutes),
         status: 'pending' as const,
       }));
@@ -1490,6 +1562,7 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       // 从 tool_use block 中提取数据
       for (const block of response.content) {
         if (block.type === 'tool_use' && block.name === 'submit_extracted_data') {
+          console.log('[SmartPlanner] extractWithAI 成功，AI 调用了工具');
           return block.input as T;
         }
       }
@@ -1503,13 +1576,18 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       }
 
       if (text) {
+        console.log('[SmartPlanner] AI 返回文本，尝试解析 JSON...');
+        console.log('[SmartPlanner] 文本内容（前500字符）:', text.slice(0, 500));
         const parsed = this.tryParseJSON<T>(text);
         if (parsed !== null) {
+          console.log('[SmartPlanner] JSON 解析成功');
           return parsed;
         }
+        console.warn('[SmartPlanner] JSON 解析失败');
       }
 
-      console.warn('[SmartPlanner] AI未调用工具，使用默认值');
+      console.warn('[SmartPlanner] AI未调用工具且无法解析文本，使用默认值');
+      console.warn('[SmartPlanner] response.content:', JSON.stringify(response.content).slice(0, 500));
       return defaultValue;
     } catch (error) {
       console.error('[SmartPlanner] AI extraction failed:', error);
