@@ -13,7 +13,6 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import type {
   ExecutionPlan,
   SmartTask,
@@ -25,10 +24,8 @@ import type {
   SwarmEvent,
   SwarmEventType,
   AutonomousWorker,
-  WorkerAction,
   FileChange,
   WorkerDecision,
-  DEFAULT_SWARM_CONFIG,
   ExecutionState,
   SerializableTaskResult,
   SerializableExecutionIssue,
@@ -639,122 +636,121 @@ export class RealtimeCoordinator extends EventEmitter {
 
   /**
    * 并行执行一组任务
+   * 组内所有任务同时启动，等待全部完成后返回
    */
   private async executeParallelGroup(tasks: SmartTask[]): Promise<(TaskResult & { taskId: string })[]> {
-    // 限制并发数
-    const maxConcurrent = Math.min(this.config.maxWorkers, tasks.length);
-    const results: (TaskResult & { taskId: string })[] = [];
+    // 检查是否被取消
+    if (this.isCancelled) {
+      return [];
+    }
+    await this.waitIfPaused();
 
-    // 使用任务队列控制并发
-    const taskQueue = [...tasks];
-    const executing: Promise<void>[] = [];
+    // 过滤掉需要跳过的任务
+    const executableTasks = tasks.filter(task => !this.shouldSkipTask(task.id));
 
-    const executeNext = async (): Promise<void> => {
-      while (taskQueue.length > 0) {
-        // 检查是否被取消或暂停
-        if (this.isCancelled) {
-          return;
-        }
-        await this.waitIfPaused();
+    // 为跳过的任务生成结果
+    const skippedResults: (TaskResult & { taskId: string })[] = tasks
+      .filter(task => this.shouldSkipTask(task.id))
+      .map(task => ({
+        taskId: task.id,
+        success: false,
+        changes: [],
+        decisions: [],
+        error: '任务被跳过',
+      }));
 
-        const task = taskQueue.shift();
-        if (!task) break;
-
-        // 应用运行时修改
-        const modifiedTask = this.applyTaskModifications(task);
-        if (this.shouldSkipTask(task.id)) {
-          results.push({
-            taskId: task.id,
-            success: false,
-            changes: [],
-            decisions: [],
-            error: '任务被跳过',
-          });
-          continue;
-        }
-
-        // 创建 Worker
-        const worker = this.createWorker();
-        this.activeWorkers.set(worker.id, worker);
-
-        // 发送任务开始事件
-        this.emitEvent('task:started', {
-          taskId: task.id,
-          workerId: worker.id,
-          taskName: modifiedTask.name,
-        });
-
-        // 任务开始时保存状态
-        if (this.autoSaveEnabled && this.projectPath) {
-          this.saveExecutionState();
-        }
-
-        try {
-          // 更新任务状态
-          this.updateTaskStatus(task.id, 'running');
-
-          // 执行任务（带超时）
-          const result = await this.executeTaskWithTimeout(modifiedTask, worker.id);
-
-          // 更新成本
-          this.currentCost += this.estimateTaskCost(modifiedTask);
-
-          // 记录结果
-          results.push({ ...result, taskId: task.id });
-
-          // 发送任务完成事件
-          this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
-            taskId: task.id,
-            workerId: worker.id,
-            success: result.success,
-            error: result.error,
-          });
-
-          // 任务完成时保存状态
-          if (this.autoSaveEnabled && this.projectPath) {
-            this.saveExecutionState();
-          }
-        } catch (error: any) {
-          results.push({
-            taskId: task.id,
-            success: false,
-            changes: [],
-            decisions: [],
-            error: error.message || '未知错误',
-          });
-
-          // 添加问题记录
-          this.addIssue(task.id, 'error', error.message || '任务执行异常');
-
-          this.emitEvent('task:failed', {
-            taskId: task.id,
-            workerId: worker.id,
-            error: error.message,
-          });
-
-          // 任务失败时保存状态
-          if (this.autoSaveEnabled && this.projectPath) {
-            this.saveExecutionState();
-          }
-        } finally {
-          // 清理 Worker
-          this.activeWorkers.delete(worker.id);
-          this.emitEvent('worker:idle', {
-            workerId: worker.id,
-          });
-        }
-      }
-    };
-
-    // 启动并发执行器
-    for (let i = 0; i < maxConcurrent; i++) {
-      executing.push(executeNext());
+    if (executableTasks.length === 0) {
+      return skippedResults;
     }
 
-    // 等待所有执行器完成
-    await Promise.all(executing);
+    // 同时启动组内所有任务
+    const promises = executableTasks.map(task => this.executeSingleTask(task));
 
-    return results;
+    // 等待所有任务完成
+    const results = await Promise.all(promises);
+
+    return [...skippedResults, ...results];
+  }
+
+  /**
+   * 执行单个任务
+   */
+  private async executeSingleTask(task: SmartTask): Promise<TaskResult & { taskId: string }> {
+    // 应用运行时修改
+    const modifiedTask = this.applyTaskModifications(task);
+
+    // 创建 Worker
+    const worker = this.createWorker();
+    worker.currentTaskId = task.id;
+    this.activeWorkers.set(worker.id, worker);
+
+    // 发送任务开始事件
+    this.emitEvent('task:started', {
+      taskId: task.id,
+      workerId: worker.id,
+      taskName: modifiedTask.name,
+    });
+
+    // 任务开始时保存状态
+    if (this.autoSaveEnabled && this.projectPath) {
+      this.saveExecutionState();
+    }
+
+    try {
+      // 更新任务状态
+      this.updateTaskStatus(task.id, 'running');
+
+      // 执行任务（带超时）
+      const result = await this.executeTaskWithTimeout(modifiedTask, worker.id);
+
+      // 更新成本
+      this.currentCost += this.estimateTaskCost(modifiedTask);
+
+      // 发送任务完成事件
+      this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
+        taskId: task.id,
+        workerId: worker.id,
+        success: result.success,
+        error: result.error,
+      });
+
+      // 任务完成时保存状态
+      if (this.autoSaveEnabled && this.projectPath) {
+        this.saveExecutionState();
+      }
+
+      return { ...result, taskId: task.id };
+
+    } catch (error: any) {
+      // 添加问题记录
+      this.addIssue(task.id, 'error', error.message || '任务执行异常');
+
+      this.emitEvent('task:failed', {
+        taskId: task.id,
+        workerId: worker.id,
+        error: error.message,
+      });
+
+      // 任务失败时保存状态
+      if (this.autoSaveEnabled && this.projectPath) {
+        this.saveExecutionState();
+      }
+
+      return {
+        taskId: task.id,
+        success: false,
+        changes: [],
+        decisions: [],
+        error: error.message || '未知错误',
+      };
+
+    } finally {
+      // 清理 Worker
+      this.activeWorkers.delete(worker.id);
+      this.emitEvent('worker:idle', {
+        workerId: worker.id,
+      });
+    }
   }
 
   /**
@@ -1301,14 +1297,29 @@ export class RealtimeCoordinator extends EventEmitter {
    * 反序列化 ExecutionPlan
    */
   private deserializePlan(serialized: SerializableExecutionPlan): ExecutionPlan {
+    // 反序列化任务并过滤掉无效任务
+    const tasks = serialized.tasks
+      .map(task => this.deserializeTask(task))
+      .filter((task): task is SmartTask => task !== null);
+
+    // 如果过滤后任务数量变化，需要同步更新并行组
+    const validTaskIds = new Set(tasks.map(t => t.id));
+    const parallelGroups = serialized.parallelGroups
+      .map(group => group.filter(taskId => validTaskIds.has(taskId)))
+      .filter(group => group.length > 0);
+
+    if (tasks.length !== serialized.tasks.length) {
+      console.warn(`[RealtimeCoordinator] 过滤了 ${serialized.tasks.length - tasks.length} 个无效任务`);
+    }
+
     return {
       id: serialized.id,
       blueprintId: serialized.blueprintId,
-      tasks: serialized.tasks.map(task => this.deserializeTask(task)),
-      parallelGroups: serialized.parallelGroups,
+      tasks,
+      parallelGroups,
       estimatedCost: serialized.estimatedCost,
       estimatedMinutes: serialized.estimatedMinutes,
-      autoDecisions: serialized.autoDecisions,
+      autoDecisions: serialized.autoDecisions || [],
       status: serialized.status,
       createdAt: new Date(serialized.createdAt),
       startedAt: serialized.startedAt ? new Date(serialized.startedAt) : undefined,
@@ -1318,21 +1329,28 @@ export class RealtimeCoordinator extends EventEmitter {
 
   /**
    * 反序列化单个任务
+   * 添加防御性检查，确保必要字段存在
    */
-  private deserializeTask(serialized: SerializableSmartTask): SmartTask {
+  private deserializeTask(serialized: SerializableSmartTask): SmartTask | null {
+    // 防御性检查：确保必要字段存在
+    if (!serialized.name) {
+      console.warn(`[RealtimeCoordinator] 任务 ${serialized.id} 缺少 name 字段，跳过`);
+      return null;
+    }
+
     return {
       id: serialized.id,
       name: serialized.name,
-      description: serialized.description,
-      type: serialized.type,
-      complexity: serialized.complexity,
+      description: serialized.description || serialized.name,
+      type: serialized.type || 'code',
+      complexity: serialized.complexity || 'simple',
       blueprintId: serialized.blueprintId,
       moduleId: serialized.moduleId,
-      files: serialized.files,
-      dependencies: serialized.dependencies,
-      needsTest: serialized.needsTest,
-      estimatedMinutes: serialized.estimatedMinutes,
-      status: serialized.status,
+      files: Array.isArray(serialized.files) ? serialized.files : [],
+      dependencies: serialized.dependencies || [],
+      needsTest: serialized.needsTest ?? true,
+      estimatedMinutes: serialized.estimatedMinutes || 5,
+      status: serialized.status || 'pending',
       workerId: serialized.workerId,
       startedAt: serialized.startedAt ? new Date(serialized.startedAt) : undefined,
       completedAt: serialized.completedAt ? new Date(serialized.completedAt) : undefined,

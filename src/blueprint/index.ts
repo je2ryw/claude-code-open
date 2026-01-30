@@ -40,12 +40,16 @@ export {
 export {
   AutonomousWorkerExecutor,
   createAutonomousWorker,
-  readTaskProgress,
-  writeTaskProgress,
   type WorkerContext,
-  type TaskProgress,
   type WorkerEventType,
 } from './autonomous-worker.js';
+
+// 进度管理函数从 task-status 工具导出
+export {
+  readTaskProgress,
+  writeTaskProgress,
+  type TaskProgress,
+} from '../tools/task-status.js';
 
 // ============================================================================
 // Git 并发控制（分支代替文件锁）

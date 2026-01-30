@@ -410,6 +410,26 @@ class RealTaskExecutor implements TaskExecutor {
   }
 
   async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
+    // 防御性检查：确保 task 对象有效
+    if (!task || typeof task !== 'object') {
+      console.error(`[RealTaskExecutor] 任务对象无效:`, task);
+      return {
+        success: false,
+        changes: [],
+        decisions: [],
+        error: '任务对象无效',
+      };
+    }
+    if (!task.name) {
+      console.error(`[RealTaskExecutor] 任务缺少 name 属性:`, JSON.stringify(task, null, 2));
+      return {
+        success: false,
+        changes: [],
+        decisions: [],
+        error: '任务缺少 name 属性',
+      };
+    }
+
     console.log(`[RealTaskExecutor] 开始执行任务: ${task.name} (Worker: ${workerId})`);
 
     // 获取或创建 Worker
@@ -507,6 +527,31 @@ class RealTaskExecutor implements TaskExecutor {
       // 任务完成
       worker.on('task:completed', (data: any) => {
         emitWorkerLog('info', 'status', `✅ 任务完成: ${data.task?.name || task.name}`, { task: data.task });
+      });
+
+      // v3.0: 监听 AI 主动汇报的任务状态变更（通过 UpdateTaskStatus 工具）
+      worker.on('task:status_change', (data: any) => {
+        // 转发到前端
+        executionEventEmitter.emit('task:status_change', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: data.taskId,
+          status: data.status,
+          percent: data.percent,
+          currentAction: data.currentAction,
+          error: data.error,
+          notes: data.notes,
+          timestamp: data.timestamp,
+        });
+
+        // 同时发送日志
+        const statusEmoji = {
+          running: '🔄',
+          completed: '✅',
+          failed: '❌',
+          blocked: '⏸️',
+        }[data.status] || '📋';
+        emitWorkerLog('info', 'status', `${statusEmoji} AI 状态汇报: ${data.currentAction || data.status}${data.percent !== undefined ? ` (${data.percent}%)` : ''}`, data);
       });
 
       // 错误处理
@@ -624,7 +669,7 @@ class RealTaskExecutor implements TaskExecutor {
       const result = await worker.execute(task, context);
 
       // 如果任务成功，提交并合并分支
-      if (result.success && result.changes.length > 0) {
+      if (result.success && Array.isArray(result.changes) && result.changes.length > 0) {
         // 提交更改到 Worker 分支
         await this.gitConcurrency.commitChanges(
           workerId,
@@ -2900,6 +2945,250 @@ router.get('/dialog/sessions', (_req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 设计图生成 API - 使用 Google Gemini
+// ============================================================================
+
+import { geminiImageService } from '../services/gemini-image-service.js';
+
+/**
+ * POST /dialog/:sessionId/generate-design
+ * 基于当前对话状态生成 UI 设计图，并自动保存到对话状态中
+ */
+router.post('/dialog/:sessionId/generate-design', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { style, autoSave = true } = req.body; // autoSave: 是否自动保存到会话状态
+
+    // 获取对话会话
+    const session = dialogManager.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    const state = session.state;
+
+    // 检查是否收集了足够的需求
+    if (!state.collectedRequirements || state.collectedRequirements.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: '还未收集到足够的需求信息，请先完成需求收集',
+      });
+    }
+
+    const designStyle = style || 'modern';
+    const projectName = session.projectPath?.split(/[/\\]/).pop() || '新项目';
+
+    // 调用 Gemini 生成设计图
+    const result = await geminiImageService.generateDesign({
+      projectName,
+      projectDescription: state.collectedRequirements[0] || '',
+      requirements: state.collectedRequirements,
+      constraints: state.collectedConstraints,
+      techStack: state.techStack,
+      style: designStyle,
+    });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: result.error || '生成设计图失败',
+      });
+    }
+
+    // 创建设计图对象
+    const { v4: uuidv4 } = await import('uuid');
+    const designImage = {
+      id: uuidv4(),
+      name: `${projectName} - UI 设计图`,
+      description: result.generatedText || undefined,
+      imageData: result.imageUrl!,
+      style: designStyle as 'modern' | 'minimal' | 'corporate' | 'creative',
+      createdAt: new Date().toISOString(),
+      isAccepted: false,
+    };
+
+    // 自动保存到对话状态（会在确认蓝图时同步到蓝图中）
+    if (autoSave) {
+      if (!state.designImages) {
+        state.designImages = [];
+      }
+      // 替换同风格的设计图，或添加新的
+      const existingIndex = state.designImages.findIndex(img => img.style === designStyle);
+      if (existingIndex >= 0) {
+        state.designImages[existingIndex] = designImage;
+      } else {
+        state.designImages.push(designImage);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: designImage.id,
+        imageUrl: result.imageUrl,
+        description: result.generatedText,
+        style: designStyle,
+        savedToSession: autoSave,
+      },
+    });
+  } catch (error: any) {
+    console.error('[Blueprint API] 生成设计图失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '生成设计图时发生错误',
+    });
+  }
+});
+
+/**
+ * POST /dialog/:sessionId/accept-design
+ * 确认设计图作为验收标准
+ */
+router.post('/dialog/:sessionId/accept-design', async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { designId, accepted = true } = req.body;
+
+    // 获取对话会话
+    const session = dialogManager.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    const state = session.state;
+
+    if (!state.designImages || state.designImages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: '没有可用的设计图',
+      });
+    }
+
+    // 查找并更新设计图状态
+    const designImage = state.designImages.find(img => img.id === designId);
+    if (!designImage) {
+      return res.status(404).json({
+        success: false,
+        error: '设计图不存在',
+      });
+    }
+
+    designImage.isAccepted = accepted;
+
+    res.json({
+      success: true,
+      data: {
+        designId,
+        isAccepted: accepted,
+        message: accepted ? '设计图已确认为验收标准' : '已取消设计图的验收标准状态',
+      },
+    });
+  } catch (error: any) {
+    console.error('[Blueprint API] 确认设计图失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '确认设计图时发生错误',
+    });
+  }
+});
+
+/**
+ * GET /dialog/:sessionId/designs
+ * 获取对话会话中的所有设计图
+ */
+router.get('/dialog/:sessionId/designs', (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+
+    // 获取对话会话
+    const session = dialogManager.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: '对话会话不存在',
+      });
+    }
+
+    const designs = session.state.designImages || [];
+
+    res.json({
+      success: true,
+      data: {
+        designs: designs.map(d => ({
+          id: d.id,
+          name: d.name,
+          description: d.description,
+          style: d.style,
+          createdAt: d.createdAt,
+          isAccepted: d.isAccepted,
+          // 不返回完整的 imageData，使用缩略信息
+          hasImage: !!d.imageData,
+        })),
+        total: designs.length,
+        acceptedCount: designs.filter(d => d.isAccepted).length,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /design/generate
+ * 独立的设计图生成接口（不依赖对话会话）
+ */
+router.post('/design/generate', async (req: Request, res: Response) => {
+  try {
+    const { projectName, projectDescription, requirements, constraints, techStack, style } = req.body;
+
+    // 参数校验
+    if (!projectName || !requirements || !Array.isArray(requirements) || requirements.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数：projectName 和 requirements（数组）',
+      });
+    }
+
+    // 调用 Gemini 生成设计图
+    const result = await geminiImageService.generateDesign({
+      projectName,
+      projectDescription: projectDescription || projectName,
+      requirements,
+      constraints: constraints || [],
+      techStack: techStack || {},
+      style: style || 'modern',
+    });
+
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: result.error || '生成设计图失败',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        imageUrl: result.imageUrl,
+        description: result.generatedText,
+      },
+    });
+  } catch (error: any) {
+    console.error('[Blueprint API] 生成设计图失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '生成设计图时发生错误',
+    });
   }
 });
 

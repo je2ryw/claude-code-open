@@ -63,6 +63,23 @@ export interface Blueprint {
 
   // v2.1: 持久化的执行计划（用于服务重启后恢复显示）
   lastExecutionPlan?: SerializableExecutionPlan;
+
+  // v2.2: UI 设计图（作为端到端验收标准）
+  designImages?: DesignImage[];
+}
+
+/**
+ * UI 设计图
+ * 用于存储 AI 生成的界面设计图，作为验收标准
+ */
+export interface DesignImage {
+  id: string;
+  name: string;                    // 设计图名称
+  description?: string;            // 设计图描述
+  imageData: string;               // base64 图片数据（data URL 格式）
+  style: 'modern' | 'minimal' | 'corporate' | 'creative';  // 设计风格
+  createdAt: Date | string;        // 创建时间
+  isAccepted?: boolean;            // 是否被用户接受作为验收标准
 }
 
 // ============================================================================
@@ -599,6 +616,8 @@ export interface DialogState {
   isComplete: boolean;
   /** 确认时生成的蓝图（避免重复生成） */
   generatedBlueprint?: Blueprint;
+  /** v2.2: 对话过程中生成的设计图（会保存到最终蓝图中） */
+  designImages?: DesignImage[];
 }
 
 /**
@@ -711,7 +730,7 @@ export interface SwarmConfig {
  * 默认配置
  */
 export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
-  maxWorkers: 5,
+  maxWorkers: 10,
   workerTimeout: 600000,  // 10分钟（从5分钟增加）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',

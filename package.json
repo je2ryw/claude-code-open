@@ -51,6 +51,7 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",
+    "@google/genai": "^1.38.0",
     "@resvg/resvg-js": "^2.6.2",
     "@resvg/resvg-wasm": "^2.6.2",
     "@vscode/tree-sitter-wasm": "^0.3.0",
@@ -70,6 +71,7 @@
     "jszip": "^3.10.1",
     "lru-cache": "^11.2.4",
     "marked": "^12.0.0",
+    "mime": "^4.1.0",
     "open": "^11.0.0",
     "proxy-from-env": "^1.1.0",
     "react": "^18.2.0",

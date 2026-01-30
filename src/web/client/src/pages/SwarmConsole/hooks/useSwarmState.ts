@@ -16,11 +16,6 @@ import type {
   UseSwarmStateReturn,
   TaskNode,
   WorkerAgent,
-  ExecutionPlan,
-  GitBranchStatus,
-  CostEstimate,
-  PlannerUpdatePayload,
-  WorkerLogEntry,
 } from '../types';
 
 const initialState: SwarmState = {
@@ -299,13 +294,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
               break;
 
             case 'tool_end':
+              // 匹配 toolName，而不是简单地找"最后一个 running"
               for (let i = newContent.length - 1; i >= 0; i--) {
                 const block = newContent[i];
-                if (block.type === 'tool' && block.status === 'running') {
-                  // 创建新对象替换，同时更新 input（因为 tool_start 时 input 可能是 undefined）
+                if (block.type === 'tool' && block.status === 'running' && block.name === toolName) {
                   newContent[i] = {
                     ...block,
-                    input: toolInput ?? block.input,  // 使用 tool_end 传递的 input
+                    input: toolInput ?? block.input,
                     status: toolError ? 'error' as const : 'completed' as const,
                     result: toolResult,
                     error: toolError,

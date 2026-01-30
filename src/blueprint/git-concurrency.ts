@@ -453,14 +453,20 @@ export class GitConcurrency extends EventEmitter {
       throw new Error(`创建 Worktree 失败: ${createResult.stderr}`);
     }
 
-    // 链接 node_modules、.env 等依赖（这些在 .gitignore 中，不会被 worktree 复制）
-    await this.linkWorktreeDependencies(worktreePath);
-
-    // 记录工作区
+    // 先记录工作区到 Map，确保即使后续链接失败也能被正确清理
+    // 这解决了 linkWorktreeDependencies 失败后 commitChanges 找不到工作区的问题
     this.workerWorkspaces.set(workerId, {
       branchName,
       worktreePath,
     });
+
+    // 链接 node_modules、.env 等依赖（这些在 .gitignore 中，不会被 worktree 复制）
+    try {
+      await this.linkWorktreeDependencies(worktreePath);
+    } catch (linkError: any) {
+      // 链接失败不应该阻止工作区的使用，只记录警告
+      console.warn(`[Git] 链接依赖失败 (worktree 仍可使用): ${linkError.message}`);
+    }
 
     this.emit('branch:created', {
       workerId,

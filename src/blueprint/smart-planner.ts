@@ -722,14 +722,25 @@ ${state.collectedRequirements.join('\n')}
   private async processTechChoiceInput(
     state: DialogState,
     input: string
-  ): Promise<{ response: string; nextPhase: DialogPhase }> {
+  ): Promise<{ response: string; nextPhase: DialogPhase; generatedBlueprint?: Blueprint }> {
     const normalizedInput = input.trim().toLowerCase();
 
     if (normalizedInput === '确认' || normalizedInput === 'confirm' || normalizedInput === 'yes') {
-      // 生成蓝图摘要
-      const summary = this.generateBlueprintSummary(state);
-      const response = DIALOG_PROMPTS.confirmation.replace('{{blueprintSummary}}', summary);
-      return { response, nextPhase: 'confirmation' };
+      // 在进入确认阶段前就生成蓝图（用户等待时间前移，确认时秒回）
+      try {
+        state.isComplete = true; // 临时标记以便生成蓝图
+        const blueprint = await this.generateBlueprint(state);
+        state.generatedBlueprint = blueprint; // 存储预生成的蓝图
+
+        // 生成蓝图摘要用于展示
+        const summary = this.generateBlueprintSummary(state);
+        const response = DIALOG_PROMPTS.confirmation.replace('{{blueprintSummary}}', summary);
+        return { response, nextPhase: 'confirmation', generatedBlueprint: blueprint };
+      } catch (error: any) {
+        state.isComplete = false;
+        const errorMsg = `蓝图预生成失败: ${error.message}\n\n请调整需求后重试。`;
+        return { response: errorMsg, nextPhase: 'tech_choice' };
+      }
     }
 
     // 处理技术栈修改
@@ -767,35 +778,44 @@ ${JSON.stringify(state.techStack, null, 2)}
     const normalizedInput = input.trim().toLowerCase();
 
     if (normalizedInput === '确认' || normalizedInput === 'confirm' || normalizedInput === 'yes') {
-      // 用户确认，立即生成蓝图和执行计划
-      try {
-        // 临时标记完成以便生成蓝图
-        state.isComplete = true;
+      // 使用预生成的蓝图（在 tech_choice 阶段已生成），秒速响应
+      const blueprint = state.generatedBlueprint;
+      if (!blueprint) {
+        // 兜底：如果没有预生成的蓝图，现场生成
+        try {
+          state.isComplete = true;
+          const newBlueprint = await this.generateBlueprint(state);
+          state.generatedBlueprint = newBlueprint;
 
-        // 生成蓝图
-        const blueprint = await this.generateBlueprint(state);
+          const moduleCount = newBlueprint.modules?.length || 0;
+          const estimatedTasks = Math.max(moduleCount * 2, 5);
+          const estimatedMinutes = Math.ceil(estimatedTasks * 3);
 
-        // 创建执行计划以获取任务数量
-        const executionPlan = await this.createExecutionPlan(blueprint);
+          const response = DIALOG_PROMPTS.done
+            .replace('{{blueprintId}}', newBlueprint.id)
+            .replace('{{taskCount}}', `约 ${estimatedTasks}`)
+            .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
 
-        // 计算预计执行时间（每个任务平均3分钟）
-        const taskCount = executionPlan.tasks.length;
-        const estimatedMinutes = Math.ceil(taskCount * 3);
-
-        // 使用真实数据替换模板变量
-        const response = DIALOG_PROMPTS.done
-          .replace('{{blueprintId}}', blueprint.id)
-          .replace('{{taskCount}}', String(taskCount))
-          .replace('{{estimatedMinutes}}', String(estimatedMinutes));
-
-        // 返回结果，包含生成的蓝图
-        return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: blueprint };
-      } catch (error: any) {
-        // 如果生成失败，恢复状态并返回错误
-        state.isComplete = false;
-        const errorMsg = `蓝图生成失败: ${error.message}\n\n请重试或输入"修改"调整需求。`;
-        return { response: errorMsg, nextPhase: 'confirmation' };
+          return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: newBlueprint };
+        } catch (error: any) {
+          state.isComplete = false;
+          const errorMsg = `蓝图生成失败: ${error.message}\n\n请重试或输入"修改"调整需求。`;
+          return { response: errorMsg, nextPhase: 'confirmation' };
+        }
       }
+
+      // 有预生成的蓝图，直接返回（秒速响应）
+      state.isComplete = true;
+      const moduleCount = blueprint.modules?.length || 0;
+      const estimatedTasks = Math.max(moduleCount * 2, 5);
+      const estimatedMinutes = Math.ceil(estimatedTasks * 3);
+
+      const response = DIALOG_PROMPTS.done
+        .replace('{{blueprintId}}', blueprint.id)
+        .replace('{{taskCount}}', `约 ${estimatedTasks}`)
+        .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
+
+      return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: blueprint };
     }
 
     if (normalizedInput === '重来' || normalizedInput === 'restart') {
@@ -1112,6 +1132,9 @@ ${JSON.stringify(state.techStack, null, 2)}
       techStack: this.ensureCompleteTechStack(state.techStack),
       constraints: state.collectedConstraints,
 
+      // v2.2: UI 设计图（作为端到端验收标准）
+      designImages: state.designImages || [],
+
       // 时间戳
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -1281,21 +1304,29 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
       { tasks: [], decisions: [] }
     );
 
-    // 构建智能任务列表
-    const tasks: SmartTask[] = taskData.tasks.map((t) => ({
-      id: t.id || uuidv4(),
-      name: t.name,
-      description: t.description,
-      type: t.type,
-      complexity: t.complexity || 'simple',
-      blueprintId: blueprint.id,
-      moduleId: t.moduleId,
-      files: t.files,
-      dependencies: t.dependencies || [],
-      needsTest: this.config.autoTestDecision ? t.needsTest : true,
-      estimatedMinutes: Math.min(t.estimatedMinutes || 5, this.config.maxTaskMinutes),
-      status: 'pending',
-    }));
+    // 构建智能任务列表（过滤掉无效任务）
+    const tasks: SmartTask[] = taskData.tasks
+      .filter((t) => {
+        if (!t.name || typeof t.name !== 'string') {
+          console.warn('[SmartPlanner] 过滤掉无效任务（缺少 name）:', JSON.stringify(t));
+          return false;
+        }
+        return true;
+      })
+      .map((t) => ({
+        id: t.id || uuidv4(),
+        name: t.name,
+        description: t.description || t.name,
+        type: t.type || 'code',
+        complexity: t.complexity || 'simple',
+        blueprintId: blueprint.id,
+        moduleId: t.moduleId,
+        files: Array.isArray(t.files) ? t.files : [],
+        dependencies: t.dependencies || [],
+        needsTest: this.config.autoTestDecision ? t.needsTest : true,
+        estimatedMinutes: Math.min(t.estimatedMinutes || 5, this.config.maxTaskMinutes),
+        status: 'pending' as const,
+      }));
 
     // 分析并行组
     const parallelGroups = this.analyzeParallelGroups(tasks);
@@ -1422,33 +1453,148 @@ ${(blueprint.constraints || []).length > 0 ? blueprint.constraints!.join('\n') :
   }
 
   /**
-   * 使用 AI 提取结构化信息
+   * 使用 Tool Use 提取结构化信息（比让AI输出JSON文本更可靠）
+   *
+   * @param prompt 提示词，描述需要提取什么
+   * @param schema JSON Schema，定义返回数据的结构
+   * @param defaultValue 默认值（当提取失败时返回）
    */
-  private async extractWithAI<T>(prompt: string, defaultValue: T): Promise<T> {
+  private async extractWithAI<T>(
+    prompt: string,
+    defaultValue: T,
+    schema?: Record<string, any>
+  ): Promise<T> {
     try {
       const client = this.getClient();
+
+      // 从 defaultValue 推断 schema（如果没有提供）
+      const inferredSchema = schema || this.inferSchemaFromValue(defaultValue);
+
+      // 定义提取工具
+      const extractTool = {
+        name: 'submit_extracted_data',
+        description: '提交提取的结构化数据',
+        inputSchema: {
+          type: 'object' as const,
+          properties: inferredSchema,
+          required: Object.keys(inferredSchema),
+        },
+      };
+
       const response = await client.createMessage(
         [{ role: 'user', content: prompt }],
-        undefined,
-        '你是一个 JSON 数据提取助手。只返回有效的 JSON，不要有其他内容。确保 JSON 格式正确，可以被直接解析。'
+        [extractTool],
+        '你是一个数据提取助手。分析用户的输入，然后使用 submit_extracted_data 工具返回结构化数据。必须调用工具，不要直接回复文本。'
       );
 
-      let text = '';
+      // 从 tool_use block 中提取数据
       for (const block of response.content) {
-        if (block.type === 'text') {
-          text += block.text;
+        if (block.type === 'tool_use' && block.name === 'submit_extracted_data') {
+          return block.input as T;
         }
       }
 
-      // 提取 JSON
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as T;
+      // 如果AI没有调用工具，尝试从文本中解析（降级方案）
+      let text = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          text += (block as any).text;
+        }
       }
+
+      if (text) {
+        const parsed = this.tryParseJSON<T>(text);
+        if (parsed !== null) {
+          return parsed;
+        }
+      }
+
+      console.warn('[SmartPlanner] AI未调用工具，使用默认值');
       return defaultValue;
     } catch (error) {
       console.error('[SmartPlanner] AI extraction failed:', error);
       return defaultValue;
+    }
+  }
+
+  /**
+   * 从默认值推断 JSON Schema
+   */
+  private inferSchemaFromValue(value: any): Record<string, any> {
+    if (value === null || value === undefined) {
+      return {};
+    }
+
+    const schema: Record<string, any> = {};
+
+    for (const [key, val] of Object.entries(value)) {
+      if (Array.isArray(val)) {
+        schema[key] = {
+          type: 'array',
+          items: val.length > 0 ? this.inferTypeSchema(val[0]) : { type: 'string' },
+        };
+      } else {
+        schema[key] = this.inferTypeSchema(val);
+      }
+    }
+
+    return schema;
+  }
+
+  /**
+   * 推断单个值的类型 schema
+   */
+  private inferTypeSchema(val: any): Record<string, any> {
+    if (val === null || val === undefined) {
+      return { type: 'string' };
+    }
+    if (typeof val === 'string') {
+      return { type: 'string' };
+    }
+    if (typeof val === 'number') {
+      return { type: 'number' };
+    }
+    if (typeof val === 'boolean') {
+      return { type: 'boolean' };
+    }
+    if (Array.isArray(val)) {
+      return {
+        type: 'array',
+        items: val.length > 0 ? this.inferTypeSchema(val[0]) : { type: 'string' },
+      };
+    }
+    if (typeof val === 'object') {
+      return {
+        type: 'object',
+        properties: this.inferSchemaFromValue(val),
+      };
+    }
+    return { type: 'string' };
+  }
+
+  /**
+   * 尝试从文本解析 JSON（降级方案）
+   */
+  private tryParseJSON<T>(text: string): T | null {
+    // 清理 markdown 代码块
+    const cleaned = text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    try {
+      return JSON.parse(cleaned) as T;
+    } catch {
+      // 尝试提取 {...} 部分
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          return JSON.parse(match[0]) as T;
+        } catch {
+          return null;
+        }
+      }
+      return null;
     }
   }
 
