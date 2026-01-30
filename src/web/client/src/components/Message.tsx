@@ -5,8 +5,9 @@ import { ImpactAnalysisCard } from './continuous/ImpactAnalysisCard';
 import { DevProgressBar } from './continuous/DevProgressBar';
 import { RegressionResultCard } from './continuous/RegressionResultCard';
 import { CycleReviewCard } from './continuous/CycleReviewCard';
+import { NotebookOutputRenderer } from './NotebookOutputRenderer';
 import { coordinatorApi } from '../api/blueprint';
-import type { ChatMessage, ChatContent, ToolUse } from '../types';
+import type { ChatMessage, ChatContent, ToolUse, NotebookOutputData } from '../types';
 
 interface MessageProps {
   message: ChatMessage;
@@ -123,6 +124,14 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onD
           key={index}
           data={item.data}
           onRollback={(checkpointId) => onDevAction?.('rollback', { checkpointId })}
+        />
+      );
+    }
+    if (item.type === 'notebook_output') {
+      return (
+        <NotebookOutputRenderer
+          key={index}
+          data={item.data as NotebookOutputData}
         />
       );
     }
