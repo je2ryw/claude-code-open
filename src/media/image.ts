@@ -247,6 +247,66 @@ export function estimateImageTokens(base64: string): number {
 }
 
 /**
+ * v4.0: 压缩 Base64 图片数据
+ * 用于蜂群系统中的设计图优化
+ *
+ * @param base64Data Base64 编码的图片数据（可以带 data:image/xxx;base64, 前缀）
+ * @param maxTokens 最大允许的 token 数（默认 25000）
+ * @returns 压缩后的 Base64 数据（带 data URI 前缀）
+ */
+export async function compressBase64Image(
+  base64Data: string,
+  maxTokens: number = MAX_IMAGE_TOKENS
+): Promise<string> {
+  // 解析 data URI
+  let pureBase64 = base64Data;
+  let originalMediaType = 'image/png';
+
+  if (base64Data.startsWith('data:')) {
+    const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (matches) {
+      originalMediaType = matches[1];
+      pureBase64 = matches[2];
+    }
+  }
+
+  // 估算当前 token 消耗
+  const estimatedTokens = Math.ceil(pureBase64.length * 0.125);
+
+  // 如果在限制内，直接返回
+  if (estimatedTokens <= maxTokens) {
+    return base64Data.startsWith('data:')
+      ? base64Data
+      : `data:${originalMediaType};base64,${pureBase64}`;
+  }
+
+  // 需要压缩
+  try {
+    const buffer = Buffer.from(pureBase64, 'base64');
+
+    const compressed = await sharp(buffer)
+      .resize(IMAGE_COMPRESSION_CONFIG.maxWidth, IMAGE_COMPRESSION_CONFIG.maxHeight, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: IMAGE_COMPRESSION_CONFIG.quality })
+      .toBuffer();
+
+    const compressedBase64 = compressed.toString('base64');
+    const newTokens = Math.ceil(compressedBase64.length * 0.125);
+
+    console.log(`[ImageCompression] 压缩: ${estimatedTokens} -> ${newTokens} tokens (${Math.round((1 - newTokens/estimatedTokens) * 100)}% 减少)`);
+
+    return `data:image/jpeg;base64,${compressedBase64}`;
+  } catch (error) {
+    console.error('[ImageCompression] 压缩失败，返回原始数据:', error);
+    return base64Data.startsWith('data:')
+      ? base64Data
+      : `data:${originalMediaType};base64,${pureBase64}`;
+  }
+}
+
+/**
  * 验证图片文件
  */
 export function validateImageFile(filePath: string): { valid: boolean; error?: string } {

@@ -21,33 +21,32 @@ import type {
   DesignImage,
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
-import type { AnyContentBlock, ImageBlockParam, TextBlockParam } from '../types/index.js';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
 
-/**
- * 依赖任务产出
- * 记录前置任务完成后产生的文件变更
- */
+/** 依赖任务的产出信息 */
 export interface DependencyOutput {
   taskId: string;
   taskName: string;
-  files: Array<{ path: string; content: string }>;
+  /** 产出的文件路径列表 */
+  files: string[];
+  /** 任务完成的简要描述（帮助后续任务理解语义） */
+  summary?: string;
 }
 
 export interface WorkerContext {
   projectPath: string;
   techStack: TechStack;
   config: SwarmConfig;
-  /** 相关代码文件（来自上下文收集器） */
-  relatedFiles?: Array<{ path: string; content: string }>;
-  /** 依赖任务的产出（前置任务写的代码） */
-  dependencyOutputs?: DependencyOutput[];
   constraints?: string[];
-  /** UI 设计图（作为端到端验收标准） */
+  /** 依赖任务的产出（前置任务创建/修改的文件） */
+  dependencyOutputs?: DependencyOutput[];
+  /** UI 设计图（只含文件路径，Worker 用 Read 工具按需读取） */
   designImages?: DesignImage[];
+  /** 共享的 System Prompt（跨 Worker 复用） */
+  sharedSystemPromptBase?: string;
 }
 
 export type WorkerEventType =
@@ -68,6 +67,23 @@ export class AutonomousWorkerExecutor extends EventEmitter {
   private defaultModel: ModelType;
   private maxTurns: number;
 
+  /**
+   * v5.0: 构建共享的 System Prompt 基础部分
+   * 在 RealTaskExecutor 中调用一次，然后复用给所有 Worker
+   * 节省 ~3000 tokens × (N-1) Workers
+   */
+  static buildSharedSystemPromptBase(techStack: TechStack): string {
+    return `你是自治开发 Worker，直接用工具执行任务。
+
+## 规则
+- 直接执行，不讨论
+- 完成后调用 UpdateTaskStatus(status="completed")
+- 失败时调用 UpdateTaskStatus(status="failed", error="...")
+
+## 环境
+${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
+  }
+
   constructor(config?: Partial<SwarmConfig>) {
     super();
     this.workerId = `worker-${uuidv4().slice(0, 8)}`;
@@ -84,6 +100,8 @@ export class AutonomousWorkerExecutor extends EventEmitter {
     // v3.3: 追踪测试运行
     let testsRan = false;
     let testsPassed = false;
+    // v3.7: 追踪 AI 是否主动汇报了任务完成
+    let aiReportedCompleted = false;
 
     this.log(`开始执行任务: ${task.name}`);
 
@@ -127,6 +145,13 @@ export class AutonomousWorkerExecutor extends EventEmitter {
           if (codeTools.includes(event.toolName)) {
             hasCodeToolCall = true;
           }
+          // v3.7: 检测 AI 主动汇报完成
+          if (event.toolName === 'UpdateTaskStatus' && event.toolInput && !event.toolError) {
+            const input = event.toolInput as { status?: string };
+            if (input.status === 'completed') {
+              aiReportedCompleted = true;
+            }
+          }
           // v3.3: 检测测试运行
           if (event.toolName === 'Bash' && event.toolInput) {
             const input = event.toolInput as { command?: string };
@@ -156,6 +181,7 @@ export class AutonomousWorkerExecutor extends EventEmitter {
         hasCodeToolCall,
         writtenFiles,
         testsRan,
+        aiReportedCompleted,
       });
 
       if (!validationResult.success) {
@@ -201,9 +227,18 @@ export class AutonomousWorkerExecutor extends EventEmitter {
   }
 
   /**
-   * v3.2: 验证任务是否真正完成
-   * v3.3: 增加测试运行检查
-   * 根据任务类型检查是否满足完成条件
+   * v3.6: 简化验收逻辑
+   *
+   * 设计理念：信任 AI 的判断，只做最小必要验证
+   *
+   * 原因：
+   * 1. AI 已经按照任务描述执行工作，并给出了完成结论
+   * 2. 机械式的检查（如检查 writtenFiles 数量）无法覆盖 Bash 命令等场景
+   * 3. 过度验证会导致假阴性（任务实际完成但被标记为失败）
+   *
+   * 只在以下场景验证：
+   * - 完全没有工具调用 → 明显的空执行
+   * - test 类型任务必须运行测试 → 测试必须验证通过
    */
   private validateTaskCompletion(
     task: SmartTask,
@@ -212,87 +247,37 @@ export class AutonomousWorkerExecutor extends EventEmitter {
       hasCodeToolCall: boolean;
       writtenFiles: FileChange[];
       testsRan?: boolean;
+      aiReportedCompleted?: boolean;
     }
   ): { success: boolean; error?: string } {
-    const { toolCallCount, hasCodeToolCall, writtenFiles, testsRan } = metrics;
+    const { toolCallCount, testsRan, aiReportedCompleted } = metrics;
 
-    // 1. 检查是否有任何工具调用（基础验收）
+    // v3.7: 如果 AI 主动汇报了完成状态，信任它的判断
+    // 这处理了 AI 判断不需要修改（如配置已正确）的情况
+    if (aiReportedCompleted) {
+      this.log(`AI 主动汇报任务完成，信任其判断`);
+      return { success: true };
+    }
+
+    // 唯一的硬性检查：必须有工具调用（防止空执行）
     if (toolCallCount === 0) {
       return {
         success: false,
-        error: '任务未执行：没有检测到任何工具调用（执行日志为空）',
+        error: '任务未执行：没有检测到任何工具调用',
       };
     }
 
-    // 2. 根据任务类型进行针对性验收
-    switch (task.type) {
-      case 'code':
-      case 'refactor':
-        // 代码任务必须有文件变更
-        if (writtenFiles.length === 0) {
-          return {
-            success: false,
-            error: `${task.type === 'code' ? '代码编写' : '重构'}任务未完成：没有检测到任何代码变更`,
-          };
-        }
-        break;
-
-      case 'test':
-        // 测试任务必须有测试文件写入
-        if (writtenFiles.length === 0) {
-          return {
-            success: false,
-            error: '测试任务未完成：没有检测到测试文件写入',
-          };
-        }
-        // 检查是否写入了测试文件（文件名包含 test/spec）
-        const hasTestFile = writtenFiles.some(f =>
-          /\.(test|spec)\.(ts|js|tsx|jsx)$/.test(f.filePath) ||
-          f.filePath.includes('/test/') ||
-          f.filePath.includes('/tests/') ||
-          f.filePath.includes('/__tests__/')
-        );
-        if (!hasTestFile) {
-          return {
-            success: false,
-            error: '测试任务未完成：写入的文件不是测试文件',
-          };
-        }
-        // v3.3: 测试任务必须运行测试来验证
-        if (!testsRan) {
-          return {
-            success: false,
-            error: '测试任务未完成：测试文件已编写但未运行测试验证，请运行测试命令（如 npm test）',
-          };
-        }
-        break;
-
-      case 'config':
-        // 配置任务必须有配置文件变更
-        if (writtenFiles.length === 0) {
-          return {
-            success: false,
-            error: '配置任务未完成：没有检测到配置文件变更',
-          };
-        }
-        break;
-
-      case 'integrate':
-        // 集成任务必须有代码相关工具调用
-        if (!hasCodeToolCall) {
-          return {
-            success: false,
-            error: '集成任务未完成：没有检测到代码集成操作',
-          };
-        }
-        break;
-
-      case 'docs':
-        // 文档任务允许没有文件变更（可能只是阅读/分析）
-        // 但至少需要有工具调用（已在上面检查过）
-        break;
+    // test 类型任务：必须运行测试（这是唯一需要强制验证的场景）
+    if (task.type === 'test' && task.needsTest !== false) {
+      if (!testsRan) {
+        return {
+          success: false,
+          error: '测试任务未完成：请运行测试命令验证（如 npm test）',
+        };
+      }
     }
 
+    // 其他任务类型：信任 AI 的执行结果
     return { success: true };
   }
 
@@ -302,137 +287,59 @@ export class AutonomousWorkerExecutor extends EventEmitter {
     return this.defaultModel;
   }
 
-  /**
-   * v3.3: 根据测试策略生成测试指导
-   * 帮助 Worker 正确处理数据库、外部 API 等依赖
-   */
-  private buildTestStrategyGuide(task: SmartTask, context: WorkerContext): string {
-    const strategy = task.testStrategy || 'unit';
-
-    switch (strategy) {
-      case 'unit':
-        return `
-### 测试策略：单元测试 (Unit)
-- 使用 mock/stub 隔离所有外部依赖
-- 数据库：使用 mock 或内存数据库
-- 外部 API：使用 jest.mock() 或 vitest.mock()
-- 示例：
-  \`\`\`typescript
-  // Mock 数据库
-  jest.mock('../db', () => ({ query: jest.fn() }));
-  // Mock 外部 API
-  jest.mock('axios');
-  \`\`\``;
-
-      case 'integration':
-        return `
-### 测试策略：集成测试 (Integration)
-- 使用测试数据库（SQLite 内存模式或 Docker 容器）
-- 外部 API 仍需 mock
-- 确保测试数据隔离，每个测试用例独立
-- 示例：
-  \`\`\`typescript
-  // 使用 SQLite 内存数据库
-  beforeAll(() => db.connect(':memory:'));
-  afterEach(() => db.truncate());
-  \`\`\``;
-
-      case 'e2e':
-        return `
-### 测试策略：端到端测试 (E2E)
-- 需要完整的测试环境
-- 使用 Docker Compose 启动所有服务
-- 测试真实的用户流程
-- 注意：运行前确保测试环境已启动`;
-
-      case 'mock':
-        return `
-### 测试策略：Mock 外部依赖
-- 所有外部 API 调用必须 mock
-- 使用 nock、msw 或 jest.mock
-- 示例：
-  \`\`\`typescript
-  import nock from 'nock';
-  nock('https://api.example.com')
-    .get('/users')
-    .reply(200, mockData);
-  \`\`\``;
-
-      case 'vcr':
-        return `
-### 测试策略：录制回放 (VCR)
-- 首次运行录制真实 API 响应
-- 后续运行使用录制的响应
-- 使用 nock-record、polly.js 或类似工具
-- 注意：敏感数据需要脱敏处理`;
-
-      case 'skip':
-        return ''; // 跳过测试，不需要指导
-
-      default:
-        return '';
+  private buildSystemPrompt(task: SmartTask, context: WorkerContext): string {
+    // v4.0 Token 优化：精简 System Prompt，移除重复信息
+    // 如果有共享的基础 Prompt，直接使用
+    if (context.sharedSystemPromptBase) {
+      return context.sharedSystemPromptBase + this.buildTaskSpecificPrompt(task, context);
     }
+
+    // 构建精简版 System Prompt
+    let prompt = `你是自治开发 Worker，直接用工具执行任务。
+
+## 规则
+- 直接执行，不讨论
+- 完成后调用 UpdateTaskStatus(status="completed")
+- 失败时调用 UpdateTaskStatus(status="failed", error="...")
+
+## 环境
+${context.techStack.language}${context.techStack.framework ? ' + ' + context.techStack.framework : ''}`;
+
+    // 只在需要时添加测试指导
+    if (task.type === 'test' || task.needsTest) {
+      prompt += `\n\n## 测试
+运行 ${context.techStack.testFramework || 'npm test'} 验证`;
+    }
+
+    // 只在 UI 任务且有设计图时添加指导
+    if (this.isUITask(task) && context.designImages?.length) {
+      prompt += `\n\n## UI
+严格按设计图还原，注意布局颜色间距`;
+    }
+
+    return prompt;
   }
 
-  private buildSystemPrompt(task: SmartTask, context: WorkerContext): string {
-    // v3.3: 根据测试策略生成不同的指导
-    const testStrategyGuide = this.buildTestStrategyGuide(task, context);
+  /**
+   * v4.0: 构建任务特定的额外提示
+   * 注意：与 buildSystemPrompt 的后半部分逻辑保持一致
+   */
+  private buildTaskSpecificPrompt(task: SmartTask, context: WorkerContext): string {
+    let extra = '';
 
-    // v3.3: 根据任务类型生成不同的指导
-    const testGuidance = task.type === 'test' ? `
-## 测试任务要求（重要！）
-这是一个测试任务，你必须：
-1. 编写测试文件
-2. **运行测试命令验证测试是否正确**（使用 ${context.techStack.testFramework || 'npm test'} 或类似命令）
-3. 如果测试失败，修复问题后再次运行
-4. 只有测试通过后才能标记任务完成
-${testStrategyGuide}` : '';
+    // 只在需要时添加测试指导
+    if (task.type === 'test' || task.needsTest) {
+      extra += `\n\n## 测试
+运行 ${context.techStack.testFramework || 'npm test'} 验证`;
+    }
 
-    const needsTestGuidance = task.needsTest && task.type !== 'test' ? `
-## 测试要求
-此任务需要测试验证。完成代码编写后：
-1. 编写对应的测试用例
-2. 运行测试命令验证（${context.techStack.testFramework || 'npm test'}）
-3. 确保测试通过后再标记完成
-${testStrategyGuide}` : '';
+    // 只在 UI 任务且有设计图时添加指导
+    if (this.isUITask(task) && context.designImages?.length) {
+      extra += `\n\n## UI
+严格按设计图还原，注意布局颜色间距`;
+    }
 
-    // v3.5: UI 任务设计图指导
-    const uiGuidance = this.isUITask(task) && context.designImages?.length ? `
-## UI 设计图验收标准（重要！）
-你将收到 UI 设计图作为参考，这是验收标准。请：
-1. **仔细观察设计图**：注意布局、颜色、间距、字体大小
-2. **严格还原设计**：界面效果必须与设计图一致
-3. **使用项目现有样式系统**：优先使用已有的 CSS 变量、组件库
-4. **保持响应式**：确保在不同屏幕尺寸下正常显示
-5. **代码质量**：组件结构清晰、样式模块化
-` : '';
-
-    return `你是一个高度自治的软件开发 Worker。
-
-## 身份
-- Worker ID: ${this.workerId}
-- 任务: ${task.name}
-- 项目: ${context.projectPath}
-
-## 核心原则
-1. 完全自主决策，不需要请示
-2. 直接使用工具执行，不要只讨论
-3. 专注任务本身，不要过度设计
-${testGuidance}${needsTestGuidance}${uiGuidance}
-## 完成汇报
-任务完成后调用 UpdateTaskStatus 工具：
-- 成功: status="completed"
-- 失败: status="failed" + error
-
-## 技术环境
-- 语言: ${context.techStack.language}
-- 框架: ${context.techStack.framework || '无'}
-- 测试: ${context.techStack.testFramework || '无'}
-- 包管理: ${context.techStack.packageManager}
-
-## 禁止
-- 不要生成文档文件
-- 完成后立即停止`;
+    return extra;
   }
 
   private buildTaskPrompt(task: SmartTask, context: WorkerContext): string {
@@ -451,37 +358,41 @@ ${task.type} (复杂度: ${task.complexity})
 ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行确定）'}
 `;
 
+    // 技术栈信息
+    const tech = context.techStack;
+    const techInfo: string[] = [];
+    if (tech.framework) techInfo.push(`框架: ${tech.framework}`);
+    if (tech.uiFramework && tech.uiFramework !== 'none') techInfo.push(`UI库: ${tech.uiFramework}`);
+    if (tech.cssFramework && tech.cssFramework !== 'none') techInfo.push(`CSS: ${tech.cssFramework}`);
+    if (tech.testFramework) techInfo.push(`测试: ${tech.testFramework}`);
+    if (tech.apiStyle) techInfo.push(`API: ${tech.apiStyle}`);
+    if (techInfo.length > 0) {
+      prompt += `\n## 技术栈\n${techInfo.join(' | ')}\n`;
+    }
+
     if (context.constraints?.length) {
       prompt += `\n## 约束\n${context.constraints.map(c => `- ${c}`).join('\n')}\n`;
     }
 
-    // v3.4: 显示相关代码上下文（来自上下文收集器）
-    if (context.relatedFiles?.length) {
-      prompt += `\n## 相关代码（重要！请仔细阅读）\n`;
-      prompt += `以下是与此任务相关的现有代码，你需要基于这些代码进行开发：\n`;
-      for (const file of context.relatedFiles.slice(0, 5)) {
-        const ext = file.path.split('.').pop() || '';
-        prompt += `\n### ${file.path}\n\`\`\`${ext}\n${file.content.slice(0, 3000)}\n\`\`\`\n`;
-      }
-    }
-
-    // v3.4: 显示依赖任务产出（前置任务写的代码）
+    // 依赖任务的产出
     if (context.dependencyOutputs?.length) {
       prompt += `\n## 前置任务产出\n`;
-      prompt += `以下是你依赖的任务已经完成的代码，你需要基于这些代码进行开发：\n`;
-      for (const output of context.dependencyOutputs.slice(0, 3)) {
-        prompt += `\n### ${output.taskName} 产出的文件\n`;
-        for (const file of output.files.slice(0, 3)) {
-          const ext = file.path.split('.').pop() || '';
-          prompt += `\n#### ${file.path}\n\`\`\`${ext}\n${file.content.slice(0, 2000)}\n\`\`\`\n`;
+      prompt += `以下是本任务依赖的前置任务产生的文件，请用 Read 工具查看：\n`;
+      for (const dep of context.dependencyOutputs) {
+        prompt += `\n### ${dep.taskName}\n`;
+        if (dep.summary) {
+          prompt += `${dep.summary}\n`;
+        }
+        for (const file of dep.files.slice(0, 5)) {
+          prompt += `- \`${file}\`\n`;
         }
       }
     }
 
     prompt += `\n## 执行要求
-1. 首先阅读项目结构，理解代码组织方式
-2. 使用 Read 工具查看需要修改或参考的文件
-3. 使用 Write/Edit 工具完成代码编写
+1. 首先用 Read 工具查看相关文件，理解现有代码
+2. 使用 Write/Edit 工具完成代码编写
+3. 创建新文件时使用具体名称（如 \`userValidation.ts\`），避免通用名称（如 \`helper.ts\`）
 4. 完成后调用 UpdateTaskStatus(taskId="${task.id}", status="completed")
 5. 如果失败，调用 UpdateTaskStatus(taskId="${task.id}", status="failed", error="错误信息")
 
@@ -501,13 +412,13 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
   }
 
   /**
-   * v3.5: 构建多模态任务提示（包含设计图）
-   * 当任务是 UI 任务且有设计图时，返回多模态内容
+   * v5.0: 构建包含设计图引用的任务提示
+   * 不再发送 base64 图片数据，而是告诉 Worker 设计图文件路径，让它用 Read 工具自己读取
    */
   private buildMultimodalTaskPrompt(
     task: SmartTask,
     context: WorkerContext
-  ): string | AnyContentBlock[] {
+  ): string {
     const textPrompt = this.buildTaskPrompt(task, context);
 
     // 如果不是 UI 任务或没有设计图，直接返回文本提示
@@ -519,86 +430,26 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
     const acceptedImages = context.designImages.filter(img => img.isAccepted);
     const imagesToUse = acceptedImages.length > 0 ? acceptedImages : context.designImages;
 
-    // 构建多模态内容
-    const contentBlocks: AnyContentBlock[] = [];
-
-    // 添加任务文本提示
-    const textBlock: TextBlockParam = {
-      type: 'text',
-      text: textPrompt,
-    };
-    contentBlocks.push(textBlock);
-
-    // 添加设计图说明
-    const designIntro: TextBlockParam = {
-      type: 'text',
-      text: `
-## UI 设计图参考（重要！这是验收标准）
-
-以下是需要还原的 UI 设计图，请仔细查看并按照设计图实现界面：
-- 布局结构：请严格按照设计图的布局
-- 颜色方案：使用设计图中的颜色
-- 组件样式：按照设计图的视觉效果实现
-- 间距比例：尽可能还原设计图的间距和比例
-
-${imagesToUse.length > 1 ? `共有 ${imagesToUse.length} 张设计图，请逐一查看。` : ''}
-`,
-    };
-    contentBlocks.push(designIntro);
-
-    // 添加每张设计图
-    for (const img of imagesToUse) {
-      // 添加设计图标题
-      const imgTitle: TextBlockParam = {
-        type: 'text',
-        text: `### 设计图: ${img.name}${img.description ? ` - ${img.description}` : ''} (风格: ${img.style})`,
-      };
-      contentBlocks.push(imgTitle);
-
-      // 解析 base64 图片数据
-      // imageData 格式: data:image/png;base64,xxxxx
-      let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/png';
-      let base64Data = img.imageData;
-
-      if (img.imageData.startsWith('data:')) {
-        const matches = img.imageData.match(/^data:(image\/\w+);base64,(.+)$/);
-        if (matches) {
-          const detectedType = matches[1];
-          if (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(detectedType)) {
-            mediaType = detectedType as typeof mediaType;
-          }
-          base64Data = matches[2];
-        }
-      }
-
-      // 添加图片内容块
-      const imageBlock: ImageBlockParam = {
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: mediaType,
-          data: base64Data,
-        },
-      };
-      contentBlocks.push(imageBlock);
+    // 只有带 filePath 的设计图才有意义
+    const imagesWithPath = imagesToUse.filter(img => img.filePath);
+    if (imagesWithPath.length === 0) {
+      return textPrompt;
     }
 
-    // 添加实现提示
-    const implementationHint: TextBlockParam = {
-      type: 'text',
-      text: `
-## 实现提示
+    // 在提示中告诉 Worker 设计图位置，让它自己用 Read 工具读取
+    const designRef = imagesWithPath.map(img => {
+      const desc = img.description ? ` - ${img.description}` : '';
+      return `- ${img.name} (${img.style}): \`${img.filePath}\`${desc}`;
+    }).join('\n');
 
-请根据上面的设计图实现界面，确保：
-1. 视觉效果与设计图一致
-2. 响应式布局（如适用）
-3. 使用项目现有的 UI 框架和样式系统
-4. 代码结构清晰、可维护
-`,
-    };
-    contentBlocks.push(implementationHint);
+    return textPrompt + `
 
-    return contentBlocks;
+## UI 设计图
+
+以下是 UI 设计图文件，请使用 Read 工具读取图片文件作为界面实现的参考，如果你的任务和UI样式无关可以不看：
+${designRef}
+
+请按照设计图的布局、颜色、间距实现界面。`;
   }
 
   private handleStreamEvent(

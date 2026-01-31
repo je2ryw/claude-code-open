@@ -132,30 +132,35 @@ function hasValidIdentity(systemPrompt?: string | Array<{type: string; text: str
 }
 
 /**
- * 格式化 system prompt 以符合 Claude Code API 要求
+ * 格式化 system prompt 以启用 Prompt Caching
  *
- * 对于 OAuth 模式，system prompt 必须：
- * 1. 使用数组格式 [{type: 'text', text: '...'}]
- * 2. 第一个 block 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
+ * v5.0: 所有模式都启用 cache_control，节省重复 System Prompt 的 token 消耗
+ * - 对于 OAuth 模式：第一个 block 必须以 CLAUDE_CODE_IDENTITY 开头
+ * - 对于非 OAuth 模式：直接缓存整个 System Prompt
  */
 function formatSystemPrompt(
   systemPrompt: string | undefined,
   isOAuth: boolean
 ): Array<{type: 'text'; text: string; cache_control?: {type: 'ephemeral'}}> | string | undefined {
-  // 如果不是 OAuth 模式，直接返回原始 prompt
-  if (!isOAuth) {
-    return systemPrompt;
+  // 没有 system prompt 时
+  if (!systemPrompt) {
+    if (isOAuth) {
+      // OAuth 模式需要身份标识
+      return [
+        { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } }
+      ];
+    }
+    return undefined;
   }
 
-  // OAuth 模式需要特殊格式
-  if (!systemPrompt) {
-    // 没有 system prompt，使用默认的 Claude Code 身份
+  // 非 OAuth 模式：直接缓存整个 System Prompt
+  if (!isOAuth) {
     return [
-      { type: 'text', text: CLAUDE_CODE_IDENTITY, cache_control: { type: 'ephemeral' } }
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }
     ];
   }
 
-  // 检查是否已经包含有效身份
+  // OAuth 模式需要身份标识作为第一个 block
   let identityToUse = CLAUDE_CODE_IDENTITY;
   let remainingText = '';
 
@@ -184,6 +189,52 @@ function formatSystemPrompt(
     blocks.push({ type: 'text' as const, text: remainingText, cache_control: { type: 'ephemeral' as const } });
   }
   return blocks;
+}
+
+/**
+ * v5.0: 格式化消息以启用 Prompt Caching
+ *
+ * 官方实现：为每条消息的最后一个 content block 添加 cache_control
+ * 这样历史消息可以被缓存，在多轮对话中节省 token
+ *
+ * 注意：thinking 和 redacted_thinking 类型的 block 不添加缓存控制
+ */
+function formatMessages(messages: Array<{ role: string; content: any }>): Array<{ role: string; content: any }> {
+  return messages.map((m, msgIndex) => {
+    const isLastMessage = msgIndex === messages.length - 1;
+
+    // 如果 content 是字符串，转换为数组格式并添加缓存控制
+    if (typeof m.content === 'string') {
+      return {
+        role: m.role,
+        content: [{
+          type: 'text',
+          text: m.content,
+          // 只为最后一条消息添加缓存控制（官方逻辑）
+          ...(isLastMessage ? { cache_control: { type: 'ephemeral' } } : {}),
+        }],
+      };
+    }
+
+    // 如果 content 是数组，为最后一个非 thinking block 添加缓存控制
+    if (Array.isArray(m.content) && m.content.length > 0) {
+      const content = m.content.map((block: any, blockIndex: number) => {
+        const isLastBlock = blockIndex === m.content.length - 1;
+        // 跳过 thinking 类型的 block
+        const isThinkingBlock = block.type === 'thinking' || block.type === 'redacted_thinking';
+
+        // 只为最后一条消息的最后一个非 thinking block 添加缓存控制
+        if (isLastMessage && isLastBlock && !isThinkingBlock) {
+          return { ...block, cache_control: { type: 'ephemeral' } };
+        }
+        return block;
+      });
+
+      return { role: m.role, content };
+    }
+
+    return { role: m.role, content: m.content };
+  });
 }
 
 // 会话相关的全局状态
@@ -253,6 +304,9 @@ function buildBetas(model: string, isOAuth: boolean): string[] {
  * 构建 API 工具列表
  * 将客户端工具定义转换为 API 格式，并始终添加 WebSearch Server Tool
  *
+ * v5.0: 为最后一个工具添加 cache_control，启用工具列表缓存
+ * 官方实现：最后一个工具添加 { type: "ephemeral" } 来缓存整个工具列表
+ *
  * 官方 Claude Code 使用 Anthropic API 的 Server Tool 进行网络搜索：
  * - type: 'web_search_20250305'
  * - name: 'web_search'
@@ -284,6 +338,13 @@ function buildApiTools(tools?: ToolDefinition[]): any[] | undefined {
     // user_location: { type: 'approximate', country: 'US' },
   };
   apiTools.push(webSearchServerTool);
+
+  // v5.0: 为最后一个工具添加 cache_control，缓存整个工具列表
+  // 官方实现：cacheControl: D && YA === D ? cPA("global") : void 0
+  if (apiTools.length > 0) {
+    const lastTool = apiTools[apiTools.length - 1];
+    lastTool.cache_control = { type: 'ephemeral' };
+  }
 
   return apiTools.length > 0 ? apiTools : undefined;
 }
@@ -612,10 +673,8 @@ export class ClaudeClient {
           model: currentModel,
           max_tokens: this.maxTokens,
           system: formattedSystem,
-          messages: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          // v5.0: 使用 formatMessages 启用消息缓存
+          messages: formatMessages(messages),
           tools: apiTools,
           // 添加 tool_choice 参数（强制 AI 使用工具）
           ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),
@@ -779,10 +838,8 @@ export class ClaudeClient {
         model: this.model,
         max_tokens: this.maxTokens,
         system: formattedSystem as any,
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })) as any,
+        // v5.0: 使用 formatMessages 启用消息缓存
+        messages: formatMessages(messages) as any,
         tools: apiTools as any,
         // 添加 toolChoice 支持（强制 AI 调用特定工具）
         ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),

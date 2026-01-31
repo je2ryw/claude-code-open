@@ -852,6 +852,50 @@ export function setupWebSocket(
     });
   });
 
+  // v3.0: AI 主动汇报的任务状态变更（通过 UpdateTaskStatus 工具）
+  executionEventEmitter.on('task:status_change', (data: {
+    blueprintId: string;
+    workerId: string;
+    taskId: string;
+    status: 'running' | 'completed' | 'failed' | 'blocked';
+    percent?: number;
+    currentAction?: string;
+    error?: string;
+    notes?: string;
+    timestamp?: string;
+  }) => {
+    console.log(`[Swarm v3.0] Task status change from AI: taskId=${data.taskId}, status=${data.status}, blueprintId=${data.blueprintId}`);
+
+    // 检查订阅者
+    const subscribers = swarmSubscriptions.get(data.blueprintId);
+    console.log(`[Swarm v3.0] Subscribers for blueprint ${data.blueprintId}: ${subscribers ? subscribers.size : 0}`);
+
+    // 构建任务更新
+    const updates: Record<string, any> = {
+      status: data.status,
+    };
+
+    // 根据状态添加额外字段
+    if (data.status === 'completed') {
+      updates.completedAt = data.timestamp || new Date().toISOString();
+    } else if (data.status === 'failed') {
+      updates.error = data.error;
+      updates.completedAt = data.timestamp || new Date().toISOString();
+    } else if (data.status === 'running') {
+      updates.startedAt = updates.startedAt || data.timestamp || new Date().toISOString();
+    }
+
+    // 发送任务更新到前端
+    console.log(`[Swarm v3.0] Broadcasting task update: taskId=${data.taskId}, updates=${JSON.stringify(updates)}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:task_update',
+      payload: {
+        taskId: data.taskId,
+        updates,
+      },
+    });
+  });
+
   // v3.4: 验收测试状态更新
   executionEventEmitter.on('verification:update', (data: {
     blueprintId: string;

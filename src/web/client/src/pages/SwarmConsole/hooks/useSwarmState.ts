@@ -82,6 +82,7 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
 
       case 'swarm:task_update':
         // 任务更新 - 同时更新 taskTree 和 executionPlan
+        console.log(`[SwarmState] Received task update: taskId=${message.payload.taskId}, updates=`, message.payload.updates);
         setState(prev => {
           let newState = { ...prev };
 
@@ -108,6 +109,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
 
           // v2.1: 同时更新 executionPlan 中的任务状态（解决界面不刷新问题）
           if (prev.executionPlan) {
+            // 调试：检查是否找到匹配的任务
+            const matchingTask = prev.executionPlan.tasks.find(t => t.id === message.payload.taskId);
+            console.log(`[SwarmState] Matching task found: ${matchingTask ? matchingTask.name : 'NOT FOUND'}, taskId=${message.payload.taskId}`);
+            if (!matchingTask) {
+              console.log(`[SwarmState] Available task IDs:`, prev.executionPlan.tasks.map(t => t.id));
+            }
+
             newState.executionPlan = {
               ...prev.executionPlan,
               tasks: prev.executionPlan.tasks.map(task =>

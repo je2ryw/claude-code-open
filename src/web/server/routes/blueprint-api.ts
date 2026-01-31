@@ -13,6 +13,7 @@
 import { Router, Request, Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { spawn } from 'child_process';
@@ -36,6 +37,7 @@ import {
   type VerificationStatus,
   type StreamingEvent,
   type ExecutionState,
+  type DesignImage,
   // 智能规划器
   SmartPlanner,
   smartPlanner,
@@ -50,6 +52,7 @@ import {
   // 自治 Worker
   AutonomousWorkerExecutor,
   createAutonomousWorker,
+  type DependencyOutput,
   // Git 并发
   GitConcurrency,
   // 错误处理
@@ -57,7 +60,6 @@ import {
   createErrorHandler,
 } from '../../../blueprint/index.js';
 
-import { TaskContextCollector, createContextCollector } from '../../../blueprint/context-collector.js';
 
 // ============================================================================
 // 分析缓存（简单内存实现）
@@ -415,15 +417,19 @@ class RealTaskExecutor implements TaskExecutor {
   private gitConcurrency: GitConcurrency;
   private blueprint: Blueprint;
   private workerPool: Map<string, AutonomousWorkerExecutor> = new Map();
-  // v2.1: 跟踪每个 Worker 当前执行的任务 ID（用于正确的日志路由）
   private currentTaskMap: Map<string, SmartTask> = new Map();
-  // v3.4: 智能上下文收集器
-  private contextCollector: TaskContextCollector;
+  /** 记录每个任务的产出（供依赖任务使用） */
+  private taskOutputs: Map<string, { files: string[]; summary?: string }> = new Map();
+  /** v5.0: 共享的 System Prompt 基础部分（所有 Worker 复用，节省 token） */
+  private sharedSystemPromptBase: string;
 
   constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
     this.gitConcurrency = gitConcurrency;
     this.blueprint = blueprint;
-    this.contextCollector = createContextCollector(blueprint.projectPath, blueprint);
+    // v5.0: 一次性构建共享的 System Prompt 基础部分
+    this.sharedSystemPromptBase = AutonomousWorkerExecutor.buildSharedSystemPromptBase(
+      blueprint.techStack || { language: 'typescript', packageManager: 'npm' }
+    );
   }
 
   async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
@@ -656,21 +662,28 @@ class RealTaskExecutor implements TaskExecutor {
       const workerWorkingDir = this.gitConcurrency.getWorkerWorkingDir(workerId);
       console.log(`[RealTaskExecutor] 创建分支: ${branchName}, 工作目录: ${workerWorkingDir}`);
 
-      // v3.4: 收集任务上下文（相关代码 + 依赖任务产出）
       const effectiveProjectPath = workerWorkingDir || this.blueprint.projectPath;
-      let collectedContext: { relatedFiles: Array<{ path: string; content: string }>; dependencyOutputs: any[] } = {
-        relatedFiles: [],
-        dependencyOutputs: [],
-      };
-      try {
-        collectedContext = await this.contextCollector.collectContext(task);
-        console.log(`[RealTaskExecutor] 上下文收集完成: ${collectedContext.relatedFiles.length} 个相关文件, ${collectedContext.dependencyOutputs.length} 个依赖产出`);
-      } catch (e: any) {
-        console.warn(`[RealTaskExecutor] 上下文收集失败(不影响执行): ${e.message}`);
+
+      // 收集依赖任务的产出
+      const dependencyOutputs: DependencyOutput[] = [];
+      if (task.dependencies?.length) {
+        for (const depId of task.dependencies) {
+          const depOutput = this.taskOutputs.get(depId);
+          if (depOutput && depOutput.files.length > 0) {
+            // 从执行计划中找到依赖任务的名称
+            const allTasks = this.blueprint.lastExecutionPlan?.tasks || [];
+            const depTask = allTasks.find(t => t.id === depId);
+            dependencyOutputs.push({
+              taskId: depId,
+              taskName: depTask?.name || depId,
+              files: depOutput.files,
+              summary: depOutput.summary,
+            });
+          }
+        }
       }
 
       // 构建 Worker 上下文
-      // 使用 worktree 路径作为工作目录，实现真正的并发隔离
       const context = {
         projectPath: effectiveProjectPath,
         techStack: this.blueprint.techStack || {
@@ -679,7 +692,7 @@ class RealTaskExecutor implements TaskExecutor {
         },
         config: {
           maxWorkers: 5,
-          workerTimeout: 600000,  // 10分钟
+          workerTimeout: 600000,
           defaultModel: 'sonnet' as const,
           complexTaskModel: 'opus' as const,
           simpleTaskModel: 'sonnet' as const,
@@ -693,19 +706,18 @@ class RealTaskExecutor implements TaskExecutor {
           costWarningThreshold: 0.8,
         },
         constraints: this.blueprint.constraints,
-        // v3.4: 注入上下文
-        relatedFiles: collectedContext.relatedFiles,
-        dependencyOutputs: collectedContext.dependencyOutputs,
-        // v3.5: 传递 UI 设计图（作为端到端验收标准）
+        dependencyOutputs: dependencyOutputs.length > 0 ? dependencyOutputs : undefined,
         designImages: this.blueprint.designImages,
       };
 
-      // 执行任务
       const result = await worker.execute(task, context);
 
-      // v3.4: 记录任务产出（供后续依赖任务使用）
-      if (result.success) {
-        this.contextCollector.recordTaskOutput(task.id, result);
+      // 记录任务产出（供依赖任务使用）
+      if (result.success && result.changes?.length) {
+        this.taskOutputs.set(task.id, {
+          files: result.changes.map(c => c.filePath),
+          summary: result.summary,
+        });
       }
 
       // 如果任务成功，提交并合并分支
@@ -2835,8 +2847,9 @@ router.post('/coordinator/start', async (req: Request, res: Response) => {
             },
           });
         } else {
-          // 会话处于僵尸状态（completedAt 未设置但执行已结束）
-          console.log('[coordinator/start] 检测到僵尸会话，清理并重新开始:', existingSession.id);
+          // v2.3: 会话不活跃，检查是否为僵尸状态
+          const isZombie = existingSession.coordinator.isZombie();
+          console.log('[coordinator/start] 检测到非活跃会话:', existingSession.id, '僵尸状态:', isZombie);
           // 标记会话为已完成
           existingSession.completedAt = new Date();
           // 继续后面的逻辑（检查文件状态或创建新执行）
@@ -3913,11 +3926,42 @@ router.post('/dialog/:sessionId/generate-design', async (req: Request, res: Resp
 
     // 创建设计图对象
     const { v4: uuidv4 } = await import('uuid');
-    const designImage = {
-      id: uuidv4(),
+    const designId = uuidv4();
+
+    // 将设计图保存为文件（不再把 base64 存入蓝图）
+    const projectPath = session.projectPath || process.cwd();
+    const designDir = path.join(projectPath, '.blueprint', 'designs');
+    await fsPromises.mkdir(designDir, { recursive: true });
+
+    // 解析 base64 数据并写入文件
+    const imageUrl = result.imageUrl!;
+    let fileExt = 'png';
+    let fileData: Buffer;
+    if (imageUrl.startsWith('data:')) {
+      const matches = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (matches) {
+        fileExt = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+        fileData = Buffer.from(matches[2], 'base64');
+      } else {
+        fileData = Buffer.from(imageUrl, 'base64');
+      }
+    } else {
+      fileData = Buffer.from(imageUrl, 'base64');
+    }
+
+    const fileName = `design_${designStyle}_${designId.slice(0, 8)}.${fileExt}`;
+    const filePath = path.join(designDir, fileName);
+    await fsPromises.writeFile(filePath, fileData);
+
+    // 蓝图中只存相对路径，不存 base64
+    const relativeFilePath = `.blueprint/designs/${fileName}`;
+    console.log(`[Blueprint API] 设计图已保存: ${relativeFilePath} (${fileData.length} bytes)`);
+
+    const designImage: DesignImage = {
+      id: designId,
       name: `${projectName} - UI 设计图`,
       description: result.generatedText || undefined,
-      imageData: result.imageUrl!,
+      filePath: relativeFilePath,
       style: designStyle as 'modern' | 'minimal' | 'corporate' | 'creative',
       createdAt: new Date().toISOString(),
       isAccepted: false,
@@ -3941,7 +3985,8 @@ router.post('/dialog/:sessionId/generate-design', async (req: Request, res: Resp
       success: true,
       data: {
         id: designImage.id,
-        imageUrl: result.imageUrl,
+        imageUrl: result.imageUrl,  // 前端预览仍用 base64
+        filePath: relativeFilePath, // 同时返回文件路径
         description: result.generatedText,
         style: designStyle,
         savedToSession: autoSave,

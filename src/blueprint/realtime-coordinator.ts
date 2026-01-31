@@ -131,6 +131,7 @@ export class RealtimeCoordinator extends EventEmitter {
   private isPaused: boolean = false;
   private isCancelled: boolean = false;
   private pauseResolve: (() => void) | null = null;
+  private isExecuting: boolean = false;  // v2.3: 跟踪执行循环是否真的在运行
 
   // 任务修改队列（运行时修改）
   private taskModifications: Map<string, { newDescription?: string; skip?: boolean }> = new Map();
@@ -195,6 +196,8 @@ export class RealtimeCoordinator extends EventEmitter {
       this.saveExecutionState();
     }
 
+    // v2.3: 标记执行循环开始
+    this.isExecuting = true;
     return this.executeFromGroup(0);
   }
 
@@ -234,6 +237,8 @@ export class RealtimeCoordinator extends EventEmitter {
       failedTasks: savedState.failedTaskIds.length,
     });
 
+    // v2.3: 标记执行循环开始
+    this.isExecuting = true;
     return this.executeFromGroup(startGroupIndex);
   }
 
@@ -329,6 +334,9 @@ export class RealtimeCoordinator extends EventEmitter {
         error: error.message,
       });
       return this.buildResult(false, error.message);
+    } finally {
+      // v2.3: 标记执行循环结束
+      this.isExecuting = false;
     }
   }
 
@@ -390,6 +398,7 @@ export class RealtimeCoordinator extends EventEmitter {
   /**
    * 检查执行是否还在活跃状态
    * 用于判断会话是否为"僵尸"状态（completedAt 未设置但执行已结束）
+   * v2.3: 使用 isExecuting 标志而不是推断
    */
   isActive(): boolean {
     // 如果没有计划，肯定不活跃
@@ -407,17 +416,30 @@ export class RealtimeCoordinator extends EventEmitter {
       return true;
     }
 
-    // 检查是否有活跃的 worker
-    if (this.activeWorkers.size > 0) {
-      return true;
+    // v2.3: 使用 isExecuting 标志来判断执行循环是否真的在运行
+    // 这解决了"僵尸会话"问题：执行循环退出但 completedTasks < totalTasks
+    return this.isExecuting;
+  }
+
+  /**
+   * v2.3: 检查是否处于僵尸状态
+   * 僵尸状态：有未完成的任务，但执行循环已停止
+   */
+  isZombie(): boolean {
+    if (!this.currentPlan || this.isCancelled) {
+      return false;
     }
 
-    // 检查是否所有任务都已完成
+    // 如果正在执行或暂停，不是僵尸
+    if (this.isExecuting || this.isPaused) {
+      return false;
+    }
+
+    // 检查是否有未完成的任务
     const completedTasks = Array.from(this.taskResults.values()).length;
     const totalTasks = this.currentPlan.tasks.length;
 
-    // 如果还有未完成的任务且没有活跃 worker，可能是卡住了
-    // 但如果所有任务都完成了，说明执行已经结束
+    // 有未完成的任务但执行循环已停止 = 僵尸状态
     return completedTasks < totalTasks;
   }
 

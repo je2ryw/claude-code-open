@@ -45,6 +45,7 @@ export {
   createAutonomousWorker,
   type WorkerContext,
   type WorkerEventType,
+  type DependencyOutput,
 } from './autonomous-worker.js';
 
 // 进度管理函数从 task-status 工具导出

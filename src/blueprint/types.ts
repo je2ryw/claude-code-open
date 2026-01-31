@@ -76,7 +76,8 @@ export interface DesignImage {
   id: string;
   name: string;                    // 设计图名称
   description?: string;            // 设计图描述
-  imageData: string;               // base64 图片数据（data URL 格式）
+  imageData?: string;              // base64 图片数据（仅前端预览用，不存入蓝图）
+  filePath?: string;               // 设计图文件路径（相对于项目根目录）
   style: 'modern' | 'minimal' | 'corporate' | 'creative';  // 设计风格
   createdAt: Date | string;        // 创建时间
   isAccepted?: boolean;            // 是否被用户接受作为验收标准
@@ -234,6 +235,12 @@ export interface TechStack {
   testFramework?: TestFrameworkType;
   buildTool?: string;
   additionalTools?: string[];
+  /** UI 组件库 */
+  uiFramework?: 'antd' | 'shadcn' | 'mui' | 'chakra' | 'element-plus' | 'none';
+  /** CSS 方案 */
+  cssFramework?: 'tailwind' | 'css-modules' | 'styled-components' | 'sass' | 'none';
+  /** API 风格 */
+  apiStyle?: 'rest' | 'graphql' | 'trpc';
   // v3.3: 测试环境配置
   testEnvironment?: TestEnvironmentConfig;
 }
@@ -396,6 +403,8 @@ export interface TaskResult {
   testsPassed?: boolean;
   error?: string;
   decisions: WorkerDecision[];
+  /** 任务完成摘要（供依赖任务理解语义） */
+  summary?: string;
 }
 
 /**
