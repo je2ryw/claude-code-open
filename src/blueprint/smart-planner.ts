@@ -754,6 +754,10 @@ export class SmartPlanner extends EventEmitter {
 
   /**
    * 处理确认阶段输入
+   *
+   * v3.1: 不在这里生成蓝图，只标记状态为完成。
+   * 蓝图生成将在 /confirm/stream API 中通过 StreamingBlueprintGenerator 进行，
+   * 以支持流式渲染。
    */
   private async processConfirmationInput(
     state: DialogState,
@@ -762,27 +766,13 @@ export class SmartPlanner extends EventEmitter {
     const normalizedInput = input.trim().toLowerCase();
 
     if (normalizedInput === '确认' || normalizedInput === 'confirm' || normalizedInput === 'yes') {
-      // 用户最终确认，生成蓝图
-      try {
-        state.isComplete = true;
-        const blueprint = await this.generateBlueprint(state);
-        state.generatedBlueprint = blueprint;
+      // 用户最终确认，标记对话完成
+      // 注意：不在这里生成蓝图，而是让 /confirm/stream API 进行流式生成
+      state.isComplete = true;
 
-        const moduleCount = blueprint.modules?.length || 0;
-        const estimatedTasks = Math.max(moduleCount * 2, 5);
-        const estimatedMinutes = Math.ceil(estimatedTasks * 3);
-
-        const response = DIALOG_PROMPTS.done
-          .replace('{{blueprintId}}', blueprint.id)
-          .replace('{{taskCount}}', `约 ${estimatedTasks}`)
-          .replace('{{estimatedMinutes}}', `约 ${estimatedMinutes}`);
-
-        return { response, nextPhase: 'done', isComplete: true, generatedBlueprint: blueprint };
-      } catch (error: any) {
-        state.isComplete = false;
-        const errorMsg = `蓝图生成失败: ${error.message}\n\n请重试或输入"修改"调整需求。`;
-        return { response: errorMsg, nextPhase: 'confirmation' };
-      }
+      // 返回提示信息，告诉前端可以开始流式生成蓝图
+      const response = '✅ 需求已确认！正在为您生成项目蓝图，请稍候...';
+      return { response, nextPhase: 'done', isComplete: true };
     }
 
     if (normalizedInput === '重来' || normalizedInput === 'restart') {
@@ -2153,8 +2143,18 @@ ${explorationContext ? `\n## 代码库探索结果\n${explorationContext}` : ''}
         if (!d) return undefined;
         return d instanceof Date ? d.toISOString() : d;
       };
+      // 处理 designImages：只保存 filePath，不保存 imageData（base64 太大）
+      let designImages = blueprint.designImages;
+      if (designImages && Array.isArray(designImages)) {
+        designImages = designImages.map(img => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { imageData, ...rest } = img;
+          return rest;
+        });
+      }
       const data = {
         ...blueprint,
+        designImages,
         createdAt: toISO(blueprint.createdAt),
         updatedAt: toISO(blueprint.updatedAt),
         confirmedAt: toISO(blueprint.confirmedAt),
@@ -2679,8 +2679,18 @@ JSON 格式要求：
         if (!d) return undefined;
         return d instanceof Date ? d.toISOString() : d;
       };
+      // 处理 designImages：只保存 filePath，不保存 imageData（base64 太大）
+      let designImages = blueprint.designImages;
+      if (designImages && Array.isArray(designImages)) {
+        designImages = designImages.map(img => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { imageData, ...rest } = img;
+          return rest;
+        });
+      }
       const data = {
         ...blueprint,
+        designImages,
         createdAt: toISO(blueprint.createdAt),
         updatedAt: toISO(blueprint.updatedAt),
         confirmedAt: toISO(blueprint.confirmedAt),

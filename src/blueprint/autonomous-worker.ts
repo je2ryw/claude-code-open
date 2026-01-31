@@ -9,6 +9,7 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 import type {
   SmartTask,
@@ -21,6 +22,10 @@ import type {
   DesignImage,
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
+import {
+  type MergeContext,
+  runGeneratorWithMergeContext,
+} from '../tools/commit-and-merge.js';
 
 // ============================================================================
 // 类型定义
@@ -47,6 +52,8 @@ export interface WorkerContext {
   designImages?: DesignImage[];
   /** 共享的 System Prompt（跨 Worker 复用） */
   sharedSystemPromptBase?: string;
+  /** 合并上下文（可选，如果提供则 Worker 负责合并代码） */
+  mergeContext?: Omit<MergeContext, 'getFileChanges'>;
 }
 
 export type WorkerEventType =
@@ -72,15 +79,42 @@ export class AutonomousWorkerExecutor extends EventEmitter {
    * 在 RealTaskExecutor 中调用一次，然后复用给所有 Worker
    * 节省 ~3000 tokens × (N-1) Workers
    */
-  static buildSharedSystemPromptBase(techStack: TechStack): string {
+  static buildSharedSystemPromptBase(techStack: TechStack, hasMergeContext: boolean = false, projectPath?: string): string {
+    // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
+    const mergeRule = hasMergeContext
+      ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
+- 合并成功后调用 UpdateTaskStatus(status="completed")
+- 合并失败时调用 UpdateTaskStatus(status="failed", error="合并失败原因")`
+      : `- 完成后调用 UpdateTaskStatus(status="completed")
+- 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
+
+    // v5.1: 添加完整环境信息，与官方 CLI 保持一致
+    const platform = os.platform();
+    const platformInfo = platform === 'win32' ? 'win32' : platform === 'darwin' ? 'darwin' : 'linux';
+    const shellHint = platform === 'win32'
+      ? '\n- Windows 系统：使用 dir 代替 ls，使用 cd 代替 pwd，使用 type 代替 cat'
+      : '';
+
+    // 检查是否是 git 仓库
+    const isGitRepo = projectPath ? fs.existsSync(path.join(projectPath, '.git')) : false;
+
+    // 获取今天的日期
+    const today = new Date().toISOString().split('T')[0];
+
     return `你是自治开发 Worker，直接用工具执行任务。
 
 ## 规则
-- 直接执行，不讨论
-- 完成后调用 UpdateTaskStatus(status="completed")
-- 失败时调用 UpdateTaskStatus(status="failed", error="...")
+- 直接执行，不讨论${shellHint}
+${mergeRule}
 
-## 环境
+<env>
+Working directory: ${projectPath || process.cwd()}
+Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
+Platform: ${platformInfo}
+Today's date: ${today}
+</env>
+
+## 技术栈
 ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
   }
 
@@ -102,6 +136,9 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     let testsPassed = false;
     // v3.7: 追踪 AI 是否主动汇报了任务完成
     let aiReportedCompleted = false;
+    // v4.0: 追踪合并结果
+    let mergeSuccess: boolean | null = null;  // null 表示未调用合并工具
+    let mergeError: string | undefined;
 
     this.log(`开始执行任务: ${task.name}`);
 
@@ -136,7 +173,24 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         });
       }
 
-      for await (const event of loop.processMessageStream(taskPrompt)) {
+      // v4.0: 构建合并上下文（如果提供）
+      const fullMergeContext: MergeContext | null = context.mergeContext
+        ? {
+            ...context.mergeContext,
+            taskDescription: task.description,
+            getFileChanges: () => writtenFiles,
+          }
+        : null;
+
+      // 获取原始的消息流
+      const rawStream = loop.processMessageStream(taskPrompt);
+
+      // v4.0: 如果有合并上下文，包装 generator 以在正确的上下文中执行
+      const messageStream = fullMergeContext
+        ? runGeneratorWithMergeContext(fullMergeContext, rawStream)
+        : rawStream;
+
+      for await (const event of messageStream) {
         // v3.2: 统计工具调用
         if (event.type === 'tool_end' && event.toolName) {
           toolCallCount++;
@@ -150,6 +204,19 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
             const input = event.toolInput as { status?: string };
             if (input.status === 'completed') {
               aiReportedCompleted = true;
+            }
+          }
+          // v4.1: 检测合并工具调用结果
+          // CommitAndMergeTool 内部已判断合并成功/失败：
+          // - 成功 → return { success: true } → loop.ts 设置 toolError = undefined
+          // - 失败 → return { success: false, error } → loop.ts 设置 toolError = error
+          // 所以只需检查 toolError 是否存在
+          if (event.toolName === 'CommitAndMergeChanges') {
+            if (event.toolError) {
+              mergeSuccess = false;
+              mergeError = event.toolError;
+            } else {
+              mergeSuccess = true;
             }
           }
           // v3.3: 检测测试运行
@@ -182,6 +249,10 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         writtenFiles,
         testsRan,
         aiReportedCompleted,
+        // v4.0: 合并结果
+        mergeSuccess,
+        mergeError,
+        hasMergeContext: !!context.mergeContext,
       });
 
       if (!validationResult.success) {
@@ -248,9 +319,32 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       writtenFiles: FileChange[];
       testsRan?: boolean;
       aiReportedCompleted?: boolean;
+      // v4.0: 合并结果
+      mergeSuccess?: boolean | null;
+      mergeError?: string;
+      hasMergeContext?: boolean;
     }
   ): { success: boolean; error?: string } {
-    const { toolCallCount, testsRan, aiReportedCompleted } = metrics;
+    const { toolCallCount, testsRan, aiReportedCompleted, mergeSuccess, mergeError, hasMergeContext } = metrics;
+
+    // v4.0: 如果有合并上下文，必须检查合并结果
+    // 这是最重要的验证：代码写完了但没有成功合并 = 任务失败
+    if (hasMergeContext) {
+      if (mergeSuccess === false) {
+        return {
+          success: false,
+          error: `代码合并失败: ${mergeError || '未知错误'}`,
+        };
+      }
+      if (mergeSuccess === null) {
+        // Worker 没有调用合并工具
+        return {
+          success: false,
+          error: '任务未完成：代码未合并到主分支（请调用 CommitAndMergeChanges 工具）',
+        };
+      }
+      // 合并成功，继续其他验证
+    }
 
     // v3.7: 如果 AI 主动汇报了完成状态，信任它的判断
     // 这处理了 AI 判断不需要修改（如配置已正确）的情况
@@ -294,15 +388,43 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       return context.sharedSystemPromptBase + this.buildTaskSpecificPrompt(task, context);
     }
 
+    // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
+    const hasMergeContext = !!context.mergeContext;
+    const mergeRule = hasMergeContext
+      ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
+- 合并成功后调用 UpdateTaskStatus(status="completed")
+- 合并失败时调用 UpdateTaskStatus(status="failed", error="合并失败原因")`
+      : `- 完成后调用 UpdateTaskStatus(status="completed")
+- 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
+
+    // v5.1: 添加完整环境信息，与官方 CLI 保持一致
+    const platform = os.platform();
+    const platformInfo = platform === 'win32' ? 'win32' : platform === 'darwin' ? 'darwin' : 'linux';
+    const shellHint = platform === 'win32'
+      ? '\n- Windows 系统：使用 dir 代替 ls，使用 cd 代替 pwd，使用 type 代替 cat'
+      : '';
+
+    // 检查是否是 git 仓库
+    const isGitRepo = fs.existsSync(path.join(context.projectPath, '.git'));
+
+    // 获取今天的日期
+    const today = new Date().toISOString().split('T')[0];
+
     // 构建精简版 System Prompt
     let prompt = `你是自治开发 Worker，直接用工具执行任务。
 
 ## 规则
-- 直接执行，不讨论
-- 完成后调用 UpdateTaskStatus(status="completed")
-- 失败时调用 UpdateTaskStatus(status="failed", error="...")
+- 直接执行，不讨论${shellHint}
+${mergeRule}
 
-## 环境
+<env>
+Working directory: ${context.projectPath}
+Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
+Platform: ${platformInfo}
+Today's date: ${today}
+</env>
+
+## 技术栈
 ${context.techStack.language}${context.techStack.framework ? ' + ' + context.techStack.framework : ''}`;
 
     // 只在需要时添加测试指导
@@ -374,18 +496,15 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
       prompt += `\n## 约束\n${context.constraints.map(c => `- ${c}`).join('\n')}\n`;
     }
 
-    // 依赖任务的产出
+    // v5.1: 精简依赖产出 - 只给文件路径，不给 summary
+    // Worker 会用 Read 工具自己读取，summary 是冗余的
     if (context.dependencyOutputs?.length) {
-      prompt += `\n## 前置任务产出\n`;
-      prompt += `以下是本任务依赖的前置任务产生的文件，请用 Read 工具查看：\n`;
+      prompt += `\n## 前置任务文件（用 Read 查看）\n`;
       for (const dep of context.dependencyOutputs) {
-        prompt += `\n### ${dep.taskName}\n`;
-        if (dep.summary) {
-          prompt += `${dep.summary}\n`;
-        }
-        for (const file of dep.files.slice(0, 5)) {
-          prompt += `- \`${file}\`\n`;
-        }
+        // 单行紧凑格式，最多 3 个文件
+        const files = dep.files.slice(0, 3).map(f => `\`${f}\``).join(', ');
+        const extra = dep.files.length > 3 ? ` (+${dep.files.length - 3})` : '';
+        prompt += `- ${dep.taskName}: ${files}${extra}\n`;
       }
     }
 

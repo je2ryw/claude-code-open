@@ -4,6 +4,7 @@ import styles from './SwarmConsole.module.css';
 import { TaskTree, TaskNode as ComponentTaskNode } from '../../components/swarm/TaskTree';
 import { WorkerPanel, WorkerAgent as ComponentWorkerAgent, SelectedTask } from '../../components/swarm/WorkerPanel';
 import { FadeIn } from '../../components/swarm/common';
+import { ConflictPanel } from './components/ConflictPanel';
 import { useSwarmState } from './hooks/useSwarmState';
 import { coordinatorApi } from '../../api/blueprint';
 import type {
@@ -15,6 +16,7 @@ import type {
   CostEstimate,
   PlanDecision,
   VerificationStatus,
+  ConflictDecision,
 } from './types';
 
 // 获取 WebSocket URL
@@ -391,6 +393,26 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   };
 
+  // v3.5: 解决冲突
+  const handleResolveConflict = useCallback(async (
+    conflictId: string,
+    decision: ConflictDecision,
+    customContents?: Record<string, string>
+  ) => {
+    try {
+      console.log(`[SwarmConsole] 解决冲突: ${conflictId}, 决策: ${decision}`);
+      const result = await coordinatorApi.resolveConflict(conflictId, decision, customContents);
+      if (result.success) {
+        console.log(`[SwarmConsole] ✅ 冲突解决成功`);
+      } else {
+        alert('冲突解决失败: ' + (result.message || '未知错误'));
+      }
+    } catch (err) {
+      console.error('[SwarmConsole] 解决冲突失败:', err);
+      alert('解决冲突失败: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  }, []);
+
   const handleBlueprintSelect = (blueprintId: string) => {
     setSelectedBlueprintId(blueprintId);
   };
@@ -402,6 +424,14 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
   return (
     <div className={styles.swarmConsole}>
+      {/* v3.5: 冲突解决面板 - 有冲突时显示在最上方 */}
+      {state.conflicts.conflicts.length > 0 && (
+        <ConflictPanel
+          conflicts={state.conflicts.conflicts}
+          onResolve={handleResolveConflict}
+        />
+      )}
+
       {/* 主内容区域 */}
       <PanelGroup orientation="horizontal" className={styles.mainArea}>
         {/* 左侧：蓝图列表 */}
@@ -740,7 +770,9 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                               onClick={() => setSelectedTaskId(task.id)}
                             >
                               <div className={styles.taskStatus}>
-                                {task.status === 'completed' ? '✅' :
+                                {/* v2.2: 有错误的已完成任务显示警告图标 */}
+                                {task.status === 'completed' && (task.error || task.result?.error) ? '⚠️' :
+                                 task.status === 'completed' ? '✅' :
                                  task.status === 'running' ? '🔄' :
                                  task.status === 'failed' ? '❌' :
                                  task.status === 'skipped' ? '⏭️' : '⏳'}
@@ -769,15 +801,15 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                                   👷 {task.workerId.slice(0, 8)}
                                 </div>
                               )}
-                              {/* v2.1: 失败任务重试按钮 */}
-                              {task.status === 'failed' && selectedBlueprintId && (
+                              {/* v2.1: 失败任务重试按钮 - 支持有错误的已完成任务 */}
+                              {(task.status === 'failed' || (task.error || task.result?.error)) && selectedBlueprintId && (
                                 <button
                                   className={styles.retryTaskButton}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     retryTask(selectedBlueprintId, task.id);
                                   }}
-                                  title="重试此任务"
+                                  title={task.status === 'failed' ? '重试此任务' : '重试（有错误记录）'}
                                 >
                                   🔄 重试
                                 </button>

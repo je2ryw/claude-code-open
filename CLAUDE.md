@@ -5,15 +5,15 @@
 官方源码路径：`node_modules\@anthropic-ai\claude-code`，但是被高度压缩混淆了，但是肯定难不到你这个天才，对齐某个功能的时候，必须找到官网函数，然后copy实现，
 docs 文档统一保存路径，
 tests 测试用例统一保存路径，
-## 你只相信自己看到代码， 不要被用户干扰，像codex gpt 5.2 学习，尽量多读读仓库的代码再去行动，不要上来就干活，一干就错的毛病！给出一个方案和回答，自己要先反思一遍方案或回答的缺点
+你只相信自己看到代码， 不要被用户干扰，像codex gpt 5.2 学习，尽量多读读仓库的代码再去行动，不要上来就干活，一干就错的毛病！给出一个方案和回答，自己要先反思一遍方案或回答的缺点
+ 你是一个高级软件产品经理，设计产品的时候一切以方便用户为核心理念，抛弃程序员思维，完成编码不是最终目的
 
-## 你是一个高级软件产品经理，设计产品的时候一切以方便用户为核心理念，抛弃程序员思维，完成编码不是最终目的
 ## Project Overview
 
 This is an educational reverse-engineering project that recreates Claude Code CLI v2.1.4. It's a TypeScript-based terminal application that provides an AI assistant with 25+ tools for file operations, code analysis, web access, and system commands.
 
 
-**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions. 后续CLI 版本的代码都不维护了，以后调整代码只调整WebUI的，遇到不确定性改进的时候的，只有一个准则，保持官网一致，不要有讨好型人格，要有批判性思维，并有敢于探索世界性难题的勇气
+**Important:** This is NOT the official Claude Code source - it's a learning project based on public APIs and type definitions.遇到不确定性改进的时候的，只有一个准则，保持官网一致，不要有讨好型人格，要有批判性思维，并有敢于探索世界性难题的勇气，在每次回复结束之前，都必须自我反思一下
 
 ## Development Commands
 

@@ -21,6 +21,7 @@ export * from './blueprint.js';
 export * from './task-storage.js';
 export * from './task-v2.js';
 export * from './task-status.js';
+export * from './commit-and-merge.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -40,6 +41,7 @@ import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
 import { LSPTool } from './lsp.js';
 import { BlueprintTool } from './blueprint.js';
 import { UpdateTaskStatusTool } from './task-status.js';
+import { CommitAndMergeTool } from './commit-and-merge.js';
 import { registerBlueprintHooks } from '../hooks/blueprint-hooks.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
@@ -103,6 +105,9 @@ export function registerAllTools(): void {
 
   // 12. 任务状态工具 (1个) - Worker 用于汇报状态
   toolRegistry.register(new UpdateTaskStatusTool());
+
+  // 13. 代码合并工具 (1个) - Worker 用于提交并合并代码
+  toolRegistry.register(new CommitAndMergeTool());
 
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留

@@ -17,7 +17,10 @@ import {
   FileChange,
   MergeResult,
   ConflictInfo,
+  ConflictFileDetail,
+  ConflictResolutionRequest,
 } from './types.js';
+import { ConflictResolver } from './conflict-resolver.js';
 
 const execAsync = promisify(exec);
 
@@ -119,6 +122,7 @@ export class GitConcurrency extends EventEmitter {
   private workerWorkspaces: Map<string, WorkerWorkspace>; // workerId -> workspace
   private gitLock: AsyncLock; // Git 操作互斥锁（仅用于需要串行的操作如合并）
   private worktreeBasePath: string; // Worktree 根目录
+  private conflictResolver: ConflictResolver; // 🐝 蜂王冲突解决器
 
   private initialized = false;
   private initPromise: Promise<void> | null = null;
@@ -130,11 +134,82 @@ export class GitConcurrency extends EventEmitter {
     this.workerWorkspaces = new Map();
     this.gitLock = new AsyncLock();
     this.worktreeBasePath = path.join(this.projectPath, WORKTREE_DIR);
+    this.conflictResolver = new ConflictResolver(this.projectPath);
 
     // 启动异步初始化（但不阻塞构造函数）
-    this.initPromise = this.detectMainBranch().then(() => {
-      this.initialized = true;
-    });
+    this.initPromise = this.initialize();
+  }
+
+  /**
+   * 异步初始化
+   * 检测主分支并从磁盘恢复已存在的 worktree 信息
+   */
+  private async initialize(): Promise<void> {
+    await this.detectMainBranch();
+    await this.rebuildWorkerWorkspacesFromDisk();
+    this.initialized = true;
+  }
+
+  /**
+   * 从磁盘恢复已存在的 worktree 信息到 workerWorkspaces Map
+   *
+   * 解决的问题：当程序重启后，GitConcurrency 实例重新创建，
+   * 但磁盘上可能还有之前创建的 worktree 目录。如果不恢复 Map，
+   * 后续的 commitChanges 等操作会因为找不到 workerId 而失败。
+   */
+  private async rebuildWorkerWorkspacesFromDisk(): Promise<void> {
+    if (!fs.existsSync(this.worktreeBasePath)) {
+      return;
+    }
+
+    try {
+      const entries = fs.readdirSync(this.worktreeBasePath);
+
+      for (const workerId of entries) {
+        const worktreePath = path.join(this.worktreeBasePath, workerId);
+
+        // 确保是目录
+        try {
+          const stat = fs.statSync(worktreePath);
+          if (!stat.isDirectory()) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
+        // 检查是否是有效的 git worktree（包含 .git 文件）
+        const gitFile = path.join(worktreePath, '.git');
+        if (!fs.existsSync(gitFile)) {
+          console.warn(`[Git] 跳过无效的 worktree 目录（无 .git 文件）: ${workerId}`);
+          continue;
+        }
+
+        const branchName = `${BRANCH_PREFIX}${workerId}`;
+
+        // 验证分支是否存在
+        const branchExists = await this.branchExists(branchName);
+        if (!branchExists) {
+          console.warn(`[Git] 跳过 worktree（分支不存在）: ${workerId}`);
+          continue;
+        }
+
+        // 恢复到 Map
+        this.workerWorkspaces.set(workerId, {
+          branchName,
+          worktreePath,
+        });
+
+        console.log(`[Git] 从磁盘恢复 worktree: ${workerId} -> ${worktreePath}`);
+      }
+
+      if (this.workerWorkspaces.size > 0) {
+        console.log(`[Git] 共恢复 ${this.workerWorkspaces.size} 个 worktree`);
+      }
+    } catch (error: any) {
+      console.warn(`[Git] 恢复 worktree 信息失败: ${error.message}`);
+      // 恢复失败不应阻止程序继续运行
+    }
   }
 
   /**
@@ -618,7 +693,7 @@ export class GitConcurrency extends EventEmitter {
    * @param workerId Worker的唯一标识
    * @returns 合并结果
    */
-  async mergeWorkerBranch(workerId: string): Promise<MergeResult> {
+  async mergeWorkerBranch(workerId: string, taskDescription?: string): Promise<MergeResult> {
     // 使用锁确保合并操作串行执行
     return this.gitLock.withLock(async () => {
       const workspace = this.workerWorkspaces.get(workerId);
@@ -634,6 +709,10 @@ export class GitConcurrency extends EventEmitter {
       if (currentBranch !== this.mainBranch) {
         await this.execGit(`git checkout ${this.mainBranch}`);
       }
+
+      // 🔒 关键预检查：检测并处理已存在的未解决冲突
+      // 如果之前的合并操作留下了未解决的冲突，新的合并会失败
+      await this.resolveExistingConflicts();
 
       // 预防性处理：在合并前暂存未跟踪文件和本地修改
       // 这是最彻底的方案，避免"untracked working tree files would be overwritten"错误
@@ -747,8 +826,14 @@ export class GitConcurrency extends EventEmitter {
           // 解析冲突信息
           const conflict = await this.parseConflict();
 
-          // 尝试自动解决冲突
-          const resolution = await this.autoResolveConflict(conflict);
+          // 第一步：尝试简单自动解决冲突
+          let resolution = await this.autoResolveConflict(conflict);
+
+          // 第二步：如果简单解决失败，启用蜂王高级解决器
+          if (!resolution.success && taskDescription) {
+            console.log('[Git] 简单解决失败，启用蜂王高级冲突解决...');
+            resolution = await this.advancedConflictResolve(conflict, workerId, taskDescription);
+          }
 
           if (resolution.success) {
             // 自动解决成功，完成合并
@@ -791,6 +876,18 @@ export class GitConcurrency extends EventEmitter {
         await this.restoreStashedChanges(stashResult);
         throw new Error(`合并失败: ${mergeResult.stderr}`);
       } finally {
+        // 🔒 关键清理：确保不留下失败的合并状态
+        // 如果还处于合并状态，说明合并没有正常完成，需要中止
+        try {
+          const mergeHeadExists = await this.execGit('git rev-parse -q --verify MERGE_HEAD');
+          if (mergeHeadExists.success) {
+            console.log('[Git] 检测到未完成的合并状态，执行中止操作');
+            await this.execGit('git merge --abort');
+          }
+        } catch {
+          // 忽略清理时的错误
+        }
+
         // 确保回到主分支
         const finalBranch = await this.getCurrentBranch();
         if (finalBranch !== this.mainBranch) {
@@ -800,6 +897,69 @@ export class GitConcurrency extends EventEmitter {
         await this.restoreStashedChanges(stashResult);
       }
     });
+  }
+
+  /**
+   * 检测并清理已存在的未解决冲突（安全网）
+   * 理论上 finally 块已清理，此方法作为额外保护
+   *
+   * 设计理念：自动恢复到干净状态，避免阻塞后续任务执行
+   * 只有在完全无法恢复时才报错
+   */
+  private async resolveExistingConflicts(): Promise<void> {
+    // 检查是否处于合并状态
+    const mergeHeadExists = await this.execGit('git rev-parse -q --verify MERGE_HEAD');
+    if (mergeHeadExists.success) {
+      console.log('[Git] 检测到残留的合并状态，执行中止操作');
+      await this.execGit('git merge --abort');
+    }
+
+    // 检查是否有未合并的文件
+    const unmergedResult = await this.execGit('git ls-files -u');
+    if (unmergedResult.success && unmergedResult.stdout.trim()) {
+      // 获取未合并文件列表
+      const statusResult = await this.execGit('git status --porcelain');
+      const lines = statusResult.stdout?.split('\n').filter((l) => l.trim()) || [];
+      const unmergedFiles: string[] = [];
+
+      for (const line of lines) {
+        if (line.startsWith('UU ') || line.startsWith('AA ') || line.startsWith('DD ')) {
+          unmergedFiles.push(line.substring(3).trim());
+        }
+      }
+
+      if (unmergedFiles.length > 0) {
+        console.warn(`[Git] 检测到 ${unmergedFiles.length} 个未解决的冲突文件: ${unmergedFiles.join(', ')}`);
+        console.log('[Git] 尝试自动恢复到干净状态...');
+
+        // 尝试自动恢复：先 abort，然后 reset --hard
+        await this.execGit('git merge --abort');
+        const resetResult = await this.execGit(`git reset --hard ${this.mainBranch}`);
+
+        if (resetResult.success) {
+          console.log('[Git] ✅ 已自动恢复到主分支的干净状态');
+          // 再次检查是否还有未合并文件
+          const recheckResult = await this.execGit('git ls-files -u');
+          if (recheckResult.success && recheckResult.stdout.trim()) {
+            // 还是有问题，尝试更激进的清理
+            console.warn('[Git] 仍有残留冲突，尝试强制清理...');
+            await this.execGit('git checkout --theirs .');
+            await this.execGit('git add -A');
+            await this.execGit('git reset --hard HEAD');
+          }
+        } else {
+          console.error('[Git] ❌ 自动恢复失败:', resetResult.stderr);
+          // 最后一次尝试：完全放弃本地修改
+          const cleanResult = await this.execGit('git checkout -- .');
+          if (!cleanResult.success) {
+            // 实在无法恢复，才报错
+            throw new Error(
+              `检测到未解决的合并冲突文件且无法自动清理: ${unmergedFiles.join(', ')}。请在主仓库中手动执行 'git reset --hard ${this.mainBranch}' 后重试。`
+            );
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -1099,6 +1259,105 @@ export class GitConcurrency extends EventEmitter {
 
     // 无法自动解决
     return null;
+  }
+
+  /**
+   * 🐝 蜂王高级冲突解决
+   * 当简单解决失败时，使用 ConflictResolver 进行智能合并
+   */
+  private async advancedConflictResolve(
+    conflict: ConflictInfo,
+    workerId: string,
+    taskDescription: string
+  ): Promise<Resolution> {
+    console.log('[Git] 启动蜂王高级冲突解决...');
+
+    try {
+      // 获取冲突文件的详细内容
+      const fileDetails: ConflictFileDetail[] = [];
+
+      for (const filePath of conflict.files) {
+        const detail = await this.getConflictFileDetail(filePath);
+        if (detail) {
+          fileDetails.push(detail);
+        }
+      }
+
+      if (fileDetails.length === 0) {
+        return {
+          success: false,
+          strategy: 'manual',
+          description: '无法获取冲突文件详情',
+        };
+      }
+
+      // 构建请求
+      const request: ConflictResolutionRequest = {
+        workerId,
+        taskId: workerId, // 暂时用 workerId 作为 taskId
+        branchName: `swarm-worker-${workerId}`,
+        files: fileDetails,
+        taskDescription,
+      };
+
+      // 调用冲突解决器
+      const decision = await this.conflictResolver.resolve(request);
+
+      if (decision.success && decision.mergedContents) {
+        // 应用合并结果
+        await this.conflictResolver.applyMergedContents(decision.mergedContents);
+
+        return {
+          success: true,
+          strategy: decision.type === 'auto_merge' ? 'ai_merge' : 'ai_merge',
+          description: decision.reasoning,
+        };
+      }
+
+      return {
+        success: false,
+        strategy: 'manual',
+        description: decision.reasoning || '蜂王无法解决此冲突',
+      };
+    } catch (error) {
+      console.error('[Git] 蜂王冲突解决失败:', error);
+      return {
+        success: false,
+        strategy: 'manual',
+        description: `蜂王冲突解决出错: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * 获取冲突文件的详细内容（ours、theirs、base）
+   */
+  private async getConflictFileDetail(filePath: string): Promise<ConflictFileDetail | null> {
+    try {
+      const fullPath = path.join(this.projectPath, filePath);
+
+      // 读取当前冲突文件内容（包含冲突标记）
+      const conflictContent = fs.readFileSync(fullPath, 'utf-8');
+
+      // 使用 git show 获取各版本
+      // :1: = base (共同祖先)
+      // :2: = ours (当前分支)
+      // :3: = theirs (合并分支)
+      const baseResult = await this.execGit(`git show ":1:${filePath}"`);
+      const oursResult = await this.execGit(`git show ":2:${filePath}"`);
+      const theirsResult = await this.execGit(`git show ":3:${filePath}"`);
+
+      return {
+        path: filePath,
+        oursContent: oursResult.success ? oursResult.stdout : '',
+        theirsContent: theirsResult.success ? theirsResult.stdout : '',
+        baseContent: baseResult.success ? baseResult.stdout : undefined,
+        conflictType: 'unknown', // 由 ConflictResolver 分析
+      };
+    } catch (error) {
+      console.error(`[Git] 获取冲突文件详情失败 ${filePath}:`, error);
+      return null;
+    }
   }
 
   /**

@@ -40,6 +40,8 @@ const initialState: SwarmState = {
   taskStreams: {},
   // v3.4: 验收测试
   verification: { status: 'idle' },
+  // v3.5: 冲突状态
+  conflicts: { conflicts: [], resolvingId: null },
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -294,13 +296,32 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
               break;
 
             case 'tool_start':
-              newContent.push({
-                type: 'tool',
-                id: `tool-${Date.now()}`,
-                name: toolName || 'unknown',
-                input: toolInput,
-                status: 'running',
-              });
+              // v3.5: 如果已存在同名的 running 工具块，更新其 input 而不是新增
+              // 这样可以在流式接收工具名称后，再更新完整的输入参数
+              {
+                let found = false;
+                for (let i = newContent.length - 1; i >= 0; i--) {
+                  const block = newContent[i];
+                  if (block.type === 'tool' && block.status === 'running' && block.name === toolName) {
+                    // 更新现有工具块的 input
+                    if (toolInput !== undefined) {
+                      newContent[i] = { ...block, input: toolInput };
+                    }
+                    found = true;
+                    break;
+                  }
+                }
+                if (!found) {
+                  // 新增工具块
+                  newContent.push({
+                    type: 'tool',
+                    id: `tool-${Date.now()}`,
+                    name: toolName || 'unknown',
+                    input: toolInput,
+                    status: 'running',
+                  });
+                }
+              }
               break;
 
             case 'tool_end':
@@ -341,6 +362,40 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
           },
         }));
         console.log(`[SwarmState] Verification status: ${message.payload.status}`);
+        break;
+
+      case 'conflict:needs_human':
+        // v3.5: 冲突需要人工处理
+        setState(prev => {
+          const conflict = message.payload.conflict;
+          // 避免重复添加
+          if (prev.conflicts.conflicts.some(c => c.id === conflict.id)) {
+            return prev;
+          }
+          console.log(`[SwarmState] 🔴 新增冲突: ${conflict.id}, 任务: ${conflict.taskName}`);
+          return {
+            ...prev,
+            conflicts: {
+              ...prev.conflicts,
+              conflicts: [...prev.conflicts.conflicts, conflict],
+            },
+          };
+        });
+        break;
+
+      case 'conflict:resolved':
+        // v3.5: 冲突已解决
+        setState(prev => {
+          console.log(`[SwarmState] ✅ 冲突已解决: ${message.payload.conflictId}`);
+          return {
+            ...prev,
+            conflicts: {
+              ...prev.conflicts,
+              conflicts: prev.conflicts.conflicts.filter(c => c.id !== message.payload.conflictId),
+              resolvingId: prev.conflicts.resolvingId === message.payload.conflictId ? null : prev.conflicts.resolvingId,
+            },
+          };
+        });
         break;
 
       default:

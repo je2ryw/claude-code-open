@@ -11,8 +11,6 @@
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import * as fs from 'fs';
-import * as path from 'path';
 import type {
   ExecutionPlan,
   SmartTask,
@@ -31,19 +29,15 @@ import type {
   SerializableExecutionIssue,
   SerializableExecutionPlan,
   SerializableSmartTask,
+  PendingConflict,
+  HumanDecisionRequest,
+  HumanDecisionResult,
+  ConflictFileForUI,
 } from './types.js';
 
-// 执行状态持久化文件路径（项目目录下）
-const getExecutionStateFilePath = (projectPath: string): string => {
-  const dir = path.join(projectPath, '.claude');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return path.join(dir, 'execution-state.json');
-};
-
+// v3.0: 状态持久化已移至蓝图文件（通过 state:changed 事件）
 // 执行状态版本号（用于兼容性检查）
-const EXECUTION_STATE_VERSION = '2.0.0';  // v2.0: 包含完整 ExecutionPlan
+const EXECUTION_STATE_VERSION = '2.0.0';
 
 // ============================================================================
 // 执行结果类型
@@ -109,7 +103,7 @@ const getDefaultConfig = (): SwarmConfig => ({
  * 扩展配置：控制并行组失败时的行为
  */
 export interface ExtendedSwarmConfig extends SwarmConfig {
-  /** 当一个并行组全部失败时，是否停止后续组的执行 (默认: true) */
+  /** 当一个并行组有任务失败时，是否停止后续组的执行 (默认: true) */
   stopOnGroupFailure?: boolean;
 }
 
@@ -126,6 +120,10 @@ export class RealtimeCoordinator extends EventEmitter {
   private taskResults: Map<string, TaskResult> = new Map();
   private activeWorkers: Map<string, AutonomousWorker> = new Map();
   private issues: ExecutionIssue[] = [];
+
+  // 🐝 冲突状态管理
+  private pendingConflicts: Map<string, PendingConflict> = new Map();
+  private conflictResolvers: Map<string, (decision: HumanDecisionRequest) => void> = new Map();
 
   // 控制标志
   private isPaused: boolean = false;
@@ -272,42 +270,37 @@ export class RealtimeCoordinator extends EventEmitter {
         }
 
         // 并行执行当前组的所有任务
+        // v2.4: taskResults 已在 executeSingleTask 中实时更新，这里只统计结果
         const groupResults = await this.executeParallelGroup(executableTasks);
 
-        // 合并结果
+        // 统计组内成功/失败数量（用于判断是否停止后续组）
         let groupFailedCount = 0;
         let groupSuccessCount = 0;
         for (const result of groupResults) {
-          const task = executableTasks.find(t => t.id === result.taskId);
-          if (task) {
-            this.taskResults.set(task.id, result);
-            this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
-
-            if (result.success) {
-              groupSuccessCount++;
-            } else {
-              groupFailedCount++;
-              // 记录失败原因
-              this.addIssue(task.id, 'error', result.error || '任务执行失败');
-            }
+          if (result.success) {
+            groupSuccessCount++;
+          } else {
+            groupFailedCount++;
           }
         }
 
-        // 发送进度更新事件
+        // 组完成后发送进度更新（汇总）
         this.emitProgressUpdate();
 
-        // 自动保存执行状态（每完成一个并行组后保存）
+        // 组完成后保存一次状态（作为检查点）
         if (this.autoSaveEnabled && this.projectPath) {
           this.saveExecutionState();
         }
 
-        // 检查并行组是否全部失败 - 如果是，停止执行后续组
-        if (this.config.stopOnGroupFailure && groupFailedCount > 0 && groupSuccessCount === 0) {
-          const failReason = `并行组 ${groupIndex + 1} 全部失败（${groupFailedCount} 个任务），停止执行后续任务`;
+        // 检查并行组是否有任务失败 - 如果是，停止执行后续组
+        // 设计理念：只要有任务失败就应该停止，因为后续组可能依赖当前组的任务
+        if (this.config.stopOnGroupFailure && groupFailedCount > 0) {
+          const failReason = `并行组 ${groupIndex + 1} 有任务失败（${groupFailedCount}/${groupFailedCount + groupSuccessCount} 失败），停止执行后续任务`;
           this.emitEvent('plan:group_failed', {
             planId: plan.id,
             groupIndex,
             failedCount: groupFailedCount,
+            successCount: groupSuccessCount,
             reason: failReason,
           });
           return this.buildResult(false, failReason);
@@ -497,10 +490,19 @@ export class RealtimeCoordinator extends EventEmitter {
       return false;
     }
 
-    // 只能重试失败的任务
-    if (task.status !== 'failed') {
-      console.warn(`[RealtimeCoordinator] 无法重试任务：任务 ${taskId} 状态为 ${task.status}，只能重试失败的任务`);
+    // 允许重试失败的任务，或者有未解决 error issues 的任务
+    const hasUnresolvedError = this.issues.some(
+      issue => issue.taskId === taskId && issue.type === 'error' && !issue.resolved
+    );
+
+    if (task.status !== 'failed' && !hasUnresolvedError) {
+      console.warn(`[RealtimeCoordinator] 无法重试任务：任务 ${taskId} 状态为 ${task.status}，且没有未解决的错误`);
       return false;
+    }
+
+    // 如果任务状态不是 failed 但有未解决的错误，也允许重试
+    if (task.status !== 'failed' && hasUnresolvedError) {
+      console.log(`[RealtimeCoordinator] 任务 ${taskId} 有未解决的错误，允许重试`);
     }
 
     console.log(`[RealtimeCoordinator] 开始重试任务: ${task.name} (${taskId})`);
@@ -769,6 +771,11 @@ export class RealtimeCoordinator extends EventEmitter {
       // 更新成本
       this.currentCost += this.estimateTaskCost(modifiedTask);
 
+      // v2.4: 立即更新 taskResults，确保 saveExecutionState 保存最新状态
+      const taskResult = { ...result, taskId: task.id };
+      this.taskResults.set(task.id, result);
+      this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
+
       // 发送任务完成事件
       this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
         taskId: task.id,
@@ -777,16 +784,29 @@ export class RealtimeCoordinator extends EventEmitter {
         error: result.error,
       });
 
-      // 任务完成时保存状态
+      // 任务完成时保存状态（现在 taskResults 已更新）
       if (this.autoSaveEnabled && this.projectPath) {
         this.saveExecutionState();
       }
 
-      return { ...result, taskId: task.id };
+      // 发送单任务进度更新
+      this.emitProgressUpdate();
+
+      return taskResult;
 
     } catch (error: any) {
       // 添加问题记录
       this.addIssue(task.id, 'error', error.message || '任务执行异常');
+
+      // v2.4: 立即更新 taskResults
+      const failedResult: TaskResult = {
+        success: false,
+        changes: [],
+        decisions: [],
+        error: error.message || '未知错误',
+      };
+      this.taskResults.set(task.id, failedResult);
+      this.updateTaskStatus(task.id, 'failed');
 
       this.emitEvent('task:failed', {
         taskId: task.id,
@@ -794,17 +814,17 @@ export class RealtimeCoordinator extends EventEmitter {
         error: error.message,
       });
 
-      // 任务失败时保存状态
+      // 任务失败时保存状态（现在 taskResults 已更新）
       if (this.autoSaveEnabled && this.projectPath) {
         this.saveExecutionState();
       }
 
+      // 发送单任务进度更新
+      this.emitProgressUpdate();
+
       return {
         taskId: task.id,
-        success: false,
-        changes: [],
-        decisions: [],
-        error: error.message || '未知错误',
+        ...failedResult,
       };
 
     } finally {
@@ -1056,127 +1076,58 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   /**
-   * 保存执行状态到项目目录
-   * 路径: {projectPath}/.claude/execution-state.json
+   * 通知状态变化（v3.0 重构：不再写文件，改为事件通知）
+   * 外部监听 'state:changed' 事件来保存状态到蓝图文件
    */
   saveExecutionState(): void {
     if (!this.currentPlan) {
-      console.warn('[RealtimeCoordinator] 无法保存状态：没有执行计划');
-      return;
-    }
-
-    if (!this.projectPath) {
-      console.warn('[RealtimeCoordinator] 无法保存状态：项目路径未设置');
       return;
     }
 
     try {
       const state = this.buildExecutionState();
-      const filePath = getExecutionStateFilePath(this.projectPath);
-      fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8');
-      console.log(`[RealtimeCoordinator] 执行状态已保存: ${filePath}`);
+      // v3.0: 发出状态变化事件，由外部决定如何持久化
+      this.emitEvent('state:changed', { state });
     } catch (error) {
-      console.error('[RealtimeCoordinator] 保存执行状态失败:', error);
+      console.error('[RealtimeCoordinator] 构建执行状态失败:', error);
     }
   }
 
   /**
-   * 从项目目录加载执行状态
-   * @param projectPath 项目路径
-   * @returns 保存的执行状态，如果不存在则返回 null
+   * @deprecated v3.0: 状态现在保存在蓝图文件中，不再使用独立的 execution-state.json
    */
-  loadExecutionState(projectPath?: string): ExecutionState | null {
-    const targetPath = projectPath || this.projectPath;
-    if (!targetPath) {
-      console.warn('[RealtimeCoordinator] 无法加载状态：项目路径未指定');
-      return null;
-    }
-
-    try {
-      const filePath = getExecutionStateFilePath(targetPath);
-      if (!fs.existsSync(filePath)) {
-        return null;
-      }
-
-      const data = fs.readFileSync(filePath, 'utf-8');
-      const state = JSON.parse(data) as ExecutionState;
-
-      // 版本兼容性检查
-      if (state.version !== EXECUTION_STATE_VERSION) {
-        console.warn(`[RealtimeCoordinator] 执行状态版本不匹配: ${state.version} vs ${EXECUTION_STATE_VERSION}`);
-        // v1.x 版本不包含 plan，无法兼容
-        if (state.version.startsWith('1.')) {
-          console.warn('[RealtimeCoordinator] 旧版本状态无法恢复，需要重新执行');
-          return null;
-        }
-      }
-
-      return state;
-    } catch (error) {
-      console.error('[RealtimeCoordinator] 加载执行状态失败:', error);
-      return null;
-    }
+  loadExecutionState(_projectPath?: string): ExecutionState | null {
+    console.warn('[RealtimeCoordinator] loadExecutionState 已废弃，请使用蓝图文件中的 lastExecutionPlan');
+    return null;
   }
 
   /**
-   * 删除项目的执行状态
-   * @param projectPath 项目路径（可选，默认使用当前项目路径）
+   * @deprecated v3.0: 状态现在保存在蓝图文件中
    */
-  deleteExecutionState(projectPath?: string): void {
-    const targetPath = projectPath || this.projectPath;
-    if (!targetPath) {
-      console.warn('[RealtimeCoordinator] 无法删除状态：项目路径未指定');
-      return;
-    }
-
-    try {
-      const filePath = getExecutionStateFilePath(targetPath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`[RealtimeCoordinator] 执行状态已删除: ${filePath}`);
-      }
-    } catch (error) {
-      console.error('[RealtimeCoordinator] 删除执行状态失败:', error);
-    }
+  deleteExecutionState(_projectPath?: string): void {
+    // 不再需要删除文件，状态保存在蓝图中
   }
 
   /**
-   * 检查项目是否有保存的执行状态
-   * @param projectPath 项目路径（可选，默认使用当前项目路径）
+   * @deprecated v3.0: 状态现在保存在蓝图文件中
    */
-  hasExecutionState(projectPath?: string): boolean {
-    const targetPath = projectPath || this.projectPath;
-    if (!targetPath) {
-      return false;
-    }
-    const filePath = getExecutionStateFilePath(targetPath);
-    return fs.existsSync(filePath);
+  hasExecutionState(_projectPath?: string): boolean {
+    return false;
   }
 
   /**
-   * 静态方法：从项目路径加载执行状态
-   * 用于在不创建实例的情况下检查项目是否有可恢复的状态
+   * @deprecated v3.0: 使用蓝图文件中的 lastExecutionPlan
    */
-  static loadStateFromProject(projectPath: string): ExecutionState | null {
-    try {
-      const filePath = getExecutionStateFilePath(projectPath);
-      if (!fs.existsSync(filePath)) {
-        return null;
-      }
-      const data = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(data) as ExecutionState;
-    } catch (error) {
-      console.error('[RealtimeCoordinator] 加载项目执行状态失败:', error);
-      return null;
-    }
+  static loadStateFromProject(_projectPath: string): ExecutionState | null {
+    console.warn('[RealtimeCoordinator] loadStateFromProject 已废弃，请使用蓝图文件');
+    return null;
   }
 
   /**
-   * 静态方法：检查项目是否有可恢复的执行状态
+   * @deprecated v3.0: 使用蓝图文件中的 lastExecutionPlan
    */
-  static hasRecoverableState(projectPath: string): boolean {
-    const filePath = getExecutionStateFilePath(projectPath);
-    return fs.existsSync(filePath);
+  static hasRecoverableState(_projectPath: string): boolean {
+    return false;
   }
 
   /**
@@ -1418,6 +1369,97 @@ export class RealtimeCoordinator extends EventEmitter {
       workerId: serialized.workerId,
       startedAt: serialized.startedAt ? new Date(serialized.startedAt) : undefined,
       completedAt: serialized.completedAt ? new Date(serialized.completedAt) : undefined,
+    };
+  }
+
+  // ============================================================================
+  // 🐝 冲突管理方法
+  // ============================================================================
+
+  /**
+   * 注册一个待处理的冲突
+   * 返回一个 Promise，当用户做出决策时 resolve
+   */
+  registerConflict(conflict: PendingConflict): Promise<HumanDecisionRequest> {
+    return new Promise((resolve) => {
+      // 保存冲突和解决回调
+      this.pendingConflicts.set(conflict.id, conflict);
+      this.conflictResolvers.set(conflict.id, resolve);
+
+      // 发送冲突事件通知前端
+      this.emitEvent('conflict:needs_human', {
+        conflict: this.serializeConflict(conflict),
+      });
+
+      console.log(`[Coordinator] 🔴 冲突已注册: ${conflict.id}, 等待人工干预...`);
+    });
+  }
+
+  /**
+   * 处理用户的冲突决策
+   */
+  resolveConflict(decision: HumanDecisionRequest): HumanDecisionResult {
+    const conflict = this.pendingConflicts.get(decision.conflictId);
+    const resolver = this.conflictResolvers.get(decision.conflictId);
+
+    if (!conflict || !resolver) {
+      return {
+        success: false,
+        conflictId: decision.conflictId,
+        message: `冲突 ${decision.conflictId} 不存在或已解决`,
+      };
+    }
+
+    // 更新冲突状态
+    conflict.status = 'resolved';
+    this.pendingConflicts.delete(decision.conflictId);
+    this.conflictResolvers.delete(decision.conflictId);
+
+    // 调用解决回调，继续执行流程
+    resolver(decision);
+
+    // 发送冲突已解决事件
+    this.emitEvent('conflict:resolved', {
+      conflictId: decision.conflictId,
+      decision: decision.decision,
+    });
+
+    console.log(`[Coordinator] ✅ 冲突已解决: ${decision.conflictId}, 决策: ${decision.decision}`);
+
+    return {
+      success: true,
+      conflictId: decision.conflictId,
+      message: '冲突已解决',
+    };
+  }
+
+  /**
+   * 获取所有待处理的冲突
+   */
+  getPendingConflicts(): PendingConflict[] {
+    return Array.from(this.pendingConflicts.values());
+  }
+
+  /**
+   * 获取指定冲突
+   */
+  getConflict(conflictId: string): PendingConflict | undefined {
+    return this.pendingConflicts.get(conflictId);
+  }
+
+  /**
+   * 序列化冲突（用于发送给前端）
+   */
+  private serializeConflict(conflict: PendingConflict): Record<string, unknown> {
+    return {
+      id: conflict.id,
+      workerId: conflict.workerId,
+      taskId: conflict.taskId,
+      taskName: conflict.taskName,
+      branchName: conflict.branchName,
+      files: conflict.files,
+      timestamp: conflict.timestamp.toISOString(),
+      status: conflict.status,
     };
   }
 }

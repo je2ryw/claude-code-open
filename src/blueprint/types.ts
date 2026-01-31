@@ -597,6 +597,113 @@ export interface ConflictInfo {
   suggestedResolution?: string;
 }
 
+/**
+ * 冲突文件详情
+ */
+export interface ConflictFileDetail {
+  path: string;
+  /** 当前 main 分支内容 */
+  oursContent: string;
+  /** Worker 分支内容 */
+  theirsContent: string;
+  /** 共同祖先内容（如果有） */
+  baseContent?: string;
+  /** 冲突类型 */
+  conflictType: 'append' | 'modify' | 'delete' | 'unknown';
+}
+
+/**
+ * 冲突决策类型
+ */
+export type ConflictDecisionType =
+  | 'auto_merge'      // 自动合并（追加冲突）
+  | 'keep_ours'       // 保留当前版本
+  | 'keep_theirs'     // 采用新版本
+  | 'ai_merge'        // AI智能合并
+  | 'manual';         // 需要人工干预
+
+/**
+ * 冲突决策结果
+ */
+export interface ConflictDecision {
+  type: ConflictDecisionType;
+  /** 合并后的文件内容（如果适用） */
+  mergedContents?: Record<string, string>;
+  /** 决策理由 */
+  reasoning: string;
+  /** 是否成功 */
+  success: boolean;
+  /** 错误信息（如果失败） */
+  error?: string;
+}
+
+/**
+ * 冲突解决请求
+ */
+export interface ConflictResolutionRequest {
+  workerId: string;
+  taskId: string;
+  branchName: string;
+  files: ConflictFileDetail[];
+  /** 任务描述（帮助AI理解上下文） */
+  taskDescription: string;
+}
+
+/**
+ * 待处理的冲突（需要人工干预）
+ */
+export interface PendingConflict {
+  id: string;
+  workerId: string;
+  taskId: string;
+  taskName: string;
+  branchName: string;
+  files: ConflictFileForUI[];
+  timestamp: Date;
+  status: 'pending' | 'resolving' | 'resolved';
+}
+
+/**
+ * 冲突文件（前端展示用）
+ */
+export interface ConflictFileForUI {
+  path: string;
+  oursContent: string;
+  theirsContent: string;
+  baseContent?: string;
+  suggestedMerge?: string;  // 蜂王建议的合并结果
+  conflictType: 'append' | 'modify' | 'delete' | 'unknown';
+}
+
+/**
+ * 人工决策类型
+ */
+export type HumanDecisionType =
+  | 'use_suggested'   // 使用蜂王建议
+  | 'use_ours'        // 使用当前版本
+  | 'use_theirs'      // 使用Worker版本
+  | 'use_both'        // 合并双方（追加模式）
+  | 'custom';         // 自定义编辑
+
+/**
+ * 人工决策请求
+ */
+export interface HumanDecisionRequest {
+  conflictId: string;
+  decision: HumanDecisionType;
+  /** 自定义内容（当 decision 为 'custom' 时使用） */
+  customContents?: Record<string, string>;
+}
+
+/**
+ * 人工决策结果
+ */
+export interface HumanDecisionResult {
+  success: boolean;
+  conflictId: string;
+  message: string;
+}
+
 // ============================================================================
 // 模型选择相关类型
 // ============================================================================

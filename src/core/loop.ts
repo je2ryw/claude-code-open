@@ -2297,6 +2297,10 @@ Guidelines:
         try {
           const input = JSON.parse(tool.input || '{}');
 
+          // v3.5: 在工具执行前发送带完整 toolInput 的 tool_start
+          // 这样前端可以在长时间运行的工具（如 Bash）执行期间显示输入参数
+          yield { type: 'tool_start', toolName: tool.name, toolInput: input };
+
           // 执行工具（带权限检查和回调）
           const result = await toolRegistry.execute(
             tool.name,

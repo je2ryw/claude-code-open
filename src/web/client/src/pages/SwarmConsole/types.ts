@@ -307,6 +307,10 @@ export type SwarmServerMessage =
   | { type: 'swarm:worker_stream'; payload: WorkerStreamPayload }
   // v3.4 新增：验收测试状态更新
   | { type: 'swarm:verification_update'; payload: VerificationUpdatePayload }
+  // v3.5 新增：冲突需要人工处理
+  | { type: 'conflict:needs_human'; payload: ConflictNeedsHumanPayload }
+  // v3.5 新增：冲突已解决
+  | { type: 'conflict:resolved'; payload: ConflictResolvedPayload }
   | { type: 'pong' };
 
 // ============= v2.1 新增：Worker 日志类型 =============
@@ -451,6 +455,9 @@ export interface SwarmState {
 
   // v3.4: 验收测试状态
   verification: VerificationState;
+
+  // v3.5: 冲突状态
+  conflicts: ConflictState;
 }
 
 /**
@@ -527,4 +534,68 @@ export interface VerificationUpdatePayload {
   status: VerificationStatus;
   result?: VerificationState['result'];
   error?: string;
+}
+
+// ============= 🐝 冲突类型（v2.1 新增）=============
+
+/**
+ * 冲突文件
+ */
+export interface ConflictFile {
+  path: string;
+  oursContent: string;
+  theirsContent: string;
+  baseContent?: string;
+  suggestedMerge?: string;
+  conflictType: 'append' | 'modify' | 'delete' | 'unknown';
+}
+
+/**
+ * 待处理冲突
+ */
+export interface PendingConflict {
+  id: string;
+  workerId: string;
+  taskId: string;
+  taskName: string;
+  branchName: string;
+  files: ConflictFile[];
+  timestamp: string;
+  status: 'pending' | 'resolving' | 'resolved';
+}
+
+/**
+ * 冲突决策类型
+ */
+export type ConflictDecision =
+  | 'use_suggested'
+  | 'use_ours'
+  | 'use_theirs'
+  | 'use_both'
+  | 'custom';
+
+/**
+ * 冲突状态
+ */
+export interface ConflictState {
+  conflicts: PendingConflict[];
+  resolvingId: string | null;
+}
+
+// ============= v3.5 冲突 WebSocket Payload 类型 =============
+
+/**
+ * 冲突需要人工处理 Payload
+ */
+export interface ConflictNeedsHumanPayload {
+  conflict: PendingConflict;
+}
+
+/**
+ * 冲突已解决 Payload
+ */
+export interface ConflictResolvedPayload {
+  conflictId: string;
+  success: boolean;
+  message?: string;
 }

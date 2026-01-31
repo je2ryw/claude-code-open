@@ -531,6 +531,75 @@ export const coordinatorApi = {
     }
     return { logs: result.logs || result || [], workerId: result.workerId };
   },
+
+  // ============ v3.5 冲突解决 ============
+
+  /**
+   * 获取所有待处理冲突
+   */
+  getConflicts: async (): Promise<Array<{
+    id: string;
+    workerId: string;
+    taskId: string;
+    taskName: string;
+    branchName: string;
+    files: Array<{
+      path: string;
+      oursContent: string;
+      theirsContent: string;
+      baseContent?: string;
+      suggestedMerge?: string;
+      conflictType: 'append' | 'modify' | 'delete' | 'unknown';
+    }>;
+    timestamp: string;
+    status: 'pending' | 'resolving' | 'resolved';
+  }>> => {
+    const response = await fetch('/api/blueprint/coordinator/conflicts');
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取单个冲突详情
+   */
+  getConflict: async (conflictId: string): Promise<{
+    id: string;
+    workerId: string;
+    taskId: string;
+    taskName: string;
+    branchName: string;
+    files: Array<{
+      path: string;
+      oursContent: string;
+      theirsContent: string;
+      baseContent?: string;
+      suggestedMerge?: string;
+      conflictType: 'append' | 'modify' | 'delete' | 'unknown';
+    }>;
+    timestamp: string;
+    status: 'pending' | 'resolving' | 'resolved';
+  }> => {
+    const response = await fetch(`/api/blueprint/coordinator/conflicts/${conflictId}`);
+    return handleResponse(response);
+  },
+
+  /**
+   * 解决冲突
+   */
+  resolveConflict: async (
+    conflictId: string,
+    decision: 'use_suggested' | 'use_ours' | 'use_theirs' | 'use_both' | 'custom',
+    customContents?: Record<string, string>
+  ): Promise<{
+    success: boolean;
+    message?: string;
+  }> => {
+    const response = await fetch(`/api/blueprint/coordinator/conflicts/${conflictId}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, customContents }),
+    });
+    return handleResponse(response);
+  },
 };
 
 /**

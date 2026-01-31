@@ -675,6 +675,27 @@ export function setupWebSocket(
           totalCost: data.event.data.totalCost,
         },
       });
+    } else if (data.event.type === 'conflict:needs_human') {
+      // 🐝 冲突需要人工干预
+      console.log(`[Swarm v2.0] Conflict needs human intervention: ${data.event.data.conflict?.id}`);
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:conflict',
+        payload: {
+          action: 'needs_human',
+          conflict: data.event.data.conflict,
+        },
+      });
+    } else if (data.event.type === 'conflict:resolved') {
+      // 🐝 冲突已解决
+      console.log(`[Swarm v2.0] Conflict resolved: ${data.event.data.conflictId}`);
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:conflict',
+        payload: {
+          action: 'resolved',
+          conflictId: data.event.data.conflictId,
+          decision: data.event.data.decision,
+        },
+      });
     }
   });
 
@@ -3750,19 +3771,33 @@ async function handleSwarmSubscribe(
       const plan = session.plan;
       const status = session.coordinator.getStatus() as any;
       const tasksWithStatus = session.coordinator.getTasksWithStatus();
+      // v2.2: 获取 issues，将错误信息附加到对应任务
+      const issues = status?.issues || [];
+      const issuesByTask = new Map<string, string>();
+      for (const issue of issues) {
+        if (issue.type === 'error' && !issue.resolved && issue.taskId) {
+          issuesByTask.set(issue.taskId, issue.description);
+        }
+      }
 
       // 序列化任务
-      const serializedTasks = tasksWithStatus.map((task: any) => ({
-        ...task,
-        startedAt: task.startedAt instanceof Date ? task.startedAt.toISOString() : task.startedAt,
-        completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
-        result: task.result ? {
-          success: task.result.success,
-          testsRan: task.result.testsRan,
-          testsPassed: task.result.testsPassed,
-          error: task.result.error,
-        } : undefined,
-      }));
+      const serializedTasks = tasksWithStatus.map((task: any) => {
+        // v2.2: 检查是否有未解决的 issue 错误
+        const issueError = issuesByTask.get(task.id);
+        return {
+          ...task,
+          startedAt: task.startedAt instanceof Date ? task.startedAt.toISOString() : task.startedAt,
+          completedAt: task.completedAt instanceof Date ? task.completedAt.toISOString() : task.completedAt,
+          // v2.2: 优先使用 issue 中的错误信息
+          error: issueError || task.error,
+          result: task.result ? {
+            success: task.result.success,
+            testsRan: task.result.testsRan,
+            testsPassed: task.result.testsPassed,
+            error: task.result.error || issueError,
+          } : (issueError ? { success: false, error: issueError } : undefined),
+        };
+      });
 
       // 推断计划状态
       const inferredStatus = status

@@ -204,6 +204,40 @@ class BlueprintStore {
    * 反序列化蓝图（直接返回原始数据，仅补充默认值）
    */
   private deserializeBlueprint(data: any, projectPath: string): Blueprint {
+    // 处理设计图：从文件系统加载 imageData
+    let designImages = data.designImages;
+    if (designImages && Array.isArray(designImages)) {
+      designImages = designImages.map((img: any) => {
+        // 如果有 filePath 但没有 imageData，则从文件加载
+        if (img.filePath && !img.imageData) {
+          try {
+            const absolutePath = path.join(projectPath, img.filePath);
+            if (fs.existsSync(absolutePath)) {
+              const fileData = fs.readFileSync(absolutePath);
+              // 根据文件扩展名确定 MIME 类型
+              const ext = path.extname(img.filePath).toLowerCase();
+              const mimeTypes: Record<string, string> = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+              };
+              const mimeType = mimeTypes[ext] || 'image/png';
+              const base64Data = fileData.toString('base64');
+              return {
+                ...img,
+                imageData: `data:${mimeType};base64,${base64Data}`,
+              };
+            }
+          } catch (e) {
+            console.warn(`[BlueprintStore] 无法加载设计图文件: ${img.filePath}`, e);
+          }
+        }
+        return img;
+      });
+    }
+
     return {
       ...data,
       projectPath: data.projectPath || projectPath,
@@ -214,6 +248,7 @@ class BlueprintStore {
       modules: data.modules || [],
       nfrs: data.nfrs || [],
       constraints: data.constraints || [],
+      designImages: designImages || [],  // 包含加载后的设计图
       // 日期字段保持原样
       createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: data.updatedAt || new Date().toISOString(),
@@ -224,8 +259,19 @@ class BlueprintStore {
    * 序列化蓝图（处理日期字段）
    */
   private serializeBlueprint(blueprint: Blueprint): any {
+    // 处理 designImages：只保存 filePath，不保存 imageData（base64 太大）
+    let designImages = blueprint.designImages;
+    if (designImages && Array.isArray(designImages)) {
+      designImages = designImages.map(img => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { imageData, ...rest } = img;
+        return rest;
+      });
+    }
+
     return {
       ...blueprint,
+      designImages,
       createdAt: blueprint.createdAt instanceof Date ? blueprint.createdAt.toISOString() : blueprint.createdAt,
       updatedAt: blueprint.updatedAt instanceof Date ? blueprint.updatedAt.toISOString() : blueprint.updatedAt,
       confirmedAt: blueprint.confirmedAt instanceof Date ? blueprint.confirmedAt.toISOString() : blueprint.confirmedAt,
@@ -427,8 +473,11 @@ class RealTaskExecutor implements TaskExecutor {
     this.gitConcurrency = gitConcurrency;
     this.blueprint = blueprint;
     // v5.0: 一次性构建共享的 System Prompt 基础部分
+    // v5.1: 传递 projectPath 以提供完整环境信息
     this.sharedSystemPromptBase = AutonomousWorkerExecutor.buildSharedSystemPromptBase(
-      blueprint.techStack || { language: 'typescript', packageManager: 'npm' }
+      blueprint.techStack || { language: 'typescript', packageManager: 'npm' },
+      false,  // hasMergeContext
+      blueprint.projectPath
     );
   }
 
@@ -684,6 +733,7 @@ class RealTaskExecutor implements TaskExecutor {
       }
 
       // 构建 Worker 上下文
+      // v4.0: 添加合并上下文，让 Worker 自己负责合并代码
       const context = {
         projectPath: effectiveProjectPath,
         techStack: this.blueprint.techStack || {
@@ -708,6 +758,11 @@ class RealTaskExecutor implements TaskExecutor {
         constraints: this.blueprint.constraints,
         dependencyOutputs: dependencyOutputs.length > 0 ? dependencyOutputs : undefined,
         designImages: this.blueprint.designImages,
+        // v4.0: 合并上下文 - Worker 自己负责提交和合并代码
+        mergeContext: {
+          workerId,
+          gitConcurrency: this.gitConcurrency,
+        },
       };
 
       const result = await worker.execute(task, context);
@@ -720,31 +775,13 @@ class RealTaskExecutor implements TaskExecutor {
         });
       }
 
-      // 如果任务成功，提交并合并分支
-      if (result.success && Array.isArray(result.changes) && result.changes.length > 0) {
-        // 提交更改到 Worker 分支
-        await this.gitConcurrency.commitChanges(
-          workerId,
-          result.changes,
-          `[Swarm] ${task.name}`
-        );
-
-        // 合并到主分支
-        const mergeResult = await this.gitConcurrency.mergeWorkerBranch(workerId);
-
-        if (!mergeResult.success) {
-          console.warn(`[RealTaskExecutor] 合并冲突: ${mergeResult.conflict?.description}`);
-          // 如果需要人工review，标记但不阻塞
-          if (mergeResult.needsHumanReview) {
-            console.warn(`[RealTaskExecutor] 需要人工review分支: ${mergeResult.branchName}`);
-          }
-        }
-      } else if (!result.success) {
-        // 任务失败，回滚分支
+      // v4.0: Worker 已经自己负责合并了，这里只处理任务失败的情况
+      if (!result.success) {
+        // 任务失败，尝试清理分支
         try {
-          await this.gitConcurrency.rollbackWorkerBranch(workerId);
+          await this.gitConcurrency.deleteWorkerBranch(workerId);
         } catch (e) {
-          // 忽略回滚错误
+          // 忽略清理错误
         }
       }
 
@@ -1314,6 +1351,25 @@ class ExecutionManager {
   }
 
   /**
+   * 获取所有活跃的执行会话
+   * 用于冲突管理等全局操作
+   */
+  getAllActiveExecutions(): Array<{ blueprintId: string; coordinator: RealtimeCoordinator }> {
+    const activeExecutions: Array<{ blueprintId: string; coordinator: RealtimeCoordinator }> = [];
+
+    for (const session of this.sessions.values()) {
+      if (!session.completedAt && session.coordinator) {
+        activeExecutions.push({
+          blueprintId: session.blueprintId,
+          coordinator: session.coordinator,
+        });
+      }
+    }
+
+    return activeExecutions;
+  }
+
+  /**
    * 注册会话（用于从持久化状态恢复）
    */
   registerSession(session: ExecutionSession): void {
@@ -1522,6 +1578,26 @@ class ExecutionManager {
         },
       });
 
+      // v2.5: 重试成功后同步更新 blueprint.lastExecutionPlan
+      // 解决前端显示状态与文件不同步的问题
+      const blueprint = blueprintStore.get(blueprintId);
+      if (blueprint) {
+        const currentPlan = session.coordinator.getCurrentPlan();
+        if (currentPlan) {
+          blueprint.lastExecutionPlan = this.serializeExecutionPlan(currentPlan);
+          // 如果所有任务都完成了，更新蓝图状态
+          const status = session.coordinator.getStatus();
+          if (status.completedTasks === status.totalTasks && status.totalTasks > 0) {
+            blueprint.status = 'completed';
+          } else if (status.failedTasks === 0 && status.runningTasks === 0) {
+            // 没有失败也没有运行中，可能是暂停状态
+            blueprint.status = 'paused';
+          }
+          blueprintStore.save(blueprint);
+          console.log(`[ExecutionManager] 已同步更新 blueprint.lastExecutionPlan`);
+        }
+      }
+
       return { success: result };
     } catch (error: any) {
       console.error(`[ExecutionManager] 重试任务失败:`, error);
@@ -1530,8 +1606,8 @@ class ExecutionManager {
   }
 
   /**
-   * v2.2: 从保存的状态恢复会话
-   * 当服务重启后会话丢失时，从 execution-state.json 恢复
+   * v3.0: 从蓝图文件恢复会话
+   * 当服务重启后会话丢失时，从蓝图的 lastExecutionPlan 和 executionState 恢复
    */
   private async restoreSessionFromState(blueprintId: string): Promise<ExecutionSession | null> {
     // 获取蓝图
@@ -1546,14 +1622,16 @@ class ExecutionManager {
       return null;
     }
 
-    // 检查是否有保存的状态
-    const stateFilePath = path.join(blueprint.projectPath, '.claude', 'execution-state.json');
-    if (!fs.existsSync(stateFilePath)) {
-      console.log(`[ExecutionManager] 恢复失败：状态文件不存在 ${stateFilePath}`);
+    // v3.0: 从蓝图文件读取执行状态
+    const lastPlan = blueprint.lastExecutionPlan;
+    const executionState = (blueprint as any).executionState;
+
+    if (!lastPlan) {
+      console.log(`[ExecutionManager] 恢复失败：蓝图没有 lastExecutionPlan`);
       return null;
     }
 
-    console.log(`[ExecutionManager] 从状态文件恢复: ${stateFilePath}`);
+    console.log(`[ExecutionManager] 从蓝图文件恢复执行状态: ${blueprint.id}`);
 
     // 创建 Git 并发控制器
     const gitConcurrency = new GitConcurrency(blueprint.projectPath);
@@ -1572,28 +1650,36 @@ class ExecutionManager {
     const executor = new RealTaskExecutor(gitConcurrency, blueprint);
     coordinator.setTaskExecutor(executor);
 
-    // 设置项目路径（用于加载状态）
+    // 设置项目路径
     coordinator.setProjectPath(blueprint.projectPath);
 
-    // 从文件加载状态并恢复到协调器
     try {
-      // 读取状态文件
-      const stateContent = fs.readFileSync(stateFilePath, 'utf-8');
-      const savedState = JSON.parse(stateContent) as ExecutionState;
-
-      // 验证蓝图 ID 匹配
-      if (savedState.plan.blueprintId !== blueprintId) {
-        console.log(`[ExecutionManager] 状态文件蓝图 ID 不匹配`);
-        return null;
-      }
+      // 构建 ExecutionState 用于恢复
+      const savedState: ExecutionState = {
+        plan: lastPlan,
+        projectPath: blueprint.projectPath,
+        currentGroupIndex: executionState?.currentGroupIndex || 0,
+        completedTaskIds: executionState?.completedTaskIds || [],
+        failedTaskIds: executionState?.failedTaskIds || [],
+        skippedTaskIds: executionState?.skippedTaskIds || [],
+        taskResults: executionState?.taskResults || [],
+        issues: [],
+        taskModifications: [],
+        currentCost: executionState?.currentCost || 0,
+        startedAt: executionState?.startedAt || new Date().toISOString(),
+        lastUpdatedAt: executionState?.lastUpdatedAt || new Date().toISOString(),
+        isPaused: executionState?.isPaused || false,
+        isCancelled: executionState?.isCancelled || false,
+        version: '2.0.0',
+      };
 
       // 恢复协调器状态
       coordinator.restoreFromState(savedState);
 
-      // 监听事件（复用 startExecution 中的事件监听逻辑）
+      // 监听事件
       this.setupCoordinatorEvents(coordinator, blueprint, gitConcurrency);
 
-      // 从协调器获取反序列化后的计划
+      // 从协调器获取恢复后的计划
       const restoredPlan = coordinator.getCurrentPlan();
       if (!restoredPlan) {
         console.log(`[ExecutionManager] 恢复失败：协调器没有计划`);
@@ -1613,11 +1699,11 @@ class ExecutionManager {
       // 保存会话
       this.sessions.set(session.id, session);
 
-      console.log(`[ExecutionManager] 会话恢复成功，包含 ${savedState.plan.tasks.length} 个任务`);
+      console.log(`[ExecutionManager] 会话恢复成功，包含 ${lastPlan.tasks.length} 个任务`);
       return session;
 
     } catch (error: any) {
-      console.error(`[ExecutionManager] 解析状态文件失败:`, error);
+      console.error(`[ExecutionManager] 恢复会话失败:`, error);
       return null;
     }
   }
@@ -1770,6 +1856,32 @@ class ExecutionManager {
         groupIndex: data.groupIndex,
         failedCount: data.failedCount,
       });
+    });
+
+    // v3.0: 状态变化事件 - 统一保存到蓝图文件
+    coordinator.on('state:changed', (data: any) => {
+      if (data.state && data.state.plan) {
+        // 将执行状态保存到蓝图的 lastExecutionPlan
+        blueprint.lastExecutionPlan = this.serializeExecutionPlan(data.state.plan);
+
+        // 同时保存额外的运行时状态（如 completedTaskIds、failedTaskIds 等）
+        // 这些信息对恢复执行很重要
+        (blueprint as any).executionState = {
+          currentGroupIndex: data.state.currentGroupIndex,
+          completedTaskIds: data.state.completedTaskIds,
+          failedTaskIds: data.state.failedTaskIds,
+          skippedTaskIds: data.state.skippedTaskIds,
+          taskResults: data.state.taskResults,
+          currentCost: data.state.currentCost,
+          startedAt: data.state.startedAt,
+          lastUpdatedAt: data.state.lastUpdatedAt,
+          isPaused: data.state.isPaused,
+          isCancelled: data.state.isCancelled,
+        };
+
+        blueprintStore.save(blueprint);
+        console.log(`[ExecutionManager] 状态已同步到蓝图文件: ${blueprint.id}`);
+      }
     });
   }
 
@@ -3526,39 +3638,76 @@ router.post('/dialog/:sessionId/message/stream', async (req: Request, res: Respo
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
+  // 辅助函数：写入并刷新缓冲区
+  const writeAndFlush = (data: string) => {
+    res.write(data);
+    // 显式刷新缓冲区（某些代理可能会缓冲数据）
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
+  };
+
   // 发送开始事件
-  res.write(`data: ${JSON.stringify({ type: 'start', message: '正在处理...' })}\n\n`);
+  writeAndFlush(`data: ${JSON.stringify({ type: 'start', message: '正在处理...' })}\n\n`);
 
   try {
-    // 发送思考中状态
-    res.write(`data: ${JSON.stringify({ type: 'thinking', message: 'AI 正在分析您的需求...' })}\n\n`);
+    // 监听 SmartPlanner 的流式事件，实时转发给前端
+    const planner = session.planner;
+    let streamingTextBuffer = '';
 
-    // 处理消息（这会调用 AI 并返回完整状态）
+    const streamingHandler = (event: { type: string; content: string }) => {
+      console.log('[Blueprint API] 收到流式事件:', event.type, '长度:', event.content?.length || 0);
+
+      if (event.type === 'text') {
+        streamingTextBuffer += event.content;
+        writeAndFlush(`data: ${JSON.stringify({ type: 'text', text: event.content })}\n\n`);
+      } else if (event.type === 'thinking') {
+        writeAndFlush(`data: ${JSON.stringify({ type: 'thinking', message: event.content })}\n\n`);
+      } else if (event.type === 'tool_input') {
+        // 工具输入事件（可选：显示 AI 正在使用的工具）
+        writeAndFlush(`data: ${JSON.stringify({ type: 'tool_input', content: event.content })}\n\n`);
+      }
+    };
+
+    // 注册事件监听器
+    planner.on('dialog:ai_streaming', streamingHandler);
+
+    // 发送思考中状态
+    writeAndFlush(`data: ${JSON.stringify({ type: 'thinking', message: 'AI 正在分析您的需求...' })}\n\n`);
+
+    // 处理消息（这会调用 AI 并触发流式事件）
     const state = await dialogManager.processInput(sessionId, input);
 
+    // 移除事件监听器
+    planner.off('dialog:ai_streaming', streamingHandler);
+
     if (!state) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: '处理消息失败' })}\n\n`);
+      writeAndFlush(`data: ${JSON.stringify({ type: 'error', error: '处理消息失败' })}\n\n`);
       res.end();
       return;
     }
 
-    // 获取最新的助手消息
-    const lastMessage = state.messages[state.messages.length - 1];
-    if (lastMessage && lastMessage.role === 'assistant') {
-      const content = lastMessage.content;
+    // 如果没有通过流式事件发送任何文本，回退到分块发送
+    if (!streamingTextBuffer) {
+      const lastMessage = state.messages[state.messages.length - 1];
+      console.log('[Blueprint API] 流式事件未触发，回退到分块发送。最新消息:', lastMessage?.role, '内容长度:', lastMessage?.content?.length || 0);
 
-      // 流式发送回复文本（逐字符或逐词）
-      // 这里使用逐段发送，模拟流式效果
-      const chunks = splitIntoChunks(content);
-      for (const chunk of chunks) {
-        res.write(`data: ${JSON.stringify({ type: 'text', text: chunk })}\n\n`);
-        // 添加小延迟模拟打字效果
-        await sleep(10 + Math.random() * 20);
+      if (lastMessage && lastMessage.role === 'assistant') {
+        const content = lastMessage.content;
+        const chunks = splitIntoChunks(content);
+        console.log('[Blueprint API] 开始发送 text 事件，共', chunks.length, '个片段');
+
+        for (const chunk of chunks) {
+          writeAndFlush(`data: ${JSON.stringify({ type: 'text', text: chunk })}\n\n`);
+          await sleep(10 + Math.random() * 20);
+        }
       }
+    } else {
+      console.log('[Blueprint API] 流式事件已发送，总文本长度:', streamingTextBuffer.length);
     }
 
     // 发送最终状态
-    res.write(`data: ${JSON.stringify({
+    writeAndFlush(`data: ${JSON.stringify({
       type: 'state',
       phase: state.phase,
       isComplete: state.isComplete,
@@ -3568,7 +3717,7 @@ router.post('/dialog/:sessionId/message/stream', async (req: Request, res: Respo
     })}\n\n`);
 
     // 发送完成事件
-    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    writeAndFlush(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
     res.end();
 
   } catch (error: any) {
@@ -6207,6 +6356,110 @@ router.post('/file-operation/move', (req: Request, res: Response) => {
     res.json({
       success: true,
       data: { path: destPath },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// 🐝 冲突管理 API
+// ============================================================================
+
+/**
+ * GET /coordinator/conflicts
+ * 获取所有待处理的冲突
+ */
+router.get('/coordinator/conflicts', (_req: Request, res: Response) => {
+  try {
+    const executions = executionManager.getAllActiveExecutions();
+    const allConflicts: any[] = [];
+
+    for (const { coordinator } of executions) {
+      const conflicts = coordinator.getPendingConflicts();
+      allConflicts.push(...conflicts.map(c => ({
+        ...c,
+        timestamp: c.timestamp.toISOString(),
+      })));
+    }
+
+    res.json({
+      success: true,
+      data: allConflicts,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /coordinator/conflicts/:conflictId
+ * 获取指定冲突详情
+ */
+router.get('/coordinator/conflicts/:conflictId', (req: Request, res: Response) => {
+  try {
+    const { conflictId } = req.params;
+    const executions = executionManager.getAllActiveExecutions();
+
+    for (const { coordinator } of executions) {
+      const conflict = coordinator.getConflict(conflictId);
+      if (conflict) {
+        return res.json({
+          success: true,
+          data: {
+            ...conflict,
+            timestamp: conflict.timestamp.toISOString(),
+          },
+        });
+      }
+    }
+
+    res.status(404).json({
+      success: false,
+      error: '冲突不存在',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordinator/conflicts/:conflictId/resolve
+ * 解决指定冲突
+ */
+router.post('/coordinator/conflicts/:conflictId/resolve', (req: Request, res: Response) => {
+  try {
+    const { conflictId } = req.params;
+    const { decision, customContents } = req.body;
+
+    if (!decision) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 decision 参数',
+      });
+    }
+
+    const executions = executionManager.getAllActiveExecutions();
+
+    for (const { coordinator } of executions) {
+      const conflict = coordinator.getConflict(conflictId);
+      if (conflict) {
+        const result = coordinator.resolveConflict({
+          conflictId,
+          decision,
+          customContents,
+        });
+
+        return res.json({
+          success: result.success,
+          data: result,
+        });
+      }
+    }
+
+    res.status(404).json({
+      success: false,
+      error: '冲突不存在',
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
