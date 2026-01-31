@@ -259,6 +259,9 @@ Usage:
       // 搜索路径
       args.push(searchPath);
 
+      // v2.1.23: 添加超时配置（默认 30 秒）
+      const GREP_TIMEOUT_MS = parseInt(process.env.GREP_TIMEOUT_MS || '30000', 10);
+
       // 使用 spawnSync 代替 execSync，实现跨平台兼容
       let output: string;
       try {
@@ -267,10 +270,27 @@ Usage:
           encoding: 'utf-8',
           shell: isWindows,  // Windows 上可能需要 shell
           windowsHide: true, // Windows 隐藏命令窗口
+          timeout: GREP_TIMEOUT_MS, // v2.1.23: 添加超时
         });
+
+        // v2.1.23: 检查是否超时（而不是静默返回空结果）
+        if (result.signal === 'SIGTERM' || result.signal === 'SIGKILL') {
+          return {
+            success: false,
+            error: `Grep search timed out after ${GREP_TIMEOUT_MS / 1000} seconds. Try narrowing your search pattern or path.`,
+          };
+        }
 
         // ripgrep 返回码: 0=找到匹配, 1=没有匹配, 2+=错误
         if (result.error) {
+          // v2.1.23: 明确报告错误而不是静默失败
+          const errorMsg = result.error.message || String(result.error);
+          if (errorMsg.includes('ETIMEDOUT') || errorMsg.includes('timed out')) {
+            return {
+              success: false,
+              error: `Grep search timed out. Try narrowing your search pattern or path.`,
+            };
+          }
           throw result.error;
         }
 
