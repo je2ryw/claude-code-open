@@ -4,13 +4,14 @@
  */
 
 // 代理支持
-export type { ProxyConfig, ProxyAgentOptions } from './proxy.js';
+export type { ProxyConfig, ProxyAgentOptions, MTLSConfig } from './proxy.js';
 export {
   getProxyFromEnv,
   parseProxyUrl,
   shouldBypassProxy,
   createProxyAgent,
   getProxyInfo,
+  loadMTLSConfig,
 } from './proxy.js';
 
 // 超时和取消

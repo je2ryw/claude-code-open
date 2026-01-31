@@ -101,6 +101,44 @@ const CLAUDE_CODE_BETA = 'claude-code-20250219';
 const OAUTH_BETA = 'oauth-2025-04-20';
 const THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
+// v2.1.25: Bedrock 和 Vertex 不支持的 betas (对应官方 AT6 集合)
+// 这些 betas 会导致网关用户出现 beta header 验证错误
+const UNSUPPORTED_GATEWAY_BETAS = new Set([
+  'interleaved-thinking-2025-05-14',
+  'context-1m-2025-08-07',
+  'tool-search-tool-2025-10-19',
+  'tool-examples-2025-10-29',
+]);
+
+// v2.1.25: Provider 类型 (对应官方 F4 函数)
+type ProviderType = 'anthropic' | 'bedrock' | 'vertex' | 'foundry';
+
+/**
+ * 获取当前 Provider 类型 (对应官方 F4 函数)
+ * 通过环境变量检测使用的云服务商
+ */
+function getProviderType(): ProviderType {
+  if (process.env.CLAUDE_CODE_USE_BEDROCK === 'true' || process.env.CLAUDE_CODE_USE_BEDROCK === '1') {
+    return 'bedrock';
+  }
+  if (process.env.CLAUDE_CODE_USE_VERTEX === 'true' || process.env.CLAUDE_CODE_USE_VERTEX === '1') {
+    return 'vertex';
+  }
+  if (process.env.CLAUDE_CODE_USE_FOUNDRY === 'true' || process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {
+    return 'foundry';
+  }
+  return 'anthropic';
+}
+
+/**
+ * 检查是否禁用实验性 betas (对应官方 ir1 函数的部分逻辑)
+ * 通过 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS 环境变量控制
+ */
+function isExperimentalBetasDisabled(): boolean {
+  const value = process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS;
+  return value === 'true' || value === '1';
+}
+
 // Claude Code 身份验证的 magic string
 // 官方有三种身份标识，根据不同场景使用
 const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
@@ -271,15 +309,20 @@ function buildMetadata(accountUuid?: string): { user_id: string } {
 }
 
 /**
- * 构建 betas 数组 (模拟官方 qC/hg1 函数)
+ * 构建 betas 数组 (模拟官方 Hu6/xV 函数)
  *
  * 重要发现：
  * - claude-code-20250219 beta 需要与特定的 system prompt 配合使用
  * - system prompt 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
  * - 只有满足这个条件，OAuth token 才能使用 sonnet/opus 模型
+ *
+ * v2.1.25 修复：
+ * - 对于 Bedrock 网关用户，过滤掉不支持的 betas (UNSUPPORTED_GATEWAY_BETAS)
+ * - 支持 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 完全禁用实验性 betas
  */
 function buildBetas(model: string, isOAuth: boolean): string[] {
   const betas: string[] = [];
+  const providerType = getProviderType();
 
   // 非 haiku 模型添加 claude-code beta（官方逻辑：if(!q)K.push(Ld6)）
   // 这个 beta 允许使用 Claude Code 特定功能
@@ -294,8 +337,21 @@ function buildBetas(model: string, isOAuth: boolean): string[] {
     betas.push(OAUTH_BETA);
   }
 
-  // 添加 thinking beta
-  betas.push(THINKING_BETA);
+  // v2.1.25: 检查是否禁用实验性 betas
+  // 如果设置了 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1，不添加 thinking beta
+  if (!isExperimentalBetasDisabled()) {
+    // 添加 thinking beta（仅当未禁用实验性 betas 时）
+    // 注意：如果没有禁用 interleaved thinking，则添加
+    if (!process.env.DISABLE_INTERLEAVED_THINKING) {
+      betas.push(THINKING_BETA);
+    }
+  }
+
+  // v2.1.25: 对于 Bedrock 网关用户，过滤掉不支持的 betas
+  // 这是修复 beta header 验证错误的关键
+  if (providerType === 'bedrock') {
+    return betas.filter(beta => !UNSUPPORTED_GATEWAY_BETAS.has(beta));
+  }
 
   return betas;
 }

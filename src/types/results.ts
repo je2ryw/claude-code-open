@@ -99,6 +99,10 @@ export interface BashToolResult extends ToolResult {
   cwd?: string;
   /** Whether the command was blocked due to security reasons */
   blocked?: boolean;
+  /** v2.1.23: Elapsed time in seconds for display */
+  elapsedTimeSeconds?: number;
+  /** v2.1.23: Timeout in milliseconds for display */
+  timeoutMs?: number;
 }
 
 /**

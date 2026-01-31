@@ -1,6 +1,7 @@
 /**
  * 代理配置和Agent创建
  * 支持 HTTP/HTTPS/SOCKS 代理
+ * v2.1.23: 添加 mTLS 客户端证书支持
  */
 
 import { HttpProxyAgent } from 'http-proxy-agent';
@@ -8,6 +9,51 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { getProxyForUrl } from 'proxy-from-env';
 import type { Agent } from 'http';
+import * as fs from 'fs';
+
+/**
+ * v2.1.23: mTLS 配置接口
+ */
+export interface MTLSConfig {
+  /** 客户端证书路径或内容 */
+  cert?: string;
+  /** 客户端私钥路径或内容 */
+  key?: string;
+  /** 私钥密码 */
+  passphrase?: string;
+}
+
+/**
+ * v2.1.23: 从环境变量加载 mTLS 配置
+ */
+export function loadMTLSConfig(): MTLSConfig {
+  const config: MTLSConfig = {};
+
+  // 加载客户端证书
+  if (process.env.CLAUDE_CODE_CLIENT_CERT) {
+    try {
+      config.cert = fs.readFileSync(process.env.CLAUDE_CODE_CLIENT_CERT, { encoding: 'utf8' });
+    } catch (err) {
+      console.error(`mTLS: Failed to load client certificate: ${err}`);
+    }
+  }
+
+  // 加载客户端私钥
+  if (process.env.CLAUDE_CODE_CLIENT_KEY) {
+    try {
+      config.key = fs.readFileSync(process.env.CLAUDE_CODE_CLIENT_KEY, { encoding: 'utf8' });
+    } catch (err) {
+      console.error(`mTLS: Failed to load client key: ${err}`);
+    }
+  }
+
+  // 私钥密码
+  if (process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE) {
+    config.passphrase = process.env.CLAUDE_CODE_CLIENT_KEY_PASSPHRASE;
+  }
+
+  return config;
+}
 
 /**
  * 代理配置接口
@@ -31,6 +77,7 @@ export interface ProxyConfig {
 
 /**
  * 代理 Agent 选项
+ * v2.1.23: 添加 mTLS 支持
  */
 export interface ProxyAgentOptions {
   /** 连接超时（毫秒） */
@@ -45,6 +92,12 @@ export interface ProxyAgentOptions {
   rejectUnauthorized?: boolean;
   /** 自定义 CA 证书 */
   ca?: string | Buffer | Array<string | Buffer>;
+  /** v2.1.23: mTLS 客户端证书 */
+  cert?: string | Buffer;
+  /** v2.1.23: mTLS 客户端私钥 */
+  key?: string | Buffer;
+  /** v2.1.23: mTLS 私钥密码 */
+  passphrase?: string;
 }
 
 /**
@@ -194,6 +247,9 @@ export function createProxyAgent(
     finalProxyUrl = url.toString();
   }
 
+  // v2.1.23: 加载 mTLS 配置
+  const mtlsConfig = loadMTLSConfig();
+
   // Agent 配置
   const agentOptions = {
     timeout: options?.timeout,
@@ -202,6 +258,10 @@ export function createProxyAgent(
     maxFreeSockets: options?.maxFreeSockets,
     rejectUnauthorized: options?.rejectUnauthorized ?? true,
     ca: options?.ca,
+    // v2.1.23: mTLS 支持
+    cert: options?.cert || mtlsConfig.cert,
+    key: options?.key || mtlsConfig.key,
+    passphrase: options?.passphrase || mtlsConfig.passphrase,
   };
 
   // 根据协议创建对应的 Agent

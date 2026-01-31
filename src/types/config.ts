@@ -597,6 +597,17 @@ export interface UISettings {
 
   /** Enable unicode symbols */
   useUnicode?: boolean;
+
+  /**
+   * v2.1.23: Custom spinner verbs configuration
+   * Allows customizing the verbs shown during loading
+   */
+  spinnerVerbs?: {
+    /** Mode: 'append' adds to default list, 'replace' uses only custom verbs */
+    mode: 'append' | 'replace';
+    /** Custom verbs list */
+    verbs: string[];
+  };
 }
 
 // ============================================================================

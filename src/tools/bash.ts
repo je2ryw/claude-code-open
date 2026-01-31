@@ -640,6 +640,10 @@ Important:
         output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
       }
 
+      // v2.1.23: 计算执行时间
+      const duration = Date.now() - startTime;
+      const elapsedTimeSeconds = Math.round(duration / 1000 * 10) / 10; // 保留一位小数
+
       result = {
         success: sandboxResult.exitCode === 0,
         output,
@@ -647,13 +651,13 @@ Important:
         stderr: sandboxResult.stderr,
         exitCode: sandboxResult.exitCode ?? 1,
         error: sandboxResult.error,
+        // v2.1.23: 添加超时时长显示
+        elapsedTimeSeconds,
+        timeoutMs: maxTimeout,
       };
 
       // 运行 post-tool hooks
       await runPostToolUseHooks('Bash', input, result.output || '');
-
-      // 记录审计日志
-      const duration = Date.now() - startTime;
       const auditLog: AuditLog = {
         timestamp: Date.now(),
         command,

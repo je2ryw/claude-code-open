@@ -1,6 +1,6 @@
 {
   "name": "claude-code-open",
-  "version": "2.1.20",
+  "version": "2.1.27",
   "description": "Open source Claude Code CLI - Educational Purpose Only",
   "type": "module",
   "bin": {
