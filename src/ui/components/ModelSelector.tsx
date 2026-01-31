@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { modelConfig } from '../../models/config.js';
 import type { ModelInfo } from '../../models/types.js';
+import { convertFullwidthToHalfwidth, charToDigit } from '../../utils/index.js';
 
 export interface ModelSelectorProps {
   /** 当前选中的模型 ID */
@@ -107,6 +108,9 @@ export function ModelSelector({
 
   // 处理键盘输入
   useInput((input, key) => {
+    // 将全角字符转换为半角字符（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
     if (key.upArrow) {
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : models.length - 1));
     } else if (key.downArrow) {
@@ -118,6 +122,16 @@ export function ModelSelector({
       }
     } else if (key.escape && onCancel) {
       onCancel();
+    } else {
+      // 支持数字键快速选择（1-9 选择对应模型，支持全角数字）
+      const digit = charToDigit(normalizedInput);
+      if (digit >= 1 && digit <= 9 && digit <= models.length) {
+        const targetModel = models[digit - 1];
+        if (targetModel) {
+          setSelectedIndex(digit - 1);
+          onSelect(targetModel.id);
+        }
+      }
     }
   });
 
