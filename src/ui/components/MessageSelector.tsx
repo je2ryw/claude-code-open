@@ -8,6 +8,7 @@
 import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { RewindableMessage, RewindOption } from '../../rewind/rewindManager.js';
+import { convertFullwidthToHalfwidth, charToDigit } from '../../utils/index.js';
 
 interface MessageSelectorProps {
   /** 可回退的消息列表 */
@@ -54,17 +55,30 @@ export function MessageSelector({
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   useInput((input, key) => {
-    if (key.upArrow || input === 'k') {
+    // 将全角字符转换为半角字符（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
+    if (key.upArrow || normalizedInput === 'k') {
       setSelectedIndex((prev) => Math.max(0, prev - 1));
-    } else if (key.downArrow || input === 'j') {
+    } else if (key.downArrow || normalizedInput === 'j') {
       setSelectedIndex((prev) => Math.min(reversedMessages.length - 1, prev + 1));
     } else if (key.return) {
       const selected = reversedMessages[selectedIndex];
       if (selected) {
         onSelect(selected.uuid);
       }
-    } else if (key.escape || input === 'q') {
+    } else if (key.escape || normalizedInput === 'q') {
       onCancel();
+    } else {
+      // 支持数字键快速选择（1-9 选择对应消息，支持全角数字）
+      const digit = charToDigit(normalizedInput);
+      if (digit >= 1 && digit <= 9 && digit <= reversedMessages.length) {
+        const selected = reversedMessages[digit - 1];
+        if (selected) {
+          setSelectedIndex(digit - 1);
+          onSelect(selected.uuid);
+        }
+      }
     }
   });
 
@@ -187,13 +201,16 @@ export function RewindOptionSelector({
   const enabledOptions = options.filter(o => !o.disabled);
 
   useInput((input, key) => {
-    if (key.upArrow || input === 'k') {
+    // 将全角字符转换为半角字符（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
+    if (key.upArrow || normalizedInput === 'k') {
       setSelectedIndex((prev) => {
         let newIndex = prev - 1;
         if (newIndex < 0) newIndex = enabledOptions.length - 1;
         return newIndex;
       });
-    } else if (key.downArrow || input === 'j') {
+    } else if (key.downArrow || normalizedInput === 'j') {
       setSelectedIndex((prev) => {
         let newIndex = prev + 1;
         if (newIndex >= enabledOptions.length) newIndex = 0;
@@ -206,6 +223,16 @@ export function RewindOptionSelector({
       }
     } else if (key.escape) {
       onBack();
+    } else {
+      // 支持数字键快速选择（1-9 选择对应选项，支持全角数字）
+      const digit = charToDigit(normalizedInput);
+      if (digit >= 1 && digit <= 9 && digit <= enabledOptions.length) {
+        const selected = enabledOptions[digit - 1];
+        if (selected) {
+          setSelectedIndex(digit - 1);
+          onSelect(selected.value);
+        }
+      }
     }
   });
 

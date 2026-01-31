@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { Spinner } from './Spinner.js';
+import { convertFullwidthToHalfwidth } from '../../utils/index.js';
 
 // 日期范围类型
 type DateRangeType = 'all' | '7d' | '30d';
@@ -697,8 +698,11 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ onDone }) => {
 
   // 键盘处理
   useInput((input, key) => {
+    // 将全角字符转换为半角字符（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
     // Escape 或 Ctrl+C/D 关闭
-    if (key.escape || (key.ctrl && (input === 'c' || input === 'd'))) {
+    if (key.escape || (key.ctrl && (normalizedInput === 'c' || normalizedInput === 'd'))) {
       onDone?.('Stats dialog dismissed', { display: 'system' });
     }
 
@@ -707,13 +711,13 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ onDone }) => {
       setActiveTab(prev => prev === 'Overview' ? 'Models' : 'Overview');
     }
 
-    // r 键循环切换日期范围 (官方实现)
-    if (input === 'r' && !key.ctrl && !key.meta) {
+    // r 键循环切换日期范围 (官方实现，支持全角字符)
+    if (normalizedInput === 'r' && !key.ctrl && !key.meta) {
       setDateRange(cycleNextDateRange);
     }
 
     // Ctrl+S 复制统计 (TODO: 实现剪贴板功能)
-    // if (key.ctrl && input === 's') { ... }
+    // if (key.ctrl && normalizedInput === 's') { ... }
   });
 
   const allTimeStats = statsCache.all;

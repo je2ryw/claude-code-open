@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { convertFullwidthToHalfwidth, charToDigit } from '../../utils/index.js';
 
 interface SelectOption<T = string> {
   label: string;
@@ -33,6 +34,9 @@ export function SelectInput<T = string>({
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
 
   useInput((input, key) => {
+    // 将全角数字转换为半角数字（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
     if (key.upArrow) {
       setSelectedIndex((prev) => {
         let newIndex = prev - 1;
@@ -62,6 +66,17 @@ export function SelectInput<T = string>({
       }
     } else if (key.escape && onCancel) {
       onCancel();
+    } else {
+      // 支持数字键快速选择（1-9 选择对应项目，支持全角数字）
+      const digit = charToDigit(normalizedInput);
+      if (digit >= 1 && digit <= 9 && digit <= items.length) {
+        const targetIndex = digit - 1;
+        const targetItem = items[targetIndex];
+        if (targetItem && !targetItem.disabled) {
+          setSelectedIndex(targetIndex);
+          onSelect(targetItem);
+        }
+      }
     }
   });
 

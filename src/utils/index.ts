@@ -115,6 +115,47 @@ export function countLines(str: string): number {
 }
 
 /**
+ * 将全角数字（日语 IME 输入）转换为半角数字
+ * 例如：'０１２３４５６７８９' -> '0123456789'
+ *
+ * 这是为了支持日语 IME 输入的全角数字，
+ * 使用户可以在选项选择提示中使用全角数字。
+ *
+ * Unicode 偏移量：全角数字 '０'(0xFF10) 到半角 '0'(0x30) 的差值是 65248
+ *
+ * @param input - 输入字符串
+ * @returns 转换后的字符串
+ */
+export function convertFullwidthToHalfwidth(input: string): string {
+  return input.replace(/[０-９]/g, (char) =>
+    String.fromCharCode(char.charCodeAt(0) - 65248)
+  );
+}
+
+/**
+ * 检查字符是否是数字（包括全角数字）
+ * @param char - 单个字符
+ * @returns 是否为数字
+ */
+export function isDigit(char: string): boolean {
+  if (char.length !== 1) return false;
+  // 半角数字 0-9 或全角数字 ０-９
+  return /^[0-9０-９]$/.test(char);
+}
+
+/**
+ * 将字符转换为数字值（支持全角数字）
+ * @param char - 单个数字字符
+ * @returns 数字值，如果不是数字则返回 -1
+ */
+export function charToDigit(char: string): number {
+  if (char.length !== 1) return -1;
+  const converted = convertFullwidthToHalfwidth(char);
+  const digit = parseInt(converted, 10);
+  return isNaN(digit) ? -1 : digit;
+}
+
+/**
  * 比较两个字符串并返回差异
  */
 export function diffStrings(oldStr: string, newStr: string): {
