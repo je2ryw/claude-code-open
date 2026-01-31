@@ -24,6 +24,7 @@ import { Box, Text, useInput } from 'ink';
 import * as path from 'path';
 import { restoreCursorAfterDialog } from '../utils/terminal.js';
 import type { QuickPermissionMode } from './Input.js';
+import { convertFullwidthToHalfwidth, charToDigit } from '../../utils/index.js';
 
 // 重新导出 QuickPermissionMode 类型以便其他模块使用
 export type { QuickPermissionMode };
@@ -216,6 +217,9 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
 
   // 处理用户输入
   useInput((input, key) => {
+    // 将全角字符转换为半角字符（支持日语 IME 输入）
+    const normalizedInput = convertFullwidthToHalfwidth(input);
+
     // ===== v2.1.6: 反馈面板输入处理 =====
     // 当反馈面板显示时，所有按键都应作为文本输入处理
     // 只有 ESC（取消）和 Enter（提交）是特殊按键
@@ -321,8 +325,8 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
         remember: option.scope === 'always' || option.scope === 'never',
       });
     } else {
-      // 快捷键
-      const option = options.find((o) => o.key === input || o.key.toLowerCase() === input);
+      // 快捷键（支持全角字符输入）
+      const option = options.find((o) => o.key === normalizedInput || o.key.toLowerCase() === normalizedInput);
       if (option) {
         // v2.1.6: 如果按 'n' 键拒绝，显示反馈面板而不是直接拒绝
         if (!option.allowed && option.key.toLowerCase() === 'n' && option.scope === 'once') {

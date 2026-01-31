@@ -181,7 +181,53 @@ function ensureDir(listId: string): void {
 }
 
 /**
+ * 高水位线存储文件名
+ * v2.1.21: 修复任务 ID 重用问题
+ * 使用一个单独的文件来存储已使用的最高 ID，
+ * 这样即使任务被删除，ID 也不会被重用
+ */
+const HIGH_WATER_MARK_FILE = '.high-water-mark';
+
+/**
+ * 获取高水位线文件路径
+ */
+function getHighWaterMarkFile(listId: string): string {
+  return join(getListDir(listId), HIGH_WATER_MARK_FILE);
+}
+
+/**
+ * 读取高水位线
+ * 返回已使用的最高任务 ID
+ */
+function readHighWaterMark(listId: string): number {
+  const file = getHighWaterMarkFile(listId);
+  if (!existsSync(file)) {
+    return 0;
+  }
+  try {
+    const content = readFileSync(file, 'utf-8').trim();
+    const value = parseInt(content, 10);
+    return isNaN(value) ? 0 : value;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 写入高水位线
+ * 保存已使用的最高任务 ID
+ */
+function writeHighWaterMark(listId: string, value: number): void {
+  ensureDir(listId);
+  const file = getHighWaterMarkFile(listId);
+  writeFileSync(file, String(value));
+}
+
+/**
  * 获取下一个任务 ID（递增整数）
+ *
+ * v2.1.21 修复：使用高水位线机制防止任务 ID 重用
+ * 即使任务被删除，新任务也会获得更高的 ID
  */
 function getNextTaskId(listId: string): string {
   const dir = getListDir(listId);
@@ -190,6 +236,11 @@ function getNextTaskId(listId: string): string {
   if (!idCounters.has(listId)) {
     let maxId = 0;
 
+    // 首先读取高水位线（记录曾经使用过的最高 ID）
+    const highWaterMark = readHighWaterMark(listId);
+    maxId = highWaterMark;
+
+    // 然后扫描现有文件，以防高水位线文件损坏或不存在
     if (existsSync(dir)) {
       const files = readdirSync(dir);
       for (const file of files) {
@@ -206,6 +257,9 @@ function getNextTaskId(listId: string): string {
 
   const nextId = (idCounters.get(listId) || 0) + 1;
   idCounters.set(listId, nextId);
+
+  // 更新高水位线
+  writeHighWaterMark(listId, nextId);
 
   return String(nextId);
 }
