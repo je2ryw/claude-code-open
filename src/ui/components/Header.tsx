@@ -10,6 +10,21 @@ import { isDemoMode } from '../../utils/env-check.js';
 // 官方 claude 颜色 (clawd_body)
 const CLAUDE_COLOR = '#D77757'; // rgb(215,119,87)
 
+/**
+ * PR 审核状态类型
+ * v2.1.27: 添加 PR 状态显示
+ */
+export type PRReviewState = 'approved' | 'changes_requested' | 'pending' | 'draft' | null;
+
+/**
+ * PR 状态信息
+ */
+export interface PRStatusInfo {
+  number: number | null;
+  url: string | null;
+  reviewState: PRReviewState;
+}
+
 interface HeaderProps {
   version: string;
   model: string;
@@ -26,6 +41,8 @@ interface HeaderProps {
   // 后台任务计数
   backgroundTaskCount?: number;
   runningTaskCount?: number;
+  // v2.1.27: PR 状态
+  prStatus?: PRStatusInfo;
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(({
@@ -43,6 +60,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   latestVersion,
   backgroundTaskCount = 0,
   runningTaskCount = 0,
+  prStatus,
 }) => {
   // 连接状态指示器
   const getConnectionIndicator = () => {
@@ -73,6 +91,56 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       default:
         return '';
     }
+  };
+
+  // v2.1.27: PR 状态颜色
+  const getPRStatusColor = (state: PRReviewState): string => {
+    switch (state) {
+      case 'approved':
+        return 'green';
+      case 'changes_requested':
+        return 'red';
+      case 'pending':
+        return 'yellow';
+      case 'draft':
+        return 'gray';
+      default:
+        return 'gray';
+    }
+  };
+
+  // v2.1.27: 渲染状态指示器（后台任务 + PR 状态）
+  // 修复：确保后台任务指示器不会与 PR 状态一起重复显示
+  const renderStatusIndicators = () => {
+    const indicators: React.ReactNode[] = [];
+
+    // 后台任务指示器（只显示一次）
+    if (backgroundTaskCount > 0) {
+      indicators.push(
+        <React.Fragment key="bg-task">
+          <Text color={runningTaskCount > 0 ? 'yellow' : 'blue'}>
+            {runningTaskCount > 0 ? '🔄' : '✓'} {backgroundTaskCount} task{backgroundTaskCount > 1 ? 's' : ''}
+          </Text>
+        </React.Fragment>
+      );
+    }
+
+    // PR 状态指示器
+    if (prStatus?.reviewState && prStatus?.number) {
+      indicators.push(
+        <React.Fragment key="pr-status">
+          <Text color={getPRStatusColor(prStatus.reviewState)}>●</Text>
+          <Text dimColor> PR #{prStatus.number}</Text>
+        </React.Fragment>
+      );
+    }
+
+    return indicators.map((indicator, index) => (
+      <React.Fragment key={index}>
+        {indicator}
+        {index < indicators.length - 1 && <Text dimColor> · </Text>}
+      </React.Fragment>
+    ));
   };
 
   // 紧凑模式 - 对话开始后显示的简洁头部
@@ -115,15 +183,9 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <Text dimColor> · </Text>
             </>
           )}
-          {/* 后台任务指示器 */}
-          {backgroundTaskCount > 0 && (
-            <>
-              <Text color={runningTaskCount > 0 ? 'yellow' : 'blue'}>
-                {runningTaskCount > 0 ? '🔄' : '✓'} {backgroundTaskCount} task{backgroundTaskCount > 1 ? 's' : ''}
-              </Text>
-              <Text dimColor> · </Text>
-            </>
-          )}
+          {/* v2.1.27: 状态指示器（后台任务 + PR 状态，修复重复显示问题） */}
+          {renderStatusIndicators()}
+          {(backgroundTaskCount > 0 || prStatus?.reviewState) && <Text dimColor> · </Text>}
           {getConnectionIndicator()}
           <Text dimColor> {getConnectionLabel()}</Text>
         </Box>
@@ -161,15 +223,9 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <Text dimColor> · </Text>
             </>
           )}
-          {/* 后台任务指示器 */}
-          {backgroundTaskCount > 0 && (
-            <>
-              <Text color={runningTaskCount > 0 ? 'yellow' : 'blue'}>
-                {runningTaskCount > 0 ? '🔄' : '✓'} {backgroundTaskCount} task{backgroundTaskCount > 1 ? 's' : ''}
-              </Text>
-              <Text dimColor> · </Text>
-            </>
-          )}
+          {/* v2.1.27: 状态指示器（后台任务 + PR 状态，修复重复显示问题） */}
+          {renderStatusIndicators()}
+          {(backgroundTaskCount > 0 || prStatus?.reviewState) && <Text dimColor> · </Text>}
           {getConnectionIndicator()}
           <Text dimColor> {getConnectionLabel()}</Text>
         </Box>
