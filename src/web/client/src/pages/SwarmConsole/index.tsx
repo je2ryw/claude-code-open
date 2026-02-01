@@ -5,7 +5,9 @@ import { TaskTree, TaskNode as ComponentTaskNode } from '../../components/swarm/
 import { WorkerPanel, WorkerAgent as ComponentWorkerAgent, SelectedTask } from '../../components/swarm/WorkerPanel';
 import { FadeIn } from '../../components/swarm/common';
 import { ConflictPanel } from './components/ConflictPanel';
+import { AskUserDialog } from './components/AskUserDialog';
 import { useSwarmState } from './hooks/useSwarmState';
+// 使用完整的 coordinatorApi（tRPC 版本可通过 api/trpc.ts 使用）
 import { coordinatorApi } from '../../api/blueprint';
 import type {
   Blueprint,
@@ -28,61 +30,45 @@ function getWebSocketUrl(): string {
 
 // ============================================================================
 // 数据转换函数: API 类型 → 组件类型
-// v2.0: 前后端状态已统一，简化转换逻辑
+// v3.0: 简化转换，移除冗余的中间函数 (mapTaskStatus, mapWorkerStatus)
+// 注意：API 和组件类型字段名有差异，转换仍然必要
 // ============================================================================
 
 /**
- * v2.0: 任务状态已统一，直接返回（仅做类型兼容）
- */
-function mapTaskStatus(apiStatus: APITaskNode['status']): ComponentTaskNode['status'] {
-  // v2.0: 状态名已统一，直接返回
-  return apiStatus as ComponentTaskNode['status'];
-}
-
-/**
  * 转换任务节点: API TaskNode → Component TaskNode
+ * v3.0: 内联状态转换
  */
 function convertTaskNode(apiNode: APITaskNode): ComponentTaskNode {
   return {
     id: apiNode.id,
     name: apiNode.name,
-    status: mapTaskStatus(apiNode.status),
+    status: apiNode.status as ComponentTaskNode['status'], // 状态名已统一
     progress: undefined,
     children: apiNode.children.map(convertTaskNode),
-    // v2.0: 传递任务详细信息
     type: apiNode.type,
     complexity: apiNode.complexity,
     needsTest: apiNode.needsTest,
     workerId: apiNode.workerId,
     estimatedMinutes: apiNode.estimatedMinutes,
-    // 传递失败原因（优先使用直接的 error 字段，其次使用 result.error）
     error: apiNode.error || apiNode.result?.error,
   };
 }
 
 /**
- * v2.0: Worker 状态已统一，直接返回
- */
-function mapWorkerStatus(apiStatus: APIWorkerAgent['status']): ComponentWorkerAgent['status'] {
-  // v2.0: 状态名已统一，直接返回
-  return apiStatus as ComponentWorkerAgent['status'];
-}
-
-/**
  * 转换 Worker: API WorkerAgent → Component WorkerAgent
- * v2.0: 移除 tddPhase，Worker 自主决策
+ * v3.0: 内联状态转换
+ * API 使用 currentTaskId/errorCount，组件使用 taskId/retryCount
  */
 function convertWorker(apiWorker: APIWorkerAgent): ComponentWorkerAgent {
   return {
     id: apiWorker.id,
-    status: mapWorkerStatus(apiWorker.status),
+    status: apiWorker.status as ComponentWorkerAgent['status'], // 状态名已统一
     taskId: apiWorker.currentTaskId || undefined,
     taskName: apiWorker.currentTaskName || undefined,
     progress: apiWorker.progress || 0,
     retryCount: apiWorker.errorCount || 0,
     maxRetries: 3,
     duration: undefined,
-    // v2.0 新增字段
     branchName: apiWorker.branchName,
     branchStatus: apiWorker.branchStatus,
     modelUsed: apiWorker.modelUsed,
@@ -99,32 +85,14 @@ interface SwarmConsoleProps {
   initialBlueprintId?: string | null;
 }
 
-interface DashboardData {
-  workers: {
-    total: number;
-    active: number;
-    idle: number;
-  };
-  tasks: {
-    total: number;
-    pending: number;
-    running: number;
-    completed: number;
-    failed: number;
-  };
-}
-
-interface TaskTreeStats {
-  totalTasks: number;
-  completedTasks: number;
-  pendingTasks: number;
-  runningTasks: number;
-  failedTasks: number;
-}
+// v3.0: 移除 DashboardData 和 TaskTreeStats 接口
+// 现在直接使用 WebSocket 推送的 state.stats 和 state.workers
 
 export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(initialBlueprintId || null);
+
+  // 蓝图列表
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [loadingBlueprints, setLoadingBlueprints] = useState(true);
 
@@ -132,21 +100,24 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle>(null);
 
-  // 协调器数据状态
-  const [coordinatorWorkers, setCoordinatorWorkers] = useState<any[]>([]);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [taskTreeStats, setTaskTreeStats] = useState<TaskTreeStats | null>(null);
-  const [loadingCoordinator, setLoadingCoordinator] = useState(false);
-
-  // v2.0: 新增状态
-  const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null);
-  const [gitBranches, setGitBranches] = useState<GitBranchStatus[]>([]);
-  const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
+  // v3.0: 移除 HTTP 轮询状态，改用 WebSocket 推送的数据
   const [showPlanDetails, setShowPlanDetails] = useState(false);
   const [showGitPanel, setShowGitPanel] = useState(false);
   const [isStartingExecution, setIsStartingExecution] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
 
-  // v2.1: 可恢复状态
+  // WebSocket 状态 - v3.0: 所有数据通过 WebSocket 推送，移除 HTTP 轮询
+  const { state, isLoading, error, refresh, retryTask, skipTask, cancelSwarm, sendAskUserResponse } = useSwarmState({
+    url: getWebSocketUrl(),
+    blueprintId: selectedBlueprintId || undefined,
+  });
+
+  // v3.0: 从 state 提取数据（原来通过 HTTP 轮询获取）
+  const executionPlan = state.executionPlan as ExecutionPlan | null;
+  const gitBranches = state.gitBranches as GitBranchStatus[];
+  const costEstimate = state.costEstimate as CostEstimate | null;
+
+  // 可恢复状态
   const [recoverableState, setRecoverableState] = useState<{
     hasRecoverableState: boolean;
     stateDetails?: {
@@ -158,103 +129,51 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       lastUpdatedAt: string;
     };
   } | null>(null);
-  const [isRecovering, setIsRecovering] = useState(false);
 
-  // WebSocket 状态
-  const { state, isLoading, error, refresh, retryTask, skipTask, cancelSwarm } = useSwarmState({
-    url: getWebSocketUrl(),
-    blueprintId: selectedBlueprintId || undefined,
-  });
-
-  // 获取协调器数据（v2.0 增强版）
-  const fetchCoordinatorData = useCallback(async () => {
-    setLoadingCoordinator(true);
-    try {
-      const [workersResult, dashboardResult] = await Promise.all([
-        coordinatorApi.getWorkers(),
-        coordinatorApi.getDashboard(),
-      ]);
-      setCoordinatorWorkers(workersResult);
-      setDashboardData(dashboardResult);
-
-      // v2.0: 获取执行计划、Git分支和成本数据
-      if (selectedBlueprintId) {
-        try {
-          const [planResult, branchesResult, costResult, recoverableResult] = await Promise.all([
-            coordinatorApi.getExecutionPlan(selectedBlueprintId).catch(() => null),
-            coordinatorApi.getGitBranches(selectedBlueprintId).catch(() => []),
-            coordinatorApi.getCostEstimate(selectedBlueprintId).catch(() => null),
-            // v2.1: 检查可恢复状态
-            coordinatorApi.getRecoverableState(selectedBlueprintId).catch(() => null),
-          ]);
-          // v2.0: 类型转换（API 返回的 status 是 string）
-          setExecutionPlan(planResult as ExecutionPlan | null);
-          setGitBranches(branchesResult);
-          setCostEstimate(costResult);
-          // v2.1: 设置可恢复状态
-          setRecoverableState(recoverableResult);
-        } catch (v2Err) {
-          // v2.0 数据获取失败不影响基础功能
-          console.warn('获取v2.0扩展数据失败:', v2Err);
-        }
-      }
-    } catch (err) {
-      console.error('获取协调器数据失败:', err);
-    } finally {
-      setLoadingCoordinator(false);
-    }
-  }, [selectedBlueprintId]);
-
-  // 定时刷新
+  // 加载蓝图列表
   useEffect(() => {
-    fetchCoordinatorData();
-    const interval = setInterval(fetchCoordinatorData, 5000);
-    return () => clearInterval(interval);
-  }, [fetchCoordinatorData]);
-
-  // 获取蓝图列表
-  useEffect(() => {
-    const fetchBlueprints = async () => {
+    const loadBlueprints = async () => {
       try {
-        setLoadingBlueprints(true);
         const response = await fetch('/api/blueprint/blueprints');
         const result = await response.json();
-
         if (result.success && result.data) {
           setBlueprints(result.data);
+          // 自动选择第一个蓝图
           if (result.data.length > 0 && !selectedBlueprintId && !initialBlueprintId) {
             setSelectedBlueprintId(result.data[0].id);
           }
         }
       } catch (err) {
-        console.error('获取蓝图列表失败:', err);
+        console.error('加载蓝图列表失败:', err);
       } finally {
         setLoadingBlueprints(false);
       }
     };
-    fetchBlueprints();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadBlueprints();
   }, []);
 
-  // 任务树统计
-  useEffect(() => {
-    if (state.stats) {
-      setTaskTreeStats({
-        totalTasks: state.stats.totalTasks,
-        completedTasks: state.stats.completedTasks,
-        pendingTasks: state.stats.pendingTasks,
-        runningTasks: state.stats.runningTasks,
-        failedTasks: state.stats.failedTasks,
-      });
+  // 检查可恢复状态
+  const checkRecoverableState = useCallback(async () => {
+    if (!selectedBlueprintId || executionPlan) return;
+    try {
+      const response = await fetch(`/api/blueprint/coordinator/recoverable/${selectedBlueprintId}`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setRecoverableState(result.data);
+      } else {
+        setRecoverableState({ hasRecoverableState: false });
+      }
+    } catch (err) {
+      console.error('检查可恢复状态失败:', err);
+      setRecoverableState({ hasRecoverableState: false });
     }
-  }, [state.stats]);
+  }, [selectedBlueprintId, executionPlan]);
 
-  // v2.1: 同步 WebSocket 更新的 executionPlan 到本地状态（解决界面不刷新问题）
   useEffect(() => {
-    if (state.executionPlan) {
-      setExecutionPlan(state.executionPlan as ExecutionPlan);
-    }
-  }, [state.executionPlan]);
+    checkRecoverableState();
+  }, [checkRecoverableState]);
+
+  // v3.0: 直接使用 state.stats，不需要额外的本地状态
 
   // 转换数据
   const taskTreeRoot: ComponentTaskNode | null = useMemo(() => {
@@ -262,9 +181,10 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     return convertTaskNode(state.taskTree.root);
   }, [state.taskTree]);
 
+  // v3.0: 从 WebSocket state 获取 workers，不再通过 HTTP 轮询
   const workers: ComponentWorkerAgent[] = useMemo(() => {
-    return coordinatorWorkers.map(convertWorker);
-  }, [coordinatorWorkers]);
+    return (state.workers || []).map(convertWorker);
+  }, [state.workers]);
 
   // v2.1: 计算选中的任务详情
   const selectedTask: SelectedTask | null = useMemo(() => {
@@ -293,10 +213,39 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   }, [selectedTaskId, executionPlan]);
 
   // v2.1: 获取选中任务的流式内容
+  // v4.1: 支持 E2E 测试任务的流式内容
   const selectedTaskStream = useMemo(() => {
     if (!selectedTaskId) return null;
     return state.taskStreams[selectedTaskId] || null;
   }, [selectedTaskId, state.taskStreams]);
+
+  // v4.1: E2E 测试任务流式内容
+  const e2eTaskStream = useMemo(() => {
+    const e2eTaskId = state.verification.e2eTaskId;
+    if (!e2eTaskId) return null;
+    return state.taskStreams[e2eTaskId] || null;
+  }, [state.verification.e2eTaskId, state.taskStreams]);
+
+  // v4.1: E2E 测试的虚拟任务对象（用于在 Worker 面板显示）
+  const e2eTask: SelectedTask | null = useMemo(() => {
+    // 只在 E2E 测试运行时显示
+    const isRunning = ['checking_env', 'running_tests', 'fixing'].includes(state.verification.status);
+    if (!isRunning && state.verification.status !== 'passed' && state.verification.status !== 'failed') {
+      return null;
+    }
+    return {
+      id: state.verification.e2eTaskId || 'e2e-test',
+      name: 'E2E 验收测试',
+      description: 'E2E 端到端浏览器测试，按业务流程验收',
+      type: 'test' as const,
+      complexity: 'moderate' as const,
+      status: isRunning ? 'running' :
+              state.verification.status === 'passed' ? 'completed' :
+              state.verification.status === 'failed' ? 'failed' : 'pending',
+      needsTest: true,
+      workerId: 'e2e-worker',
+    };
+  }, [state.verification.status, state.verification.e2eTaskId]);
 
   // 开始/恢复执行
   const handleStartOrResumeExecution = async () => {
@@ -315,8 +264,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       const result = await coordinatorApi.resume(selectedBlueprintId);
       console.log('[SwarmConsole] 执行启动结果:', result);
 
-      // 刷新数据以获取执行计划
-      await fetchCoordinatorData();
+      // v3.0: 刷新 WebSocket 订阅以获取最新数据
       refresh();
 
       // 显示成功提示
@@ -341,8 +289,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     try {
       await coordinatorApi.stop();
       alert('执行已暂停');
-      refresh();
-      fetchCoordinatorData();
+      refresh(); // v3.0: 只需刷新 WebSocket 订阅
     } catch (err) {
       console.error('暂停执行失败:', err);
       alert('暂停执行失败');
@@ -366,8 +313,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       const result = await coordinatorApi.recoverExecution(selectedBlueprintId);
       console.log('[SwarmConsole] 恢复执行结果:', result);
 
-      // 刷新数据
-      await fetchCoordinatorData();
+      // v3.0: 刷新 WebSocket 订阅以获取最新数据
       refresh();
 
       alert('执行已恢复，将从上次中断的位置继续');
@@ -379,15 +325,15 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     }
   };
 
-  // v3.4: 启动验收测试
+  // v3.4: 启动 E2E 验收测试
   const [isStartingVerification, setIsStartingVerification] = useState(false);
-  const handleStartVerification = async () => {
+  const handleStartE2EVerification = async () => {
     if (!selectedBlueprintId || isStartingVerification) return;
     setIsStartingVerification(true);
     try {
-      await coordinatorApi.startVerification(selectedBlueprintId);
+      await coordinatorApi.startE2EVerification(selectedBlueprintId);
     } catch (err) {
-      alert('启动验收测试失败: ' + (err instanceof Error ? err.message : String(err)));
+      alert('启动 E2E 测试失败: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsStartingVerification(false);
     }
@@ -429,6 +375,14 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
         <ConflictPanel
           conflicts={state.conflicts.conflicts}
           onResolve={handleResolveConflict}
+        />
+      )}
+
+      {/* v4.2: E2E Agent AskUserQuestion 对话框 */}
+      {state.askUserDialog.visible && (
+        <AskUserDialog
+          dialog={state.askUserDialog}
+          onSubmit={sendAskUserResponse}
         />
       )}
 
@@ -528,10 +482,11 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 )}
               </div>
             )}
-            {dashboardData?.workers && (
+            {/* v3.0: 从 WebSocket state.workers 计算，不再轮询 */}
+            {workers.length > 0 && (
               <div className={styles.dashboardPreview}>
                 <span className={styles.dashboardItem} title="工作中/总Workers">
-                  👷 {dashboardData.workers.active}/{dashboardData.workers.total}
+                  👷 {workers.filter(w => w.status === 'working').length}/{workers.length}
                 </span>
               </div>
             )}
@@ -554,7 +509,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 title="Git分支状态"
                 onClick={() => setShowGitPanel(!showGitPanel)}
               >🌿</button>
-              <button className={styles.iconButton} title="刷新" onClick={() => { refresh(); fetchCoordinatorData(); }}>🔄</button>
+              <button className={styles.iconButton} title="刷新" onClick={refresh}>🔄</button>
               <button
                 className={`${styles.iconButton} ${isStartingExecution ? styles.loading : ''}`}
                 title={isStartingExecution ? "正在启动..." : "开始/恢复执行"}
@@ -874,14 +829,15 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                       {state.verification.status === 'idle' && (
                         <div className={styles.verificationAction}>
                           <button
-                            className={styles.verificationButton}
-                            onClick={handleStartVerification}
+                            className={`${styles.verificationButton} ${styles.e2eButton}`}
+                            onClick={handleStartE2EVerification}
                             disabled={isStartingVerification}
+                            title="启动应用，打开浏览器，按业务流程验收，与设计图对比"
                           >
-                            {isStartingVerification ? '启动中...' : '🧪 运行验收测试'}
+                            {isStartingVerification ? '启动中...' : '🌐 E2E 浏览器测试'}
                           </button>
                           <div className={styles.verificationHint}>
-                            AI 将自动检查环境、运行测试、失败时尝试修复
+                            启动应用 → 浏览器操作 → 设计图对比（需要 Chrome MCP 扩展）
                           </div>
                         </div>
                       )}
@@ -947,12 +903,12 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                           {/* 失败时可以重新运行 */}
                           {state.verification.status === 'failed' && (
                             <button
-                              className={styles.verificationButton}
-                              onClick={handleStartVerification}
+                              className={`${styles.verificationButton} ${styles.e2eButton}`}
+                              onClick={handleStartE2EVerification}
                               disabled={isStartingVerification}
                               style={{ marginTop: '12px' }}
                             >
-                              {isStartingVerification ? '启动中...' : '🔄 重新运行验收测试'}
+                              {isStartingVerification ? '启动中...' : '🔄 重新运行 E2E 测试'}
                             </button>
                           )}
                         </div>
@@ -971,15 +927,24 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
         <Panel defaultSize="33" minSize="20" collapsible={true} className={styles.rightPanel}>
           <div className={styles.panelHeader}>
             <h2>👷 Workers</h2>
+            {/* v3.0: 从 WebSocket 推送的 workers 计算 */}
             <span className={styles.workerCount}>
-              {dashboardData?.workers
-                ? `${dashboardData.workers.active}/${dashboardData.workers.total}`
-                : `${workers.filter(w => w.status !== 'idle').length}/${workers.length}`}
+              {`${workers.filter(w => w.status !== 'idle').length}/${workers.length}`}
             </span>
-            {loadingCoordinator && <span className={styles.loadingIndicator}>...</span>}
+            {isLoading && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {workers.length === 0 && !selectedTask ? (
+            {/* v4.1: E2E 测试运行时优先显示 E2E 任务，否则显示选中任务 */}
+            {e2eTask ? (
+              <FadeIn>
+                <WorkerPanel
+                  queen={null}
+                  workers={workers}
+                  selectedTask={e2eTask}
+                  taskStream={e2eTaskStream}
+                />
+              </FadeIn>
+            ) : workers.length === 0 && !selectedTask ? (
               <div className={styles.emptyState}>
                 <div className={styles.emptyStateIcon}>👷</div>
                 <div className={styles.emptyStateText}>

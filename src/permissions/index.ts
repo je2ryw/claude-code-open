@@ -25,7 +25,8 @@ export type PermissionType =
   | 'network_request'
   | 'mcp_server'
   | 'plugin_install'
-  | 'system_config';
+  | 'system_config'
+  | 'elevated_command';  // v2.1.28: 需要管理员权限的命令
 
 // 权限请求
 export interface PermissionRequest {

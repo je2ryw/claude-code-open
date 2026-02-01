@@ -51,7 +51,7 @@ export function PermissionDialog({
   const [remember, setRemember] = useState(false);
   const [destination, setDestination] = useState<PermissionDestination>(defaultDestination);
 
-  const { tool, args, description, riskLevel } = request;
+  const { tool, args, description, riskLevel, isElevated, elevationReason } = request;
 
   // 处理批准
   const handleApprove = useCallback(() => {
@@ -142,6 +142,24 @@ export function PermissionDialog({
             <pre className="args">{JSON.stringify(args, null, 2)}</pre>
           )}
         </div>
+
+        {/* v2.1.28: 管理员权限提示 */}
+        {isElevated && (
+          <div className="permission-elevated-warning">
+            <div className="elevated-icon">🔐</div>
+            <div className="elevated-content">
+              <strong>需要管理员权限</strong>
+              <p>{elevationReason || '此操作需要提升权限才能执行'}</p>
+              <p className="elevated-hint">
+                {typeof window !== 'undefined' && navigator.platform?.includes('Win')
+                  ? '批准后将弹出 Windows UAC 对话框'
+                  : navigator.platform?.includes('Mac')
+                  ? '批准后将弹出 macOS 密码输入对话框'
+                  : '批准后需要输入 sudo 密码'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* 目标选择器（v2.1.3 新功能） */}
         {useNewCallback && (

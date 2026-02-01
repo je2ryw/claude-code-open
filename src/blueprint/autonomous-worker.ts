@@ -85,7 +85,34 @@ export type WorkerEventType =
   | 'stream:tool_start'
   | 'stream:tool_end'
   | 'task:completed'
-  | 'task:failed';
+  | 'task:failed'
+  | 'ask:request';  // v4.2: AskUserQuestion 请求
+
+/**
+ * v4.2: AskUserQuestion 请求事件数据
+ */
+export interface WorkerAskUserRequestEvent {
+  workerId: string;
+  taskId: string;
+  requestId: string;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{
+      label: string;
+      description: string;
+    }>;
+    multiSelect: boolean;
+  }>;
+}
+
+/**
+ * v4.2: AskUserQuestion 响应数据
+ */
+export interface WorkerAskUserResponseData {
+  answers: Record<string, string>;
+  cancelled?: boolean;
+}
 
 // ============================================================================
 // 自治 Worker Executor
@@ -95,6 +122,13 @@ export class AutonomousWorkerExecutor extends EventEmitter {
   private workerId: string;
   private defaultModel: ModelType;
   private maxTurns: number;
+  // v4.2: 等待用户响应的 Promise 回调
+  private pendingAskUserResolvers: Map<string, {
+    resolve: (data: WorkerAskUserResponseData) => void;
+    reject: (error: Error) => void;
+  }> = new Map();
+  // v4.2: 当前正在执行的任务 ID（用于 ask:request 事件）
+  private currentTaskId: string | null = null;
 
   /**
    * v5.0: 构建共享的 System Prompt 基础部分
@@ -135,6 +169,39 @@ export class AutonomousWorkerExecutor extends EventEmitter {
 - 直接执行，不讨论${shellHint}
 ${mergeRule}
 
+## 环境问题处理（重要！）
+**你没有解决不了的问题！** 你能力很强，可以解决几乎所有问题。
+
+### 自己直接解决
+1. **缺少 npm/pip 包** → npm install xxx / pip install xxx
+2. **缺少配置文件** → 复制 .env.example 为 .env
+3. **需要构建** → npm run build / cargo build
+4. **程序未启动** → 用系统命令启动
+5. **docker-compose 服务** → docker-compose up -d
+6. **本地数据库** → 检查 sqlite 选项或内存模式
+
+### 安装软件（你可以做到！）
+软件未安装？直接安装它！
+
+**Windows:** \`winget install Docker.DockerDesktop\` / \`winget install OpenJS.NodeJS.LTS\`
+**macOS:** \`brew install node\` / \`brew install --cask docker\`
+**Linux:** \`sudo apt-get install -y nodejs npm\` / \`sudo apt-get install -y docker.io\`
+
+安装后记得验证：\`node --version\`、\`docker --version\`
+
+### 请求用户帮助（使用 AskUserQuestion）
+只有以下情况才需要询问用户：
+- **需要 API 密钥/敏感信息** → 询问用户提供
+- **安装失败需要手动操作** → 询问用户处理
+- **有多种方案不确定选哪个** → 询问用户选择
+- **需要付费服务** → 询问用户是否愿意
+
+**原则**：
+- 先尝试自己解决，包括安装软件
+- 只有真正需要用户输入信息时才询问
+- 不要含糊地说"环境问题"，要说清楚具体问题
+- 遇到问题先用 Bash 探索（\`where docker\`、\`which python\`）
+
 <env>
 Working directory: ${projectPath || process.cwd()}
 Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
@@ -151,6 +218,57 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     this.workerId = `worker-${uuidv4().slice(0, 8)}`;
     this.defaultModel = config?.defaultModel ?? 'sonnet';
     this.maxTurns = 50;
+  }
+
+  /**
+   * 获取 Worker ID
+   */
+  getWorkerId(): string {
+    return this.workerId;
+  }
+
+  /**
+   * v4.2: 响应用户的 AskUserQuestion 请求
+   * 由外部调用（如 WebSocket handler）来提供用户的答案
+   */
+  resolveAskUser(requestId: string, response: WorkerAskUserResponseData): void {
+    const resolver = this.pendingAskUserResolvers.get(requestId);
+    if (resolver) {
+      resolver.resolve(response);
+      this.pendingAskUserResolvers.delete(requestId);
+    }
+  }
+
+  /**
+   * v4.2: 创建 askUserHandler 回调
+   * 发射事件并等待响应
+   */
+  private createAskUserHandler(taskId: string): (input: { questions: WorkerAskUserRequestEvent['questions'] }) => Promise<WorkerAskUserResponseData> {
+    return async (input) => {
+      const requestId = `worker-ask-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+      return new Promise<WorkerAskUserResponseData>((resolve, reject) => {
+        // 保存 resolver
+        this.pendingAskUserResolvers.set(requestId, { resolve, reject });
+
+        // 发射事件
+        const event: WorkerAskUserRequestEvent = {
+          workerId: this.workerId,
+          taskId,
+          requestId,
+          questions: input.questions,
+        };
+        this.emit('ask:request', event);
+
+        // 设置超时（5 分钟）
+        setTimeout(() => {
+          if (this.pendingAskUserResolvers.has(requestId)) {
+            this.pendingAskUserResolvers.delete(requestId);
+            reject(new Error('AskUserQuestion timeout: User did not respond within 5 minutes'));
+          }
+        }, 5 * 60 * 1000);
+      });
+    };
   }
 
   async execute(task: SmartTask, context: WorkerContext): Promise<TaskResult> {
@@ -187,6 +305,9 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       timestamp: new Date(),
     });
 
+    // v4.2: 记录当前任务 ID（用于 ask:request 事件）
+    this.currentTaskId = task.id;
+
     try {
       const loop = new ConversationLoop({
         model,
@@ -196,6 +317,8 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         workingDir: context.projectPath,
         systemPrompt: this.buildSystemPrompt(task, context),
         isSubAgent: true,
+        // v4.2: 使用自定义 askUserHandler 支持 WebUI 交互
+        askUserHandler: this.createAskUserHandler(task.id),
       });
 
       // v3.5: 使用多模态任务提示（当是 UI 任务且有设计图时）
@@ -554,6 +677,39 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
 - 直接执行，不讨论${shellHint}
 ${mergeRule}
 
+## 环境问题处理（重要！）
+**你没有解决不了的问题！** 你能力很强，可以解决几乎所有问题。
+
+### 自己直接解决
+1. **缺少 npm/pip 包** → npm install xxx / pip install xxx
+2. **缺少配置文件** → 复制 .env.example 为 .env
+3. **需要构建** → npm run build / cargo build
+4. **程序未启动** → 用系统命令启动
+5. **docker-compose 服务** → docker-compose up -d
+6. **本地数据库** → 检查 sqlite 选项或内存模式
+
+### 安装软件（你可以做到！）
+软件未安装？直接安装它！
+
+**Windows:** \`winget install Docker.DockerDesktop\` / \`winget install OpenJS.NodeJS.LTS\`
+**macOS:** \`brew install node\` / \`brew install --cask docker\`
+**Linux:** \`sudo apt-get install -y nodejs npm\` / \`sudo apt-get install -y docker.io\`
+
+安装后记得验证：\`node --version\`、\`docker --version\`
+
+### 请求用户帮助（使用 AskUserQuestion）
+只有以下情况才需要询问用户：
+- **需要 API 密钥/敏感信息** → 询问用户提供
+- **安装失败需要手动操作** → 询问用户处理
+- **有多种方案不确定选哪个** → 询问用户选择
+- **需要付费服务** → 询问用户是否愿意
+
+**原则**：
+- 先尝试自己解决，包括安装软件
+- 只有真正需要用户输入信息时才询问
+- 不要含糊地说"环境问题"，要说清楚具体问题
+- 遇到问题先用 Bash 探索（\`where docker\`、\`which python\`）
+
 <env>
 Working directory: ${context.projectPath}
 Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
@@ -823,10 +979,6 @@ ${designRef}
 
   private log(message: string): void {
     console.log(`[${this.workerId}] ${message}`);
-  }
-
-  getWorkerId(): string {
-    return this.workerId;
   }
 }
 

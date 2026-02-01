@@ -46,6 +46,8 @@ const initialState: SwarmState = {
   verification: { status: 'idle' },
   // v3.5: 冲突状态
   conflicts: { conflicts: [], resolvingId: null },
+  // v4.2: AskUserQuestion 对话框
+  askUserDialog: { visible: false, requestId: null, questions: [] },
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -180,6 +182,10 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
           stats: message.payload.stats,
           blueprint: prev.blueprint
             ? { ...prev.blueprint, status: 'completed' }
+            : null,
+          // 同时更新 executionPlan 状态，以显示验收测试面板
+          executionPlan: prev.executionPlan
+            ? { ...prev.executionPlan, status: 'completed' as const }
             : null,
         }));
         break;
@@ -358,14 +364,16 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
 
       case 'swarm:verification_update':
         // v3.4: 验收测试状态更新
+        // v4.1: 保存 e2eTaskId 用于显示流式日志
         setState(prev => ({
           ...prev,
           verification: {
             status: message.payload.status,
+            e2eTaskId: message.payload.e2eTaskId || prev.verification.e2eTaskId,
             result: message.payload.result || prev.verification.result,
           },
         }));
-        console.log(`[SwarmState] Verification status: ${message.payload.status}`);
+        console.log(`[SwarmState] Verification status: ${message.payload.status}, e2eTaskId: ${message.payload.e2eTaskId || 'N/A'}`);
         break;
 
       case 'conflict:needs_human':
@@ -400,6 +408,22 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             },
           };
         });
+        break;
+
+      case 'swarm:ask_user':
+        // v4.2: E2E Agent / Worker 请求用户输入
+        console.log(`[SwarmState] 🤔 AskUserQuestion request: ${message.payload.requestId}${message.payload.workerId ? ` (Worker: ${message.payload.workerId})` : ''}`);
+        setState(prev => ({
+          ...prev,
+          askUserDialog: {
+            visible: true,
+            requestId: message.payload.requestId,
+            questions: message.payload.questions,
+            e2eTaskId: message.payload.e2eTaskId,
+            workerId: message.payload.workerId,
+            taskId: message.payload.taskId,
+          },
+        }));
         break;
 
       default:
@@ -557,6 +581,24 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     }
   }, []);
 
+  // v4.2: AskUserQuestion 响应包装（关闭对话框并发送响应，支持 Worker）
+  const sendAskUserResponse = useCallback((
+    requestId: string,
+    answers: Record<string, string>,
+    cancelled?: boolean
+  ) => {
+    if (blueprintId) {
+      // 从当前对话框状态获取 workerId
+      const workerId = state.askUserDialog.workerId;
+      ws.sendAskUserResponse(blueprintId, requestId, answers, cancelled, workerId);
+      // 关闭对话框
+      setState(prev => ({
+        ...prev,
+        askUserDialog: { visible: false, requestId: null, questions: [] },
+      }));
+    }
+  }, [blueprintId, ws.sendAskUserResponse, state.askUserDialog.workerId]);
+
   return {
     state,
     isLoading,
@@ -571,6 +613,8 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     // v4.0: 历史日志管理
     loadTaskHistoryLogs,
     clearTaskLogs,
+    // v4.2: AskUserQuestion 响应
+    sendAskUserResponse,
   };
 }
 

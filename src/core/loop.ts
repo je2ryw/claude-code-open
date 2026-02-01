@@ -8,7 +8,7 @@ import { Session } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import { runWithCwd, runGeneratorWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
-import type { Message, ContentBlock, ToolDefinition, PermissionMode, AnyContentBlock } from '../types/index.js';
+import type { Message, ContentBlock, ToolDefinition, PermissionMode, AnyContentBlock, ToolResult } from '../types/index.js';
 
 // ============================================================================
 // 官方 v2.1.2 AppState 类型定义 - 响应式状态管理
@@ -1425,6 +1425,37 @@ export interface LoopOptions {
    * 如果提供此回调，权限模式将从 AppState.toolPermissionContext.mode 获取
    */
   getAppState?: () => AppState;
+  /**
+   * v4.2: AskUserQuestion 工具处理器
+   * 在 WebUI 环境下，可以通过此回调拦截 AskUserQuestion 工具调用
+   * 用于在前端显示对话框并等待用户响应
+   */
+  askUserHandler?: (input: AskUserQuestionHandlerInput) => Promise<AskUserQuestionHandlerResult>;
+}
+
+/**
+ * v4.2: AskUserQuestion 处理器输入类型
+ */
+export interface AskUserQuestionHandlerInput {
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{
+      label: string;
+      description: string;
+    }>;
+    multiSelect: boolean;
+  }>;
+}
+
+/**
+ * v4.2: AskUserQuestion 处理器结果类型
+ */
+export interface AskUserQuestionHandlerResult {
+  /** 用户的回答 header -> answer */
+  answers: Record<string, string>;
+  /** 是否取消 */
+  cancelled?: boolean;
 }
 
 export class ConversationLoop {
@@ -2301,15 +2332,47 @@ Guidelines:
           // 这样前端可以在长时间运行的工具（如 Bash）执行期间显示输入参数
           yield { type: 'tool_start', toolName: tool.name, toolInput: input };
 
-          // 执行工具（带权限检查和回调）
-          const result = await toolRegistry.execute(
-            tool.name,
-            input,
-            // 权限请求回调函数
-            async (name, toolInput, message) => {
-              return await this.handlePermissionRequest(name, toolInput, message);
+          let result: ToolResult;
+
+          // v4.2: AskUserQuestion 工具拦截 - 使用自定义处理器
+          if (tool.name === 'AskUserQuestion' && this.options.askUserHandler) {
+            try {
+              const handlerResult = await this.options.askUserHandler({
+                questions: input.questions || [],
+              });
+
+              if (handlerResult.cancelled) {
+                result = {
+                  success: false,
+                  error: 'User cancelled the question dialog',
+                };
+              } else {
+                // 使用官方格式返回结果
+                const formattedAnswers = Object.entries(handlerResult.answers)
+                  .map(([header, answer]) => `"${header}"="${answer}"`)
+                  .join(', ');
+                result = {
+                  success: true,
+                  output: `User has answered your questions: ${formattedAnswers}. You can now continue with the user's answers in mind.`,
+                };
+              }
+            } catch (err) {
+              result = {
+                success: false,
+                error: `AskUserQuestion handler error: ${err instanceof Error ? err.message : String(err)}`,
+              };
             }
-          );
+          } else {
+            // 正常执行工具（带权限检查和回调）
+            result = await toolRegistry.execute(
+              tool.name,
+              input,
+              // 权限请求回调函数
+              async (name, toolInput, message) => {
+                return await this.handlePermissionRequest(name, toolInput, message);
+              }
+            );
+          }
 
           yield {
             type: 'tool_end',

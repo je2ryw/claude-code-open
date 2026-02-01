@@ -278,6 +278,20 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     send({ type: 'swarm:cancel', payload: { blueprintId } });
   }, [send]);
 
+  // v4.2: AskUserQuestion 响应（支持 E2E Agent 和 Worker）
+  const sendAskUserResponse = useCallback((
+    blueprintId: string,
+    requestId: string,
+    answers: Record<string, string>,
+    cancelled?: boolean,
+    workerId?: string
+  ) => {
+    send({
+      type: 'swarm:ask_response',
+      payload: { blueprintId, requestId, answers, cancelled, workerId },
+    });
+  }, [send]);
+
   return {
     connected,
     status,
@@ -293,5 +307,6 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     retryTask,
     skipTask,
     cancelSwarm,
+    sendAskUserResponse,
   };
 }

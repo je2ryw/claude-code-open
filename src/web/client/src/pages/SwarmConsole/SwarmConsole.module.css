@@ -1864,6 +1864,13 @@
   padding: 12px 0;
 }
 
+.verificationButtonGroup {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
 .verificationButton {
   padding: 10px 24px;
   border-radius: 6px;
@@ -1884,6 +1891,14 @@
 .verificationButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.verificationButton.e2eButton {
+  background: linear-gradient(135deg, #66bb6a, #43a047);
+}
+
+.verificationButton.e2eButton:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
 }
 
 .verificationHint {
@@ -2251,4 +2266,270 @@
 
 .actionBtn.secondary:hover:not(:disabled) {
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+/* ============================================================================
+   v4.2: AskUserQuestion 对话框样式
+   ============================================================================ */
+
+.askUserDialogOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.askUserDialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.askUserDialogHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+}
+
+.askUserDialogIcon {
+  font-size: 1.5rem;
+}
+
+.askUserDialogHeader h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.askUserDialogContent {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.askUserQuestion {
+  margin-bottom: 24px;
+}
+
+.askUserQuestion:last-child {
+  margin-bottom: 0;
+}
+
+.askUserQuestionHeader {
+  margin-bottom: 8px;
+}
+
+.askUserQuestionTag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.askUserQuestionText {
+  margin: 0 0 16px 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.askUserOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.askUserOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.askUserOption:hover {
+  border-color: var(--accent-color);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.askUserOption.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.askUserOptionLabel {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.askUserOptionDesc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* v4.2.1: 多选支持 */
+.askUserMultiSelectHint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+  padding: 4px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.askUserOption.multiSelect {
+  flex-direction: row;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.askUserOptionCheckbox {
+  font-size: 1.125rem;
+  margin-right: 8px;
+  color: var(--text-secondary);
+  min-width: 20px;
+}
+
+.askUserOption.selected .askUserOptionCheckbox {
+  color: #3b82f6;
+}
+
+.askUserOtherOption {
+  margin-top: 4px;
+}
+
+.askUserOtherInput {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.askUserOtherInput::placeholder {
+  color: var(--text-secondary);
+}
+
+.askUserOtherInput:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.askUserOtherInput.active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.askUserDialogActions {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  border-radius: 0 0 12px 12px;
+}
+
+.askUserCancelBtn {
+  flex: 1;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.askUserCancelBtn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.askUserCancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.askUserSubmitBtn {
+  flex: 2;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.askUserSubmitBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.askUserSubmitBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

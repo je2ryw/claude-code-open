@@ -297,6 +297,7 @@ export class PermissionUI {
       mcp_server: 'Server',
       plugin_install: 'Plugin',
       system_config: 'Config',
+      elevated_command: 'Elevated',
     };
     return labels[type] || 'Resource';
   }
@@ -638,6 +639,7 @@ export class PermissionUI {
       mcp_server: '🔌',
       plugin_install: '📦',
       system_config: '⚙️',
+      elevated_command: '🔐',
     };
     return icons[type] || '🔧';
   }
@@ -744,6 +746,7 @@ export function createPermissionSummary(permissions: ToolPermission[]): string {
     mcp_server: 0,
     plugin_install: 0,
     system_config: 0,
+    elevated_command: 0,
   };
 
   permissions.forEach(perm => {

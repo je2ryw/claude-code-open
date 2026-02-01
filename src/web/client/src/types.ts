@@ -245,6 +245,10 @@ export interface PermissionRequest {
   args: unknown;
   description: string;
   riskLevel: 'low' | 'medium' | 'high';
+  /** v2.1.28: 是否需要管理员权限 */
+  isElevated?: boolean;
+  /** v2.1.28: 管理员权限原因 */
+  elevationReason?: string;
 }
 
 // 用户问题

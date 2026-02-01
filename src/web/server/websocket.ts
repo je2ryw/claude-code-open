@@ -13,7 +13,7 @@ import { oauthManager } from './oauth-manager.js';
 import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
 // 导入蓝图存储和执行管理器（用于 WebSocket 订阅）
-import { blueprintStore, executionEventEmitter, executionManager } from './routes/blueprint-api.js';
+import { blueprintStore, executionEventEmitter, executionManager, activeWorkers } from './routes/blueprint-api.js';
 // v4.0: 导入 SQLite 日志存储
 import { getSwarmLogDB, type WorkerLog, type WorkerStream } from './database/swarm-logs.js';
 
@@ -119,6 +119,10 @@ const createContinuousDevOrchestrator = (_config: any): ContinuousDevOrchestrato
 
 // 持续开发编排器实例管理：sessionId -> Orchestrator
 const orchestrators = new Map<string, ContinuousDevOrchestrator>();
+
+// v4.2: 活动的 E2E Agent 实例管理：blueprintId -> E2ETestAgent
+// 用于接收前端的 AskUserQuestion 响应
+const activeE2EAgents = new Map<string, any>();
 
 interface ClientConnection {
   id: string;
@@ -865,6 +869,31 @@ export function setupWebSocket(
   });
 
   // ============================================================================
+  // v4.2 新增：Worker AskUserQuestion 请求事件
+  // ============================================================================
+
+  executionEventEmitter.on('worker:ask_request', (data: {
+    blueprintId: string;
+    workerId: string;
+    taskId: string;
+    requestId: string;
+    questions: any[];
+  }) => {
+    console.log(`[Swarm v4.2] Worker ${data.workerId} AskUserQuestion request: ${data.requestId}`);
+
+    // 广播给订阅的客户端
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:ask_user',
+      payload: {
+        requestId: data.requestId,
+        questions: data.questions,
+        workerId: data.workerId,
+        taskId: data.taskId,
+      },
+    });
+  });
+
+  // ============================================================================
   // v2.1 新增：Worker 流式输出事件（实时推送 Claude 的思考和输出）
   // ============================================================================
 
@@ -981,6 +1010,199 @@ export function setupWebSocket(
         error: data.error,
       },
     });
+  });
+
+  // ============================================================================
+  // v4.0: E2E 端到端验收测试事件
+  // ============================================================================
+
+  executionEventEmitter.on('e2e:start_request', async (data: {
+    blueprintId: string;
+    blueprint: any;
+    config: {
+      similarityThreshold?: number;
+      autoFix?: boolean;
+      maxFixAttempts?: number;
+    };
+  }) => {
+    console.log(`[Swarm E2E] Starting E2E test for blueprint ${data.blueprintId}`);
+
+    // E2E 测试使用特殊任务 ID，用于在 Worker 面板显示流式日志
+    const e2eTaskId = `e2e-test-${Date.now()}`;
+    const e2eWorkerId = `e2e-worker`;
+
+    // 通知前端开始 E2E 测试，包含任务 ID
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:verification_update',
+      payload: {
+        status: 'checking_env',
+        message: '正在检查测试环境...',
+        e2eTaskId, // 前端可以用这个 ID 显示流式日志
+      },
+    });
+
+    // 清空之前的 E2E 流式内容
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:task_reset',
+      payload: { taskId: e2eTaskId },
+    });
+
+    try {
+      // 动态导入 E2ETestAgent
+      const { createE2ETestAgent } = await import('../../blueprint/e2e-test-agent.js');
+
+      const agent = createE2ETestAgent({
+        model: 'sonnet',
+        maxFixAttempts: data.config.maxFixAttempts || 3,
+        similarityThreshold: data.config.similarityThreshold || 80,
+        autoFix: data.config.autoFix ?? true,
+      });
+
+      // 监听 Agent 事件（仅服务端日志，不发送到前端）
+      agent.on('log', (msg: string) => {
+        console.log(`[E2E Agent] ${msg}`);
+        // v4.3: 不再发送冗余日志到前端，只保留服务端调试输出
+      });
+
+      // v4.1: 监听 Agent 流式事件（文本、工具调用）
+      agent.on('stream:text', (streamData: { content: string }) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:worker_stream',
+          payload: {
+            workerId: e2eWorkerId,
+            taskId: e2eTaskId,
+            streamType: 'text',
+            content: streamData.content,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      });
+
+      agent.on('stream:tool_start', (streamData: { toolName: string; toolInput: any }) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:worker_stream',
+          payload: {
+            workerId: e2eWorkerId,
+            taskId: e2eTaskId,
+            streamType: 'tool_start',
+            toolName: streamData.toolName,
+            toolInput: streamData.toolInput,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      });
+
+      agent.on('stream:tool_end', (streamData: { toolName: string; toolResult?: string; toolError?: string }) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:worker_stream',
+          payload: {
+            workerId: e2eWorkerId,
+            taskId: e2eTaskId,
+            streamType: 'tool_end',
+            toolName: streamData.toolName,
+            toolResult: streamData.toolResult,
+            toolError: streamData.toolError,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      });
+
+      agent.on('step:start', (stepData: any) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:verification_update',
+          payload: {
+            status: 'running_tests',
+            message: `执行测试步骤: ${stepData.stepName || stepData.step}`,
+            currentStep: stepData,
+            e2eTaskId,
+          },
+        });
+      });
+
+      agent.on('step:complete', (stepData: any) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:verification_update',
+          payload: {
+            status: 'running_tests',
+            message: `步骤完成: ${stepData.stepName || stepData.step}`,
+            stepResult: stepData,
+            e2eTaskId,
+          },
+        });
+      });
+
+      // v4.2: 监听 AskUserQuestion 请求事件
+      agent.on('ask:request', (askData: { requestId: string; questions: any[] }) => {
+        console.log(`[E2E Agent] AskUserQuestion request: ${askData.requestId}`);
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:ask_user',
+          payload: {
+            requestId: askData.requestId,
+            questions: askData.questions,
+            e2eTaskId,
+          },
+        });
+
+        // 保存 agent 引用用于响应
+        activeE2EAgents.set(data.blueprintId, agent);
+      });
+
+      // 构建测试上下文
+      const context = {
+        blueprint: data.blueprint,
+        projectPath: data.blueprint.projectPath,
+        techStack: data.blueprint.techStack || { language: 'typescript', packageManager: 'npm' },
+        designImages: data.blueprint.designImages || [],
+        appUrl: 'http://localhost:3000',
+      };
+
+      // 通知前端开始运行测试
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:verification_update',
+        payload: {
+          status: 'running_tests',
+          message: '正在执行 E2E 浏览器测试...',
+          e2eTaskId,
+        },
+      });
+
+      // 执行 E2E 测试
+      const result = await agent.execute(context);
+
+      // 通知前端测试完成
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:verification_update',
+        payload: {
+          status: result.success ? 'passed' : 'failed',
+          message: result.success ? 'E2E 测试全部通过' : `E2E 测试失败: ${result.summary || '部分步骤未通过'}`,
+          result: {
+            success: result.success,
+            steps: result.steps,
+            summary: result.summary,
+          },
+          e2eTaskId,
+        },
+      });
+
+      console.log(`[Swarm E2E] E2E test completed: ${result.success ? 'PASSED' : 'FAILED'}`);
+
+      // v4.2: 清理 agent 引用
+      activeE2EAgents.delete(data.blueprintId);
+    } catch (error: any) {
+      console.error(`[Swarm E2E] E2E test error:`, error);
+      broadcastToSubscribers(data.blueprintId, {
+        type: 'swarm:verification_update',
+        payload: {
+          status: 'failed',
+          message: `E2E 测试执行失败: ${error.message}`,
+          error: error.message,
+          e2eTaskId,
+        },
+      });
+
+      // v4.2: 清理 agent 引用
+      activeE2EAgents.delete(data.blueprintId);
+    }
   });
 
   wss.on('close', () => {
@@ -1365,6 +1587,11 @@ async function handleClientMessage(
     // v3.8: 取消执行
     case 'swarm:cancel':
       await handleSwarmCancel(client, (message.payload as any).blueprintId, swarmSubscriptions);
+      break;
+
+    // v4.2: E2E Agent AskUserQuestion 响应
+    case 'swarm:ask_response':
+      await handleAskUserResponse(client, message.payload as any);
       break;
 
     // ========== 持续开发相关消息 ==========
@@ -4839,6 +5066,98 @@ async function handleSwarmCancel(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : '取消执行失败',
+      },
+    });
+  }
+}
+
+/**
+ * v4.2: 处理 E2E Agent / Worker AskUserQuestion 响应
+ * 支持两种场景：
+ * 1. E2E Agent - 使用 activeE2EAgents Map
+ * 2. Worker - 使用 activeWorkers Map（payload 中有 workerId）
+ */
+async function handleAskUserResponse(
+  client: ClientConnection,
+  payload: {
+    blueprintId: string;
+    requestId: string;
+    answers: Record<string, string>;
+    cancelled?: boolean;
+    workerId?: string; // v4.2: 可选，用于区分 Worker 和 E2E Agent
+  }
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const { blueprintId, requestId, answers, cancelled, workerId } = payload;
+
+    if (!blueprintId || !requestId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId 或 requestId' },
+      });
+      return;
+    }
+
+    // v4.2: 根据是否有 workerId 区分 Worker 和 E2E Agent
+    if (workerId) {
+      // Worker 响应
+      const workerKey = `${blueprintId}:${workerId}`;
+      const worker = activeWorkers.get(workerKey);
+      if (!worker) {
+        console.warn(`[Worker] No active worker found: ${workerKey}`);
+        sendMessage(ws, {
+          type: 'error',
+          payload: { message: `找不到活动的 Worker: ${workerId}` },
+        });
+        return;
+      }
+
+      // 调用 worker 的 resolveAskUser 方法
+      worker.resolveAskUser(requestId, {
+        answers: answers || {},
+        cancelled: cancelled || false,
+      });
+
+      console.log(`[Worker] AskUserQuestion response received: ${requestId}`, answers);
+
+      // 清理 Worker 引用（可选，但建议保留到任务完成）
+      // activeWorkers.delete(workerKey);
+    } else {
+      // E2E Agent 响应（原有逻辑）
+      const agent = activeE2EAgents.get(blueprintId);
+      if (!agent) {
+        console.warn(`[E2E Agent] No active agent found for blueprint: ${blueprintId}`);
+        sendMessage(ws, {
+          type: 'error',
+          payload: { message: '找不到活动的 E2E Agent' },
+        });
+        return;
+      }
+
+      // 调用 agent 的 resolveAskUser 方法
+      agent.resolveAskUser(requestId, {
+        answers: answers || {},
+        cancelled: cancelled || false,
+      });
+
+      console.log(`[E2E Agent] AskUserQuestion response received: ${requestId}`, answers);
+    }
+
+    sendMessage(ws, {
+      type: 'swarm:ask_response_ack',
+      payload: {
+        requestId,
+        success: true,
+      },
+    });
+  } catch (error) {
+    console.error('[AskUser] 处理 AskUserQuestion 响应失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '处理响应失败',
       },
     });
   }

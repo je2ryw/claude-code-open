@@ -211,28 +211,38 @@ export class TaskReviewer {
   }
 
   /**
-   * v5.0: 构建 Reviewer 的 System Prompt
-   * 精简版：基于预先格式化的上下文判断，不需要工具
+   * v4.0: 构建 Reviewer 的 System Prompt
+   * Reviewer 现在拥有全局视角和只读工具能力
    */
-  private buildReviewerSystemPrompt(_projectPath?: string): string {
-    return `你是任务审查员，基于提供的执行报告判断任务是否完成。
+  private buildReviewerSystemPrompt(projectPath?: string): string {
+    return `你是一个高级任务审查员（Reviewer），负责审查 Worker 的工作成果。
+
+## 你的能力
+- 你可以使用 Read、Glob、Grep 工具来**主动验证** Worker 的工作
+- 你能看到整个项目，可以检查代码是否真的被修改
+- 你是独立的第三方，不受 Worker 报告的影响
+
+## 工作目录
+${projectPath || '未指定'}
 
 ## 审查原则
-1. **理解意图**：理解任务的真正目标，而不是死板检查步骤
-2. **基于证据**：根据工具调用记录、文件变更、合并状态判断
-3. **合并是关键**：有代码变更时，合并成功才算任务完成
+1. **眼见为实**：不要只看 Worker 的报告，主动读取文件验证
+2. **理解意图**：理解任务的真正目标，而不是死板检查步骤
+3. **客观公正**：基于事实判断，不偏袒任何一方
 
-## 判断标准
-- 合并成功 + 符合任务要求 → passed
-- 合并失败或未调用合并 → failed
-- "无文件变更"但现有代码满足要求 → passed
-- 代码有问题需修复 → needs_revision
+## 审查流程
+1. 阅读 Worker 的执行报告
+2. **主动使用工具验证**：
+   - 用 Glob 检查是否有新文件被创建
+   - 用 Read 查看关键文件内容
+   - 用 Grep 搜索特定代码模式
+3. 综合判断任务是否完成
+4. **必须在最后返回 JSON 格式的审查结果**（这是硬性要求！）
 
-## 输出要求
-直接返回 JSON（不要废话）：
-\`\`\`json
-{"verdict": "passed|failed|needs_revision", "confidence": "high|medium|low", "reasoning": "简短理由"}
-\`\`\``;
+## 特殊情况
+- 如果 Worker 说"文件已存在，无需修改"，你应该**验证**文件是否确实存在且满足要求
+- 如果 Worker 没有修改文件但任务需要创建文件，这可能是问题
+- 如果现有代码已经满足任务要求，"不修改"是正确的结论`;
   }
 
   /**
@@ -288,6 +298,35 @@ ${blueprintContext}
 - 关注**结果**，而不是**过程**
 - **结合全局上下文判断**：任务是否符合项目整体需求
 
+## ⚠️ 环境问题判断规则（严格执行）
+
+### 核心原则
+**Worker 没有解决不了的问题！** Worker 遇到问题应该：
+1. 先尝试自己解决
+2. 自己解决不了的，使用 AskUserQuestion 请求用户帮助
+3. 只有用户明确拒绝帮助时，才能标记为失败
+
+### Worker 应该自己解决的问题
+- 缺少 npm/pip 包 → 运行 install 命令
+- 缺少配置文件 → 复制 .env.example 或创建配置
+- 需要构建 → 运行 build 命令
+- Docker 容器未启动 → docker-compose up -d
+如果 Worker 没有尝试解决这些问题就放弃 → **needs_revision**
+
+### Worker 应该请求用户帮助的问题
+- 软件未安装 → 应使用 AskUserQuestion 询问用户
+- 需要 API 密钥 → 应使用 AskUserQuestion 询问用户
+- 需要数据库配置 → 应使用 AskUserQuestion 询问用户
+- 权限不足 → 应使用 AskUserQuestion 询问用户
+如果 Worker 没有请求用户帮助就放弃 → **needs_revision**
+如果 Worker 请求了用户帮助，用户拒绝 → 可以 **passed**（在 issues 中注明）
+
+### 判断标准
+- 模糊的"环境问题"不可接受 → **failed**
+- 必须有具体的错误信息和尝试记录
+- 检查 Worker 是否调用了 AskUserQuestion 请求用户帮助
+- 检查 Worker 的工具调用：是否真的运行了 npm install / docker-compose 等
+
 ## 任务信息
 ${relatedTasksContext}
 
@@ -309,9 +348,6 @@ ${context?.previousAttempts ? `- **之前尝试次数**: ${context.previousAttem
 - **声称完成**: ${summary.selfReported.completed ? '是' : '否'}
 ${summary.selfReported.message ? `- **汇报信息**: ${summary.selfReported.message}` : ''}
 
-### 工具调用记录 (共 ${summary.toolCalls.length} 次)
-${this.formatToolCalls(summary.toolCalls)}
-
 ### 文件变更 (共 ${summary.fileChanges.length} 个)
 ${this.formatFileChanges(summary.fileChanges)}
 
@@ -326,49 +362,38 @@ ${Math.round(summary.durationMs / 1000)} 秒
 
 ${summary.error ? `### 错误信息\n${summary.error}` : ''}
 
-## 判断并返回 JSON
+## 你的任务
 
-基于以上执行报告，返回审查结果：
+**重要：在做出判断之前，你必须使用工具主动验证！**
+
+### 验证步骤（必须执行）
+1. **检查文件是否存在**：用 Glob 搜索任务相关的文件
+2. **查看文件内容**：用 Read 查看关键文件，确认代码质量
+3. **搜索关键代码**：用 Grep 搜索任务要求的功能点是否实现
+
+### 判断标准
+- **【最重要】如果有文件变更但合并状态不是"✅ 合并成功"** → **failed**（代码必须合并到主分支才算完成）
+- 如果 Worker 说完成了但你验证发现代码不存在 → **failed**
+- 如果 Worker 没修改文件但现有代码已满足要求 → **passed**
+- 如果代码存在但有明显问题需要修复 → **needs_revision**
+
+### 完成验证后，返回 JSON 格式的审查结果：
+
 \`\`\`json
-{"verdict": "passed|failed|needs_revision", "confidence": "high|medium|low", "reasoning": "简短理由", "issues": ["问题"], "suggestions": ["建议"]}
-\`\`\``;
-  }
+{
+  "verdict": "passed" | "failed" | "needs_revision",
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "你的判断理由（简洁明了）",
+  "verified": ["验证项1", "验证项2"],  // 你实际验证过的内容
+  "issues": ["问题1", "问题2"],  // 如果失败，列出问题
+  "suggestions": ["建议1", "建议2"]  // 如果需要修改，给出建议
+}
+\`\`\`
 
-  /**
-   * 格式化工具调用记录
-   */
-  private formatToolCalls(calls: ToolCallRecord[]): string {
-    if (calls.length === 0) {
-      return '（无工具调用）';
-    }
-
-    // 只显示关键工具调用，避免 prompt 过长
-    const importantTools = ['Write', 'Edit', 'MultiEdit', 'Bash', 'CommitAndMergeChanges', 'UpdateTaskStatus'];
-    const filteredCalls = calls.filter(c =>
-      importantTools.includes(c.name) || c.error
-    );
-
-    if (filteredCalls.length === 0) {
-      // 如果没有重要工具，显示所有工具名称
-      return `调用了以下工具: ${calls.map(c => c.name).join(', ')}`;
-    }
-
-    return filteredCalls.map(call => {
-      let line = `- **${call.name}**`;
-      if (call.input) {
-        // 简化输入显示
-        const inputStr = JSON.stringify(call.input);
-        if (inputStr.length > 100) {
-          line += `: ${inputStr.substring(0, 100)}...`;
-        } else {
-          line += `: ${inputStr}`;
-        }
-      }
-      if (call.error) {
-        line += ` ❌ 错误: ${call.error}`;
-      }
-      return line;
-    }).join('\n');
+**注意**：
+- 不要只看 Worker 的报告就做判断，必须自己验证
+- 如果是重新执行的任务，检查之前的问题是否已解决
+- "无文件变更"不等于"任务失败"，可能现有代码已经满足要求`;
   }
 
   /**
@@ -425,24 +450,25 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
 
   /**
    * 调用 Reviewer 模型（使用 ConversationLoop，与 Worker 相同的认证方式）
-   * v5.0: 精简版 - 预先格式化的上下文已足够判断，不需要工具
+   * v4.0: 支持只读工具，让 Reviewer 能主动验证代码
    */
   private async callReviewer(prompt: string, projectPath?: string): Promise<Omit<ReviewResult, 'durationMs'>> {
-    // v5.0: 关键信息已在 prompt 中预先格式化，Reviewer 只需判断并返回 JSON
-    // 不再需要工具调用，节省 token 和延迟
+    // v4.0: Reviewer 现在拥有只读工具，可以主动验证 Worker 的工作
+    const REVIEWER_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
     // 使用 ConversationLoop，自动处理认证（支持 OAuth 和 API Key）
     const loop = new ConversationLoop({
       model: this.config.model as ModelType,
-      maxTurns: 3,  // v5.0: 精简到 3 轮，审查应该是一次性的
+      maxTurns: 20,  // v4.1: 增加轮数到 20，因为验证过程可能需要多次读取文件
       verbose: false,
       permissionMode: 'bypassPermissions',
-      workingDir: projectPath,
+      workingDir: projectPath,  // v4.0: 传递项目路径，让工具知道在哪里读文件
       isSubAgent: true,
       systemPrompt: this.buildReviewerSystemPrompt(projectPath),
+      // 禁用 Extended Thinking，Reviewer 只需要简单的 JSON 输出
       thinking: { enabled: false },
-      // v5.0: 不需要工具，上下文已预先格式化
-      allowedTools: [],
+      // v4.0: 允许只读工具，让 Reviewer 能主动验证
+      allowedTools: REVIEWER_READ_ONLY_TOOLS,
     });
 
     let responseText = '';
@@ -464,10 +490,14 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
         if (event.type === 'text' && event.content?.startsWith('[Thinking:')) {
           thinkingText += event.content;
         }
-        // 记录错误事件
+        // 记录错误事件（使用字符串比较绕过类型检查，因为实际运行时可能有 error 类型）
         if ((event.type as string) === 'error') {
           errorEvent = (event as any).error || (event as any).message || JSON.stringify(event);
           console.error(`[TaskReviewer] 收到错误事件:`, errorEvent);
+        }
+        // v4.0: 记录工具调用（现在 Reviewer 可以使用只读工具验证）
+        if (event.type === 'tool_start') {
+          console.log(`[TaskReviewer] 使用工具验证: ${(event as any).toolName}`);
         }
       }
     } catch (streamError) {

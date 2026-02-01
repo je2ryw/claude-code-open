@@ -137,6 +137,8 @@ export type ClientMessage =
   | { type: 'task:skip'; payload: { blueprintId: string; taskId: string } }
   // v3.8: 取消执行
   | { type: 'swarm:cancel'; payload: { blueprintId: string } }
+  // v4.2: AskUserQuestion 响应
+  | { type: 'swarm:ask_response'; payload: { blueprintId: string; requestId: string; answers: Record<string, string>; cancelled?: boolean } }
   // 持续开发消息
   | { type: 'continuous_dev:start'; payload: { requirement: string } }
   | { type: 'continuous_dev:status' }
@@ -234,6 +236,9 @@ export type ServerMessage =
   | { type: 'task:skip_failed'; payload: { blueprintId: string; taskId: string; success: false; error: string; timestamp: string } }
   // v3.8: 取消执行响应
   | { type: 'swarm:cancelled'; payload: { blueprintId: string; success: boolean; timestamp: string } }
+  // v4.2: AskUserQuestion 相关消息
+  | { type: 'swarm:ask_user'; payload: { requestId: string; questions: any[]; e2eTaskId?: string } }
+  | { type: 'swarm:ask_response_ack'; payload: { requestId: string; success: boolean } }
   // 持续开发消息
   | { type: 'continuous_dev:ack'; payload: { message: string } }
   | { type: 'continuous_dev:status_update'; payload: any }

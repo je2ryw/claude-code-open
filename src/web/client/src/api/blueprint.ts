@@ -460,11 +460,21 @@ export const coordinatorApi = {
   // ============ v3.4 验收测试 ============
 
   /**
-   * 启动验收测试
+   * 启动 E2E 端到端验收测试
+   * 需要浏览器 MCP 扩展支持
    */
-  startVerification: async (blueprintId: string): Promise<{ success: boolean; error?: string }> => {
-    const response = await fetch(`/api/blueprint/execution/${blueprintId}/verify`, {
+  startE2EVerification: async (
+    blueprintId: string,
+    config?: {
+      similarityThreshold?: number;
+      autoFix?: boolean;
+      maxFixAttempts?: number;
+    }
+  ): Promise<{ success: boolean; message?: string; hint?: string; error?: string }> => {
+    const response = await fetch(`/api/blueprint/execution/${blueprintId}/verify-e2e`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config || {}),
     });
     return handleResponse(response);
   },

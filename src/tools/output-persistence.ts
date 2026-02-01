@@ -98,6 +98,12 @@ export function cleanupOldOutputFiles(): number {
       const filePath = path.join(outputDir, file);
       try {
         const stat = fs.statSync(filePath);
+
+        // 跳过目录，只清理文件
+        if (stat.isDirectory()) {
+          continue;
+        }
+
         if (now - stat.mtimeMs > maxAge) {
           fs.unlinkSync(filePath);
           cleaned++;

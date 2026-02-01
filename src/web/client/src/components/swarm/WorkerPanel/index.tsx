@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { QueenStatus, QueenAgent } from './QueenStatus';
 import { WorkerCard, WorkerAgent } from './WorkerCard';
 import { MarkdownContent } from '../../MarkdownContent';
@@ -346,15 +346,36 @@ const WorkerChatLog: React.FC<{
 }> = ({ taskStatus, worker, stream }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
+  // v4.3: 过滤掉冗余的日志消息，保留正常的模型回复和工具调用
+  // 冗余日志格式: "[EnvAgent] 执行工具: xxx" 或 "[E2ETestAgent] xxx" 等
+  const LOG_PATTERN = /^\[[\w-]+\]\s*(执行工具|Starting|Checking|Running|Found|Using|Tool)/;
+
+  const filteredBlocks = useMemo(() => {
+    if (!stream?.content) return [];
+    return stream.content.filter(block => {
+      // 保留所有 tool 和 thinking 类型
+      if (block.type === 'tool' || block.type === 'thinking') return true;
+      // text 类型：过滤掉日志格式的消息
+      if (block.type === 'text') {
+        const text = block.text.trim();
+        // 过滤掉空文本和日志格式的文本
+        if (!text) return false;
+        if (LOG_PATTERN.test(text)) return false;
+        return true;
+      }
+      return true;
+    });
+  }, [stream?.content]);
+
   // 自动滚动到底部（当日志或流式内容变化时）
   useEffect(() => {
     if (logsContainerRef.current) {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
-  }, [stream?.content?.length, stream?.lastUpdated]);
+  }, [filteredBlocks.length, stream?.lastUpdated]);
 
-  // 计算总消息数（仅流式内容块）
-  const totalMessageCount = stream?.content?.length || 0;
+  // 计算总消息数
+  const totalMessageCount = filteredBlocks.length;
 
   // 将 StreamContentBlock 转换为官方 ToolUse 类型
   const toToolUse = (block: StreamContentBlock & { type: 'tool' }): ToolUse => ({
@@ -369,11 +390,10 @@ const WorkerChatLog: React.FC<{
     } : undefined,
   });
 
-  // 渲染流式内容块（复用官方 Chat 组件）
+  // 渲染内容块
   const renderContentBlock = (block: StreamContentBlock, index: number) => {
     switch (block.type) {
       case 'thinking':
-        // 使用官方 thinking-block 样式
         return (
           <div key={`thinking-${index}`} className="thinking-block">
             <div className="thinking-header">💭 思考中</div>
@@ -381,14 +401,12 @@ const WorkerChatLog: React.FC<{
           </div>
         );
       case 'text':
-        // 使用官方 MarkdownContent 组件
         return (
           <div key={`text-${index}`}>
             <MarkdownContent content={block.text} />
           </div>
         );
       case 'tool':
-        // 使用官方 ToolCall 组件
         return (
           <ToolCallComponent key={block.id} toolUse={toToolUse(block)} />
         );
@@ -408,8 +426,8 @@ const WorkerChatLog: React.FC<{
       </div>
 
       <div className={styles.workerChatMessages} ref={logsContainerRef}>
-        {/* 流式内容块（复用官方 Chat 组件） */}
-        {stream?.content?.map(renderContentBlock)}
+        {/* v4.3: 显示过滤后的内容块（工具调用 + 正常文本，排除日志消息） */}
+        {filteredBlocks.map(renderContentBlock)}
 
         {/* 空状态 */}
         {totalMessageCount === 0 && (

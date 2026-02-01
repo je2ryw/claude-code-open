@@ -287,6 +287,10 @@ export type SwarmClientMessage =
   | { type: 'worker:terminate'; payload: { workerId: string } }
   // v2.1: 任务重试消息
   | { type: 'task:retry'; payload: { blueprintId: string; taskId: string } }
+  // v3.8: 任务跳过消息
+  | { type: 'task:skip'; payload: { blueprintId: string; taskId: string } }
+  // v4.2: AskUserQuestion 响应消息（支持 E2E Agent 和 Worker）
+  | { type: 'swarm:ask_response'; payload: { blueprintId: string; requestId: string; answers: Record<string, string>; cancelled?: boolean; workerId?: string } }
   | { type: 'ping' };
 
 // 服务端 → 客户端消息
@@ -311,6 +315,8 @@ export type SwarmServerMessage =
   | { type: 'conflict:needs_human'; payload: ConflictNeedsHumanPayload }
   // v3.5 新增：冲突已解决
   | { type: 'conflict:resolved'; payload: ConflictResolvedPayload }
+  // v4.2 新增：E2E Agent 请求用户输入
+  | { type: 'swarm:ask_user'; payload: AskUserPayload }
   | { type: 'pong' };
 
 // ============= v2.1 新增：Worker 日志类型 =============
@@ -458,6 +464,9 @@ export interface SwarmState {
 
   // v3.5: 冲突状态
   conflicts: ConflictState;
+
+  // v4.2: AskUserQuestion 对话框状态
+  askUserDialog: AskUserDialogState;
 }
 
 /**
@@ -490,7 +499,7 @@ export interface UseSwarmWebSocketReturn {
   unsubscribe: (blueprintId: string) => void;
   pauseSwarm: (blueprintId: string) => void;
   resumeSwarm: (blueprintId: string) => void;
-  cancelSwarm?: (blueprintId: string) => void;
+  cancelSwarm: (blueprintId: string) => void;
   // v2.0: 新增控制函数
   stopSwarm: (blueprintId: string) => void;
   pauseWorker: (workerId: string) => void;
@@ -498,6 +507,15 @@ export interface UseSwarmWebSocketReturn {
   terminateWorker: (workerId: string) => void;
   // v2.1: 任务重试
   retryTask: (blueprintId: string, taskId: string) => void;
+  // v3.8: 任务跳过
+  skipTask: (blueprintId: string, taskId: string) => void;
+  // v4.2: AskUserQuestion 响应
+  sendAskUserResponse: (
+    blueprintId: string,
+    requestId: string,
+    answers: Record<string, string>,
+    cancelled?: boolean
+  ) => void;
 }
 
 export interface UseSwarmStateReturn {
@@ -507,6 +525,10 @@ export interface UseSwarmStateReturn {
   refresh: () => void;
   // v2.1: 任务重试
   retryTask: (blueprintId: string, taskId: string) => void;
+  // v3.8: 任务跳过
+  skipTask: (blueprintId: string, taskId: string) => void;
+  // v3.8: 取消执行
+  cancelSwarm: (blueprintId: string) => void;
   // v4.0: 历史日志管理
   loadTaskHistoryLogs: (taskId: string) => Promise<{
     success: boolean;
@@ -525,6 +547,59 @@ export interface UseSwarmStateReturn {
     error?: string;
   }>;
   clearTaskLogs: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+  // v4.2: AskUserQuestion 响应
+  sendAskUserResponse: (requestId: string, answers: Record<string, string>, cancelled?: boolean) => void;
+}
+
+// ============= v4.2 新增：AskUserQuestion 对话框类型 =============
+
+/**
+ * AskUserQuestion 问题选项
+ */
+export interface AskUserQuestionOption {
+  label: string;
+  description: string;
+}
+
+/**
+ * AskUserQuestion 问题
+ */
+export interface AskUserQuestionItem {
+  question: string;
+  header: string;
+  options: AskUserQuestionOption[];
+  multiSelect: boolean;
+}
+
+/**
+ * AskUserQuestion 对话框状态
+ */
+export interface AskUserDialogState {
+  /** 是否显示对话框 */
+  visible: boolean;
+  /** 请求 ID（用于响应） */
+  requestId: string | null;
+  /** 问题列表 */
+  questions: AskUserQuestionItem[];
+  /** E2E 任务 ID（用于关联） */
+  e2eTaskId?: string;
+  /** v4.2: Worker ID（如果是 Worker 发起的请求） */
+  workerId?: string;
+  /** v4.2: 任务 ID（如果是 Worker 发起的请求） */
+  taskId?: string;
+}
+
+/**
+ * AskUser WebSocket Payload
+ */
+export interface AskUserPayload {
+  requestId: string;
+  questions: AskUserQuestionItem[];
+  e2eTaskId?: string;
+  /** v4.2: Worker ID（如果是 Worker 发起的请求） */
+  workerId?: string;
+  /** v4.2: 任务 ID（如果是 Worker 发起的请求） */
+  taskId?: string;
 }
 
 // ============= v3.4 新增：验收测试类型 =============
@@ -533,6 +608,8 @@ export type VerificationStatus = 'idle' | 'checking_env' | 'running_tests' | 'fi
 
 export interface VerificationState {
   status: VerificationStatus;
+  /** v4.1: E2E 测试任务 ID，用于显示流式日志 */
+  e2eTaskId?: string;
   result?: {
     totalTests: number;
     passedTests: number;

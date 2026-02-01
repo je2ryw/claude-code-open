@@ -19,6 +19,7 @@ import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import { escapePathForShell } from '../utils/platform.js';
 import { getCurrentCwd } from '../core/cwd-context.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
+import { needsElevation, getElevationReason, executeElevated } from '../permissions/elevated-commands.js';
 
 const execAsync = promisify(exec);
 
@@ -264,6 +265,7 @@ interface AuditLog {
   duration: number;
   outputSize: number;
   background: boolean;
+  elevated?: boolean;  // v2.1.28: 是否以管理员权限执行
 }
 
 const auditLogs: AuditLog[] = [];
@@ -598,7 +600,74 @@ Important:
       console.warn(`[Bash Security Warning] ${safetyCheck.warning}`);
     }
 
-    // 运行 pre-tool hooks
+    // v2.1.28: 检测是否需要管理员权限
+    // 如果命令需要提升权限，会触发权限请求弹框
+    // 用户确认后才会执行，被拒绝则返回错误
+    if (needsElevation(command)) {
+      const reason = getElevationReason(command);
+      console.log(`\n🔐 检测到需要管理员权限的命令: ${command}`);
+      console.log(`   原因: ${reason}`);
+      console.log(`   等待用户确认...`);
+
+      // 这里会触发权限弹框（通过 hook 机制）
+      // 用户可以选择: 批准(会触发 UAC/sudo)、拒绝、手动处理
+      const hookResult = await runPreToolUseHooks('Bash', {
+        ...input,
+        _elevatedCommand: true,
+        _elevationReason: reason,
+      });
+
+      if (!hookResult.allowed) {
+        return {
+          success: false,
+          error: `❌ 管理员权限被拒绝: ${hookResult.message || '用户取消'}
+
+此命令需要管理员权限才能执行。你可以：
+1. 告知用户需要手动执行此命令
+2. 尝试其他不需要管理员权限的替代方案`,
+        };
+      }
+
+      // 用户批准，以提升权限执行
+      try {
+        const elevatedResult = await executeElevated(command, getCurrentCwd(), maxTimeout);
+
+        const duration = Date.now() - startTime;
+        const auditLog: AuditLog = {
+          timestamp: Date.now(),
+          command,
+          cwd: getCurrentCwd(),
+          sandboxed: false,
+          success: elevatedResult.success,
+          duration,
+          outputSize: (elevatedResult.stdout?.length || 0) + (elevatedResult.stderr?.length || 0),
+          background: false,
+          elevated: true,  // 标记为提升权限执行
+        };
+        recordAudit(auditLog);
+
+        let output = elevatedResult.stdout + (elevatedResult.stderr ? `\nSTDERR:\n${elevatedResult.stderr}` : '');
+        if (output.length > MAX_OUTPUT_LENGTH) {
+          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
+        }
+
+        return {
+          success: elevatedResult.success,
+          output: `🔐 [以管理员权限执行]\n${output}`,
+          stdout: elevatedResult.stdout,
+          stderr: elevatedResult.stderr,
+          exitCode: elevatedResult.exitCode,
+          error: elevatedResult.error,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `管理员权限执行失败: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
+    // 运行 pre-tool hooks（普通命令）
     const hookResult = await runPreToolUseHooks('Bash', input);
     if (!hookResult.allowed) {
       return {

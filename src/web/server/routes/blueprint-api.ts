@@ -17,6 +17,7 @@ import * as fsPromises from 'fs/promises';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { spawn } from 'child_process';
+import { LRUCache } from 'lru-cache';
 
 // ============================================================================
 // 新架构 v2.0 导入
@@ -62,60 +63,35 @@ import {
 
 
 // ============================================================================
-// 分析缓存（简单内存实现）
+// 分析缓存 - v3.0: 使用 lru-cache 替代手写实现
 // ============================================================================
 
 /**
- * 简单的分析结果缓存
- * 使用 LRU 策略，最多缓存 100 个结果，30 分钟过期
+ * 分析结果缓存
+ * v3.0: 使用 lru-cache 库，最多缓存 100 个结果，30 分钟过期
  */
-class SimpleAnalysisCache {
-  private cache: Map<string, { data: any; timestamp: number }> = new Map();
-  private maxSize = 100;
-  private ttl = 30 * 60 * 1000; // 30 分钟
+const analysisLRU = new LRUCache<string, any>({
+  max: 100,
+  ttl: 30 * 60 * 1000, // 30 分钟
+});
 
-  private getKey(path: string, isFile: boolean): string {
-    return `${isFile ? 'file' : 'dir'}:${path}`;
-  }
-
+// 保持原有 API 兼容性的包装
+const analysisCache = {
   get(path: string, isFile: boolean): any | null {
-    const key = this.getKey(path, isFile);
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    // 检查是否过期
-    if (Date.now() - entry.timestamp > this.ttl) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    return entry.data;
-  }
-
+    const key = `${isFile ? 'file' : 'dir'}:${path}`;
+    return analysisLRU.get(key) ?? null;
+  },
   set(path: string, isFile: boolean, data: any): void {
-    const key = this.getKey(path, isFile);
-
-    // LRU: 如果缓存满了，删除最老的条目
-    if (this.cache.size >= this.maxSize) {
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey) {
-        this.cache.delete(oldestKey);
-      }
-    }
-
-    this.cache.set(key, { data, timestamp: Date.now() });
-  }
-
+    const key = `${isFile ? 'file' : 'dir'}:${path}`;
+    analysisLRU.set(key, data);
+  },
   clear(): void {
-    this.cache.clear();
-  }
-
+    analysisLRU.clear();
+  },
   get size(): number {
-    return this.cache.size;
-  }
-}
-
-const analysisCache = new SimpleAnalysisCache();
+    return analysisLRU.size;
+  },
+};
 
 const router = Router();
 
@@ -130,6 +106,13 @@ import { EventEmitter } from 'events';
  */
 export const executionEventEmitter = new EventEmitter();
 executionEventEmitter.setMaxListeners(50); // 允许多个监听器
+
+/**
+ * v4.2: 活动的 Worker 实例管理
+ * key: `${blueprintId}:${workerId}` -> Worker 实例
+ * 用于接收前端的 AskUserQuestion 响应
+ */
+export const activeWorkers = new Map<string, AutonomousWorkerExecutor>();
 
 // ============================================================================
 // 蓝图存储（内存 + 文件系统）- v2.0 新架构
@@ -512,7 +495,7 @@ class BlueprintStore {
 }
 
 // 全局蓝图存储实例
-const blueprintStore = new BlueprintStore();
+export const blueprintStore = new BlueprintStore();
 
 // ============================================================================
 // 执行管理器 - v2.0 新架构（完整集成版）
@@ -765,6 +748,24 @@ class RealTaskExecutor implements TaskExecutor {
           toolInput: data.toolInput,  // 添加 toolInput 供前端显示
           toolResult: data.toolResult,
           toolError: data.toolError,
+        });
+      });
+
+      // v4.2: 监听 Worker 的 AskUserQuestion 请求事件
+      worker.on('ask:request', (askData: { workerId: string; taskId: string; requestId: string; questions: any[] }) => {
+        console.log(`[RealTaskExecutor] Worker ${workerId} AskUserQuestion request: ${askData.requestId}`);
+
+        // 保存 Worker 引用用于响应
+        const workerKey = `${this.blueprint.id}:${workerId}`;
+        activeWorkers.set(workerKey, worker);
+
+        // 转发给前端
+        executionEventEmitter.emit('worker:ask_request', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: askData.taskId,
+          requestId: askData.requestId,
+          questions: askData.questions,
         });
       });
 
@@ -2009,263 +2010,6 @@ class ExecutionManager {
   }
 
   /**
-   * v3.4: 启动验收测试
-   * 创建一个 verify 类型的 SmartTask，用现有 AutonomousWorkerExecutor 执行
-   */
-  async startVerification(blueprintId: string): Promise<{ success: boolean; error?: string }> {
-    const session = this.getSessionByBlueprint(blueprintId);
-    if (!session) {
-      return { success: false, error: '找不到该蓝图的执行会话' };
-    }
-
-    // 验证蜂群已执行完毕
-    if (!session.completedAt) {
-      return { success: false, error: '蜂群尚未执行完毕，请等待执行完成后再运行验收测试' };
-    }
-
-    // 防止重复触发
-    if (session.verification?.status === 'checking_env' ||
-        session.verification?.status === 'running_tests' ||
-        session.verification?.status === 'fixing') {
-      return { success: false, error: '验收测试正在进行中' };
-    }
-
-    const blueprint = blueprintStore.get(blueprintId);
-    if (!blueprint) {
-      return { success: false, error: '蓝图不存在' };
-    }
-
-    // 初始化验收状态
-    session.verification = { status: 'checking_env' };
-
-    // 发送验收开始事件
-    executionEventEmitter.emit('verification:update', {
-      blueprintId,
-      status: 'checking_env',
-    });
-
-    // 构建验收任务的描述（包含测试环境信息）
-    const testEnvConfig = blueprint.techStack?.testEnvironment;
-    let envDescription = '';
-    if (testEnvConfig) {
-      const parts: string[] = [];
-      if (testEnvConfig.database) {
-        parts.push(`数据库配置: type=${testEnvConfig.database.type}${testEnvConfig.database.dockerComposePath ? `, docker-compose=${testEnvConfig.database.dockerComposePath}` : ''}${testEnvConfig.database.envVar ? `, 环境变量=${testEnvConfig.database.envVar}` : ''}`);
-      }
-      if (testEnvConfig.externalServices) {
-        parts.push(`外部服务: mockServerUrl=${testEnvConfig.externalServices.mockServerUrl || '无'}`);
-      }
-      if (testEnvConfig.envFile) {
-        parts.push(`环境变量文件: ${testEnvConfig.envFile}`);
-      }
-      if (testEnvConfig.setupCommand) {
-        parts.push(`环境启动命令: ${testEnvConfig.setupCommand}`);
-      }
-      if (testEnvConfig.teardownCommand) {
-        parts.push(`环境清理命令: ${testEnvConfig.teardownCommand}`);
-      }
-      if (parts.length > 0) {
-        envDescription = `\n\n已知的测试环境配置：\n${parts.join('\n')}`;
-      }
-    }
-
-    // 创建验收 SmartTask
-    const verifyTaskId = `verify-${blueprintId}-${Date.now()}`;
-    const verifyTask: SmartTask = {
-      id: verifyTaskId,
-      name: '验收测试：运行全部测试并验证',
-      description: `你是一个验收测试工程师。蜂群已完成所有开发任务，现在需要你验证代码是否正确。
-
-请按以下步骤执行：
-
-1. **分析项目**：读取项目配置文件（package.json、pyproject.toml 等），确定测试框架和测试命令
-2. **检查环境依赖**：
-   - 查看项目是否需要数据库（检查 .env、docker-compose.yml、数据库相关配置）
-   - 查看是否需要外部服务
-   - 如果有 docker-compose.test.yml 或类似文件，运行 docker-compose up -d 启动服务
-   - 如果有 .env.test，确保环境变量已加载
-3. **运行测试**：执行项目的测试命令（npm test、pytest 等）
-4. **分析结果**：
-   - 如果全部通过，报告成功
-   - 如果有失败，分析失败原因
-5. **自动修复**（如果测试失败）：
-   - 分析失败的测试和相关代码
-   - 修复代码中的问题
-   - 重新运行测试
-   - 最多尝试修复 3 轮${envDescription}
-
-重要：你必须实际运行测试命令，不要只是读代码。最终请在完成时明确报告测试结果统计（通过/失败/跳过数量）。`,
-      type: 'verify',
-      complexity: 'moderate',
-      blueprintId,
-      files: [],
-      dependencies: [],
-      needsTest: true,
-      testStrategy: 'e2e',
-      estimatedMinutes: 10,
-      status: 'running',
-    };
-
-    session.verification.taskId = verifyTaskId;
-
-    // 使用现有的 AutonomousWorkerExecutor 执行验收任务
-    const worker = createAutonomousWorker({
-      maxRetries: 3,
-      testTimeout: 120000,  // 验收测试给更多时间
-      defaultModel: 'sonnet',
-    });
-
-    // 监听 Worker 流式事件，转发到前端
-    worker.on('stream:text', (data: any) => {
-      executionEventEmitter.emit('worker:stream', {
-        blueprintId,
-        workerId: 'verify-worker',
-        taskId: verifyTaskId,
-        streamType: 'text',
-        content: data.content,
-      });
-    });
-
-    worker.on('stream:thinking', (data: any) => {
-      executionEventEmitter.emit('worker:stream', {
-        blueprintId,
-        workerId: 'verify-worker',
-        taskId: verifyTaskId,
-        streamType: 'thinking',
-        content: data.content,
-      });
-    });
-
-    worker.on('stream:tool_start', (data: any) => {
-      executionEventEmitter.emit('worker:stream', {
-        blueprintId,
-        workerId: 'verify-worker',
-        taskId: verifyTaskId,
-        streamType: 'tool_start',
-        toolName: data.toolName,
-        toolInput: data.toolInput,
-      });
-    });
-
-    worker.on('stream:tool_end', (data: any) => {
-      executionEventEmitter.emit('worker:stream', {
-        blueprintId,
-        workerId: 'verify-worker',
-        taskId: verifyTaskId,
-        streamType: 'tool_end',
-        toolName: data.toolName,
-        toolResult: data.toolResult,
-        toolError: data.toolError,
-      });
-    });
-
-    // 异步执行验收任务
-    (async () => {
-      try {
-        // 更新状态为 running_tests
-        session.verification!.status = 'running_tests';
-        executionEventEmitter.emit('verification:update', {
-          blueprintId,
-          status: 'running_tests',
-        });
-
-        const context = {
-          projectPath: blueprint.projectPath,
-          techStack: blueprint.techStack || {
-            language: 'typescript' as const,
-            packageManager: 'npm' as const,
-          },
-          config: {
-            maxWorkers: 1,
-            workerTimeout: 600000,
-            defaultModel: 'sonnet' as const,
-            complexTaskModel: 'opus' as const,
-            simpleTaskModel: 'sonnet' as const,
-            autoTest: true,
-            testTimeout: 120000,
-            maxRetries: 3,
-            skipOnFailure: false,
-            useGitBranches: false,
-            autoMerge: false,
-            maxCost: 5,
-            costWarningThreshold: 0.8,
-          },
-        };
-
-        const result = await worker.execute(verifyTask, context);
-
-        // 解析结果
-        const verificationResult: VerificationResult = {
-          status: result.success ? 'passed' : 'failed',
-          totalTests: 0,
-          passedTests: 0,
-          failedTests: 0,
-          skippedTests: 0,
-          testOutput: result.error || '',
-          failures: [],
-          fixAttempts: [],
-          envIssues: [],
-          startedAt: new Date().toISOString(),
-          completedAt: new Date().toISOString(),
-        };
-
-        // 从 Worker decisions 提取信息
-        if (result.decisions) {
-          for (const decision of result.decisions) {
-            if (decision.type === 'retry') {
-              verificationResult.fixAttempts.push({
-                description: decision.description,
-                success: false,
-              });
-            }
-          }
-        }
-
-        session.verification = {
-          status: result.success ? 'passed' : 'failed',
-          result: verificationResult,
-          taskId: verifyTaskId,
-        };
-
-        // 发送完成事件
-        executionEventEmitter.emit('verification:update', {
-          blueprintId,
-          status: result.success ? 'passed' : 'failed',
-          result: verificationResult,
-        });
-
-      } catch (error: any) {
-        console.error('[ExecutionManager] 验收测试执行失败:', error);
-        session.verification = {
-          status: 'failed',
-          result: {
-            status: 'failed',
-            totalTests: 0,
-            passedTests: 0,
-            failedTests: 0,
-            skippedTests: 0,
-            testOutput: error.message || '验收测试执行出错',
-            failures: [],
-            fixAttempts: [],
-            envIssues: [error.message || '未知错误'],
-            startedAt: new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-          },
-          taskId: verifyTaskId,
-        };
-
-        executionEventEmitter.emit('verification:update', {
-          blueprintId,
-          status: 'failed',
-          error: error.message,
-        });
-      }
-    })();
-
-    return { success: true };
-  }
-
-  /**
    * v3.4: 获取验收测试状态
    */
   getVerificationStatus(blueprintId: string): { status: VerificationStatus; result?: VerificationResult } | null {
@@ -2462,6 +2206,136 @@ router.delete('/blueprints/:id', (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// 架构图生成（使用 Agent 能力，替代 onion-analyzer）
+// ============================================================================
+const architectureGraphCache = new LRUCache<string, {
+  type: string;
+  title: string;
+  description: string;
+  mermaidCode: string;
+  generatedAt: string;
+  nodePathMap?: Record<string, { path: string; type: 'file' | 'folder'; line?: number }>;
+}>({
+  max: 50,
+  ttl: 30 * 60 * 1000, // 30 分钟
+});
+
+/**
+ * GET /blueprints/:id/architecture-graph
+ * AI 生成架构图
+ */
+router.get('/blueprints/:id/architecture-graph', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { type = 'full', forceRefresh } = req.query as { type?: string; forceRefresh?: string };
+
+    const blueprint = blueprintStore.get(id);
+    if (!blueprint) {
+      return res.status(404).json({ success: false, error: '蓝图不存在' });
+    }
+
+    // 检查缓存
+    const cacheKey = `${id}:${type}`;
+    if (forceRefresh !== 'true') {
+      const cached = architectureGraphCache.get(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: cached, fromCache: true });
+      }
+    }
+
+    // 获取项目路径
+    const projectPath = blueprint.projectPath || process.cwd();
+
+    // 扫描项目目录结构（限制深度和数量）
+    const scanDir = (dir: string, depth = 0, maxDepth = 2): string[] => {
+      if (depth > maxDepth) return [];
+      const results: string[] = [];
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+          const fullPath = path.join(dir, entry.name);
+          const relativePath = path.relative(projectPath, fullPath);
+          if (entry.isDirectory()) {
+            results.push(`📁 ${relativePath}/`);
+            results.push(...scanDir(fullPath, depth + 1, maxDepth));
+          } else if (/\.(ts|tsx|js|jsx|py|go|rs|java)$/.test(entry.name)) {
+            results.push(`📄 ${relativePath}`);
+          }
+        }
+      } catch { /* ignore */ }
+      return results;
+    };
+
+    const fileStructure = scanDir(projectPath).slice(0, 80).join('\n');
+
+    // 构建 AI 提示词
+    const typePrompts: Record<string, string> = {
+      dataflow: '数据流图：展示数据如何在系统中流动',
+      modulerelation: '模块关系图：展示各模块之间的依赖关系',
+      full: '完整架构图：展示系统整体架构和核心组件',
+    };
+
+    const prompt = `分析项目并生成 ${typePrompts[type] || typePrompts.full}。
+
+项目: ${blueprint.name}
+描述: ${blueprint.description || '无'}
+技术栈: ${JSON.stringify(blueprint.techStack || {})}
+
+文件结构:
+${fileStructure || '(无)'}
+
+模块:
+${blueprint.modules?.map((m: any) => `- ${m.name}: ${m.description || ''}`).join('\n') || '(无)'}
+
+生成 Mermaid flowchart 代码。要求:
+1. 使用 flowchart TD 格式
+2. 节点 ID 用英文，标签可中文
+3. 用 subgraph 分组
+4. 不同箭头: --> 调用, -.-> 依赖, ==> 数据流
+
+返回 JSON:
+{"title":"标题","description":"描述","mermaidCode":"flowchart TD\\n...","nodePathMap":{"NodeId":{"path":"src/xxx","type":"folder"}}}`;
+
+    // 调用 AI
+    const { getDefaultClient } = await import('../../../core/client.js');
+    const client = getDefaultClient();
+
+    const response = await client.createMessage([
+      { role: 'user', content: prompt }
+    ]);
+
+    // 解析响应
+    let result: any;
+    try {
+      // 从 response 中提取文本内容
+      const textBlock = response.content.find((block) => block.type === 'text') as { type: 'text'; text: string } | undefined;
+      let jsonStr = textBlock?.text || '';
+      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) jsonStr = jsonMatch[1];
+      result = JSON.parse(jsonStr.trim());
+    } catch {
+      return res.status(500).json({ success: false, error: 'AI 返回格式错误' });
+    }
+
+    const graphData = {
+      type,
+      title: result.title || `${blueprint.name} 架构图`,
+      description: result.description || '',
+      mermaidCode: result.mermaidCode || '',
+      generatedAt: new Date().toISOString(),
+      nodePathMap: result.nodePathMap || {},
+    };
+
+    architectureGraphCache.set(cacheKey, graphData);
+    res.json({ success: true, data: graphData });
+  } catch (error: any) {
+    console.error('[architecture-graph] 错误:', error);
+    res.status(500).json({ success: false, error: error.message || 'AI 生成失败' });
+  }
+});
+
 /**
  * POST /blueprints/:id/execute
  * 执行蓝图
@@ -2614,30 +2488,6 @@ router.post('/execution/:id/cancel', (req: Request, res: Response) => {
 });
 
 /**
- * POST /execution/:blueprintId/verify
- * v3.4: 启动验收测试
- */
-router.post('/execution/:blueprintId/verify', async (req: Request, res: Response) => {
-  try {
-    const result = await executionManager.startVerification(req.params.blueprintId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        error: result.error,
-      });
-    }
-
-    res.json({
-      success: true,
-      message: '验收测试已启动',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
  * GET /execution/:blueprintId/verification
  * v3.4: 获取验收测试状态
  */
@@ -2648,6 +2498,45 @@ router.get('/execution/:blueprintId/verification', (req: Request, res: Response)
     res.json({
       success: true,
       data: status || { status: 'idle' },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /execution/:blueprintId/verify-e2e
+ * v4.0: 启动 E2E 端到端验收测试（需要浏览器 MCP 支持）
+ */
+router.post('/execution/:blueprintId/verify-e2e', async (req: Request, res: Response) => {
+  try {
+    const blueprintId = req.params.blueprintId;
+    const { similarityThreshold = 80, autoFix = true, maxFixAttempts = 3 } = req.body;
+
+    const blueprint = blueprintStore.get(blueprintId);
+    if (!blueprint) {
+      return res.status(404).json({
+        success: false,
+        error: '蓝图不存在',
+      });
+    }
+
+    // E2E 测试需要通过 WebSocket 提供 MCP 工具调用器
+    // 这里只是注册测试请求，实际执行通过 WebSocket 事件触发
+    executionEventEmitter.emit('e2e:start_request', {
+      blueprintId,
+      blueprint,
+      config: {
+        similarityThreshold,
+        autoFix,
+        maxFixAttempts,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'E2E 测试请求已提交，请确保浏览器 MCP 扩展已连接',
+      hint: 'E2E 测试将启动应用、打开浏览器、按业务流程验收，并与设计图对比',
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -2920,7 +2809,7 @@ class WorkerStateTracker {
 }
 
 // 全局 Worker 状态追踪器
-const workerTracker = new WorkerStateTracker();
+export const workerTracker = new WorkerStateTracker();
 
 /**
  * GET /coordinator/workers
@@ -6738,7 +6627,6 @@ router.post('/logs/cleanup', (_req: Request, res: Response) => {
 // 导出路由和共享实例
 // ============================================================================
 
-// 导出 blueprintStore 供 WebSocket 使用
-export { blueprintStore };
+// blueprintStore 已在第 491 行导出
 
 export default router;

@@ -95,6 +95,15 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   const blueprintRouter = await import('./routes/blueprint-api.js');
   app.use('/api/blueprint', blueprintRouter.default);
 
+  // tRPC API 路由（端到端类型安全）
+  const { createExpressMiddleware } = await import('@trpc/server/adapters/express');
+  const { appRouter } = await import('./trpc/appRouter.js');
+  const { createContext } = await import('./trpc/index.js');
+  app.use('/api/trpc', createExpressMiddleware({
+    router: appRouter,
+    createContext,
+  }));
+
   // 蓝图需求收集对话 API 路由
   const blueprintRequirementRouter = await import('./routes/blueprint-requirement-api.js');
   app.use('/api/blueprint/requirement', blueprintRequirementRouter.default);

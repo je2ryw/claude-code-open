@@ -38,7 +38,8 @@ export type PermissionType =
   | 'network_request'
   | 'mcp_server'
   | 'plugin_install'
-  | 'system_config';
+  | 'system_config'
+  | 'elevated_command';  // v2.1.28: 需要管理员权限的命令
 
 // 权限作用域
 export type PermissionScope = 'once' | 'session' | 'always' | 'never';
@@ -350,8 +351,13 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
       return dangerousCommands.some((cmd) => resource.trim().startsWith(cmd));
     }
     if (type === 'system_config') return true;
+    // v2.1.28: 管理员权限命令总是显示为危险操作
+    if (type === 'elevated_command') return true;
     return false;
   }, [type, resource]);
+
+  // v2.1.28: 判断是否为管理员权限请求
+  const isElevated = type === 'elevated_command';
 
   // 格式化资源显示
   const formatResource = () => {
@@ -430,6 +436,7 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
       mcp_server: { icon: '🔌', color: 'green', label: 'MCP Server' },
       plugin_install: { icon: '📦', color: 'yellow', label: 'Plugin Install' },
       system_config: { icon: '⚙️ ', color: 'red', label: 'System Config' },
+      elevated_command: { icon: '🔐', color: 'red', label: '管理员权限' },  // v2.1.28
     };
 
     return displays[type] || { icon: '🔧', color: 'white', label: 'Unknown' };
@@ -482,10 +489,26 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({
       )}
 
       {/* 危险操作警告 */}
-      {isDangerous && (
+      {isDangerous && !isElevated && (
         <Box marginTop={1} paddingX={1} borderStyle="single" borderColor="red">
           <Text color="red" bold>
             ⚠️  WARNING: This operation could be destructive!
+          </Text>
+        </Box>
+      )}
+
+      {/* v2.1.28: 管理员权限提示 */}
+      {isElevated && (
+        <Box marginTop={1} paddingX={1} borderStyle="double" borderColor="yellow" flexDirection="column">
+          <Text color="yellow" bold>
+            🔐 需要管理员权限
+          </Text>
+          <Text color="gray">
+            {process.platform === 'win32'
+              ? '批准后将弹出 Windows UAC 对话框'
+              : process.platform === 'darwin'
+              ? '批准后将弹出 macOS 密码输入对话框'
+              : '批准后需要输入 sudo 密码'}
           </Text>
         </Box>
       )}

@@ -173,16 +173,28 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         case 'tool_use_start':
           if (currentMessageRef.current) {
             const currentMsg = currentMessageRef.current;
-            currentMsg.content.push({
-              type: 'tool_use',
-              id: payload.toolUseId as string,
-              name: payload.toolName as string,
-              input: payload.input,
-              status: 'running',
-            });
+            // 创建新的 content 数组（不可变更新）
+            const newContent = [
+              ...currentMsg.content,
+              {
+                type: 'tool_use' as const,
+                id: payload.toolUseId as string,
+                name: payload.toolName as string,
+                input: payload.input,
+                status: 'running' as const,
+              },
+            ];
+            // 创建新的消息对象
+            const updatedMsg = {
+              ...currentMsg,
+              content: newContent,
+            };
+            // 更新 ref
+            currentMessageRef.current = updatedMsg;
+            // 更新状态
             setMessages(prev => {
               const filtered = prev.filter(m => m.id !== currentMsg.id);
-              return [...filtered, { ...currentMsg }];
+              return [...filtered, updatedMsg];
             });
             setStatus('tool_executing');
           }
@@ -191,20 +203,40 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         case 'tool_result':
           if (currentMessageRef.current) {
             const currentMsg = currentMessageRef.current;
-            const toolUse = currentMsg.content.find(
+            const toolUseIndex = currentMsg.content.findIndex(
               c => c.type === 'tool_use' && c.id === payload.toolUseId
             );
-            if (toolUse && toolUse.type === 'tool_use') {
-              toolUse.status = payload.success ? 'completed' : 'error';
-              toolUse.result = {
-                success: payload.success as boolean,
-                output: payload.output as string | undefined,
-                error: payload.error as string | undefined,
-              };
-              setMessages(prev => {
-                const filtered = prev.filter(m => m.id !== currentMsg.id);
-                return [...filtered, { ...currentMsg }];
-              });
+            if (toolUseIndex !== -1) {
+              const toolUse = currentMsg.content[toolUseIndex];
+              if (toolUse.type === 'tool_use') {
+                // 创建新的 content 数组（不可变更新）
+                const newContent = currentMsg.content.map((item, index) => {
+                  if (index === toolUseIndex && item.type === 'tool_use') {
+                    return {
+                      ...item,
+                      status: (payload.success ? 'completed' : 'error') as 'completed' | 'error',
+                      result: {
+                        success: payload.success as boolean,
+                        output: payload.output as string | undefined,
+                        error: payload.error as string | undefined,
+                      },
+                    };
+                  }
+                  return item;
+                });
+                // 创建新的消息对象
+                const updatedMsg = {
+                  ...currentMsg,
+                  content: newContent,
+                };
+                // 更新 ref
+                currentMessageRef.current = updatedMsg;
+                // 更新状态
+                setMessages(prev => {
+                  const filtered = prev.filter(m => m.id !== currentMsg.id);
+                  return [...filtered, updatedMsg];
+                });
+              }
             }
           }
           break;
@@ -213,12 +245,15 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           if (currentMessageRef.current) {
             const currentMsg = currentMessageRef.current;
             const usage = payload.usage as { inputTokens: number; outputTokens: number } | undefined;
-            if (usage) {
-              currentMsg.usage = usage;
-            }
+            // 创建新的消息对象（不可变更新）
+            const finalMsg = {
+              ...currentMsg,
+              content: [...currentMsg.content],
+              ...(usage && { usage }),
+            };
             setMessages(prev => {
               const filtered = prev.filter(m => m.id !== currentMsg.id);
-              return [...filtered, { ...currentMsg }];
+              return [...filtered, finalMsg];
             });
             currentMessageRef.current = null;
           }
