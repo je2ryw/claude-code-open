@@ -4,7 +4,7 @@
  */
 
 import { ClaudeClient, type ClientConfig } from './client.js';
-import { Session } from './session.js';
+import { Session, setCurrentSessionId } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import { runWithCwd, runGeneratorWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
@@ -1652,6 +1652,9 @@ export class ConversationLoop {
     this.options = options;
     this.promptBuilder = systemPromptBuilder;
 
+    // v2.1.27: 设置全局会话 ID 以供工具使用（如 gh pr create 自动链接）
+    setCurrentSessionId(this.session.sessionId);
+
     // 初始化提示词上下文
     this.promptContext = {
       workingDir: options.workingDir || process.cwd(),
@@ -2389,6 +2392,8 @@ Guidelines:
 
   setSession(session: Session): void {
     this.session = session;
+    // v2.1.27: 设置全局会话 ID 以供工具使用（如 gh pr create 自动链接）
+    setCurrentSessionId(session.sessionId);
   }
 
   /**
