@@ -516,6 +516,8 @@ export interface UseSwarmWebSocketReturn {
     answers: Record<string, string>,
     cancelled?: boolean
   ) => void;
+  // v4.4: 用户插嘴
+  interjectTask: (blueprintId: string, taskId: string, message: string) => void;
 }
 
 export interface UseSwarmStateReturn {
@@ -549,6 +551,8 @@ export interface UseSwarmStateReturn {
   clearTaskLogs: (taskId: string) => Promise<{ success: boolean; error?: string }>;
   // v4.2: AskUserQuestion 响应
   sendAskUserResponse: (requestId: string, answers: Record<string, string>, cancelled?: boolean) => void;
+  // v4.4: 用户插嘴
+  interjectTask: (taskId: string, message: string) => void;
 }
 
 // ============= v4.2 新增：AskUserQuestion 对话框类型 =============

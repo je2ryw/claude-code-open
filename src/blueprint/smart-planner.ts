@@ -42,6 +42,9 @@ import type {
   CodebaseExploration,
   SwarmConfig,
   DEFAULT_SWARM_CONFIG,
+  // v4.0: API 契约类型
+  APIEndpoint,
+  APIContract,
 } from './types.js';
 import { ClaudeClient, getDefaultClient } from '../core/client.js';
 import { ConversationLoop } from '../core/loop.js';
@@ -1103,6 +1106,24 @@ export class SmartPlanner extends EventEmitter {
     );
     const explorationContext = this.formatExplorationContext(exploration);
 
+    // v4.0 新增：生成 API 契约（事前约束）
+    // 在任务分解之前定义 API 契约，确保前后端一致
+    this.emit('planner:generating_api_contract', { blueprintId: blueprint.id });
+    const apiContract = await this.generateAPIContract(blueprint, explorationContext);
+    if (apiContract) {
+      // 将契约写入蓝图（持久化）
+      blueprint.apiContract = apiContract;
+      blueprint.updatedAt = new Date();
+
+      this.emit('planner:api_contract_generated', {
+        blueprintId: blueprint.id,
+        endpoints: apiContract.endpoints?.length || 0,
+        apiPrefix: apiContract.apiPrefix,
+      });
+
+      console.log(`[SmartPlanner] API 契约已写入蓝图: ${apiContract.endpoints.length} 个端点, 前缀: ${apiContract.apiPrefix}`);
+    }
+
     this.emit('planner:decomposing', { blueprintId: blueprint.id });
 
     // 格式化模块信息（支持完整格式和简化格式）
@@ -1152,12 +1173,14 @@ export class SmartPlanner extends EventEmitter {
     };
 
     // 使用专门的任务分解方法（不依赖 extractWithAI）
+    // v4.0: 传入 API 契约，让任务分解时考虑 API 路径规范
     const taskData = await this.decomposeTasksWithAI(
       blueprint,
       explorationContext,
       formatModules(),
       formatProcesses(),
-      formatNFRs()
+      formatNFRs(),
+      apiContract
     );
 
     // 验证 AI 返回的数据结构
@@ -1195,12 +1218,12 @@ export class SmartPlanner extends EventEmitter {
         status: 'pending' as const,
       }));
 
-    // 分析并行组
-    const parallelGroups = this.analyzeParallelGroups(tasks);
-
-    // 计算预估
-    const estimatedMinutes = this.calculateEstimatedTime(tasks, parallelGroups);
+    // 计算预估（任务已按顺序排列，直接累加）
+    const estimatedMinutes = this.calculateEstimatedTime(tasks);
     const estimatedCost = this.calculateEstimatedCost(tasks);
+
+    // 使用 Agent 返回的 parallelGroups
+    const parallelGroups: string[][] = taskData.parallelGroups || [tasks.map(t => t.id)];
 
     // 构建执行计划
     const plan: ExecutionPlan = {
@@ -1228,63 +1251,13 @@ export class SmartPlanner extends EventEmitter {
   }
 
   /**
-   * 分析可并行执行的任务组
-   *
-   * 使用拓扑排序算法，找出没有依赖关系的任务可以并行执行
+   * 计算预估执行时间
+   * 简化版：假设有一定并行度（约 50%），实际时间 ≈ 总时间 / 2
    */
-  private analyzeParallelGroups(tasks: SmartTask[]): string[][] {
-    const groups: string[][] = [];
-    const completed = new Set<string>();
-    const taskMap = new Map(tasks.map((t) => [t.id, t]));
-
-    while (completed.size < tasks.length) {
-      const currentGroup: string[] = [];
-
-      for (const task of tasks) {
-        if (completed.has(task.id)) continue;
-
-        // 检查所有依赖是否已完成
-        const depsComplete = task.dependencies.every((depId) => completed.has(depId));
-        if (depsComplete) {
-          currentGroup.push(task.id);
-        }
-      }
-
-      if (currentGroup.length === 0) {
-        // 检测到循环依赖，强制打破
-        const remaining = tasks.filter((t) => !completed.has(t.id));
-        if (remaining.length > 0) {
-          currentGroup.push(remaining[0].id);
-        }
-      }
-
-      if (currentGroup.length > 0) {
-        groups.push(currentGroup);
-        currentGroup.forEach((id) => completed.add(id));
-      } else {
-        break; // 防止无限循环
-      }
-    }
-
-    return groups;
-  }
-
-  /**
-   * 计算预估执行时间（考虑并行）
-   */
-  private calculateEstimatedTime(tasks: SmartTask[], parallelGroups: string[][]): number {
-    let totalMinutes = 0;
-    const taskMap = new Map(tasks.map((t) => [t.id, t]));
-
-    for (const group of parallelGroups) {
-      // 每组取最长的任务时间
-      const groupTime = Math.max(
-        ...group.map((id) => taskMap.get(id)?.estimatedMinutes || 5)
-      );
-      totalMinutes += groupTime;
-    }
-
-    return totalMinutes;
+  private calculateEstimatedTime(tasks: SmartTask[]): number {
+    const totalMinutes = tasks.reduce((sum, t) => sum + (t.estimatedMinutes || 5), 0);
+    // 假设平均并行度 50%
+    return Math.ceil(totalMinutes * 0.5);
   }
 
   /**
@@ -1527,6 +1500,108 @@ export class SmartPlanner extends EventEmitter {
   }
 
   // --------------------------------------------------------------------------
+  // v4.0 新增：API 契约生成（事前约束）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 生成 API 契约
+   * 在任务分解之前，根据需求生成 API 契约，确保前后端一致
+   *
+   * @param blueprint 蓝图
+   * @param explorationContext 代码库探索上下文
+   * @returns API 契约
+   */
+  private async generateAPIContract(
+    blueprint: Blueprint,
+    explorationContext: string
+  ): Promise<APIContract | null> {
+    // 只有包含前后端的项目才需要生成 API 契约
+    const hasBackend = blueprint.requirements?.some(r =>
+      /api|后端|backend|接口|路由|endpoint/i.test(r)
+    );
+    const hasFrontend = blueprint.requirements?.some(r =>
+      /前端|frontend|ui|界面|页面|组件/i.test(r)
+    );
+
+    if (!hasBackend || !hasFrontend) {
+      console.log('[SmartPlanner] 项目不需要 API 契约（非前后端分离项目）');
+      return null;
+    }
+
+    console.log('[SmartPlanner] 开始生成 API 契约...');
+
+    try {
+      const loop = new ConversationLoop({
+        model: this.getClient().getModel(),
+        maxTurns: 5,
+        verbose: false,
+        permissionMode: 'bypassPermissions',
+        workingDir: blueprint.projectPath,
+        systemPrompt: `你是 API 契约设计专家。根据项目需求，设计 RESTful API 契约。
+
+设计原则：
+1. 使用统一的 API 前缀（如 /api/v1）
+2. 遵循 RESTful 规范
+3. 路径命名使用小写和连字符
+4. 确保路径完整（包含前缀）
+
+输出 JSON 格式：
+\`\`\`json
+{
+  "apiPrefix": "/api/v1",
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "description": "用户登录",
+      "requestBody": "{ username, password }",
+      "responseType": "{ token, user }"
+    }
+  ]
+}
+\`\`\``,
+        isSubAgent: true,
+      });
+
+      const prompt = `根据以下需求，设计 API 契约：
+
+## 项目需求
+${blueprint.requirements?.join('\n') || blueprint.description}
+
+## 技术栈
+${JSON.stringify(blueprint.techStack, null, 2)}
+
+${explorationContext ? `## 现有代码结构\n${explorationContext}` : ''}
+
+请设计完整的 API 契约，包含所有需要的端点。`;
+
+      const result = await loop.processMessage(prompt);
+
+      if (result) {
+        // 提取 JSON
+        const jsonMatch = result.match(/```json\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[1]);
+          console.log('[SmartPlanner] API 契约生成成功:', parsed.endpoints?.length, '个端点');
+
+          return {
+            apiPrefix: parsed.apiPrefix || '/api/v1',
+            endpoints: parsed.endpoints || [],
+            generatedAt: new Date(),
+          };
+        }
+      }
+
+      console.warn('[SmartPlanner] 无法解析 API 契约响应');
+      return null;
+
+    } catch (error: any) {
+      console.error('[SmartPlanner] API 契约生成失败:', error.message);
+      return null;
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // v2.0 新增：Agent 模式探索代码库
   // --------------------------------------------------------------------------
 
@@ -1664,13 +1739,15 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
   /**
    * 专用的任务分解方法 - 使用 Agent 分解任务
    * 不依赖 extractWithAI，有独立的实现逻辑
+   * v4.0: 添加 apiContract 参数，确保任务遵循 API 契约
    */
   private async decomposeTasksWithAI(
     blueprint: Blueprint,
     explorationContext: string,
     modulesText: string,
     processesText: string,
-    nfrsText: string
+    nfrsText: string,
+    apiContract?: APIContract | null
   ): Promise<{
     tasks: Array<{
       id: string;
@@ -1686,26 +1763,48 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
       estimatedMinutes: number;
       complexity: TaskComplexity;
     }>;
+    parallelGroups?: string[][];
     decisions: Array<{
       type: 'task_split' | 'parallel' | 'dependency' | 'tech_choice' | 'other';
       description: string;
       reasoning?: string;
     }>;
   }> {
+    // v4.0: 如果有 API 契约，添加到 system prompt 中
+    const apiContractSection = apiContract ? `
+
+## ⚠️ API 契约（必须遵循）
+以下是已定义的 API 契约，所有前后端任务必须严格遵循：
+- API 前缀: ${apiContract.apiPrefix}
+- 端点列表:
+${apiContract.endpoints.map(ep => `  - ${ep.method} ${ep.path} (${ep.description})`).join('\n')}
+
+**重要**：
+- 后端任务必须按契约路径实现路由
+- 前端任务必须按契约路径调用 API
+- 不要自行修改 API 路径` : '';
+
     const systemPrompt = `你是一个专业的任务分解专家。你的职责是将软件项目蓝图分解为具体可执行的开发任务。
 
 分解原则：
 1. 每个任务应该能在5分钟内完成
 2. 任务要有明确的输入和输出
 3. 任务可以独立验证
-4. 相互独立的任务可以并行执行
-5. 配置类/文档类任务不需要测试
-6. 核心业务逻辑必须有测试
+4. 配置类/文档类任务不需要测试
+5. 核心业务逻辑必须有测试
+6. **前后端任务必须遵循 API 契约**（如果提供）
+
+⚠️ 任务分组与并行执行：
+- 把可以**同时执行**的任务放进同一组（parallelGroups）
+- 组与组之间是**串行**的：第一组全部完成后，才执行第二组
+- 例如：[[数据库模型], [后端API-A, 后端API-B], [前端组件A, 前端组件B]]
+- dependencies 字段填写前置任务的 ID（用于失败时跳过依赖链）
 
 任务类型：code(功能代码), config(配置), test(测试), refactor(重构), docs(文档), integrate(集成)
 任务领域：frontend(前端), backend(后端), database(数据库), shared(共享代码), other(其他)
 测试策略：unit(单元测试), integration(集成测试), e2e(端到端), mock(Mock), vcr(录制回放), skip(跳过)
 复杂度：trivial, simple, moderate, complex
+${apiContractSection}
 
 完成分析后，你必须输出一个 JSON 代码块，不要包含其他说明文字，格式如下：
 \`\`\`json
@@ -1714,7 +1813,7 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
     {
       "id": "task-1",
       "name": "任务名称",
-      "description": "详细描述",
+      "description": "详细描述（如果是 API 相关任务，请明确写出完整的 API 路径）",
       "type": "code",
       "category": "backend",
       "moduleId": "模块ID",
@@ -1726,6 +1825,11 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
       "complexity": "simple"
     }
   ],
+  "parallelGroups": [
+    ["task-1", "task-2"],
+    ["task-3"],
+    ["task-4", "task-5"]
+  ],
   "decisions": [
     {
       "type": "task_split",
@@ -1735,6 +1839,8 @@ ${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
   ]
 }
 \`\`\`
+
+⚠️ parallelGroups 必填！每个任务ID必须出现在某一组中。
 
 【重要】你的响应必须包含上述格式的 JSON 代码块。`;
 

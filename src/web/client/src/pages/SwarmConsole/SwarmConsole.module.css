@@ -1811,6 +1811,19 @@
   border-radius: 8px;
   padding: 16px;
   background: var(--bg-secondary);
+  transition: all 0.2s ease;
+}
+
+/* v4.4: 验收测试面板选中状态 */
+.verificationPanel:hover {
+  border-color: var(--accent-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.verificationPanel.selected {
+  border-color: var(--accent-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
 .verificationHeader {

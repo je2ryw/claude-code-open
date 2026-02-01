@@ -292,6 +292,18 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     });
   }, [send]);
 
+  // v4.4: 用户插嘴 - 向正在执行的任务发送消息
+  const interjectTask = useCallback((
+    blueprintId: string,
+    taskId: string,
+    message: string
+  ) => {
+    send({
+      type: 'task:interject',
+      payload: { blueprintId, taskId, message },
+    });
+  }, [send]);
+
   return {
     connected,
     status,
@@ -308,5 +320,6 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     skipTask,
     cancelSwarm,
     sendAskUserResponse,
+    interjectTask,
   };
 }

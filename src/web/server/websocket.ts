@@ -14,6 +14,8 @@ import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
 // 导入蓝图存储和执行管理器（用于 WebSocket 订阅）
 import { blueprintStore, executionEventEmitter, executionManager, activeWorkers } from './routes/blueprint-api.js';
+// v4.5: 导入 Worker 类型
+import type { AutonomousWorkerExecutor } from '../../blueprint/autonomous-worker.js';
 // v4.0: 导入 SQLite 日志存储
 import { getSwarmLogDB, type WorkerLog, type WorkerStream } from './database/swarm-logs.js';
 
@@ -1582,6 +1584,16 @@ async function handleClientMessage(
     // v3.8: 任务跳过
     case 'task:skip':
       await handleTaskSkip(client, (message.payload as any).blueprintId, (message.payload as any).taskId, swarmSubscriptions);
+      break;
+
+    // v4.4: 用户插嘴 - 向正在执行的任务发送消息
+    case 'task:interject':
+      await handleTaskInterject(
+        client,
+        (message.payload as any).blueprintId,
+        (message.payload as any).taskId,
+        (message.payload as any).message
+      );
       break;
 
     // v3.8: 取消执行
@@ -5006,6 +5018,93 @@ async function handleTaskSkip(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : '任务跳过失败',
+      },
+    });
+  }
+}
+
+/**
+ * v4.4: 处理用户插嘴请求
+ * 用户可以在任务执行过程中向 Worker 发送消息/指令
+ */
+async function handleTaskInterject(
+  client: ClientConnection,
+  blueprintId: string,
+  taskId: string,
+  message: string
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId || !taskId || !message) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少必要参数: blueprintId, taskId, message' },
+      });
+      return;
+    }
+
+    console.log(`[Interject] 用户插嘴: blueprintId=${blueprintId}, taskId=${taskId}, message=${message.substring(0, 50)}...`);
+
+    // 查找正在执行该任务的 Worker
+    let targetWorker: AutonomousWorkerExecutor | null = null;
+    for (const [key, worker] of activeWorkers.entries()) {
+      // v4.5: 使用 getCurrentTaskId() 方法获取当前任务 ID
+      if (key.startsWith(`${blueprintId}:`) && worker.getCurrentTaskId() === taskId) {
+        targetWorker = worker;
+        break;
+      }
+    }
+
+    if (!targetWorker) {
+      console.warn(`[Interject] 找不到执行任务 ${taskId} 的 Worker`);
+      sendMessage(ws, {
+        type: 'task:interject_failed',
+        payload: {
+          blueprintId,
+          taskId,
+          success: false,
+          error: '找不到执行该任务的 Worker，任务可能已完成或尚未开始',
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    // 调用 Worker 的插嘴方法
+    if (typeof targetWorker.interject === 'function') {
+      targetWorker.interject(message);
+      console.log(`[Interject] 消息已发送到 Worker`);
+
+      sendMessage(ws, {
+        type: 'task:interject_success',
+        payload: {
+          blueprintId,
+          taskId,
+          success: true,
+          message: '消息已发送，Worker 将在下一轮对话中处理',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } else {
+      console.warn(`[Interject] Worker 不支持 interject 方法`);
+      sendMessage(ws, {
+        type: 'task:interject_failed',
+        payload: {
+          blueprintId,
+          taskId,
+          success: false,
+          error: 'Worker 不支持插嘴功能',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Interject] 处理插嘴失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '处理插嘴失败',
       },
     });
   }

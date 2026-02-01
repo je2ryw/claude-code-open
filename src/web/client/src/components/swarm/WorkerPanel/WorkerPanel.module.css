@@ -2104,3 +2104,97 @@
     gap: 4px;
   }
 }
+
+/* ============================================================================
+ * v4.4: 用户插嘴输入框样式
+ * ============================================================================ */
+
+.interjectContainer {
+  margin: 12px 0;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+}
+
+.interjectHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.interjectIcon {
+  font-size: 16px;
+}
+
+.interjectTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a5b4fc;
+}
+
+.interjectInputWrapper {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.interjectInput {
+  flex: 1;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  transition: all 0.2s ease;
+}
+
+.interjectInput:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.interjectInput::placeholder {
+  color: #6b7280;
+}
+
+.interjectInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.interjectButton {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.interjectButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.interjectButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.interjectHint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+}

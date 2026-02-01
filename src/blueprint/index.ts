@@ -87,15 +87,10 @@ export {
 } from './model-selector.js';
 
 // ============================================================================
-// 错误处理器（Worker 自愈能力）
+// 集成验证器（v4.0 新增：前后端一致性检查）
 // ============================================================================
 
 export {
-  ErrorHandler,
-  errorHandler,
-  analyzeError,
-  decideErrorAction,
-  createErrorHandler,
-  type ErrorContext,
-  type AutoFixResult,
-} from './error-handler.js';
+  IntegrationValidator,
+  createIntegrationValidator,
+} from './integration-validator.js';

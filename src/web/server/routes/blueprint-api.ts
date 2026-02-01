@@ -56,9 +56,6 @@ import {
   type DependencyOutput,
   // Git 并发
   GitConcurrency,
-  // 错误处理
-  ErrorHandler,
-  createErrorHandler,
 } from '../../../blueprint/index.js';
 
 
@@ -536,6 +533,45 @@ class RealTaskExecutor implements TaskExecutor {
   /** v5.0: 共享的 System Prompt 基础部分（所有 Worker 复用，节省 token） */
   private sharedSystemPromptBase: string;
 
+  /**
+   * v5.0: 获取精简的共享记忆文本
+   */
+  private getCompactMemoryText(): string {
+    const memory = this.blueprint.swarmMemory;
+    if (!memory) {
+      return '';
+    }
+
+    const lines: string[] = ['## 蜂群共享记忆'];
+
+    // 进度概览
+    lines.push(`进度: ${memory.overview}`);
+
+    // API 列表（最多显示 10 个）
+    if (memory.apis?.length > 0) {
+      const apiList = memory.apis
+        .slice(0, 10)
+        .map(a => `${a.method} ${a.path}`)
+        .join(', ');
+      const extra = memory.apis.length > 10 ? ` (+${memory.apis.length - 10})` : '';
+      lines.push(`API: ${apiList}${extra}`);
+    }
+
+    // 已完成任务（最多显示 5 个）
+    if (memory.completedTasks?.length > 0) {
+      lines.push('已完成:');
+      memory.completedTasks.slice(-5).forEach(t => {
+        lines.push(`- ${t.taskName}: ${t.summary?.slice(0, 30) || '完成'}`);
+      });
+    }
+
+    // 蓝图路径提示
+    const blueprintPath = `.blueprint/${this.blueprint.id}.json`;
+    lines.push(`\n详情: Read("${blueprintPath}") 查看完整蓝图和记忆`);
+
+    return lines.join('\n');
+  }
+
   constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
     this.gitConcurrency = gitConcurrency;
     this.blueprint = blueprint;
@@ -872,6 +908,9 @@ class RealTaskExecutor implements TaskExecutor {
         relatedTasks: relatedTasks.length > 0 ? relatedTasks : undefined,
         // v4.1: 主仓库路径 - Reviewer 用（因为 worktree 可能已被删除/合并）
         mainRepoPath: this.blueprint.projectPath,
+        // v5.0: 蜂群共享记忆
+        swarmMemoryText: this.getCompactMemoryText(),
+        blueprintPath: `.blueprint/${this.blueprint.id}.json`,
       };
 
       const result = await worker.execute(task, context);

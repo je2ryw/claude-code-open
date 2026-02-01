@@ -599,6 +599,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     }
   }, [blueprintId, ws.sendAskUserResponse, state.askUserDialog.workerId]);
 
+  // v4.4: 用户插嘴包装（自动注入 blueprintId）
+  const interjectTask = useCallback((taskId: string, message: string) => {
+    if (blueprintId) {
+      ws.interjectTask(blueprintId, taskId, message);
+    }
+  }, [blueprintId, ws.interjectTask]);
+
   return {
     state,
     isLoading,
@@ -615,6 +622,8 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     clearTaskLogs,
     // v4.2: AskUserQuestion 响应
     sendAskUserResponse,
+    // v4.4: 用户插嘴
+    interjectTask,
   };
 }
 

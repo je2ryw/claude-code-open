@@ -3,7 +3,7 @@
  * 支持多平台: Linux (Bubblewrap), macOS (Seatbelt), Windows (无沙箱)
  */
 
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -11,6 +11,36 @@ import { getGlobalAppState } from './planmode.js';
 import type { ToolPermissionContext } from './planmode.js';
 import { escapePathForShell, isWindows } from '../utils/platform.js';
 import { getCurrentCwd } from '../core/cwd-context.js';
+
+// ============ 跨平台进程终止 ============
+
+/** 获取平台适配的终止信号类型 */
+type TermSignal = 'SIGTERM' | 'SIGKILL' | 'SIGINT';
+
+/**
+ * 安全地终止进程（跨平台）
+ * 在Windows上使用taskkill终止进程树，Unix上使用信号
+ */
+function killProcessSafely(proc: ChildProcess, signal: TermSignal = 'SIGTERM'): boolean {
+  try {
+    if (isWindows() && proc.pid) {
+      // Windows: 使用 taskkill 终止进程树
+      try {
+        spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        return true;
+      } catch {
+        // 回退到标准方法
+      }
+    }
+    proc.kill(signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ============ 类型定义 ============
 
@@ -515,7 +545,7 @@ async function executeWithBubblewrap(
 
     const timeoutId = setTimeout(() => {
       killed = true;
-      proc.kill('SIGKILL');
+      killProcessSafely(proc, 'SIGKILL');
     }, timeout);
 
     proc.stdout?.on('data', (data) => {
@@ -604,7 +634,7 @@ async function executeWithSeatbelt(
 
     const timeoutId = setTimeout(() => {
       killed = true;
-      proc.kill('SIGKILL');
+      killProcessSafely(proc, 'SIGKILL');
     }, timeout);
 
     proc.stdout?.on('data', (data) => {
@@ -706,7 +736,10 @@ async function executeDirectly(
 
     const timeoutId = setTimeout(() => {
       killed = true;
-      proc.kill('SIGKILL');
+      // 使用跨平台的进程终止方法
+      // Windows: 使用 taskkill 终止进程树
+      // Unix: 使用 SIGKILL 信号
+      killProcessSafely(proc, 'SIGKILL');
     }, timeout);
 
     proc.stdout?.on('data', (data) => {

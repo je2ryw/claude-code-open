@@ -515,10 +515,27 @@ export class E2ETestAgent extends EventEmitter {
         }
       }
 
-      // 判断步骤是否通过（基于 AI 的响应）
-      const passed = !responseText.toLowerCase().includes('失败') &&
-                     !responseText.toLowerCase().includes('error') &&
-                     !responseText.toLowerCase().includes('failed');
+      // 判断步骤是否通过（基于 AI 响应中的结构化标记）
+      const passedMatch = responseText.match(/\[TEST_RESULT:\s*PASSED\]/i);
+      const failedMatch = responseText.match(/\[TEST_RESULT:\s*FAILED\](.*)$/im);
+
+      let passed: boolean;
+      let failReason: string | undefined;
+
+      if (passedMatch) {
+        passed = true;
+      } else if (failedMatch) {
+        passed = false;
+        failReason = failedMatch[1]?.trim() || '测试未通过';
+      } else {
+        // 如果 AI 没有输出结构化标记，降级使用旧逻辑但更严格
+        // 只有在明确包含失败结论性词汇时才判定失败
+        const hasExplicitFailure = /测试(失败|未通过)|test\s+(failed|failure)/i.test(responseText);
+        passed = !hasExplicitFailure;
+        if (!passed) {
+          failReason = '测试执行未通过（未找到结构化结果标记）';
+        }
+      }
 
       // 检查是否有设计图需要对比
       let designComparison: TestStepResult['designComparison'];
@@ -541,7 +558,7 @@ export class E2ETestAgent extends EventEmitter {
         status: passed ? 'passed' : 'failed',
         duration: Date.now() - startTime,
         designComparison,
-        error: passed ? undefined : '步骤执行结果显示失败',
+        error: passed ? undefined : (failReason || '步骤执行结果显示失败'),
       };
 
     } catch (error) {
@@ -609,7 +626,11 @@ ${step.designImage.description ? `- 描述: ${step.designImage.description}` : '
 `;
     }
 
-    prompt += `完成操作后，请报告测试结果（通过/失败）和观察到的情况。`;
+    prompt += `完成操作后，请报告观察到的情况，并在最后一行使用以下格式输出测试结论：
+- 如果测试通过: [TEST_RESULT: PASSED]
+- 如果测试失败: [TEST_RESULT: FAILED] 原因说明
+
+注意：必须严格使用上述格式，这是自动化判断测试结果的依据。`;
 
     return prompt;
   }

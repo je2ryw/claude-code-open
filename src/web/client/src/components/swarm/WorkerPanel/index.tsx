@@ -64,12 +64,15 @@ export interface SelectedTask {
  * WorkerPanel 组件属性
  * v2.0: queen 变为可选，因为 RealtimeCoordinator 直接调度
  * v2.1: 新增 selectedTask 和 taskLogs 用于显示任务详情和日志
+ * v4.4: 新增 onInterject 用于用户插嘴
  */
 interface WorkerPanelProps {
   queen?: QueenAgent | null;
   workers: WorkerAgent[];
   selectedTask?: SelectedTask | null;
   taskStream?: TaskStreamContent | null;
+  // v4.4: 用户插嘴回调
+  onInterject?: (taskId: string, message: string) => void;
 }
 
 /**
@@ -823,13 +826,71 @@ const WorkerLogSection: React.FC<{
  * 展示所有 Worker Agents 的状态
  * v2.0: Queen 是可选的，仅在提供时显示
  * v2.1: 支持显示选中任务的详情和执行日志
+ * v4.4: 支持用户插嘴（发送消息给正在执行的任务）
  */
-export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskStream }) => {
+export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskStream, onInterject }) => {
+  // v4.4: 用户插嘴输入状态
+  const [interjectInput, setInterjectInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  // 处理插嘴发送
+  const handleInterjectSubmit = () => {
+    if (!interjectInput.trim() || !selectedTask || !onInterject) return;
+
+    setIsSending(true);
+    onInterject(selectedTask.id, interjectInput.trim());
+    setInterjectInput('');
+    // 短暂显示发送状态
+    setTimeout(() => setIsSending(false), 500);
+  };
+
+  // 处理键盘事件
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleInterjectSubmit();
+    }
+  };
+
+  // 是否可以插嘴（任务正在执行）
+  const canInterject = selectedTask && selectedTask.status === 'running' && onInterject;
+
   return (
     <div className={styles.panel}>
       {/* 选中任务详情（优先显示） */}
       {selectedTask && (
         <TaskDetailCard task={selectedTask} workers={workers} stream={taskStream} />
+      )}
+
+      {/* v4.4: 用户插嘴输入框 */}
+      {canInterject && (
+        <div className={styles.interjectContainer}>
+          <div className={styles.interjectHeader}>
+            <span className={styles.interjectIcon}>💬</span>
+            <span className={styles.interjectTitle}>插嘴 (向 Worker 发送指令)</span>
+          </div>
+          <div className={styles.interjectInputWrapper}>
+            <textarea
+              className={styles.interjectInput}
+              value={interjectInput}
+              onChange={(e) => setInterjectInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="输入指令或反馈... (Enter 发送, Shift+Enter 换行)"
+              disabled={isSending}
+              rows={2}
+            />
+            <button
+              className={styles.interjectButton}
+              onClick={handleInterjectSubmit}
+              disabled={!interjectInput.trim() || isSending}
+            >
+              {isSending ? '发送中...' : '发送'}
+            </button>
+          </div>
+          <div className={styles.interjectHint}>
+            提示：Worker 会在下一轮对话中收到您的消息
+          </div>
+        </div>
       )}
 
       {/* Queen 状态卡片（v2.0 可选） */}

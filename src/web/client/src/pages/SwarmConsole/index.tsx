@@ -107,7 +107,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [isRecovering, setIsRecovering] = useState(false);
 
   // WebSocket 状态 - v3.0: 所有数据通过 WebSocket 推送，移除 HTTP 轮询
-  const { state, isLoading, error, refresh, retryTask, skipTask, cancelSwarm, sendAskUserResponse } = useSwarmState({
+  // v4.4: 添加 loadTaskHistoryLogs 用于加载历史聊天记录，添加 interjectTask 用于用户插嘴
+  const { state, isLoading, error, refresh, retryTask, skipTask, cancelSwarm, sendAskUserResponse, loadTaskHistoryLogs, interjectTask } = useSwarmState({
     url: getWebSocketUrl(),
     blueprintId: selectedBlueprintId || undefined,
   });
@@ -219,6 +220,22 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     return state.taskStreams[selectedTaskId] || null;
   }, [selectedTaskId, state.taskStreams]);
 
+  // v4.4: 选中任务时自动加载历史聊天记录
+  useEffect(() => {
+    if (!selectedTaskId || selectedTaskId === 'e2e-test') return;
+
+    // 检查是否已有流式内容，如果没有则从 SQLite 加载历史
+    const existingStream = state.taskStreams[selectedTaskId];
+    if (!existingStream || existingStream.content.length === 0) {
+      console.log(`[SwarmConsole] 加载任务 ${selectedTaskId} 的历史聊天记录...`);
+      loadTaskHistoryLogs(selectedTaskId).then(result => {
+        if (result.success) {
+          console.log(`[SwarmConsole] 历史日志加载成功: ${result.totalLogs} 条日志, ${result.totalStreams} 条流`);
+        }
+      });
+    }
+  }, [selectedTaskId, loadTaskHistoryLogs]);
+
   // v4.1: E2E 测试任务流式内容
   const e2eTaskStream = useMemo(() => {
     const e2eTaskId = state.verification.e2eTaskId;
@@ -227,10 +244,14 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   }, [state.verification.e2eTaskId, state.taskStreams]);
 
   // v4.1: E2E 测试的虚拟任务对象（用于在 Worker 面板显示）
+  // v4.4: 支持点击验收测试区域时选中显示（不再限制只在运行时显示）
   const e2eTask: SelectedTask | null = useMemo(() => {
-    // 只在 E2E 测试运行时显示
+    // 当验收测试被选中时，始终返回 E2E 任务对象
     const isRunning = ['checking_env', 'running_tests', 'fixing'].includes(state.verification.status);
-    if (!isRunning && state.verification.status !== 'passed' && state.verification.status !== 'failed') {
+    const isE2eSelected = selectedTaskId === 'e2e-test';
+
+    // 如果选中了 E2E 测试，或者 E2E 测试正在运行/已完成/失败，都显示
+    if (!isE2eSelected && !isRunning && state.verification.status !== 'passed' && state.verification.status !== 'failed') {
       return null;
     }
     return {
@@ -245,7 +266,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
       needsTest: true,
       workerId: 'e2e-worker',
     };
-  }, [state.verification.status, state.verification.e2eTaskId]);
+  }, [state.verification.status, state.verification.e2eTaskId, selectedTaskId]);
 
   // 开始/恢复执行
   const handleStartOrResumeExecution = async () => {
@@ -805,8 +826,13 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   ))}
 
                   {/* v3.4: 验收测试面板 - 所有任务完成后显示 */}
+                  {/* v4.4: 添加点击选中功能，点击后右侧显示 E2E 测试的聊天界面 */}
                   {executionPlan.status === 'completed' && (
-                    <div className={styles.verificationPanel}>
+                    <div
+                      className={`${styles.verificationPanel} ${selectedTaskId === 'e2e-test' ? styles.selected : ''}`}
+                      onClick={() => setSelectedTaskId('e2e-test')}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <div className={styles.verificationHeader}>
                         <span className={styles.verificationIcon}>
                           {state.verification.status === 'idle' ? '🧪' :
@@ -934,26 +960,38 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
             {isLoading && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {/* v4.1: E2E 测试运行时优先显示 E2E 任务，否则显示选中任务 */}
-            {e2eTask ? (
+            {/* v4.4: 根据选中状态显示对应任务的聊天界面 */}
+            {/* 选中 E2E 测试时显示 E2E 任务，选中普通任务时显示普通任务 */}
+            {selectedTaskId === 'e2e-test' && e2eTask ? (
               <FadeIn>
                 <WorkerPanel
                   queen={null}
                   workers={workers}
                   selectedTask={e2eTask}
                   taskStream={e2eTaskStream}
+                  onInterject={interjectTask}
                 />
               </FadeIn>
-            ) : workers.length === 0 && !selectedTask ? (
+            ) : selectedTask ? (
+              <FadeIn>
+                <WorkerPanel
+                  queen={null}
+                  workers={workers}
+                  selectedTask={selectedTask}
+                  taskStream={selectedTaskStream}
+                  onInterject={interjectTask}
+                />
+              </FadeIn>
+            ) : workers.length === 0 ? (
               <div className={styles.emptyState}>
                 <div className={styles.emptyStateIcon}>👷</div>
                 <div className={styles.emptyStateText}>
                   {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
-                  {selectedBlueprintId && !selectedTask && (
+                  {selectedBlueprintId && (
                     <>
                       <br />
                       <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
-                        点击左侧任务查看详情
+                        点击左侧任务查看执行详情和聊天记录
                       </span>
                     </>
                   )}
@@ -964,8 +1002,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 <WorkerPanel
                   queen={null}
                   workers={workers}
-                  selectedTask={selectedTask}
-                  taskStream={selectedTaskStream}
+                  selectedTask={null}
+                  taskStream={null}
                 />
               </FadeIn>
             )}

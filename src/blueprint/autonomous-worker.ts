@@ -76,6 +76,10 @@ export interface WorkerContext {
   }>;
   /** v4.1: 主仓库路径（Reviewer 用，因为 worktree 可能已删除） */
   mainRepoPath?: string;
+  /** v5.0: 蜂群共享记忆文本（精简版，直接注入 Prompt） */
+  swarmMemoryText?: string;
+  /** v5.0: 蓝图文件路径（Worker 可用 Read 工具查看详情） */
+  blueprintPath?: string;
 }
 
 export type WorkerEventType =
@@ -129,6 +133,8 @@ export class AutonomousWorkerExecutor extends EventEmitter {
   }> = new Map();
   // v4.2: 当前正在执行的任务 ID（用于 ask:request 事件）
   private currentTaskId: string | null = null;
+  // v4.5: 当前执行的 ConversationLoop 实例（用于插嘴功能）
+  private currentLoop: ConversationLoop | null = null;
 
   /**
    * v5.0: 构建共享的 System Prompt 基础部分
@@ -228,6 +234,14 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
   }
 
   /**
+   * v4.5: 获取当前正在执行的任务 ID
+   * 用于 WebSocket 处理器查找执行特定任务的 Worker
+   */
+  getCurrentTaskId(): string | null {
+    return this.currentTaskId;
+  }
+
+  /**
    * v4.2: 响应用户的 AskUserQuestion 请求
    * 由外部调用（如 WebSocket handler）来提供用户的答案
    */
@@ -236,6 +250,46 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     if (resolver) {
       resolver.resolve(response);
       this.pendingAskUserResolvers.delete(requestId);
+    }
+  }
+
+  /**
+   * v4.5: 用户插嘴 - 在任务执行期间注入用户消息
+   *
+   * 工作原理：
+   * 1. 将用户消息添加到当前对话的 Session 中
+   * 2. ConversationLoop 在下一轮 API 调用时会自动包含这条消息
+   * 3. AI 会看到并响应用户的插嘴内容
+   *
+   * @param message 用户要发送给 Worker 的消息
+   * @returns 是否成功注入消息
+   */
+  interject(message: string): boolean {
+    if (!this.currentLoop) {
+      this.log('插嘴失败：当前没有正在执行的任务');
+      return false;
+    }
+
+    try {
+      const session = this.currentLoop.getSession();
+      session.addMessage({
+        role: 'user',
+        content: `[用户插嘴] ${message}`,
+      });
+
+      this.log(`用户插嘴: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
+
+      // 发射事件通知前端
+      this.emit('stream:text', {
+        workerId: this.workerId,
+        task: { id: this.currentTaskId },
+        content: `\n[用户插嘴] ${message}\n`,
+      });
+
+      return true;
+    } catch (error) {
+      this.log(`插嘴失败: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }
 
@@ -320,6 +374,9 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         // v4.2: 使用自定义 askUserHandler 支持 WebUI 交互
         askUserHandler: this.createAskUserHandler(task.id),
       });
+
+      // v4.5: 保存 loop 引用以支持插嘴功能
+      this.currentLoop = loop;
 
       // v3.5: 使用多模态任务提示（当是 UI 任务且有设计图时）
       const taskPrompt = this.buildMultimodalTaskPrompt(task, context);
@@ -541,6 +598,10 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         error: errorMsg,
         decisions,
       };
+    } finally {
+      // v4.5: 清理 loop 引用
+      this.currentLoop = null;
+      this.currentTaskId = null;
     }
   }
 
@@ -821,17 +882,46 @@ ${feedback.suggestions?.length ? `### 修改建议\n${feedback.suggestions.map(s
 `;
     }
 
+    // v5.0: 注入蜂群共享记忆
+    if (context.swarmMemoryText) {
+      prompt += `\n${context.swarmMemoryText}\n`;
+    }
+
+    // v5.0: 根据任务类型给出 summary 引导
+    const summaryGuide = this.getSummaryGuide(task);
+
     prompt += `\n## 执行要求
 1. 首先用 Read 工具查看相关文件，理解现有代码
 2. 使用 Write/Edit 工具完成代码编写
 3. 创建新文件时使用具体名称（如 \`userValidation.ts\`），避免通用名称（如 \`helper.ts\`）
-4. 完成后调用 UpdateTaskStatus(taskId="${task.id}", status="completed")
+4. 完成后调用 UpdateTaskStatus，**必须包含 summary**：
+   UpdateTaskStatus(taskId="${task.id}", status="completed", summary="...")
+   ${summaryGuide}
 5. 如果失败，调用 UpdateTaskStatus(taskId="${task.id}", status="failed", error="错误信息")
 
 ## 开始
 直接使用工具执行任务。`;
 
     return prompt;
+  }
+
+  /**
+   * v5.0: 根据任务类型返回 summary 引导
+   * 帮助 Worker 输出对后续任务有价值的 summary
+   */
+  private getSummaryGuide(task: SmartTask): string {
+    switch (task.category) {
+      case 'backend':
+        return `**后端任务 summary 格式**: 列出 API 路径，如 "API: POST /api/users (创建), GET /api/users/:id (查询)"`;
+      case 'frontend':
+        return `**前端任务 summary 格式**: 列出组件和调用的 API，如 "组件: UserForm, UserList | 调用: POST /api/users"`;
+      case 'shared':
+        return `**共享任务 summary 格式**: 列出导出内容，如 "导出: User (类型), formatDate (函数)"`;
+      case 'database':
+        return `**数据库任务 summary 格式**: 列出表/模型，如 "创建: users 表 (id, name, email)"`;
+      default:
+        return `**summary 格式**: 简要描述完成的内容（供后续任务参考）`;
+    }
   }
 
   /**
