@@ -13,6 +13,23 @@ import { GitUtils, type GitInfo } from '../git/index.js';
 // 会话版本号
 const SESSION_VERSION = '2.0';
 
+// v2.1.27: 全局会话 ID 追踪
+let _currentSessionId: string | null = null;
+
+/**
+ * 获取当前全局会话 ID
+ */
+export function getCurrentSessionId(): string | null {
+  return _currentSessionId;
+}
+
+/**
+ * 设置当前全局会话 ID
+ */
+export function setCurrentSessionId(sessionId: string | null): void {
+  _currentSessionId = sessionId;
+}
+
 export class Session {
   private state: SessionState;
   private messages: Message[] = [];

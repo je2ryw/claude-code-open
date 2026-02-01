@@ -154,6 +154,12 @@ export interface SessionMetadata {
   needsPlanModeExitAttachment?: boolean; // 是否需要在退出时添加附件
   activePlanId?: string; // 当前活跃的计划 ID
   planHistory?: string[]; // 历史计划 ID 列表
+  // v2.1.27: PR 链接相关元数据
+  prNumber?: number; // 关联的 PR 号
+  prUrl?: string; // PR 的完整 URL
+  prRepository?: string; // 仓库名称（格式：owner/repo）
+  // Git 分支相关
+  gitBranch?: string; // 当前 git 分支
 }
 
 export interface SessionData {
@@ -1924,6 +1930,179 @@ export type {
   ListSessionsResult,
   ExportOptions,
 } from './list.js';
+
+// ============ v2.1.27: PR 链接功能 ============
+
+/**
+ * 解析 GitHub PR URL
+ *
+ * 官方 mxY() 函数实现
+ *
+ * @param urlOrNumber PR URL 或编号
+ * @returns PR 信息对象，如果解析失败返回 null
+ */
+export function parseGitHubPrUrl(urlOrNumber: string): {
+  prNumber: number;
+  prUrl: string;
+  prRepository: string;
+} | null {
+  // 尝试解析完整 URL
+  const urlMatch = urlOrNumber.match(/https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (urlMatch?.[1] && urlMatch?.[2]) {
+    return {
+      prNumber: parseInt(urlMatch[2], 10),
+      prUrl: urlOrNumber,
+      prRepository: urlMatch[1],
+    };
+  }
+
+  // 尝试解析纯数字
+  const numMatch = urlOrNumber.match(/^(\d+)$/);
+  if (numMatch?.[1]) {
+    return {
+      prNumber: parseInt(numMatch[1], 10),
+      prUrl: '', // 需要通过 gh cli 获取完整 URL
+      prRepository: '', // 需要通过 git remote 获取
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 将 PR 链接到会话
+ *
+ * 官方 TeY() 函数实现
+ *
+ * @param sessionId 会话 ID
+ * @param prNumber PR 号
+ * @param prUrl PR URL
+ * @param prRepository 仓库名称
+ */
+export function linkSessionToPr(
+  sessionId: string,
+  prNumber: number,
+  prUrl?: string,
+  prRepository?: string
+): boolean {
+  const session = loadSession(sessionId);
+  if (!session) {
+    return false;
+  }
+
+  session.metadata.prNumber = prNumber;
+  if (prUrl) {
+    session.metadata.prUrl = prUrl;
+  }
+  if (prRepository) {
+    session.metadata.prRepository = prRepository;
+  }
+  session.metadata.updatedAt = Date.now();
+  saveSession(session);
+
+  // 发送遥测事件
+  if (process.env.DEBUG) {
+    console.log(`[Session] Linked session ${sessionId} to PR #${prNumber}`);
+  }
+
+  return true;
+}
+
+/**
+ * 获取与 PR 关联的会话列表
+ *
+ * @param prNumber PR 号
+ * @param prRepository 可选的仓库名称过滤
+ * @returns 匹配的会话元数据列表
+ */
+export function getSessionsByPr(
+  prNumber: number,
+  prRepository?: string
+): SessionMetadata[] {
+  const allSessions = listSessions({ limit: 1000 });
+
+  return allSessions.filter((session) => {
+    if (session.prNumber !== prNumber) {
+      return false;
+    }
+    if (prRepository && session.prRepository !== prRepository) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * 通过 PR 号或 URL 查找会话
+ *
+ * @param prIdentifier PR 号或 URL
+ * @returns 最近的匹配会话，如果没有找到返回 null
+ */
+export function findSessionByPr(prIdentifier: string | number): SessionData | null {
+  let prNumber: number;
+  let prRepository: string | undefined;
+
+  if (typeof prIdentifier === 'number') {
+    prNumber = prIdentifier;
+  } else {
+    const parsed = parseGitHubPrUrl(prIdentifier);
+    if (!parsed) {
+      return null;
+    }
+    prNumber = parsed.prNumber;
+    prRepository = parsed.prRepository || undefined;
+  }
+
+  const sessions = getSessionsByPr(prNumber, prRepository);
+  if (sessions.length === 0) {
+    return null;
+  }
+
+  // 返回最近更新的会话
+  const sortedSessions = sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+  return loadSession(sortedSessions[0].id);
+}
+
+/**
+ * 从 gh pr create 输出中提取 PR 信息
+ *
+ * @param output gh pr create 命令的输出
+ * @returns PR 信息对象，如果解析失败返回 null
+ */
+export function parsePrCreateOutput(output: string): {
+  prNumber: number;
+  prUrl: string;
+  prRepository: string;
+} | null {
+  // gh pr create 输出格式：https://github.com/owner/repo/pull/123
+  const match = output.match(/https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (match?.[1] && match?.[2]) {
+    return {
+      prNumber: parseInt(match[2], 10),
+      prUrl: match[0],
+      prRepository: match[1],
+    };
+  }
+  return null;
+}
+
+/**
+ * 设置会话的 git 分支
+ *
+ * @param sessionId 会话 ID
+ * @param branch 分支名称
+ */
+export function setSessionGitBranch(sessionId: string, branch: string): boolean {
+  const session = loadSession(sessionId);
+  if (!session) {
+    return false;
+  }
+
+  session.metadata.gitBranch = branch;
+  session.metadata.updatedAt = Date.now();
+  saveSession(session);
+  return true;
+}
 
 // ============ 导出新增模块 ============
 export * from './resume.js';

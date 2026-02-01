@@ -18,6 +18,8 @@ import { configManager } from '../config/index.js';
 import { isBackgroundTasksDisabled } from '../utils/env-check.js';
 import { escapePathForShell } from '../utils/platform.js';
 import { getCurrentCwd } from '../core/cwd-context.js';
+import { parsePrCreateOutput, linkSessionToPr } from '../session/index.js';
+import { getCurrentSessionId } from '../core/session.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 import { needsElevation, getElevationReason, executeElevated } from '../permissions/elevated-commands.js';
 
@@ -724,6 +726,25 @@ Important:
         elapsedTimeSeconds,
         timeoutMs: maxTimeout,
       };
+
+      // v2.1.27: 检测 gh pr create 命令，自动链接 PR 到当前会话
+      if (command.includes('gh pr create') && result.success && result.output) {
+        const prInfo = parsePrCreateOutput(result.output);
+        if (prInfo) {
+          const sessionId = getCurrentSessionId();
+          if (sessionId) {
+            linkSessionToPr(
+              sessionId,
+              prInfo.prNumber,
+              prInfo.prUrl,
+              prInfo.prRepository
+            );
+            if (process.env.DEBUG) {
+              console.log(`[Bash] Auto-linked session to PR #${prInfo.prNumber}`);
+            }
+          }
+        }
+      }
 
       // 运行 post-tool hooks
       await runPostToolUseHooks('Bash', input, result.output || '');
