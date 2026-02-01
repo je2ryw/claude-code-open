@@ -17,7 +17,7 @@ import { ConversationLoop } from './core/loop.js';
 import { Session } from './core/session.js';
 import { toolRegistry } from './tools/index.js';
 import { configManager } from './config/index.js';
-import { listSessions, loadSession, forkSession } from './session/index.js';
+import { listSessions, loadSession, forkSession, findSessionByPr, getSessionsByPr } from './session/index.js';
 import { getMemoryManager } from './memory/index.js';
 import { emitLifecycleEvent } from './lifecycle/index.js';
 import { runHooks } from './hooks/index.js';
@@ -172,6 +172,7 @@ program
   .option('-c, --continue', 'Continue the most recent conversation')
   .option('-r, --resume [value]', 'Resume by session ID, or open interactive picker')
   .option('--fork-session', 'Create new session ID when resuming')
+  .option('--from-pr [value]', 'Resume a session linked to a PR by PR number/URL, or open interactive picker')
   .option('--no-session-persistence', 'Disable session persistence (only with --print)')
   .option('--session-id <uuid>', 'Use a specific session ID (must be valid UUID)')
   // 模型选项
@@ -722,6 +723,29 @@ async function runTextInterface(
         } else {
           console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
         }
+      }
+    }
+  } else if (options.fromPr !== undefined) {
+    // v2.1.27: 通过 PR 号或 URL 恢复会话
+    if (options.fromPr === true || options.fromPr === '') {
+      // 显示 PR 会话选择器
+      await showPrSessionPicker(loop);
+    } else {
+      // 通过 PR 号或 URL 查找会话
+      const sessionData = findSessionByPr(options.fromPr);
+      if (sessionData) {
+        const session = Session.load(sessionData.metadata.id);
+        if (session) {
+          loop.setSession(session);
+          const prInfo = sessionData.metadata.prNumber
+            ? `PR #${sessionData.metadata.prNumber}`
+            : options.fromPr;
+          console.log(chalk.green(`Resumed session linked to ${prInfo}`));
+        } else {
+          console.log(chalk.yellow(`Failed to load session for PR ${options.fromPr}, starting new session`));
+        }
+      } else {
+        console.log(chalk.yellow(`No session found for PR ${options.fromPr}, starting new session`));
       }
     }
   }
@@ -2184,6 +2208,58 @@ async function showSessionPicker(loop: ConversationLoop): Promise<void> {
         const session = loadSession(sessions[num - 1].id);
         if (session) {
           console.log(chalk.green(`\nResumed session: ${sessions[num - 1].id}\n`));
+        }
+      }
+      resolve();
+    });
+  });
+}
+
+// v2.1.27: PR 会话选择器
+async function showPrSessionPicker(loop: ConversationLoop): Promise<void> {
+  // 获取所有有 PR 链接的会话
+  const allSessions = listSessions({ limit: 100 });
+  const prSessions = allSessions.filter(s => s.prNumber !== undefined);
+
+  if (prSessions.length === 0) {
+    console.log(chalk.yellow('No sessions linked to PRs found.'));
+    return;
+  }
+
+  console.log(chalk.bold('\nSelect a PR-linked session to resume:\n'));
+  prSessions.forEach((s, i) => {
+    const date = new Date(s.updatedAt).toLocaleString();
+    const prInfo = s.prRepository
+      ? `${s.prRepository.split('/')[1]}#${s.prNumber}`
+      : `PR #${s.prNumber}`;
+    console.log(`  ${chalk.cyan(`[${i + 1}]`)} ${prInfo}`);
+    console.log(`      ${chalk.gray(date)} - ${s.messageCount} messages`);
+    if (s.gitBranch) {
+      console.log(`      ${chalk.dim(`Branch: ${s.gitBranch}`)}`);
+    }
+  });
+  console.log();
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question('Enter session number (or press Enter to cancel): ', (answer) => {
+      rl.close();
+      const num = parseInt(answer);
+      if (num >= 1 && num <= prSessions.length) {
+        const sessionData = loadSession(prSessions[num - 1].id);
+        if (sessionData) {
+          const session = Session.load(prSessions[num - 1].id);
+          if (session) {
+            loop.setSession(session);
+            const prInfo = prSessions[num - 1].prRepository
+              ? `${prSessions[num - 1].prRepository?.split('/')[1]}#${prSessions[num - 1].prNumber}`
+              : `PR #${prSessions[num - 1].prNumber}`;
+            console.log(chalk.green(`\nResumed session linked to ${prInfo}\n`));
+          }
         }
       }
       resolve();

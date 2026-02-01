@@ -4,7 +4,7 @@
  */
 
 import { ClaudeClient, type ClientConfig } from './client.js';
-import { Session } from './session.js';
+import { Session, setCurrentSessionId } from './session.js';
 import { toolRegistry } from '../tools/index.js';
 import { runWithCwd, runGeneratorWithCwd } from './cwd-context.js';
 import { isToolSearchEnabled } from '../tools/mcp.js';
@@ -64,6 +64,9 @@ import { modelConfig, type ThinkingConfig } from '../models/index.js';
 import { initAuth, getAuth, ensureOAuthApiKey } from '../auth/index.js';
 import { runPermissionRequestHooks } from '../hooks/index.js';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { setParentModelContext } from '../tools/agent.js';
 import { configManager } from '../config/index.js';
 import { accountUsageManager } from '../ratelimit/index.js';
@@ -100,6 +103,109 @@ const OUTPUT_THRESHOLD = 400000; // 400KB
 
 /** 预览大小（字节） */
 const PREVIEW_SIZE = 2000; // 2KB
+
+// ============================================================================
+// v2.1.27: 调试日志功能 - 工具失败和拒绝记录
+// ============================================================================
+
+/**
+ * 调试日志类型
+ */
+type DebugLogType = 'tool_denied' | 'tool_failed' | 'tool_error' | 'permission_denied';
+
+/**
+ * 调试日志条目
+ */
+interface DebugLogEntry {
+  timestamp: string;
+  type: DebugLogType;
+  toolName?: string;
+  reason?: string;
+  error?: string;
+  input?: unknown;
+  sessionId?: string;
+}
+
+/**
+ * 写入调试日志
+ *
+ * @param entry 调试日志条目
+ */
+function writeDebugLogEntry(entry: DebugLogEntry): void {
+  // 只有在 DEBUG 模式下才记录
+  if (!process.env.DEBUG && !process.env.CLAUDE_CODE_DEBUG) {
+    return;
+  }
+
+  try {
+    const logDir = path.join(os.homedir(), '.claude', 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const logFile = path.join(logDir, 'debug.log');
+    const logLine = JSON.stringify({
+      ...entry,
+      timestamp: entry.timestamp || new Date().toISOString(),
+    }) + '\n';
+
+    fs.appendFileSync(logFile, logLine, 'utf-8');
+  } catch {
+    // 静默忽略日志写入错误
+  }
+}
+
+/**
+ * 记录工具拒绝
+ */
+function logToolDenied(toolName: string, reason: string, sessionId?: string): void {
+  writeDebugLogEntry({
+    timestamp: new Date().toISOString(),
+    type: 'tool_denied',
+    toolName,
+    reason,
+    sessionId,
+  });
+
+  if (process.env.DEBUG) {
+    console.log(chalk.yellow(`[Debug] Tool denied: ${toolName} - ${reason}`));
+  }
+}
+
+/**
+ * 记录工具执行失败
+ */
+function logToolFailed(toolName: string, error: string, input?: unknown, sessionId?: string): void {
+  writeDebugLogEntry({
+    timestamp: new Date().toISOString(),
+    type: 'tool_failed',
+    toolName,
+    error,
+    input,
+    sessionId,
+  });
+
+  if (process.env.DEBUG) {
+    console.log(chalk.red(`[Debug] Tool failed: ${toolName} - ${error}`));
+  }
+}
+
+/**
+ * 记录权限拒绝
+ */
+function logPermissionDenied(toolName: string, reason: string, sessionId?: string): void {
+  writeDebugLogEntry({
+    timestamp: new Date().toISOString(),
+    type: 'permission_denied',
+    toolName,
+    reason,
+    sessionId,
+  });
+
+  if (process.env.DEBUG) {
+    console.log(chalk.yellow(`[Debug] Permission denied: ${toolName} - ${reason}`));
+  }
+}
 
 /**
  * 可清理的工具白名单（官方策略）
@@ -1524,9 +1630,12 @@ export class ConversationLoop {
       }
       return true;
     } else if (hookResult.decision === 'deny') {
+      const reason = hookResult.message || 'No reason provided';
       if (this.options.verbose) {
-        console.log(chalk.red(`[Permission] Denied by hook: ${hookResult.message || 'No reason provided'}`));
+        console.log(chalk.red(`[Permission] Denied by hook: ${reason}`));
       }
+      // v2.1.27: 记录到调试日志
+      logPermissionDenied(toolName, `Denied by hook: ${reason}`, this.session.sessionId);
       return false;
     }
 
@@ -1545,6 +1654,8 @@ export class ConversationLoop {
       if (this.options.verbose) {
         console.log(chalk.red('[Permission] Auto-denied in dontAsk mode'));
       }
+      // v2.1.27: 记录到调试日志
+      logPermissionDenied(toolName, 'Auto-denied in dontAsk mode', this.session.sessionId);
       return false;
     }
 
@@ -1556,6 +1667,8 @@ export class ConversationLoop {
         if (this.options.verbose) {
           console.log(chalk.yellow(`[Permission] Denied in plan mode (non-readonly tool): ${toolName}`));
         }
+        // v2.1.27: 记录到调试日志
+        logPermissionDenied(toolName, 'Denied in plan mode (non-readonly tool)', this.session.sessionId);
         return false;
       }
       // 只读工具在 plan 模式下允许执行
@@ -1682,6 +1795,9 @@ export class ConversationLoop {
     this.session = new Session();
     this.options = options;
     this.promptBuilder = systemPromptBuilder;
+
+    // v2.1.27: 设置全局会话 ID 以供工具使用（如 gh pr create 自动链接）
+    setCurrentSessionId(this.session.sessionId);
 
     // 初始化提示词上下文
     this.promptContext = {
@@ -2030,6 +2146,11 @@ export class ConversationLoop {
 
           if (this.options.verbose) {
             console.log(chalk.gray(result.output || result.error || ''));
+          }
+
+          // v2.1.27: 记录工具执行失败到调试日志
+          if (!result.success && result.error) {
+            logToolFailed(toolName, result.error, toolInput, this.session.sessionId);
           }
 
           // 使用格式化函数处理工具结果
@@ -2382,6 +2503,11 @@ Guidelines:
             toolError: result.success ? undefined : result.error,
           };
 
+          // v2.1.27: 记录工具执行失败到调试日志
+          if (!result.success && result.error) {
+            logToolFailed(tool.name, result.error, input, this.session.sessionId);
+          }
+
           assistantContent.push({
             type: 'tool_use',
             id,
@@ -2452,6 +2578,8 @@ Guidelines:
 
   setSession(session: Session): void {
     this.session = session;
+    // v2.1.27: 设置全局会话 ID 以供工具使用（如 gh pr create 自动链接）
+    setCurrentSessionId(session.sessionId);
   }
 
   /**
