@@ -45,6 +45,7 @@ program
   .option('-H, --host <host>', '服务器主机', '127.0.0.1')
   .option('-m, --model <model>', '默认模型 (opus/sonnet/haiku)', 'sonnet')
   .option('-d, --dir <directory>', '工作目录', process.cwd())
+  .option('--ngrok', '启用 ngrok 公网隧道 (需要 NGROK_AUTHTOKEN 环境变量)', false)
   .action(async (options) => {
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
@@ -62,6 +63,7 @@ program
         host: options.host,
         model: options.model,
         cwd: options.dir,
+        ngrok: options.ngrok,
       });
     } catch (error) {
       console.error('启动失败:', error);

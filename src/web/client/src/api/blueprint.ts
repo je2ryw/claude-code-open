@@ -1072,3 +1072,131 @@ export const aiHoverApi = {
     return handleResponse(response);
   },
 };
+
+// ============================================================================
+// v4.0: 执行日志 API
+// ============================================================================
+
+export interface WorkerLog {
+  id: string;
+  blueprintId: string;
+  taskId: string;
+  workerId: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  type: 'tool' | 'decision' | 'status' | 'output' | 'error';
+  message: string;
+  details?: any;
+}
+
+export interface WorkerStream {
+  id: string;
+  blueprintId: string;
+  taskId: string;
+  workerId: string;
+  timestamp: string;
+  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolResult?: string;
+  toolError?: string;
+}
+
+export interface TaskExecution {
+  id: string;
+  blueprintId: string;
+  taskId: string;
+  taskName: string;
+  workerId: string;
+  attempt: number;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+  reviewFeedback?: any;
+}
+
+export interface TaskLogsResponse {
+  taskId: string;
+  executions: TaskExecution[];
+  logs: WorkerLog[];
+  streams: WorkerStream[];
+  totalLogs: number;
+  totalStreams: number;
+}
+
+export interface LogsStatsResponse {
+  totalExecutions: number;
+  totalLogs: number;
+  totalStreams: number;
+  dbSizeBytes: number;
+  dbSizeMB: string;
+}
+
+/**
+ * 执行日志 API
+ */
+export const logsApi = {
+  /**
+   * 获取任务执行日志
+   */
+  getTaskLogs: async (
+    taskId: string,
+    options?: { limit?: number; offset?: number; since?: string; until?: string }
+  ): Promise<TaskLogsResponse> => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.offset) params.set('offset', options.offset.toString());
+    if (options?.since) params.set('since', options.since);
+    if (options?.until) params.set('until', options.until);
+
+    const url = `/api/blueprint/logs/task/${taskId}${params.toString() ? `?${params}` : ''}`;
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取蓝图所有执行日志
+   */
+  getBlueprintLogs: async (
+    blueprintId: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ blueprintId: string; executions: TaskExecution[]; logs: WorkerLog[]; totalExecutions: number; totalLogs: number }> => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.offset) params.set('offset', options.offset.toString());
+
+    const url = `/api/blueprint/logs/blueprint/${blueprintId}${params.toString() ? `?${params}` : ''}`;
+    const response = await fetch(url);
+    return handleResponse(response);
+  },
+
+  /**
+   * 清空任务日志
+   */
+  clearTaskLogs: async (
+    taskId: string,
+    keepLatest: boolean = false
+  ): Promise<{ taskId: string; deletedCount: number }> => {
+    const url = `/api/blueprint/logs/task/${taskId}?keepLatest=${keepLatest}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+
+  /**
+   * 获取日志统计信息
+   */
+  getStats: async (): Promise<LogsStatsResponse> => {
+    const response = await fetch('/api/blueprint/logs/stats');
+    return handleResponse(response);
+  },
+
+  /**
+   * 手动触发日志清理
+   */
+  cleanup: async (): Promise<{ deletedCount: number; message: string }> => {
+    const response = await fetch('/api/blueprint/logs/cleanup', { method: 'POST' });
+    return handleResponse(response);
+  },
+};

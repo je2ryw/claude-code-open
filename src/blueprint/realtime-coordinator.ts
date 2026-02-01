@@ -85,7 +85,7 @@ export interface TaskExecutor {
 
 const getDefaultConfig = (): SwarmConfig => ({
   maxWorkers: 5,
-  workerTimeout: 600000,  // 10分钟
+  workerTimeout: 1200000,  // 20分钟（Worker 执行 + Reviewer 审查）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
   simpleTaskModel: 'sonnet',
@@ -200,29 +200,35 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   /**
-   * 从项目目录恢复执行
-   * 从 {projectPath}/.claude/execution-state.json 加载状态并继续执行
-   * @param projectPath 项目路径
+   * v3.0: 从当前状态继续执行
+   * 在调用 restoreFromState() 恢复状态后，调用此方法继续执行
    */
-  async resume(projectPath: string): Promise<ExecutionResult> {
+  async continueExecution(): Promise<ExecutionResult> {
     // 验证执行器已设置
     if (!this.taskExecutor) {
       throw new Error('任务执行器未设置，请先调用 setTaskExecutor()');
     }
 
-    // 加载保存的状态
-    const savedState = this.loadExecutionState(projectPath);
-    if (!savedState) {
-      throw new Error(`项目 ${projectPath} 没有可恢复的执行状态`);
+    // 验证已有计划
+    if (!this.currentPlan) {
+      throw new Error('没有执行计划，请先调用 restoreFromState()');
     }
 
-    // 从状态恢复（包含完整的 ExecutionPlan）
-    this.restoreFromState(savedState);
+    const plan = this.currentPlan;
+    const startGroupIndex = this.currentGroupIndex;
 
-    const plan = this.currentPlan!;
-    const startGroupIndex = savedState.currentGroupIndex;
+    console.log(`[RealtimeCoordinator] 从第 ${startGroupIndex + 1} 组继续执行`);
 
-    console.log(`[RealtimeCoordinator] 从保存的状态恢复执行，从第 ${startGroupIndex + 1} 组开始`);
+    // 计算已完成和失败的任务数
+    let completedCount = 0;
+    let failedCount = 0;
+    this.taskResults.forEach((result) => {
+      if (result.success) {
+        completedCount++;
+      } else if (result.error !== '任务被跳过') {
+        failedCount++;
+      }
+    });
 
     // 发送计划恢复事件
     this.emitEvent('plan:resumed', {
@@ -231,11 +237,11 @@ export class RealtimeCoordinator extends EventEmitter {
       totalTasks: plan.tasks.length,
       parallelGroups: plan.parallelGroups.length,
       resumedFrom: startGroupIndex,
-      completedTasks: savedState.completedTaskIds.length,
-      failedTasks: savedState.failedTaskIds.length,
+      completedTasks: completedCount,
+      failedTasks: failedCount,
     });
 
-    // v2.3: 标记执行循环开始
+    // 标记执行循环开始
     this.isExecuting = true;
     return this.executeFromGroup(startGroupIndex);
   }
@@ -450,20 +456,69 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   /**
-   * 运行时跳过任务
-   * 如果任务尚未执行，则跳过
+   * v3.8: 跳过失败的任务
+   * 将任务标记为跳过，然后检查是否可以继续执行下一组
+   * @param taskId 要跳过的任务 ID
+   * @returns 是否成功跳过
    */
-  skipTask(taskId: string): void {
-    const existing = this.taskModifications.get(taskId) || {};
-    this.taskModifications.set(taskId, { ...existing, skip: true });
+  skipTask(taskId: string): boolean {
+    if (!this.currentPlan) {
+      console.warn('[RealtimeCoordinator] 无法跳过任务：没有执行计划');
+      return false;
+    }
+
+    const task = this.currentPlan.tasks.find(t => t.id === taskId);
+    if (!task) {
+      console.warn(`[RealtimeCoordinator] 无法跳过任务：找不到任务 ${taskId}`);
+      return false;
+    }
+
+    // 只能跳过失败或待执行的任务
+    if (task.status !== 'failed' && task.status !== 'pending') {
+      console.warn(`[RealtimeCoordinator] 无法跳过任务：任务 ${taskId} 状态为 ${task.status}`);
+      return false;
+    }
+
+    console.log(`[RealtimeCoordinator] 跳过任务: ${task.name} (${taskId})`);
 
     // 更新任务状态
-    this.updateTaskStatus(taskId, 'skipped');
+    task.status = 'skipped';
+    task.completedAt = new Date();
 
+    // 标记为跳过
+    this.taskModifications.set(taskId, {
+      ...this.taskModifications.get(taskId),
+      skip: true,
+    });
+
+    // 记录跳过结果
+    this.taskResults.set(taskId, {
+      success: false,
+      changes: [],
+      decisions: [],
+      error: '任务被跳过',
+    });
+
+    // 发送任务跳过事件
     this.emitEvent('task:skipped', {
       taskId,
-      reason: '用户跳过',
+      taskName: task.name,
     });
+
+    // 发送进度更新
+    this.emitProgressUpdate();
+
+    // 保存状态
+    if (this.autoSaveEnabled && this.projectPath) {
+      this.saveExecutionState();
+    }
+
+    // 检查是否可以继续执行下一组
+    if (!this.isExecuting && !this.isPaused && !this.isCancelled) {
+      this.checkAndContinueExecution(taskId);
+    }
+
+    return true;
   }
 
   /**
@@ -507,10 +562,11 @@ export class RealtimeCoordinator extends EventEmitter {
 
     console.log(`[RealtimeCoordinator] 开始重试任务: ${task.name} (${taskId})`);
 
-    // 重置任务状态
+    // 重置任务状态（保留 lastReviewFeedback 和 attemptCount，供 Worker 参考）
     task.status = 'pending';
     task.startedAt = undefined;
     task.completedAt = undefined;
+    // 注意：不清除 task.lastReviewFeedback 和 task.attemptCount
 
     // 清除之前的任务结果
     this.taskResults.delete(taskId);
@@ -552,6 +608,11 @@ export class RealtimeCoordinator extends EventEmitter {
       this.taskResults.set(task.id, result);
       this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
 
+      // v3.7: 如果任务失败且有 Review 反馈，保存到任务中供下次重试使用
+      if (!result.success && result.reviewFeedback) {
+        this.saveReviewFeedbackToTask(task.id, result.reviewFeedback);
+      }
+
       // 发送任务完成/失败事件
       this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
         taskId: task.id,
@@ -569,6 +630,12 @@ export class RealtimeCoordinator extends EventEmitter {
       this.emitProgressUpdate();
 
       console.log(`[RealtimeCoordinator] 任务重试${result.success ? '成功' : '失败'}: ${task.name}`);
+
+      // v3.8: 如果重试成功且执行循环已停止，检查是否可以继续执行下一组
+      if (result.success && !this.isExecuting && !this.isPaused && !this.isCancelled) {
+        this.checkAndContinueExecution(taskId);
+      }
+
       return result.success;
 
     } catch (error: any) {
@@ -603,6 +670,72 @@ export class RealtimeCoordinator extends EventEmitter {
       this.emitEvent('worker:idle', {
         workerId: worker.id,
       });
+    }
+  }
+
+  /**
+   * v3.8: 检查当前组是否全部完成，如果是则自动继续执行下一组
+   * 解决：手动重试成功后不自动滚动到下一组的问题
+   */
+  private checkAndContinueExecution(retriedTaskId: string): void {
+    if (!this.currentPlan) return;
+
+    const plan = this.currentPlan;
+    const currentGroup = plan.parallelGroups[this.currentGroupIndex];
+
+    if (!currentGroup) return;
+
+    // 获取当前组的所有任务
+    const groupTasks = this.getTasksForGroup(currentGroup);
+
+    // 检查组内是否所有任务都已完成（成功或被跳过）
+    const allTasksCompleted = groupTasks.every(task => {
+      const result = this.taskResults.get(task.id);
+      // 已成功，或被跳过，或状态为 completed/skipped
+      return result?.success ||
+             result?.error === '任务被跳过' ||
+             task.status === 'completed' ||
+             task.status === 'skipped';
+    });
+
+    if (allTasksCompleted) {
+      console.log(`[RealtimeCoordinator] 并行组 ${this.currentGroupIndex + 1} 全部完成，自动继续执行下一组`);
+
+      // 检查是否还有下一组
+      if (this.currentGroupIndex + 1 < plan.parallelGroups.length) {
+        // 发送组完成事件
+        this.emitEvent('plan:group_completed', {
+          planId: plan.id,
+          groupIndex: this.currentGroupIndex,
+          message: '重试后组全部完成',
+        });
+
+        // 更新到下一组索引
+        this.currentGroupIndex++;
+
+        // 启动执行循环继续执行
+        this.isExecuting = true;
+        this.executeFromGroup(this.currentGroupIndex).catch(err => {
+          console.error('[RealtimeCoordinator] 自动继续执行失败:', err);
+        });
+      } else {
+        // 所有组都完成了
+        console.log('[RealtimeCoordinator] 所有并行组已完成');
+        const success = this.issues.filter(i => i.type === 'error' && !i.resolved).length === 0;
+        this.emitEvent(success ? 'plan:completed' : 'plan:failed', {
+          planId: plan.id,
+          success,
+          totalCost: this.currentCost,
+        });
+      }
+    } else {
+      // 当前组还有未完成的任务，记录日志
+      const pendingTasks = groupTasks.filter(task => {
+        const result = this.taskResults.get(task.id);
+        return !result?.success && result?.error !== '任务被跳过' &&
+               task.status !== 'completed' && task.status !== 'skipped';
+      });
+      console.log(`[RealtimeCoordinator] 并行组 ${this.currentGroupIndex + 1} 还有 ${pendingTasks.length} 个任务未完成`);
     }
   }
 
@@ -738,103 +871,225 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   /**
-   * 执行单个任务
+   * 执行单个任务（支持自动重试）
+   * v3.7: 任务失败时自动重试，最多 maxRetries 次
    */
   private async executeSingleTask(task: SmartTask): Promise<TaskResult & { taskId: string }> {
-    // 应用运行时修改
-    const modifiedTask = this.applyTaskModifications(task);
+    const maxRetries = this.config.maxRetries || 3;
 
-    // 创建 Worker
-    const worker = this.createWorker();
-    worker.currentTaskId = task.id;
-    this.activeWorkers.set(worker.id, worker);
+    // 自动重试循环
+    while (true) {
+      const currentAttempt = task.attemptCount || 0;
 
-    // 发送任务开始事件
-    this.emitEvent('task:started', {
-      taskId: task.id,
-      workerId: worker.id,
-      taskName: modifiedTask.name,
-    });
+      // 检查是否超过最大重试次数
+      if (currentAttempt >= maxRetries) {
+        console.log(`[RealtimeCoordinator] 任务 ${task.name} 已达到最大重试次数 (${maxRetries})，不再重试`);
+        // 返回最后一次的失败结果
+        const lastResult = this.taskResults.get(task.id);
+        return {
+          taskId: task.id,
+          success: false,
+          changes: lastResult?.changes || [],
+          decisions: lastResult?.decisions || [],
+          error: lastResult?.error || `已重试 ${maxRetries} 次仍然失败`,
+        };
+      }
 
-    // 任务开始时保存状态
-    if (this.autoSaveEnabled && this.projectPath) {
-      this.saveExecutionState();
-    }
+      // 应用运行时修改
+      const modifiedTask = this.applyTaskModifications(task);
 
-    try {
-      // 更新任务状态
-      this.updateTaskStatus(task.id, 'running');
+      // 创建 Worker
+      const worker = this.createWorker();
+      worker.currentTaskId = task.id;
+      this.activeWorkers.set(worker.id, worker);
 
-      // 执行任务（带超时）
-      const result = await this.executeTaskWithTimeout(modifiedTask, worker.id);
-
-      // 更新成本
-      this.currentCost += this.estimateTaskCost(modifiedTask);
-
-      // v2.4: 立即更新 taskResults，确保 saveExecutionState 保存最新状态
-      const taskResult = { ...result, taskId: task.id };
-      this.taskResults.set(task.id, result);
-      this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
-
-      // 发送任务完成事件
-      this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
+      // 发送任务开始事件
+      this.emitEvent('task:started', {
         taskId: task.id,
         workerId: worker.id,
-        success: result.success,
-        error: result.error,
+        taskName: modifiedTask.name,
+        attempt: currentAttempt + 1,  // v3.7: 发送当前尝试次数
       });
 
-      // 任务完成时保存状态（现在 taskResults 已更新）
+      // 任务开始时保存状态
       if (this.autoSaveEnabled && this.projectPath) {
         this.saveExecutionState();
       }
 
-      // 发送单任务进度更新
-      this.emitProgressUpdate();
+      try {
+        // 更新任务状态（这会增加 attemptCount）
+        this.updateTaskStatus(task.id, 'running');
 
-      return taskResult;
+        // 执行任务（带超时）
+        const result = await this.executeTaskWithTimeout(modifiedTask, worker.id);
 
-    } catch (error: any) {
-      // 添加问题记录
-      this.addIssue(task.id, 'error', error.message || '任务执行异常');
+        // 更新成本
+        this.currentCost += this.estimateTaskCost(modifiedTask);
 
-      // v2.4: 立即更新 taskResults
-      const failedResult: TaskResult = {
-        success: false,
-        changes: [],
-        decisions: [],
-        error: error.message || '未知错误',
-      };
-      this.taskResults.set(task.id, failedResult);
-      this.updateTaskStatus(task.id, 'failed');
+        // v2.4: 立即更新 taskResults，确保 saveExecutionState 保存最新状态
+        const taskResult = { ...result, taskId: task.id };
+        this.taskResults.set(task.id, result);
+        this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
 
-      this.emitEvent('task:failed', {
-        taskId: task.id,
-        workerId: worker.id,
-        error: error.message,
-      });
+        // v3.7: 如果任务失败且有 Review 反馈，保存到任务中供重试使用
+        if (!result.success && result.reviewFeedback) {
+          this.saveReviewFeedbackToTask(task.id, result.reviewFeedback);
+        }
 
-      // 任务失败时保存状态（现在 taskResults 已更新）
-      if (this.autoSaveEnabled && this.projectPath) {
-        this.saveExecutionState();
+        // 发送任务完成/失败事件
+        this.emitEvent(result.success ? 'task:completed' : 'task:failed', {
+          taskId: task.id,
+          workerId: worker.id,
+          success: result.success,
+          error: result.error,
+        });
+
+        // 任务完成时保存状态（现在 taskResults 已更新）
+        if (this.autoSaveEnabled && this.projectPath) {
+          this.saveExecutionState();
+        }
+
+        // 发送单任务进度更新
+        this.emitProgressUpdate();
+
+        // 清理 Worker
+        this.activeWorkers.delete(worker.id);
+        this.emitEvent('worker:idle', { workerId: worker.id });
+
+        // v3.7: 如果任务成功或不需要重试，返回结果
+        if (result.success) {
+          return taskResult;
+        }
+
+        // v3.7: 检查是否应该自动重试
+        const shouldAutoRetry = this.shouldAutoRetry(task, result);
+        if (!shouldAutoRetry) {
+          console.log(`[RealtimeCoordinator] 任务 ${task.name} 失败但不适合自动重试`);
+          return taskResult;
+        }
+
+        // v3.7: 自动重试 - 重置任务状态，继续循环
+        console.log(`[RealtimeCoordinator] 任务 ${task.name} 失败，自动重试 (第 ${(task.attemptCount || 0) + 1}/${maxRetries} 次)`);
+        task.status = 'pending';
+        task.startedAt = undefined;
+        task.completedAt = undefined;
+        // 保留 lastReviewFeedback 和 attemptCount
+
+        // 发送重试事件
+        this.emitEvent('task:auto_retry', {
+          taskId: task.id,
+          attempt: task.attemptCount || 0,
+          maxRetries,
+          reason: result.reviewFeedback?.reasoning || result.error,
+        });
+
+        // 短暂延迟，避免立即重试
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // 继续循环，重新执行
+        continue;
+
+      } catch (error: any) {
+        const errorMsg = error.message || '任务执行异常';
+        const isTimeout = errorMsg.includes('超时') || errorMsg.toLowerCase().includes('timeout');
+
+        // 添加问题记录
+        this.addIssue(task.id, isTimeout ? 'timeout' : 'error', errorMsg);
+
+        // v2.4: 立即更新 taskResults
+        const failedResult: TaskResult = {
+          success: false,
+          changes: [],
+          decisions: [],
+          error: errorMsg,
+        };
+        this.taskResults.set(task.id, failedResult);
+        this.updateTaskStatus(task.id, 'failed');
+
+        this.emitEvent('task:failed', {
+          taskId: task.id,
+          workerId: worker.id,
+          error: errorMsg,
+        });
+
+        // 任务失败时保存状态（现在 taskResults 已更新）
+        if (this.autoSaveEnabled && this.projectPath) {
+          this.saveExecutionState();
+        }
+
+        // 发送单任务进度更新
+        this.emitProgressUpdate();
+
+        // 清理 Worker
+        this.activeWorkers.delete(worker.id);
+        this.emitEvent('worker:idle', { workerId: worker.id });
+
+        // v3.8: 超时异常也应该自动重试（之前直接返回，不给重试机会）
+        if (isTimeout && (task.attemptCount || 0) < maxRetries) {
+          console.log(`[RealtimeCoordinator] 任务 ${task.name} 超时，自动重试 (第 ${(task.attemptCount || 0) + 1}/${maxRetries} 次)`);
+
+          // 重置任务状态，继续循环重试
+          task.status = 'pending';
+          task.startedAt = undefined;
+          task.completedAt = undefined;
+
+          // 发送重试事件
+          this.emitEvent('task:auto_retry', {
+            taskId: task.id,
+            attempt: task.attemptCount || 0,
+            maxRetries,
+            reason: '任务超时',
+          });
+
+          // 延迟后重试（给系统一些恢复时间）
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;  // 继续重试循环
+        }
+
+        // 非超时异常或已达最大重试次数，直接返回
+        return {
+          taskId: task.id,
+          ...failedResult,
+        };
       }
-
-      // 发送单任务进度更新
-      this.emitProgressUpdate();
-
-      return {
-        taskId: task.id,
-        ...failedResult,
-      };
-
-    } finally {
-      // 清理 Worker
-      this.activeWorkers.delete(worker.id);
-      this.emitEvent('worker:idle', {
-        workerId: worker.id,
-      });
     }
   }
+
+  /**
+   * v3.7: 判断任务是否应该自动重试
+   */
+  private shouldAutoRetry(task: SmartTask, result: TaskResult): boolean {
+    // 1. 检查是否有 Review 反馈（needs_revision 适合重试）
+    if (result.reviewFeedback?.verdict === 'needs_revision') {
+      return true;
+    }
+
+    // 2. 某些错误类型不适合重试
+    const errorMsg = result.error?.toLowerCase() || '';
+    const noRetryPatterns = [
+      'permission denied',
+      'authentication failed',
+      'quota exceeded',
+      'rate limit',
+      'invalid api key',
+      '无法访问',
+      '权限不足',
+    ];
+    if (noRetryPatterns.some(pattern => errorMsg.includes(pattern))) {
+      return false;
+    }
+
+    // 3. 如果有 Review 反馈且是 failed（不是 needs_revision），可能是根本性问题
+    if (result.reviewFeedback?.verdict === 'failed') {
+      // 根据 confidence 判断
+      // 这里简化处理：failed 也允许重试一次
+      return true;
+    }
+
+    // 4. 默认：允许重试
+    return true;
+  }
+
 
   /**
    * 带超时执行任务
@@ -925,8 +1180,25 @@ export class RealtimeCoordinator extends EventEmitter {
    * 检查任务是否应该跳过
    */
   private shouldSkipTask(taskId: string): boolean {
+    // 1. 检查是否被标记为跳过
     const modification = this.taskModifications.get(taskId);
-    return modification?.skip === true;
+    if (modification?.skip === true) {
+      return true;
+    }
+
+    // 2. v3.8: 检查任务是否已完成（避免重复执行）
+    const task = this.currentPlan?.tasks.find(t => t.id === taskId);
+    if (task?.status === 'completed') {
+      return true;
+    }
+
+    // 3. 检查任务结果是否已成功（双重保险）
+    const result = this.taskResults.get(taskId);
+    if (result?.success) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -953,9 +1225,34 @@ export class RealtimeCoordinator extends EventEmitter {
       task.status = status;
       if (status === 'running') {
         task.startedAt = new Date();
+        // v3.7: 增加尝试次数
+        task.attemptCount = (task.attemptCount || 0) + 1;
       } else if (status === 'completed' || status === 'failed' || status === 'skipped') {
         task.completedAt = new Date();
       }
+    }
+  }
+
+  /**
+   * v3.7: 保存 Review 反馈到任务，供重试时使用
+   */
+  private saveReviewFeedbackToTask(
+    taskId: string,
+    feedback: {
+      verdict: 'failed' | 'needs_revision';
+      reasoning: string;
+      issues?: string[];
+      suggestions?: string[];
+    }
+  ): void {
+    if (!this.currentPlan) return;
+    const task = this.currentPlan.tasks.find(t => t.id === taskId);
+    if (task) {
+      task.lastReviewFeedback = {
+        ...feedback,
+        timestamp: new Date(),
+      };
+      console.log(`[RealtimeCoordinator] 保存 Review 反馈到任务 ${taskId}:`, feedback.verdict);
     }
   }
 

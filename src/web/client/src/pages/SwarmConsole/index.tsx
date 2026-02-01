@@ -161,7 +161,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   const [isRecovering, setIsRecovering] = useState(false);
 
   // WebSocket 状态
-  const { state, isLoading, error, refresh, retryTask } = useSwarmState({
+  const { state, isLoading, error, refresh, retryTask, skipTask, cancelSwarm } = useSwarmState({
     url: getWebSocketUrl(),
     blueprintId: selectedBlueprintId || undefined,
   });
@@ -564,6 +564,18 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 {isStartingExecution ? '⏳' : '▶️'}
               </button>
               <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
+              <button
+                className={styles.iconButton}
+                title="取消执行"
+                onClick={() => {
+                  if (selectedBlueprintId && confirm('确定要取消执行吗？这将停止所有正在进行的任务。')) {
+                    cancelSwarm(selectedBlueprintId);
+                  }
+                }}
+                style={{ color: '#f44336' }}
+              >
+                ❌
+              </button>
             </div>
           </div>
 
@@ -812,6 +824,22 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                                   title={task.status === 'failed' ? '重试此任务' : '重试（有错误记录）'}
                                 >
                                   🔄 重试
+                                </button>
+                              )}
+                              {/* v3.8: 失败任务跳过按钮 */}
+                              {task.status === 'failed' && selectedBlueprintId && (
+                                <button
+                                  className={styles.retryTaskButton}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`确定要跳过任务 "${task.name}" 吗？跳过后将继续执行下一组任务。`)) {
+                                      skipTask(selectedBlueprintId, task.id);
+                                    }
+                                  }}
+                                  title="跳过此任务"
+                                  style={{ background: '#ff9800' }}
+                                >
+                                  ⏭️ 跳过
                                 </button>
                               )}
                             </div>

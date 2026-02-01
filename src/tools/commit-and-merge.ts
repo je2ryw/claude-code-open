@@ -26,6 +26,16 @@ export interface CommitAndMergeResult extends ToolResult {
   needsHumanReview?: boolean;
   /** 分支名称 */
   branchName?: string;
+  /** v3.9: 冲突文件详情 - 供 Worker 自己解决 */
+  conflictDetails?: Array<{
+    path: string;
+    /** 带冲突标记的完整内容 */
+    conflictContent: string;
+    /** 主分支内容 */
+    oursContent: string;
+    /** Worker 分支内容 */
+    theirsContent: string;
+  }>;
 }
 
 /**
@@ -40,7 +50,17 @@ export interface MergeContext {
     mergeWorkerBranch(workerId: string, taskDescription?: string): Promise<{
       success: boolean;
       branchName: string;
-      conflict?: { files: string[]; description: string };
+      conflict?: {
+        files: string[];
+        description: string;
+        /** v3.9: 冲突文件详情 */
+        fileDetails?: Array<{
+          path: string;
+          conflictContent: string;
+          oursContent: string;
+          theirsContent: string;
+        }>;
+      };
       needsHumanReview: boolean;
     }>;
     getWorkerWorkingDir(workerId: string): string | undefined;
@@ -152,12 +172,23 @@ export class CommitAndMergeTool extends BaseTool<CommitAndMergeInput, CommitAndM
           branchName: mergeResult.branchName,
         };
       } else {
-        // 合并失败
+        // 合并失败 - v3.9: 返回冲突详情供 Worker 解决
+        const conflictDetails = mergeResult.conflict?.fileDetails;
+        let errorMsg = `合并失败: ${mergeResult.conflict?.description || '未知冲突'}`;
+
+        // 如果有冲突详情，添加解决提示
+        if (conflictDetails && conflictDetails.length > 0) {
+          errorMsg += '\n\n你可以查看 conflictDetails 中的冲突内容，然后：';
+          errorMsg += '\n1. 用 Write 工具直接写入正确的合并结果到冲突文件';
+          errorMsg += '\n2. 再次调用 CommitAndMergeChanges 完成合并';
+        }
+
         return {
           success: false,
-          error: `合并失败: ${mergeResult.conflict?.description || '未知冲突'}`,
+          error: errorMsg,
           merged: false,
           conflictFiles: mergeResult.conflict?.files,
+          conflictDetails,
           needsHumanReview: mergeResult.needsHumanReview,
           branchName: mergeResult.branchName,
         };

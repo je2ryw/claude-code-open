@@ -133,6 +133,10 @@ export type ClientMessage =
   | { type: 'worker:terminate'; payload: { workerId: string } }
   // v2.1: 任务重试
   | { type: 'task:retry'; payload: { blueprintId: string; taskId: string } }
+  // v3.8: 任务跳过
+  | { type: 'task:skip'; payload: { blueprintId: string; taskId: string } }
+  // v3.8: 取消执行
+  | { type: 'swarm:cancel'; payload: { blueprintId: string } }
   // 持续开发消息
   | { type: 'continuous_dev:start'; payload: { requirement: string } }
   | { type: 'continuous_dev:status' }
@@ -225,6 +229,11 @@ export type ServerMessage =
   // v2.1: 任务重试响应
   | { type: 'task:retry_success'; payload: { blueprintId: string; taskId: string; success: true; timestamp: string } }
   | { type: 'task:retry_failed'; payload: { blueprintId: string; taskId: string; success: false; error: string; timestamp: string } }
+  // v3.8: 任务跳过响应
+  | { type: 'task:skip_success'; payload: { blueprintId: string; taskId: string; success: true; timestamp: string } }
+  | { type: 'task:skip_failed'; payload: { blueprintId: string; taskId: string; success: false; error: string; timestamp: string } }
+  // v3.8: 取消执行响应
+  | { type: 'swarm:cancelled'; payload: { blueprintId: string; success: boolean; timestamp: string } }
   // 持续开发消息
   | { type: 'continuous_dev:ack'; payload: { message: string } }
   | { type: 'continuous_dev:status_update'; payload: any }

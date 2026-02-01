@@ -1068,6 +1068,7 @@ export class GitConcurrency extends EventEmitter {
 
   /**
    * 解析冲突信息
+   * v3.9: 增加 fileDetails，返回冲突文件的完整内容供 Worker 解决
    */
   private async parseConflict(): Promise<ConflictInfo> {
     // 获取冲突文件列表
@@ -1088,10 +1089,34 @@ export class GitConcurrency extends EventEmitter {
       suggestedResolution = `大量文件存在冲突，建议回退此分支的更改或重新规划任务分配，避免多个Worker修改相同文件。`;
     }
 
+    // v3.9: 读取冲突文件的详细内容，供 Worker 自己解决
+    const fileDetails: ConflictInfo['fileDetails'] = [];
+    for (const filePath of conflictFiles) {
+      try {
+        const fullPath = path.join(this.projectPath, filePath);
+        // 读取带冲突标记的完整文件内容
+        const conflictContent = fs.readFileSync(fullPath, 'utf-8');
+
+        // 获取各版本内容
+        const oursResult = await this.execGit(`git show ":2:${filePath}"`);
+        const theirsResult = await this.execGit(`git show ":3:${filePath}"`);
+
+        fileDetails.push({
+          path: filePath,
+          conflictContent,
+          oursContent: oursResult.success ? oursResult.stdout : '',
+          theirsContent: theirsResult.success ? theirsResult.stdout : '',
+        });
+      } catch (err) {
+        console.warn(`[Git] 读取冲突文件详情失败 ${filePath}:`, err);
+      }
+    }
+
     return {
       files: conflictFiles,
       description,
       suggestedResolution,
+      fileDetails,
     };
   }
 

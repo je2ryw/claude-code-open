@@ -268,6 +268,16 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     send({ type: 'task:retry', payload: { blueprintId, taskId } });
   }, [send]);
 
+  // v3.8: 跳过失败任务
+  const skipTask = useCallback((blueprintId: string, taskId: string) => {
+    send({ type: 'task:skip', payload: { blueprintId, taskId } });
+  }, [send]);
+
+  // v3.8: 取消执行
+  const cancelSwarm = useCallback((blueprintId: string) => {
+    send({ type: 'swarm:cancel', payload: { blueprintId } });
+  }, [send]);
+
   return {
     connected,
     status,
@@ -281,5 +291,7 @@ export function useSwarmWebSocket(options: UseSwarmWebSocketOptions): UseSwarmWe
     resumeWorker,
     terminateWorker,
     retryTask,
+    skipTask,
+    cancelSwarm,
   };
 }

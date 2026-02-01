@@ -21,7 +21,8 @@ export type BlueprintStatus =
   | 'executing'    // 执行中
   | 'completed'    // 已完成
   | 'paused'       // 已暂停
-  | 'failed';      // 已失败
+  | 'failed'       // 已失败
+  | 'cancelled';   // 已取消
 
 /**
  * 蓝图 - 需求锚点，所有Worker必须参照
@@ -391,6 +392,30 @@ export interface SmartTask {
 
   // 结果
   result?: TaskResult;
+
+  // v3.7: 重试机制 - 将 Review 反馈传递给下次执行
+  /** 已尝试次数 */
+  attemptCount?: number;
+  /** 上次失败的 Review 反馈 */
+  lastReviewFeedback?: {
+    verdict: 'failed' | 'needs_revision';
+    reasoning: string;
+    issues?: string[];
+    suggestions?: string[];
+    timestamp: Date;
+    /** v3.9: 合并冲突详情 - 让 Worker 自己解决 */
+    mergeConflict?: {
+      files: Array<{
+        path: string;
+        /** 带冲突标记的完整内容 */
+        conflictContent: string;
+        /** 主分支内容 */
+        oursContent: string;
+        /** Worker 分支内容 */
+        theirsContent: string;
+      }>;
+    };
+  };
 }
 
 /**
@@ -405,6 +430,13 @@ export interface TaskResult {
   decisions: WorkerDecision[];
   /** 任务完成摘要（供依赖任务理解语义） */
   summary?: string;
+  /** v3.7: Review 反馈（失败时包含，用于下次重试） */
+  reviewFeedback?: {
+    verdict: 'failed' | 'needs_revision';
+    reasoning: string;
+    issues?: string[];
+    suggestions?: string[];
+  };
 }
 
 /**
@@ -595,6 +627,16 @@ export interface ConflictInfo {
   files: string[];
   description: string;
   suggestedResolution?: string;
+  /** v3.9: 冲突文件详情 - 供 Worker 自己解决冲突 */
+  fileDetails?: Array<{
+    path: string;
+    /** 带冲突标记的完整文件内容 */
+    conflictContent: string;
+    /** 主分支内容 */
+    oursContent: string;
+    /** Worker 分支内容 */
+    theirsContent: string;
+  }>;
 }
 
 /**
@@ -898,6 +940,13 @@ export interface SwarmConfig {
   // Worker 策略决策 Agent 配置
   workerAnalyzeEnabled?: boolean;   // 策略决策前是否先用 Agent 分析代码（默认true）
   workerAnalyzeMaxTurns?: number;   // 分析阶段最大轮次（默认3）
+
+  // ==========================================================================
+  // v4.2 新增：Reviewer Agent 配置
+  // ==========================================================================
+  enableReviewer?: boolean;         // 是否启用 Reviewer Agent 审查（默认true）
+  reviewerModel?: 'haiku' | 'sonnet' | 'opus';  // Reviewer 使用的模型（默认haiku）
+  reviewerStrictness?: 'lenient' | 'normal' | 'strict';  // 审查严格程度（默认normal）
 }
 
 /**
@@ -922,6 +971,10 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
   plannerExploreMaxTurns: 5,
   workerAnalyzeEnabled: true,
   workerAnalyzeMaxTurns: 3,
+  // v4.2 新增：Reviewer Agent 配置
+  enableReviewer: true,
+  reviewerModel: 'opus',  // 使用最强模型确保审查质量
+  reviewerStrictness: 'normal',
 };
 
 // ============================================================================
@@ -1081,7 +1134,7 @@ export interface SerializableSmartTask {
  * 执行状态（用于持久化和恢复）
  * 保存执行的中间状态，支持重启后恢复
  *
- * 持久化位置：{projectPath}/.claude/execution-state.json
+ * v3.0: 状态现在保存在蓝图文件（.blueprint/{id}.json）的 lastExecutionPlan 和 executionState 字段中
  */
 export interface ExecutionState {
   // 完整的执行计划（序列化格式）

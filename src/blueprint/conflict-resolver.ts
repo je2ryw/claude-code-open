@@ -15,6 +15,7 @@ import type {
   ConflictDecisionType,
   ConflictResolutionRequest,
 } from './types.js';
+import { ConversationLoop } from '../core/loop.js';
 
 // ============================================================================
 // 冲突解决器
@@ -401,11 +402,162 @@ export class ConflictResolver {
 
   /**
    * AI 智能合并（调用 Claude）
+   *
+   * 核心理念：像人类程序员一样解决冲突
+   * 1. 理解双方的修改意图
+   * 2. 分析是否可以共存
+   * 3. 生成正确的合并代码
    */
   private async aiMerge(file: ConflictFileDetail, taskDescription: string): Promise<string | null> {
-    // TODO: 实现 AI 合并
-    // 暂时返回 null，表示需要人工干预
-    console.log(`[ConflictResolver] AI合并暂未实现，文件 ${file.path} 需要人工干预`);
+    console.log(`[ConflictResolver] 启动 AI 智能合并: ${file.path}`);
+
+    try {
+      const prompt = this.buildAiMergePrompt(file, taskDescription);
+
+      // 使用 ConversationLoop 调用 Claude
+      const loop = new ConversationLoop({
+        model: 'sonnet',  // 使用 sonnet 平衡速度和质量
+        maxTurns: 3,
+        verbose: false,
+        permissionMode: 'bypassPermissions',
+        workingDir: this.projectPath,
+        isSubAgent: true,
+        systemPrompt: this.buildAiMergeSystemPrompt(),
+        thinking: { enabled: false },
+        allowedTools: [],  // 不需要工具，纯文本生成
+      });
+
+      let responseText = '';
+
+      for await (const event of loop.processMessageStream(prompt)) {
+        if (event.type === 'text' && event.content) {
+          responseText += event.content;
+        }
+      }
+
+      // 从响应中提取合并后的代码
+      const mergedCode = this.extractMergedCode(responseText, file.path);
+
+      if (mergedCode) {
+        console.log(`[ConflictResolver] AI 合并成功: ${file.path}`);
+        return mergedCode;
+      }
+
+      console.log(`[ConflictResolver] AI 无法提取合并代码: ${file.path}`);
+      return null;
+    } catch (err) {
+      console.error(`[ConflictResolver] AI 合并异常:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * 构建 AI 合并的 System Prompt
+   */
+  private buildAiMergeSystemPrompt(): string {
+    return `你是一个专业的 Git 冲突解决专家。你的任务是像人类程序员一样解决合并冲突。
+
+## 工作流程
+1. 理解双方的修改意图
+2. 分析修改是否可以共存
+3. 生成正确的合并代码
+
+## 输出要求
+- 必须返回完整的合并后代码
+- 用 \`\`\`merged 代码块包裹
+- 不要包含任何冲突标记（<<<<<<< ======= >>>>>>>）
+- 保留双方有效的修改
+- 确保代码语法正确`;
+  }
+
+  /**
+   * 构建 AI 合并的 Prompt
+   */
+  private buildAiMergePrompt(file: ConflictFileDetail, taskDescription: string): string {
+    return `# Git 合并冲突解决请求
+
+## 任务背景
+${taskDescription}
+
+## 冲突文件
+\`${file.path}\`
+
+## 主分支内容（ours - 已合并的其他 Worker 改动）
+\`\`\`
+${file.oursContent}
+\`\`\`
+
+## Worker 分支内容（theirs - 当前 Worker 的改动）
+\`\`\`
+${file.theirsContent}
+\`\`\`
+
+${file.baseContent ? `## 共同祖先内容（base - 合并前的原始内容）
+\`\`\`
+${file.baseContent}
+\`\`\`
+` : ''}
+
+## 你的任务
+
+1. **分析双方意图**：
+   - 主分支（ours）添加/修改了什么？
+   - Worker分支（theirs）添加/修改了什么？
+
+2. **判断是否冲突**：
+   - 如果两边修改不同的部分 → 保留两边
+   - 如果两边修改相同部分 → 选择更合理的或合并逻辑
+
+3. **生成合并结果**：
+   - 必须是完整的文件内容
+   - 不能有任何冲突标记
+   - 语法必须正确
+
+请返回合并后的完整代码，用 \`\`\`merged 代码块包裹：
+
+\`\`\`merged
+// 合并后的完整代码
+\`\`\``;
+  }
+
+  /**
+   * 从 AI 响应中提取合并后的代码
+   */
+  private extractMergedCode(response: string, filePath: string): string | null {
+    // 优先查找 ```merged 代码块
+    const mergedMatch = response.match(/```merged\s*([\s\S]*?)\s*```/);
+    if (mergedMatch) {
+      return mergedMatch[1].trim();
+    }
+
+    // 查找带语言标识的代码块（如 ```typescript, ```javascript）
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    const langMap: Record<string, string[]> = {
+      'ts': ['typescript', 'ts'],
+      'tsx': ['typescript', 'tsx'],
+      'js': ['javascript', 'js'],
+      'jsx': ['javascript', 'jsx'],
+    };
+
+    const langs = langMap[ext || ''] || [ext];
+    for (const lang of langs) {
+      const regex = new RegExp(`\`\`\`${lang}\\s*([\\s\\S]*?)\\s*\`\`\``);
+      const match = response.match(regex);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+
+    // 查找任意代码块
+    const anyCodeMatch = response.match(/```\w*\s*([\s\S]*?)\s*```/);
+    if (anyCodeMatch) {
+      const code = anyCodeMatch[1].trim();
+      // 验证没有冲突标记
+      if (!code.includes('<<<<<<<') && !code.includes('=======') && !code.includes('>>>>>>>')) {
+        return code;
+      }
+    }
+
     return null;
   }
 

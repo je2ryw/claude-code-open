@@ -19,7 +19,8 @@ export type BlueprintStatus =
   | 'executing'    // 执行中：任务树正在执行
   | 'completed'    // 已完成：所有任务都已完成
   | 'paused'       // 已暂停：用户暂停了执行
-  | 'modified';    // 已修改：执行中用户修改了蓝图，需要重新规划
+  | 'modified'     // 已修改：执行中用户修改了蓝图，需要重新规划
+  | 'cancelled';   // 已取消：用户取消了执行
 
 /**
  * 业务流程定义（As-Is/To-Be）

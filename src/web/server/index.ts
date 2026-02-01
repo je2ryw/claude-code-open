@@ -23,6 +23,7 @@ export interface WebServerOptions {
   host?: string;
   cwd?: string;
   model?: string;
+  ngrok?: boolean;
 }
 
 export async function startWebServer(options: WebServerOptions = {}): Promise<void> {
@@ -38,6 +39,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     host = process.env.CLAUDE_WEB_HOST || '127.0.0.1',
     cwd = process.cwd(),
     model = process.env.CLAUDE_MODEL || 'sonnet',
+    ngrok: enableNgrok = process.env.ENABLE_NGROK === 'true' || !!process.env.NGROK_AUTHTOKEN,
   } = options;
 
   // 创建 Express 应用
@@ -130,19 +132,67 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
   // 设置 WebSocket 处理
   setupWebSocket(wss, conversationManager);
 
+  // 用于存储 ngrok 隧道 listener
+  let ngrokListener: any = null;
+
   // 启动服务器
-  server.listen(port, host, () => {
-    const displayHost = host === '0.0.0.0' ? 'localhost' : host;
-    console.log(`\n🌐 Claude Code WebUI 已启动`);
-    console.log(`   地址: http://${displayHost}:${port}`);
-    console.log(`   WebSocket: ws://${displayHost}:${port}/ws`);
-    console.log(`   工作目录: ${cwd}`);
-    console.log(`   模型: ${model}\n`);
+  await new Promise<void>((resolve) => {
+    server.listen(port, host, () => {
+      const displayHost = host === '0.0.0.0' ? 'localhost' : host;
+      console.log(`\n🌐 Claude Code WebUI 已启动`);
+      console.log(`   地址: http://${displayHost}:${port}`);
+      console.log(`   WebSocket: ws://${displayHost}:${port}/ws`);
+      console.log(`   工作目录: ${cwd}`);
+      console.log(`   模型: ${model}`);
+      resolve();
+    });
   });
 
+  // 如果启用了 ngrok，创建公网隧道
+  if (enableNgrok) {
+    try {
+      const ngrok = await import('@ngrok/ngrok');
+
+      // 检查 authtoken
+      const authtoken = process.env.NGROK_AUTHTOKEN;
+      if (!authtoken) {
+        console.log(`   ⚠️  ngrok: 未设置 NGROK_AUTHTOKEN 环境变量`);
+        console.log(`   ⚠️  请访问 https://dashboard.ngrok.com/get-started/your-authtoken 获取 authtoken\n`);
+      } else {
+        console.log(`   🔗 正在创建 ngrok 隧道...`);
+
+        // 创建 ngrok 隧道
+        ngrokListener = await ngrok.forward({
+          addr: port,
+          authtoken: authtoken,
+        });
+
+        const ngrokUrl = ngrokListener.url();
+        console.log(`   🌍 公网地址: ${ngrokUrl}`);
+        console.log(`   🌍 公网 WebSocket: ${ngrokUrl?.replace('https://', 'wss://').replace('http://', 'ws://')}/ws\n`);
+      }
+    } catch (err: any) {
+      console.log(`   ⚠️  ngrok 隧道创建失败: ${err.message}`);
+      console.log(`   ⚠️  请检查 NGROK_AUTHTOKEN 是否正确\n`);
+    }
+  } else {
+    console.log('');
+  }
+
   // 优雅关闭
-  process.on('SIGINT', () => {
+  process.on('SIGINT', async () => {
     console.log('\n正在关闭服务器...');
+
+    // 关闭 ngrok 隧道
+    if (ngrokListener) {
+      try {
+        await ngrokListener.close();
+        console.log('   ngrok 隧道已关闭');
+      } catch (err) {
+        // 忽略关闭错误
+      }
+    }
+
     wss.close();
     server.close(() => {
       console.log('服务器已关闭');

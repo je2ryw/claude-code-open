@@ -26,6 +26,11 @@ import {
   type MergeContext,
   runGeneratorWithMergeContext,
 } from '../tools/commit-and-merge.js';
+import {
+  TaskReviewer,
+  collectWorkerSummary,
+  type FileChangeRecord,
+} from './task-reviewer.js';
 
 // ============================================================================
 // 类型定义
@@ -54,6 +59,23 @@ export interface WorkerContext {
   sharedSystemPromptBase?: string;
   /** 合并上下文（可选，如果提供则 Worker 负责合并代码） */
   mergeContext?: Omit<MergeContext, 'getFileChanges'>;
+  /** v4.0: Blueprint 信息（传递给 Reviewer 用于全局审查） */
+  blueprint?: {
+    id: string;
+    name: string;
+    description: string;
+    requirements?: string[];
+    techStack?: TechStack;
+    constraints?: string[];
+  };
+  /** v4.0: 相关任务状态（传递给 Reviewer 用于上下文判断） */
+  relatedTasks?: Array<{
+    id: string;
+    name: string;
+    status: string;
+  }>;
+  /** v4.1: 主仓库路径（Reviewer 用，因为 worktree 可能已删除） */
+  mainRepoPath?: string;
 }
 
 export type WorkerEventType =
@@ -81,10 +103,16 @@ export class AutonomousWorkerExecutor extends EventEmitter {
    */
   static buildSharedSystemPromptBase(techStack: TechStack, hasMergeContext: boolean = false, projectPath?: string): string {
     // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
+    // v3.9: 增加冲突解决指导 - 让 Worker 像人类程序员一样处理冲突
     const mergeRule = hasMergeContext
       ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
 - 合并成功后调用 UpdateTaskStatus(status="completed")
-- 合并失败时调用 UpdateTaskStatus(status="failed", error="合并失败原因")`
+- **合并冲突处理**：如果 CommitAndMergeChanges 返回冲突（conflictDetails），你需要：
+  1. 分析 conflictDetails 中 oursContent（主分支）和 theirsContent（你的改动）
+  2. 理解双方修改意图，决定如何合并
+  3. 用 Write 工具写入正确的合并结果（不要包含 <<<<<<< ======= >>>>>>> 标记）
+  4. 再次调用 CommitAndMergeChanges 完成合并
+- 只有在无法解决冲突时才调用 UpdateTaskStatus(status="failed")`
       : `- 完成后调用 UpdateTaskStatus(status="completed")
 - 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
 
@@ -131,6 +159,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     // v3.2: 追踪工具调用，用于验收检查
     let toolCallCount = 0;
     let hasCodeToolCall = false;  // 是否调用过代码相关工具（Read/Write/Edit/Grep/Glob）
+    let hasWriteToolCall = false; // v4.2: 是否调用过写入类工具（Write/Edit/MultiEdit）
     // v3.3: 追踪测试运行
     let testsRan = false;
     let testsPassed = false;
@@ -139,6 +168,15 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     // v4.0: 追踪合并结果
     let mergeSuccess: boolean | null = null;  // null 表示未调用合并工具
     let mergeError: string | undefined;
+    // v4.2: 收集事件流（用于 Reviewer 审查）
+    const collectedEvents: Array<{
+      type: string;
+      toolName?: string;
+      toolInput?: any;
+      toolOutput?: string;
+      toolError?: string;
+    }> = [];
+    const executionStartTime = Date.now();
 
     this.log(`开始执行任务: ${task.name}`);
 
@@ -194,10 +232,15 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         // v3.2: 统计工具调用
         if (event.type === 'tool_end' && event.toolName) {
           toolCallCount++;
-          // 检查是否是代码相关工具
+          // 检查是否是代码相关工具（读取类）
           const codeTools = ['Read', 'Write', 'Edit', 'MultiEdit', 'Grep', 'Glob', 'Bash'];
           if (codeTools.includes(event.toolName)) {
             hasCodeToolCall = true;
+          }
+          // v4.1: 检查是否是写入类工具（只有写入才需要合并）
+          const writeTools = ['Write', 'Edit', 'MultiEdit'];
+          if (writeTools.includes(event.toolName)) {
+            hasWriteToolCall = true;
           }
           // v3.7: 检测 AI 主动汇报完成
           if (event.toolName === 'UpdateTaskStatus' && event.toolInput && !event.toolError) {
@@ -239,39 +282,120 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
             }
           }
         }
+        // v4.2: 收集事件（用于 Reviewer）
+        if (event.type === 'tool_end') {
+          collectedEvents.push({
+            type: event.type,
+            toolName: event.toolName,
+            toolInput: event.toolInput,
+            toolOutput: event.toolResult,
+            toolError: event.toolError,
+          });
+        }
         this.handleStreamEvent(event, task, writtenFiles, context);
       }
 
-      // v3.2: 任务完成验收检查
-      const validationResult = this.validateTaskCompletion(task, {
-        toolCallCount,
-        hasCodeToolCall,
-        writtenFiles,
-        testsRan,
-        aiReportedCompleted,
-        // v4.0: 合并结果
-        mergeSuccess,
-        mergeError,
-        hasMergeContext: !!context.mergeContext,
+      // v4.2: 使用 Reviewer Agent 进行任务审查（替代机械式验收规则）
+      // 设计理念：执行者(Worker) ≠ 审核者(Reviewer)，分权制衡
+      const executionDuration = Date.now() - executionStartTime;
+
+      // 收集 Worker 执行摘要
+      const typeMap: Record<string, 'created' | 'modified' | 'deleted'> = {
+        create: 'created',
+        modify: 'modified',
+        delete: 'deleted',
+      };
+      const fileChangeRecords: FileChangeRecord[] = writtenFiles.map(f => ({
+        path: f.filePath,
+        type: typeMap[f.type] || 'modified',
+        contentPreview: f.content?.substring(0, 500),
+      }));
+
+      const workerSummary = collectWorkerSummary(
+        collectedEvents,
+        fileChangeRecords,
+        executionDuration,
+      );
+
+      // 创建 Reviewer 并审查（使用 ConversationLoop，与 Worker 相同的认证方式）
+      // v4.0: Reviewer 必须使用 opus（最强推理能力 + 拥有只读工具验证能力）
+      const reviewer = new TaskReviewer({
+        enabled: context.config.enableReviewer !== false,  // 默认启用
+        model: context.config.reviewerModel || 'opus',  // v4.0: Reviewer 必须用 opus
+        strictness: context.config.reviewerStrictness || 'normal',
       });
 
-      if (!validationResult.success) {
-        this.log(`任务验收失败: ${validationResult.error}`);
+      this.log(`开始 Reviewer 审查...`);
+      // v4.0: 传递全局上下文给 Reviewer（Blueprint + 相关任务）
+      // v4.1: 使用主仓库路径（worktree 可能已被删除/合并）
+      const reviewResult = await reviewer.review(task, workerSummary, {
+        projectPath: context.mainRepoPath || context.projectPath,  // 优先使用主仓库
+        isRetry: false,  // TODO: 从上下文获取
+        blueprint: context.blueprint,
+        relatedTasks: context.relatedTasks,
+      });
+
+      this.log(`Reviewer 结论: ${reviewResult.verdict} (置信度: ${reviewResult.confidence})`);
+      this.log(`Reviewer 理由: ${reviewResult.reasoning}`);
+
+      // 记录审查决策
+      decisions.push({
+        type: 'strategy',
+        description: `Reviewer 审查: ${reviewResult.verdict} - ${reviewResult.reasoning}`,
+        timestamp: new Date(),
+      });
+
+      if (reviewResult.verdict === 'failed') {
+        const errorMsg = reviewResult.issues?.join('; ') || reviewResult.reasoning;
+        this.log(`任务审查失败: ${errorMsg}`);
         this.emit('task:failed', {
           workerId: this.workerId,
           task,
-          error: validationResult.error,
-          reason: 'validation_failed',
+          error: errorMsg,
+          reason: 'review_failed',
         });
 
         return {
           success: false,
           changes: writtenFiles,
-          error: validationResult.error,
+          error: errorMsg,
           decisions,
+          // v3.7: 包含 Review 反馈，供重试时使用
+          reviewFeedback: {
+            verdict: 'failed',
+            reasoning: reviewResult.reasoning,
+            issues: reviewResult.issues,
+            suggestions: reviewResult.suggestions,
+          },
         };
       }
 
+      if (reviewResult.verdict === 'needs_revision') {
+        const errorMsg = `需要修改: ${reviewResult.suggestions?.join('; ') || reviewResult.reasoning}`;
+        this.log(`任务需要修改: ${errorMsg}`);
+        this.emit('task:failed', {
+          workerId: this.workerId,
+          task,
+          error: errorMsg,
+          reason: 'needs_revision',
+        });
+
+        return {
+          success: false,
+          changes: writtenFiles,
+          error: errorMsg,
+          decisions,
+          // v3.7: 包含 Review 反馈，供重试时使用
+          reviewFeedback: {
+            verdict: 'needs_revision',
+            reasoning: reviewResult.reasoning,
+            issues: reviewResult.issues,
+            suggestions: reviewResult.suggestions,
+          },
+        };
+      }
+
+      // 审查通过
       this.emit('task:completed', { workerId: this.workerId, task });
 
       return {
@@ -325,11 +449,19 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       hasMergeContext?: boolean;
     }
   ): { success: boolean; error?: string } {
-    const { toolCallCount, testsRan, aiReportedCompleted, mergeSuccess, mergeError, hasMergeContext } = metrics;
+    const { toolCallCount, hasCodeToolCall, testsRan, aiReportedCompleted, mergeSuccess, mergeError, hasMergeContext } = metrics;
 
-    // v4.0: 如果有合并上下文，必须检查合并结果
+    // v4.1: 优先处理 AI 主动汇报完成 + 无代码变更的场景
+    // 场景：重新执行任务时，AI 判断"配置已存在，无需修改"，直接汇报完成
+    // 此时没有代码变更，不应强制要求调用合并工具
+    if (aiReportedCompleted && !hasCodeToolCall) {
+      this.log(`AI 主动汇报任务完成且无代码变更，信任其判断`);
+      return { success: true };
+    }
+
+    // v4.0: 如果有合并上下文 + 有代码变更，必须检查合并结果
     // 这是最重要的验证：代码写完了但没有成功合并 = 任务失败
-    if (hasMergeContext) {
+    if (hasMergeContext && hasCodeToolCall) {
       if (mergeSuccess === false) {
         return {
           success: false,
@@ -337,7 +469,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         };
       }
       if (mergeSuccess === null) {
-        // Worker 没有调用合并工具
+        // Worker 写了代码但没有调用合并工具
         return {
           success: false,
           error: '任务未完成：代码未合并到主分支（请调用 CommitAndMergeChanges 工具）',
@@ -346,8 +478,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       // 合并成功，继续其他验证
     }
 
-    // v3.7: 如果 AI 主动汇报了完成状态，信任它的判断
-    // 这处理了 AI 判断不需要修改（如配置已正确）的情况
+    // v3.7: 如果 AI 主动汇报了完成状态（有代码变更但已合并的情况）
     if (aiReportedCompleted) {
       this.log(`AI 主动汇报任务完成，信任其判断`);
       return { success: true };
@@ -389,11 +520,17 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     }
 
     // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
+    // v3.9: 增加冲突解决指导 - 让 Worker 像人类程序员一样处理冲突
     const hasMergeContext = !!context.mergeContext;
     const mergeRule = hasMergeContext
       ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
 - 合并成功后调用 UpdateTaskStatus(status="completed")
-- 合并失败时调用 UpdateTaskStatus(status="failed", error="合并失败原因")`
+- **合并冲突处理**：如果 CommitAndMergeChanges 返回冲突（conflictDetails），你需要：
+  1. 分析 conflictDetails 中 oursContent（主分支）和 theirsContent（你的改动）
+  2. 理解双方修改意图，决定如何合并
+  3. 用 Write 工具写入正确的合并结果（不要包含 <<<<<<< ======= >>>>>>> 标记）
+  4. 再次调用 CommitAndMergeChanges 完成合并
+- 只有在无法解决冲突时才调用 UpdateTaskStatus(status="failed")`
       : `- 完成后调用 UpdateTaskStatus(status="completed")
 - 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
 
@@ -496,16 +633,36 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
       prompt += `\n## 约束\n${context.constraints.map(c => `- ${c}`).join('\n')}\n`;
     }
 
-    // v5.1: 精简依赖产出 - 只给文件路径，不给 summary
-    // Worker 会用 Read 工具自己读取，summary 是冗余的
+    // v5.2: 精简依赖产出 - 只给相对路径，Worker 可以直接在当前工作目录中读取
+    // 注意：这些路径是相对于项目根目录的，前置任务的代码已合并到主分支
     if (context.dependencyOutputs?.length) {
-      prompt += `\n## 前置任务文件（用 Read 查看）\n`;
+      prompt += `\n## 前置任务文件（相对路径，已合并到当前分支）\n`;
       for (const dep of context.dependencyOutputs) {
         // 单行紧凑格式，最多 3 个文件
         const files = dep.files.slice(0, 3).map(f => `\`${f}\``).join(', ');
         const extra = dep.files.length > 3 ? ` (+${dep.files.length - 3})` : '';
         prompt += `- ${dep.taskName}: ${files}${extra}\n`;
       }
+    }
+
+    // v3.7: 如果有上次的 Review 反馈，添加到 prompt 中
+    if (task.lastReviewFeedback) {
+      const feedback = task.lastReviewFeedback;
+      prompt += `\n## ⚠️ 重试提醒（第 ${task.attemptCount || 1} 次尝试）
+
+上次执行被 Reviewer 标记为 **${feedback.verdict === 'failed' ? '失败' : '需要修改'}**。
+
+### 上次失败原因
+${feedback.reasoning}
+
+${feedback.issues?.length ? `### 具体问题\n${feedback.issues.map(i => `- ❌ ${i}`).join('\n')}\n` : ''}
+${feedback.suggestions?.length ? `### 修改建议\n${feedback.suggestions.map(s => `- 💡 ${s}`).join('\n')}\n` : ''}
+### 本次要求
+请务必针对上述问题进行修复，确保：
+1. 解决所有列出的具体问题
+2. 按照建议进行修改
+3. 不要重复同样的错误
+`;
     }
 
     prompt += `\n## 执行要求

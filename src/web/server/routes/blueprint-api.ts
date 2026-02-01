@@ -143,6 +143,13 @@ executionEventEmitter.setMaxListeners(50); // 允许多个监听器
 class BlueprintStore {
   private blueprints: Map<string, Blueprint> = new Map();
 
+  // v3.5: 写入队列机制，解决并发写入冲突问题
+  private pendingWrites: Map<string, Blueprint> = new Map(); // 待写入的蓝图（按 ID 合并）
+  private isProcessingQueue: boolean = false; // 是否正在处理队列
+  private writeRetryCount: Map<string, number> = new Map(); // 重试计数器
+  private readonly MAX_WRITE_RETRIES = 3; // 最大重试次数
+  private readonly WRITE_RETRY_DELAY = 100; // 重试延迟（毫秒）
+
   constructor() {
     // 延迟加载，等待 recentProjects 可用
   }
@@ -371,7 +378,7 @@ class BlueprintStore {
   }
 
   /**
-   * 保存蓝图
+   * 保存蓝图（v3.5: 使用写入队列避免并发冲突）
    */
   save(blueprint: Blueprint): void {
     if (!blueprint.projectPath) {
@@ -391,12 +398,89 @@ class BlueprintStore {
     blueprint.updatedAt = new Date();
     this.blueprints.set(blueprint.id, blueprint);
 
-    // 确保目录存在
-    this.ensureDir(blueprint.projectPath);
+    // v3.5: 将写入请求放入队列（相同 ID 的会被合并，只保留最新）
+    // 深拷贝避免后续修改影响队列中的数据
+    this.pendingWrites.set(blueprint.id, JSON.parse(JSON.stringify(blueprint)));
 
-    // 持久化到项目的 .blueprint 目录
-    const filePath = path.join(this.getBlueprintDir(blueprint.projectPath), `${blueprint.id}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(this.serializeBlueprint(blueprint), null, 2), 'utf-8');
+    // 触发队列处理（非阻塞）
+    this.processWriteQueue();
+  }
+
+  /**
+   * v3.5: 处理写入队列（顺序写入，避免并发冲突）
+   */
+  private async processWriteQueue(): Promise<void> {
+    // 如果已经在处理中，则跳过（当前处理完成后会继续处理剩余的）
+    if (this.isProcessingQueue) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.pendingWrites.size > 0) {
+        // 获取下一个要写入的蓝图
+        const iterator = this.pendingWrites.entries().next();
+        if (iterator.done) break;
+
+        const [blueprintId, blueprint] = iterator.value;
+
+        // 从队列中移除（在写入之前移除，这样如果写入过程中有新请求，会被重新加入）
+        this.pendingWrites.delete(blueprintId);
+
+        // 执行写入
+        try {
+          await this.writeToFile(blueprint);
+          // 写入成功，清除重试计数
+          this.writeRetryCount.delete(blueprintId);
+        } catch (error) {
+          // 写入失败，检查是否需要重试
+          const retryCount = (this.writeRetryCount.get(blueprintId) || 0) + 1;
+          this.writeRetryCount.set(blueprintId, retryCount);
+
+          if (retryCount <= this.MAX_WRITE_RETRIES) {
+            console.warn(`[BlueprintStore] 写入失败，将重试 (${retryCount}/${this.MAX_WRITE_RETRIES}): ${blueprintId}`, error);
+            // 重新加入队列
+            this.pendingWrites.set(blueprintId, blueprint);
+            // 短暂延迟后继续
+            await new Promise(resolve => setTimeout(resolve, this.WRITE_RETRY_DELAY));
+          } else {
+            console.error(`[BlueprintStore] 写入失败，已达最大重试次数: ${blueprintId}`, error);
+            this.writeRetryCount.delete(blueprintId);
+          }
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+
+      // 检查是否有新的写入请求（在处理过程中可能有新请求加入）
+      if (this.pendingWrites.size > 0) {
+        // 使用 setImmediate 避免递归调用栈过深
+        setImmediate(() => this.processWriteQueue());
+      }
+    }
+  }
+
+  /**
+   * v3.5: 实际写入文件（带重试机制）
+   */
+  private async writeToFile(blueprint: Blueprint): Promise<void> {
+    // 确保目录存在
+    this.ensureDir(blueprint.projectPath!);
+
+    const filePath = path.join(this.getBlueprintDir(blueprint.projectPath!), `${blueprint.id}.json`);
+    const content = JSON.stringify(this.serializeBlueprint(blueprint), null, 2);
+
+    // 使用 Promise 包装的异步写入
+    return new Promise((resolve, reject) => {
+      fs.writeFile(filePath, content, 'utf-8', (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   /**
@@ -734,6 +818,17 @@ class RealTaskExecutor implements TaskExecutor {
 
       // 构建 Worker 上下文
       // v4.0: 添加合并上下文，让 Worker 自己负责合并代码
+      // v4.1: 添加 Blueprint 信息给 Reviewer 用于全局审查
+      const allTasks = this.blueprint.lastExecutionPlan?.tasks || [];
+      const relatedTasks = allTasks
+        .filter(t => t.id !== task.id)  // 排除当前任务
+        .slice(0, 10)  // 最多显示 10 个相关任务
+        .map(t => ({
+          id: t.id,
+          name: t.name,
+          status: t.status || 'pending',
+        }));
+
       const context = {
         projectPath: effectiveProjectPath,
         techStack: this.blueprint.techStack || {
@@ -763,14 +858,49 @@ class RealTaskExecutor implements TaskExecutor {
           workerId,
           gitConcurrency: this.gitConcurrency,
         },
+        // v4.1: Blueprint 信息 - 传递给 Reviewer 用于全局审查
+        blueprint: {
+          id: this.blueprint.id,
+          name: this.blueprint.name,
+          description: this.blueprint.description,
+          requirements: this.blueprint.requirements,
+          techStack: this.blueprint.techStack,
+          constraints: this.blueprint.constraints,
+        },
+        // v4.1: 相关任务状态 - 让 Reviewer 了解项目整体进度
+        relatedTasks: relatedTasks.length > 0 ? relatedTasks : undefined,
+        // v4.1: 主仓库路径 - Reviewer 用（因为 worktree 可能已被删除/合并）
+        mainRepoPath: this.blueprint.projectPath,
       };
 
       const result = await worker.execute(task, context);
 
       // 记录任务产出（供依赖任务使用）
+      // v5.2: 将 worktree 路径转换为相对路径，避免后续任务引用已删除的 worktree
       if (result.success && result.changes?.length) {
+        const mainRepoPath = this.blueprint.projectPath;
         this.taskOutputs.set(task.id, {
-          files: result.changes.map(c => c.filePath),
+          files: result.changes.map(c => {
+            // 将绝对路径转换为相对于主仓库的路径
+            // 例如：F:/wms/.swarm-worktrees/.../backend/src/file.js → backend/src/file.js
+            if (path.isAbsolute(c.filePath)) {
+              // 使用 path.normalize 标准化路径，确保 Windows 上的路径比较正确
+              const normalizedFilePath = path.normalize(c.filePath);
+              const normalizedWorktreePath = path.normalize(effectiveProjectPath);
+              const normalizedMainRepoPath = path.normalize(mainRepoPath);
+
+              // 尝试从 worktree 路径提取相对路径
+              if (normalizedFilePath.startsWith(normalizedWorktreePath)) {
+                // 转换为 POSIX 风格的相对路径（跨平台兼容）
+                return path.relative(normalizedWorktreePath, normalizedFilePath).replace(/\\/g, '/');
+              }
+              // 如果是主仓库路径，也转换为相对路径
+              if (normalizedFilePath.startsWith(normalizedMainRepoPath)) {
+                return path.relative(normalizedMainRepoPath, normalizedFilePath).replace(/\\/g, '/');
+              }
+            }
+            return c.filePath;
+          }),
           summary: result.summary,
         });
       }
@@ -1268,8 +1398,8 @@ class ExecutionManager {
       }
       blueprintStore.save(blueprint);
 
-      // 失败时保留状态文件以便恢复
-      console.log(`[ExecutionManager] 执行失败，状态已保存到: ${blueprint.projectPath}/.claude/execution-state.json`);
+      // 失败时状态已保存到蓝图文件
+      console.log(`[ExecutionManager] 执行失败，状态已保存到蓝图文件: ${blueprint.id}`);
 
       // 清理 Worker 分支
       await executor.cleanup();
@@ -1377,98 +1507,25 @@ class ExecutionManager {
   }
 
   /**
-   * 从项目目录恢复执行
+   * v3.0: 从项目目录恢复执行
+   * 现在通过蓝图 ID 查找并恢复，不再使用 execution-state.json
    */
   async recoverFromProject(projectPath: string): Promise<ExecutionSession | null> {
-    // 检查是否有可恢复的状态
-    if (!RealtimeCoordinator.hasRecoverableState(projectPath)) {
-      return null;
-    }
+    // 查找项目路径对应的蓝图
+    const blueprints = blueprintStore.getAll();
+    const blueprint = blueprints.find(b => b.projectPath === projectPath);
 
-    // 加载状态
-    const state = RealtimeCoordinator.loadStateFromProject(projectPath);
-    if (!state) {
-      return null;
-    }
-
-    // 获取或创建蓝图
-    let blueprint = blueprintStore.get(state.plan.blueprintId);
     if (!blueprint) {
-      // 创建临时蓝图用于恢复
-      blueprint = {
-        id: state.plan.blueprintId,
-        name: '恢复的执行',
-        description: '从持久化状态恢复的执行',
-        status: 'executing',
-        requirements: [],
-        projectPath,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      console.log(`[ExecutionManager] 找不到项目路径对应的蓝图: ${projectPath}`);
+      return null;
     }
 
-    // 创建 Git 并发控制器
-    const gitConcurrency = new GitConcurrency(projectPath);
-
-    // 创建协调器
-    const coordinator = createRealtimeCoordinator({
-      maxWorkers: 5,
-      workerTimeout: 600000,  // 10分钟
-      skipOnFailure: true,
-      stopOnGroupFailure: true,
-      useGitBranches: true,
-      autoMerge: true,
-    });
-
-    // 设置任务执行器
-    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
-    coordinator.setTaskExecutor(executor);
-
-    // 创建会话
-    const session: ExecutionSession = {
-      id: state.plan.id,
-      blueprintId: state.plan.blueprintId,
-      plan: null as any, // 将由 resume 方法设置
-      coordinator,
-      gitConcurrency,
-      startedAt: new Date(state.startedAt),
-    };
-
-    this.sessions.set(session.id, session);
-
-    // 异步恢复执行
-    coordinator.resume(projectPath).then(result => {
-      session.plan = coordinator.getCurrentPlan()!;
-      session.result = result;
-      session.completedAt = new Date();
-
-      // 更新蓝图状态
-      blueprint!.status = result.success ? 'completed' : 'failed';
-      blueprintStore.save(blueprint!);
-
-      // 执行成功后删除状态文件
-      if (result.success) {
-        coordinator.deleteExecutionState(projectPath);
-      }
-
-      // 清理 Worker 分支
-      executor.cleanup().catch(e => {
-        console.warn('[ExecutionManager] 清理分支失败:', e);
-      });
-    }).catch(error => {
-      console.error('[ExecutionManager] 恢复执行失败:', error);
-      session.completedAt = new Date();
-      blueprint!.status = 'failed';
-      blueprintStore.save(blueprint!);
-    });
-
-    // 返回恢复后的计划
-    session.plan = coordinator.getCurrentPlan()!;
-    return session;
+    // 使用新的恢复方法
+    return this.restoreSessionFromState(blueprint.id);
   }
 
   /**
-   * 初始化恢复：检查所有已知蓝图的项目目录，恢复未完成的执行
+   * v3.0: 初始化恢复：检查所有蓝图是否有可恢复的执行状态
    * 应该在服务器启动时调用
    */
   async initRecovery(): Promise<void> {
@@ -1478,23 +1535,15 @@ class ExecutionManager {
     const blueprints = blueprintStore.getAll();
 
     for (const blueprint of blueprints) {
-      // 只检查状态为 executing 的蓝图
-      if (blueprint.status === 'executing' && blueprint.projectPath) {
+      // 检查是否有可恢复的状态（使用新方法）
+      if (this.hasRecoverableState(blueprint.id)) {
         try {
-          // 检查是否有可恢复的状态文件
-          if (RealtimeCoordinator.hasRecoverableState(blueprint.projectPath)) {
-            console.log(`[ExecutionManager] 发现可恢复的执行: ${blueprint.name} (${blueprint.projectPath})`);
+          console.log(`[ExecutionManager] 发现可恢复的执行: ${blueprint.name} (${blueprint.id})`);
 
-            // 尝试恢复
-            const session = await this.recoverFromProject(blueprint.projectPath);
-            if (session) {
-              console.log(`[ExecutionManager] 成功恢复执行: ${blueprint.name}`);
-            }
-          } else {
-            // 状态文件不存在，但蓝图状态是 executing，重置为 paused
-            console.log(`[ExecutionManager] 蓝图 ${blueprint.name} 状态为 executing 但无状态文件，重置为 paused`);
-            blueprint.status = 'paused';
-            blueprintStore.save(blueprint);
+          // 尝试恢复
+          const session = await this.restoreSessionFromState(blueprint.id);
+          if (session) {
+            console.log(`[ExecutionManager] 成功恢复执行: ${blueprint.name}`);
           }
         } catch (error) {
           console.error(`[ExecutionManager] 恢复执行失败 (${blueprint.name}):`, error);
@@ -1509,18 +1558,55 @@ class ExecutionManager {
   }
 
   /**
-   * 获取指定蓝图的可恢复状态（如果存在）
+   * v3.0: 获取可恢复状态的详细信息
+   * 使用蓝图文件中的 lastExecutionPlan 和 executionState
    */
-  getRecoverableState(blueprintId: string): { hasState: boolean; projectPath?: string } {
+  getRecoverableState(blueprintId: string): {
+    hasState: boolean;
+    projectPath?: string;
+    stateDetails?: {
+      planId: string;
+      completedTasks: number;
+      failedTasks: number;
+      skippedTasks: number;
+      totalTasks: number;
+      currentGroupIndex: number;
+      totalGroups: number;
+      lastUpdatedAt: string;
+      isPaused: boolean;
+      currentCost: number;
+    };
+  } {
     const blueprint = blueprintStore.get(blueprintId);
     if (!blueprint || !blueprint.projectPath) {
       return { hasState: false };
     }
 
-    const hasState = RealtimeCoordinator.hasRecoverableState(blueprint.projectPath);
+    // v3.0: 使用新的检查方法
+    const hasState = this.hasRecoverableState(blueprintId);
+    if (!hasState) {
+      return { hasState: false };
+    }
+
+    // 从蓝图文件获取状态详情
+    const lastPlan = blueprint.lastExecutionPlan;
+    const executionState = (blueprint as any).executionState;
+
     return {
-      hasState,
-      projectPath: hasState ? blueprint.projectPath : undefined,
+      hasState: true,
+      projectPath: blueprint.projectPath,
+      stateDetails: lastPlan ? {
+        planId: lastPlan.id,
+        completedTasks: executionState?.completedTaskIds?.length || 0,
+        failedTasks: executionState?.failedTaskIds?.length || 0,
+        skippedTasks: executionState?.skippedTaskIds?.length || 0,
+        totalTasks: lastPlan.tasks.length,
+        currentGroupIndex: executionState?.currentGroupIndex || 0,
+        totalGroups: lastPlan.parallelGroups.length,
+        lastUpdatedAt: executionState?.lastUpdatedAt || new Date().toISOString(),
+        isPaused: executionState?.isPaused || false,
+        currentCost: executionState?.currentCost || 0,
+      } : undefined,
     };
   }
 
@@ -1606,10 +1692,26 @@ class ExecutionManager {
   }
 
   /**
+   * v3.0: 检查蓝图是否有可恢复的执行状态
+   * 统一的恢复能力检查入口
+   */
+  hasRecoverableState(blueprintId: string): boolean {
+    const blueprint = blueprintStore.get(blueprintId);
+    if (!blueprint) return false;
+
+    return !!(
+      blueprint.lastExecutionPlan &&
+      (blueprint as any).executionState &&
+      // 只有未完成的执行才需要恢复
+      ['executing', 'paused', 'failed'].includes(blueprint.status)
+    );
+  }
+
+  /**
    * v3.0: 从蓝图文件恢复会话
    * 当服务重启后会话丢失时，从蓝图的 lastExecutionPlan 和 executionState 恢复
    */
-  private async restoreSessionFromState(blueprintId: string): Promise<ExecutionSession | null> {
+  async restoreSessionFromState(blueprintId: string): Promise<ExecutionSession | null> {
     // 获取蓝图
     const blueprint = blueprintStore.get(blueprintId);
     if (!blueprint) {
@@ -1699,7 +1801,28 @@ class ExecutionManager {
       // 保存会话
       this.sessions.set(session.id, session);
 
-      console.log(`[ExecutionManager] 会话恢复成功，包含 ${lastPlan.tasks.length} 个任务`);
+      console.log(`[ExecutionManager] 会话恢复成功，包含 ${lastPlan.tasks.length} 个任务，从第 ${savedState.currentGroupIndex + 1} 组继续执行`);
+
+      // v3.0: 异步继续执行
+      coordinator.continueExecution().then(result => {
+        session.result = result;
+        session.completedAt = new Date();
+
+        // 更新蓝图状态
+        blueprint.status = result.success ? 'completed' : 'failed';
+        blueprintStore.save(blueprint);
+
+        // 清理 Worker 分支
+        executor.cleanup().catch(e => {
+          console.warn('[ExecutionManager] 清理分支失败:', e);
+        });
+      }).catch(error => {
+        console.error('[ExecutionManager] 继续执行失败:', error);
+        session.completedAt = new Date();
+        blueprint.status = 'failed';
+        blueprintStore.save(blueprint);
+      });
+
       return session;
 
     } catch (error: any) {
@@ -2978,11 +3101,11 @@ router.post('/coordinator/start', async (req: Request, res: Response) => {
         });
       }
 
-      // V2.1: 优先检查文件系统上的可恢复状态
-      if (blueprint.projectPath && RealtimeCoordinator.hasRecoverableState(blueprint.projectPath)) {
-        console.log('[coordinator/start] 发现可恢复的执行状态，尝试恢复...');
+      // v3.0: 使用统一的恢复状态检查方法
+      if (executionManager.hasRecoverableState(blueprintId)) {
+        console.log('[coordinator/start] 发现可恢复的执行状态，尝试从蓝图恢复...');
         try {
-          const recoveredSession = await executionManager.recoverFromProject(blueprint.projectPath);
+          const recoveredSession = await executionManager.restoreSessionFromState(blueprintId);
           if (recoveredSession) {
             console.log('[coordinator/start] 成功恢复执行:', {
               executionId: recoveredSession.id,
@@ -3006,7 +3129,7 @@ router.post('/coordinator/start', async (req: Request, res: Response) => {
       }
 
       // 检查蓝图状态（允许 executing 以便处理会话丢失的情况，允许 completed 以便重新执行）
-      const allowedStatuses = ['confirmed', 'draft', 'paused', 'failed', 'executing'];
+      const allowedStatuses = ['confirmed', 'draft', 'paused', 'failed', 'executing', 'completed'];
       if (!allowedStatuses.includes(blueprint.status)) {
         console.log('[coordinator/start] 蓝图状态不允许执行:', blueprint.status);
         return res.status(400).json({
@@ -3070,34 +3193,15 @@ router.post('/coordinator/start', async (req: Request, res: Response) => {
 router.get('/coordinator/recoverable/:blueprintId', (req: Request, res: Response) => {
   try {
     const { blueprintId } = req.params;
+    // v3.0: getRecoverableState 现在直接返回 stateDetails
     const result = executionManager.getRecoverableState(blueprintId);
-
-    // 如果有可恢复状态，尝试加载状态详情
-    let stateDetails = null;
-    if (result.hasState && result.projectPath) {
-      const state = RealtimeCoordinator.loadStateFromProject(result.projectPath);
-      if (state) {
-        stateDetails = {
-          planId: state.plan.id,
-          completedTasks: state.completedTaskIds.length,
-          failedTasks: state.failedTaskIds.length,
-          skippedTasks: state.skippedTaskIds.length,
-          totalTasks: state.plan.tasks.length,
-          currentGroupIndex: state.currentGroupIndex,
-          totalGroups: state.plan.parallelGroups.length,
-          lastUpdatedAt: state.lastUpdatedAt,
-          isPaused: state.isPaused,
-          currentCost: state.currentCost,
-        };
-      }
-    }
 
     res.json({
       success: true,
       data: {
         hasRecoverableState: result.hasState,
         projectPath: result.projectPath,
-        stateDetails,
+        stateDetails: result.stateDetails || null,
       },
     });
   } catch (error: any) {
@@ -6462,6 +6566,170 @@ router.post('/coordinator/conflicts/:conflictId/resolve', (req: Request, res: Re
       error: '冲突不存在',
     });
   } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================================
+// v4.0: 执行日志 API（SQLite 存储）
+// ============================================================================
+
+import { getSwarmLogDB } from '../database/swarm-logs.js';
+
+/**
+ * GET /logs/task/:taskId
+ * 获取指定任务的执行日志
+ */
+router.get('/logs/task/:taskId', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const { limit = '100', offset = '0', since, until } = req.query;
+
+    const logDB = getSwarmLogDB();
+
+    // 获取任务执行历史
+    const history = logDB.getTaskHistory(taskId);
+
+    // 获取日志和流
+    const logs = logDB.getLogs({
+      taskId,
+      limit: parseInt(limit as string, 10),
+      offset: parseInt(offset as string, 10),
+      since: since as string,
+      until: until as string,
+    });
+
+    const streams = logDB.getStreams({
+      taskId,
+      limit: parseInt(limit as string, 10),
+      offset: parseInt(offset as string, 10),
+      since: since as string,
+      until: until as string,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        taskId,
+        executions: history.executions,
+        logs,
+        streams,
+        totalLogs: history.totalLogs,
+        totalStreams: history.totalStreams,
+      },
+    });
+  } catch (error: any) {
+    console.error('[LogsAPI] 获取任务日志失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /logs/blueprint/:blueprintId
+ * 获取指定蓝图的所有执行日志
+ */
+router.get('/logs/blueprint/:blueprintId', (req: Request, res: Response) => {
+  try {
+    const { blueprintId } = req.params;
+    const { limit = '500', offset = '0' } = req.query;
+
+    const logDB = getSwarmLogDB();
+
+    // 获取所有执行记录
+    const executions = logDB.getExecutions({
+      blueprintId,
+      limit: parseInt(limit as string, 10),
+      offset: parseInt(offset as string, 10),
+    });
+
+    // 获取日志
+    const logs = logDB.getLogs({
+      blueprintId,
+      limit: parseInt(limit as string, 10),
+      offset: parseInt(offset as string, 10),
+    });
+
+    res.json({
+      success: true,
+      data: {
+        blueprintId,
+        executions,
+        logs,
+        totalExecutions: executions.length,
+        totalLogs: logs.length,
+      },
+    });
+  } catch (error: any) {
+    console.error('[LogsAPI] 获取蓝图日志失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /logs/task/:taskId
+ * 清空指定任务的日志（用于重试前）
+ */
+router.delete('/logs/task/:taskId', (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const { keepLatest = 'false' } = req.query;
+
+    const logDB = getSwarmLogDB();
+    const deletedCount = logDB.clearTaskLogs(taskId, keepLatest === 'true');
+
+    res.json({
+      success: true,
+      data: {
+        taskId,
+        deletedCount,
+      },
+    });
+  } catch (error: any) {
+    console.error('[LogsAPI] 清空任务日志失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /logs/stats
+ * 获取日志数据库统计信息
+ */
+router.get('/logs/stats', (_req: Request, res: Response) => {
+  try {
+    const logDB = getSwarmLogDB();
+    const stats = logDB.getStats();
+
+    res.json({
+      success: true,
+      data: {
+        ...stats,
+        dbSizeMB: (stats.dbSizeBytes / 1024 / 1024).toFixed(2),
+      },
+    });
+  } catch (error: any) {
+    console.error('[LogsAPI] 获取统计信息失败:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /logs/cleanup
+ * 手动触发日志清理
+ */
+router.post('/logs/cleanup', (_req: Request, res: Response) => {
+  try {
+    const logDB = getSwarmLogDB();
+    const deletedCount = logDB.cleanupOldLogs();
+
+    res.json({
+      success: true,
+      data: {
+        deletedCount,
+        message: `清理了 ${deletedCount} 条过期日志`,
+      },
+    });
+  } catch (error: any) {
+    console.error('[LogsAPI] 清理日志失败:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

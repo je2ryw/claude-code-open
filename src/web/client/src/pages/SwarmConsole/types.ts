@@ -507,6 +507,24 @@ export interface UseSwarmStateReturn {
   refresh: () => void;
   // v2.1: 任务重试
   retryTask: (blueprintId: string, taskId: string) => void;
+  // v4.0: 历史日志管理
+  loadTaskHistoryLogs: (taskId: string) => Promise<{
+    success: boolean;
+    executions?: Array<{
+      id: string;
+      taskId: string;
+      taskName: string;
+      attempt: number;
+      status: string;
+      startedAt: string;
+      completedAt?: string;
+      error?: string;
+    }>;
+    totalLogs?: number;
+    totalStreams?: number;
+    error?: string;
+  }>;
+  clearTaskLogs: (taskId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 // ============= v3.4 新增：验收测试类型 =============

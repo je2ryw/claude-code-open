@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSwarmWebSocket, UseSwarmWebSocketOptions } from './useSwarmWebSocket';
+import { logsApi } from '../../../api/blueprint';
 import type {
   SwarmState,
   SwarmServerMessage,
@@ -17,6 +18,9 @@ import type {
   TaskNode,
   WorkerAgent,
 } from '../types';
+
+// 工具调用 ID 计数器，确保唯一性
+let toolIdCounter = 0;
 
 const initialState: SwarmState = {
   blueprint: null,
@@ -315,7 +319,7 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
                   // 新增工具块
                   newContent.push({
                     type: 'tool',
-                    id: `tool-${Date.now()}`,
+                    id: `tool-${Date.now()}-${++toolIdCounter}`,
                     name: toolName || 'unknown',
                     input: toolInput,
                     status: 'running',
@@ -449,6 +453,110 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     }
   }, [blueprintId, ws]);
 
+  // v4.0: 从 SQLite 加载历史日志
+  const loadTaskHistoryLogs = useCallback(async (taskId: string) => {
+    try {
+      const response = await logsApi.getTaskLogs(taskId, { limit: 200 });
+
+      // 将历史日志合并到当前状态
+      setState(prev => {
+        // 转换 logs 为前端格式
+        const historyLogs = response.logs.map(log => ({
+          id: log.id,
+          timestamp: log.timestamp,
+          level: log.level,
+          type: log.type,
+          message: log.message,
+          details: log.details,
+        }));
+
+        // 转换 streams 为前端内容格式
+        const historyContent: Array<{
+          type: 'tool';
+          id: string;
+          name: string;
+          input?: any;
+          status: 'completed' | 'error';
+          result?: string;
+          error?: string;
+        }> = response.streams
+          .filter(s => s.streamType === 'tool_end')
+          .map(s => ({
+            type: 'tool' as const,
+            id: s.id,
+            name: s.toolName || 'unknown',
+            input: s.toolInput,
+            status: s.toolError ? 'error' as const : 'completed' as const,
+            result: s.toolResult,
+            error: s.toolError,
+          }));
+
+        // 获取现有日志，避免重复
+        const existingLogs = prev.taskLogs[taskId] || [];
+        const existingIds = new Set(existingLogs.map(l => l.id));
+        const newLogs = historyLogs.filter(l => !existingIds.has(l.id));
+
+        // 获取现有流内容
+        const existingStream = prev.taskStreams[taskId] || { content: [], lastUpdated: new Date().toISOString() };
+        const existingContentIds = new Set(
+          existingStream.content.filter((c): c is { type: 'tool'; id: string } => c.type === 'tool').map(c => c.id)
+        );
+        const newContent = historyContent.filter(c => !existingContentIds.has(c.id));
+
+        return {
+          ...prev,
+          taskLogs: {
+            ...prev.taskLogs,
+            [taskId]: [...newLogs, ...existingLogs].slice(0, 200),
+          },
+          taskStreams: {
+            ...prev.taskStreams,
+            [taskId]: {
+              content: [...newContent, ...existingStream.content].slice(0, 200),
+              lastUpdated: existingStream.lastUpdated,
+            },
+          },
+        };
+      });
+
+      return {
+        success: true,
+        executions: response.executions,
+        totalLogs: response.totalLogs,
+        totalStreams: response.totalStreams,
+      };
+    } catch (err) {
+      console.error('[useSwarmState] 加载历史日志失败:', err);
+      return { success: false, error: err instanceof Error ? err.message : '未知错误' };
+    }
+  }, []);
+
+  // v4.0: 清空任务日志（重试前调用）
+  const clearTaskLogs = useCallback(async (taskId: string) => {
+    try {
+      // 清空后端 SQLite 日志
+      await logsApi.clearTaskLogs(taskId, false);
+
+      // 清空前端状态
+      setState(prev => ({
+        ...prev,
+        taskLogs: {
+          ...prev.taskLogs,
+          [taskId]: [],
+        },
+        taskStreams: {
+          ...prev.taskStreams,
+          [taskId]: { content: [], lastUpdated: new Date().toISOString() },
+        },
+      }));
+
+      return { success: true };
+    } catch (err) {
+      console.error('[useSwarmState] 清空任务日志失败:', err);
+      return { success: false, error: err instanceof Error ? err.message : '未知错误' };
+    }
+  }, []);
+
   return {
     state,
     isLoading,
@@ -456,6 +564,13 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     refresh,
     // v2.1: 任务重试
     retryTask: ws.retryTask,
+    // v3.8: 任务跳过
+    skipTask: ws.skipTask,
+    // v3.8: 取消执行
+    cancelSwarm: ws.cancelSwarm,
+    // v4.0: 历史日志管理
+    loadTaskHistoryLogs,
+    clearTaskLogs,
   };
 }
 

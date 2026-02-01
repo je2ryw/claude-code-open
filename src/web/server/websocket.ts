@@ -14,6 +14,8 @@ import { CheckpointManager } from './checkpoint-manager.js';
 import type { ClientMessage, ServerMessage, Attachment } from '../shared/types.js';
 // 导入蓝图存储和执行管理器（用于 WebSocket 订阅）
 import { blueprintStore, executionEventEmitter, executionManager } from './routes/blueprint-api.js';
+// v4.0: 导入 SQLite 日志存储
+import { getSwarmLogDB, type WorkerLog, type WorkerStream } from './database/swarm-logs.js';
 
 // ============================================================================
 // 旧蓝图系统已被移除，以下是类型占位符和空函数
@@ -831,6 +833,27 @@ export function setupWebSocket(
     };
   }) => {
     console.log(`[Swarm v2.1] Worker log: ${data.workerId} - ${data.log.message.slice(0, 50)}`);
+
+    // v4.0: 存储到 SQLite
+    if (data.taskId) {
+      try {
+        const logDB = getSwarmLogDB();
+        logDB.insertLog({
+          id: data.log.id,
+          blueprintId: data.blueprintId,
+          taskId: data.taskId,
+          workerId: data.workerId,
+          timestamp: data.log.timestamp,
+          level: data.log.level,
+          type: data.log.type,
+          message: data.log.message,
+          details: data.log.details,
+        });
+      } catch (err) {
+        console.error('[SwarmLogDB] 存储日志失败:', err);
+      }
+    }
+
     broadcastToSubscribers(data.blueprintId, {
       type: 'swarm:worker_log',
       payload: {
@@ -857,6 +880,30 @@ export function setupWebSocket(
     toolError?: string;
   }) => {
     // console.log(`[Swarm v2.1] Worker stream: ${data.workerId} - ${data.streamType}`);
+    const timestamp = new Date().toISOString();
+
+    // v4.0: 只存储 tool_start 和 tool_end（thinking/text 太碎片化，不存储）
+    if (data.taskId && (data.streamType === 'tool_start' || data.streamType === 'tool_end')) {
+      try {
+        const logDB = getSwarmLogDB();
+        logDB.insertStream({
+          id: `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          blueprintId: data.blueprintId,
+          taskId: data.taskId,
+          workerId: data.workerId,
+          timestamp,
+          streamType: data.streamType,
+          content: data.content,
+          toolName: data.toolName,
+          toolInput: data.toolInput,
+          toolResult: data.toolResult,
+          toolError: data.toolError,
+        });
+      } catch (err) {
+        console.error('[SwarmLogDB] 存储流失败:', err);
+      }
+    }
+
     broadcastToSubscribers(data.blueprintId, {
       type: 'swarm:worker_stream',
       payload: {
@@ -868,7 +915,7 @@ export function setupWebSocket(
         toolInput: data.toolInput,
         toolResult: data.toolResult,
         toolError: data.toolError,
-        timestamp: new Date().toISOString(),
+        timestamp,
       },
     });
   });
@@ -1308,6 +1355,16 @@ async function handleClientMessage(
     // v2.1: 任务重试
     case 'task:retry':
       await handleTaskRetry(client, (message.payload as any).blueprintId, (message.payload as any).taskId, swarmSubscriptions);
+      break;
+
+    // v3.8: 任务跳过
+    case 'task:skip':
+      await handleTaskSkip(client, (message.payload as any).blueprintId, (message.payload as any).taskId, swarmSubscriptions);
+      break;
+
+    // v3.8: 取消执行
+    case 'swarm:cancel':
+      await handleSwarmCancel(client, (message.payload as any).blueprintId, swarmSubscriptions);
       break;
 
     // ========== 持续开发相关消息 ==========
@@ -4656,6 +4713,132 @@ async function handleTaskRetry(
       type: 'error',
       payload: {
         message: error instanceof Error ? error.message : '任务重试失败',
+      },
+    });
+  }
+}
+
+/**
+ * v3.8: 处理任务跳过请求
+ */
+async function handleTaskSkip(
+  client: ClientConnection,
+  blueprintId: string,
+  taskId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId || !taskId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId 或 taskId' },
+      });
+      return;
+    }
+
+    // 获取执行会话
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+    if (!session) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '找不到执行会话' },
+      });
+      return;
+    }
+
+    // 调用跳过方法
+    const success = session.coordinator.skipTask(taskId);
+
+    if (success) {
+      sendMessage(ws, {
+        type: 'task:skip_success',
+        payload: {
+          blueprintId,
+          taskId,
+          success: true,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } else {
+      sendMessage(ws, {
+        type: 'task:skip_failed',
+        payload: {
+          blueprintId,
+          taskId,
+          success: false,
+          error: '跳过失败',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[Swarm] 任务跳过失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '任务跳过失败',
+      },
+    });
+  }
+}
+
+/**
+ * v3.8: 处理取消执行请求
+ */
+async function handleSwarmCancel(
+  client: ClientConnection,
+  blueprintId: string,
+  swarmSubscriptions: Map<string, Set<string>>
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    if (!blueprintId) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '缺少 blueprintId' },
+      });
+      return;
+    }
+
+    // 获取执行会话
+    const session = executionManager.getSessionByBlueprint(blueprintId);
+    if (!session) {
+      sendMessage(ws, {
+        type: 'error',
+        payload: { message: '找不到执行会话' },
+      });
+      return;
+    }
+
+    // 调用取消方法
+    session.coordinator.cancel();
+
+    console.log(`[Swarm] 执行已取消: ${blueprintId}`);
+
+    sendMessage(ws, {
+      type: 'swarm:cancelled',
+      payload: {
+        blueprintId,
+        success: true,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 更新蓝图状态
+    const blueprint = blueprintStore.get(blueprintId);
+    if (blueprint) {
+      blueprint.status = 'cancelled';
+      blueprintStore.save(blueprint);
+    }
+  } catch (error) {
+    console.error('[Swarm] 取消执行失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '取消执行失败',
       },
     });
   }

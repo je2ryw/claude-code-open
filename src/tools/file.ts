@@ -1258,8 +1258,11 @@ Usage:
         return { success: false, error: `Path is a directory: ${file_path}` };
       }
 
-      // 5. 读取原始内容
-      const originalContent = fs.readFileSync(file_path, 'utf-8');
+      // 5. 读取原始内容并标准化换行符
+      // 官方实现: let $ = O.readFileSync(w, {encoding:uX(w)}).replaceAll(`\r\n`, `\n`)
+      // Windows 文件使用 CRLF，但 Claude 传来的 old_string 使用 LF，必须统一
+      const rawContent = fs.readFileSync(file_path, 'utf-8');
+      const originalContent = rawContent.replaceAll('\r\n', '\n');
 
       // 4. 检查文件是否在读取后被外部修改
       // v2.1.7: 使用内容哈希检测而不是仅依赖时间戳
