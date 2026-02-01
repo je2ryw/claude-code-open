@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import chalk from 'chalk';
 import type { SlashCommand, CommandContext, CommandResult } from './types.js';
 import { commandRegistry } from './registry.js';
 import { contextManager, type ContextStats } from '../context/index.js';
@@ -403,24 +404,35 @@ export const contextCommand: SlashCommand = {
     const summarizedMessages = contextStats.summarizedMessages;
     const compressionRatio = Math.round(contextStats.compressionRatio * 100);
 
-    // 构建输出
-    let contextInfo = `Context Usage:\n`;
-    contextInfo += `  [${progressBar}] ${Math.round(usagePercent)}%\n`;
+    // v2.1.27: 添加彩色输出
+    // 根据使用率选择进度条颜色
+    let progressBarColor: (s: string) => string;
+    if (usagePercent > 80) {
+      progressBarColor = chalk.red;
+    } else if (usagePercent > 60) {
+      progressBarColor = chalk.yellow;
+    } else {
+      progressBarColor = chalk.green;
+    }
+
+    // 构建输出（使用 chalk 彩色）
+    let contextInfo = `${chalk.bold('Context Usage:')}\n`;
+    contextInfo += `  [${progressBarColor(progressBar)}] ${chalk.bold(Math.round(usagePercent).toString())}%\n`;
     contextInfo += `  \n`;
     // v2.1.14: 显示与状态栏一致的 token 计数
-    contextInfo += `  Used:      ${totalUsedTokens.toLocaleString()} tokens\n`;
-    contextInfo += `  Available: ${availableTokens.toLocaleString()} tokens\n`;
-    contextInfo += `  Total:     ${maxTokens.toLocaleString()} tokens\n`;
+    contextInfo += `  ${chalk.dim('Used:')}      ${chalk.cyan(totalUsedTokens.toLocaleString())} tokens\n`;
+    contextInfo += `  ${chalk.dim('Available:')} ${chalk.green(availableTokens.toLocaleString())} tokens\n`;
+    contextInfo += `  ${chalk.dim('Total:')}     ${chalk.white(maxTokens.toLocaleString())} tokens\n`;
     contextInfo += `  \n`;
-    contextInfo += `  Messages: ${stats.messageCount}`;
+    contextInfo += `  ${chalk.dim('Messages:')} ${stats.messageCount}`;
 
     if (summarizedMessages > 0) {
-      contextInfo += ` (${summarizedMessages} summarized)`;
+      contextInfo += ` ${chalk.dim(`(${summarizedMessages} summarized)`)}`;
     }
     contextInfo += `\n`;
 
     if (summarizedMessages > 0) {
-      contextInfo += `  Compression: ${compressionRatio}%\n`;
+      contextInfo += `  ${chalk.dim('Compression:')} ${compressionRatio}%\n`;
     }
 
     contextInfo += `\n`;
@@ -430,31 +442,31 @@ export const contextCommand: SlashCommand = {
     const systemPromptEstimate = Math.min(3000, Math.round(totalUsedTokens * 0.15)); // 约15%
     const messagesTokens = totalUsedTokens - systemPromptEstimate;
 
-    contextInfo += `Token Breakdown:\n`;
-    contextInfo += `  System prompt:  ${systemPromptEstimate.toLocaleString()} tokens (~${((systemPromptEstimate / maxTokens) * 100).toFixed(1)}%)\n`;
-    contextInfo += `  Messages:       ${messagesTokens.toLocaleString()} tokens (~${((messagesTokens / maxTokens) * 100).toFixed(1)}%)\n`;
-    contextInfo += `  Free space:     ${availableTokens.toLocaleString()} tokens (${((availableTokens / maxTokens) * 100).toFixed(1)}%)\n`;
+    contextInfo += `${chalk.bold('Token Breakdown:')}\n`;
+    contextInfo += `  ${chalk.dim('System prompt:')}  ${chalk.cyan(systemPromptEstimate.toLocaleString())} tokens ${chalk.dim(`(~${((systemPromptEstimate / maxTokens) * 100).toFixed(1)}%)`)}\n`;
+    contextInfo += `  ${chalk.dim('Messages:')}       ${chalk.cyan(messagesTokens.toLocaleString())} tokens ${chalk.dim(`(~${((messagesTokens / maxTokens) * 100).toFixed(1)}%)`)}\n`;
+    contextInfo += `  ${chalk.dim('Free space:')}     ${chalk.green(availableTokens.toLocaleString())} tokens ${chalk.dim(`(${((availableTokens / maxTokens) * 100).toFixed(1)}%)`)}\n`;
 
     contextInfo += `\n`;
-    contextInfo += `Model: ${modelName}\n`;
-    contextInfo += `Context Window: ${(maxTokens / 1000).toFixed(0)}k tokens\n`;
+    contextInfo += `${chalk.dim('Model:')} ${chalk.white(modelName)}\n`;
+    contextInfo += `${chalk.dim('Context Window:')} ${chalk.white((maxTokens / 1000).toFixed(0) + 'k')} tokens\n`;
 
     contextInfo += `\n`;
 
-    // 提供建议
+    // 提供建议（彩色）
     if (usagePercent > 80) {
-      contextInfo += `⚠️  Context is nearly full (${usagePercent.toFixed(1)}%).\n`;
-      contextInfo += `   Consider using /compact to free up space.\n\n`;
-      contextInfo += `What /compact does:\n`;
-      contextInfo += `  • Generates AI summary of conversation\n`;
-      contextInfo += `  • Preserves important context and files\n`;
-      contextInfo += `  • Clears old messages from context\n`;
-      contextInfo += `  • Frees up ~${Math.round((messagesTokens * 0.7) / 1000)}k tokens\n`;
+      contextInfo += `${chalk.yellow('⚠️  Context is nearly full')} (${usagePercent.toFixed(1)}%).\n`;
+      contextInfo += `   Consider using ${chalk.cyan('/compact')} to free up space.\n\n`;
+      contextInfo += `${chalk.bold('What /compact does:')}\n`;
+      contextInfo += `  ${chalk.dim('•')} Generates AI summary of conversation\n`;
+      contextInfo += `  ${chalk.dim('•')} Preserves important context and files\n`;
+      contextInfo += `  ${chalk.dim('•')} Clears old messages from context\n`;
+      contextInfo += `  ${chalk.dim('•')} Frees up ${chalk.green(`~${Math.round((messagesTokens * 0.7) / 1000)}k`)} tokens\n`;
     } else if (usagePercent > 60) {
-      contextInfo += `ℹ️  Context is ${usagePercent.toFixed(1)}% full.\n`;
-      contextInfo += `   You can use /compact when context gets too large.\n`;
+      contextInfo += `${chalk.blue('ℹ️  Context is')} ${usagePercent.toFixed(1)}% full.\n`;
+      contextInfo += `   You can use ${chalk.cyan('/compact')} when context gets too large.\n`;
     } else {
-      contextInfo += `✓ Plenty of context space available.\n`;
+      contextInfo += `${chalk.green('✓ Plenty of context space available.')}\n`;
     }
 
     contextInfo += `\n`;
