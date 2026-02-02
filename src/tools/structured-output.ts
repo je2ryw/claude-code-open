@@ -5,7 +5,11 @@
  * 对应官方 vH6 函数和 EXA/ZD 工具定义
  */
 
-import Ajv, { type ValidateFunction } from 'ajv';
+import AjvModule from 'ajv';
+import type { ValidateFunction } from 'ajv';
+
+// ESM 兼容：处理 default 导出
+const Ajv = (AjvModule as any).default || AjvModule;
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition } from '../types/index.js';
 

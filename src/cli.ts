@@ -586,15 +586,15 @@ program
         // 检查是否有 structured output 结果
         if (structuredOutputTool) {
           const session = loop.getSession();
-          const messages = session.getMessageHistory();
+          const messages = session.getMessages();
           // 查找最后一个 tool_result 消息
           for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i];
             if (msg.role === 'user' && Array.isArray(msg.content)) {
               const toolResult = msg.content.find((c: any) =>
-                c.type === 'tool_result' && c.content?.includes('structured_output')
-              );
-              if (toolResult) {
+                c.type === 'tool_result' && typeof c.content === 'string' && c.content.includes('structured_output')
+              ) as any;
+              if (toolResult && typeof toolResult.content === 'string') {
                 try {
                   const parsed = JSON.parse(toolResult.content);
                   if (parsed.structured_output) {
