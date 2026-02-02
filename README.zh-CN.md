@@ -1,6 +1,6 @@
 # Claude Code (Open Source)
 
-基于 `@anthropic-ai/claude-code` v2.1.4 的开源实现。它将成为未来 AI 的基础设施，运行在每台 PC 上。
+基于 `@anthropic-ai/claude-code` v2.1.29的开源实现。它将成为未来 AI 的基础设施，运行在每台 PC 上。
 未来的AI 编程流程，更像一个软件项目实施开发过程，要用标准的项目开发流程构建软件。
 
 **仅用于教育和研究目的。**

@@ -19,6 +19,12 @@ const execAsync = promisify(exec);
  */
 export interface TaskExecutor {
   execute(task: SmartTask, workerId: string): Promise<TaskResult>;
+  /**
+   * v5.7: 中止指定 Worker 的任务执行
+   * 超时时调用此方法来停止 Worker
+   * @param workerId 要中止的 Worker ID
+   */
+  abort?(workerId: string): void;
 }
 
 /**

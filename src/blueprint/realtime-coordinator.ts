@@ -87,6 +87,12 @@ export interface ExecutionResult {
  */
 export interface TaskExecutor {
   execute(task: SmartTask, workerId: string): Promise<TaskResult>;
+  /**
+   * v5.7: 中止指定 Worker 的任务执行
+   * 超时时调用此方法来停止 Worker
+   * @param workerId 要中止的 Worker ID
+   */
+  abort?(workerId: string): void;
 }
 
 // ============================================================================
@@ -1399,6 +1405,7 @@ export class RealtimeCoordinator extends EventEmitter {
 
   /**
    * 带超时执行任务
+   * v5.7: 超时时会调用 TaskExecutor.abort() 来中止 Worker
    */
   private async executeTaskWithTimeout(task: SmartTask, workerId: string): Promise<TaskResult> {
     if (!this.taskExecutor) {
@@ -1406,17 +1413,32 @@ export class RealtimeCoordinator extends EventEmitter {
     }
 
     return new Promise<TaskResult>((resolve, reject) => {
+      let isSettled = false;
+
       const timeoutId = setTimeout(() => {
+        if (isSettled) return;
+        isSettled = true;
+
+        // v5.7: 超时时中止 Worker，立即停止执行
+        if (this.taskExecutor?.abort) {
+          console.log(`[RealtimeCoordinator] 任务 ${task.name} 超时，正在中止 Worker ${workerId}...`);
+          this.taskExecutor.abort(workerId);
+        }
+
         this.addIssue(task.id, 'timeout', `任务超时（${this.config.workerTimeout}ms）`);
         reject(new Error(`任务超时`));
       }, this.config.workerTimeout);
 
       this.taskExecutor!.execute(task, workerId)
         .then(result => {
+          if (isSettled) return;
+          isSettled = true;
           clearTimeout(timeoutId);
           resolve(result);
         })
         .catch(error => {
+          if (isSettled) return;
+          isSettled = true;
           clearTimeout(timeoutId);
           reject(error);
         });

@@ -78,15 +78,16 @@ interface ExtendedFileEditInput extends FileEditInput {
 
 /**
  * 文件读取记录接口
- * v2.1.7: 添加 contentHash 和 fileSize 用于内容哈希检测
- * 修复 Windows 上的 "file modified" 假错误问题
+ * v3.7: 对齐官网实现 - 存储 content 而不是 contentHash
+ * 官网策略：直接比较 content 字符串，不使用哈希
  */
 interface FileReadRecord {
   path: string;
-  readTime: number;  // 读取时的时间戳
-  mtime: number;     // 读取时的文件修改时间（mtimeMs）
-  contentHash: string;  // 文件内容的 SHA256 哈希值
-  fileSize: number;     // 文件大小（字节），用于快速检查
+  readTime: number;    // 读取时的时间戳
+  mtime: number;       // 读取时的文件修改时间（mtimeMs）
+  content: string;     // 文件内容（已标准化换行符为 LF）
+  offset?: number;     // 部分读取时的偏移量
+  limit?: number;      // 部分读取时的限制
 }
 
 /**
@@ -107,17 +108,24 @@ class FileReadTracker {
 
   /**
    * 标记文件已被读取
-   * v2.1.7: 添加 contentHash 和 fileSize 参数用于内容哈希检测
+   * v3.7: 对齐官网实现 - 存储 content 而不是 contentHash
+   *
+   * @param filePath 文件路径
+   * @param content 文件内容（已标准化为 LF 换行符）
+   * @param mtime 文件修改时间（mtimeMs）
+   * @param offset 可选，部分读取时的偏移量
+   * @param limit 可选，部分读取时的限制
    */
-  markAsRead(filePath: string, mtime: number, contentHash: string, fileSize: number): void {
+  markAsRead(filePath: string, content: string, mtime: number, offset?: number, limit?: number): void {
     // 规范化路径
     const normalizedPath = path.resolve(filePath);
     const record: FileReadRecord = {
       path: normalizedPath,
       readTime: Date.now(),
       mtime,
-      contentHash,
-      fileSize,
+      content,
+      offset,
+      limit,
     };
     this.readFiles.set(normalizedPath, record);
   }
@@ -367,7 +375,7 @@ Usage:
 
       const stat = fs.statSync(file_path);
       if (stat.isDirectory()) {
-        return { success: false, error: `Path is a directory: ${file_path}. Use ls command instead.` };
+        return { success: false, error: `Path is a directory: ${file_path}. Use the Read tool on specific files within this directory, or use ls command via Bash to list contents.` };
       }
 
       const ext = path.extname(file_path).toLowerCase().slice(1);
@@ -422,14 +430,20 @@ Usage:
         maxLength: 30000,
       });
 
-      // v2.1.7: 计算内容哈希用于检测文件是否真正被修改
-      // 修复 Windows 上的 "file modified" 假错误问题
+      // v3.7: 对齐官网实现 - 存储完整文件内容
+      // 官网逻辑: z.set(X,{content:G, timestamp:dP(X), offset:void 0, limit:void 0})
       // 标准化换行符以确保跨平台一致性（Windows CRLF -> LF）
       const normalizedContent = content.replaceAll('\r\n', '\n');
-      const contentHash = computeContentHash(normalizedContent);
 
-      // 标记文件已被读取（用于 Edit 工具验证），记录 mtime、内容哈希和文件大小
-      fileReadTracker.markAsRead(file_path, stat.mtimeMs, contentHash, stat.size);
+      // 标记文件已被读取（用于 Edit 工具验证）
+      // 如果是部分读取（offset != 0 或未读到末尾），记录 offset 和 limit
+      const isPartialRead = offset !== 0 || (offset + limit) < lines.length;
+      if (isPartialRead) {
+        fileReadTracker.markAsRead(file_path, normalizedContent, stat.mtimeMs, offset, limit);
+      } else {
+        // 完整读取，不传 offset 和 limit（与官网一致）
+        fileReadTracker.markAsRead(file_path, normalizedContent, stat.mtimeMs);
+      }
 
       return {
         success: true,
@@ -949,6 +963,16 @@ Usage:
 
       fs.writeFileSync(file_path, content, 'utf-8');
 
+      // v3.7: 写入成功后更新 FileReadTracker（对齐官网实现）
+      // 这样后续的 Edit 操作可以正常工作
+      try {
+        const stat = fs.statSync(file_path);
+        const normalizedContent = content.replaceAll('\r\n', '\n');
+        fileReadTracker.markAsRead(file_path, normalizedContent, stat.mtimeMs);
+      } catch {
+        // 如果更新失败，不影响写入结果
+      }
+
       const lines = content.split('\n').length;
       const result = {
         success: true,
@@ -1255,7 +1279,7 @@ Usage:
 
       const stat = fs.statSync(file_path);
       if (stat.isDirectory()) {
-        return { success: false, error: `Path is a directory: ${file_path}` };
+        return { success: false, error: `Path is a directory: ${file_path}. Use the Read tool on specific files within this directory, or use ls command via Bash to list contents.` };
       }
 
       // 5. 读取原始内容并标准化换行符
@@ -1265,35 +1289,33 @@ Usage:
       const originalContent = rawContent.replaceAll('\r\n', '\n');
 
       // 4. 检查文件是否在读取后被外部修改
-      // v2.1.7: 使用内容哈希检测而不是仅依赖时间戳
-      // 修复 Windows 上的 "file modified" 假错误问题
+      // v3.7: 对齐官网实现 - 直接比较 content 字符串，不使用哈希
+      // 官网逻辑: if(dP(w)>_.timestamp) if($.readFileSync(w).replaceAll(`\r\n`,`\n`)===_.content); else return error
       const readRecord = fileReadTracker.getRecord(file_path);
       if (readRecord && stat.mtimeMs > readRecord.mtime) {
         // 时间戳已变化，需要检查内容是否真正被修改
-        // 首先快速检查：如果文件大小不同，则肯定被修改
-        if (stat.size !== readRecord.fileSize) {
+        // 特殊处理：如果是部分读取（有 offset 或 limit），跳过验证
+        // 官网逻辑: if (C && C.offset === void 0 && C.limit === void 0 && M === C.content)
+        if (readRecord.offset !== undefined || readRecord.limit !== undefined) {
+          // 部分读取的文件不能进行完整内容比对，直接报错
+          return {
+            success: false,
+            error: 'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.',
+            errorCode: EditErrorCode.EXTERNALLY_MODIFIED,
+          };
+        }
+
+        // 全文读取：直接比较 content 字符串（已标准化为 LF）
+        // originalContent 已经标准化过了（见上方 1284 行）
+        if (originalContent !== readRecord.content) {
           return {
             success: false,
             error: 'File has been modified since it was read, either by the user or by a linter. Read it again before attempting to write it.',
             errorCode: EditErrorCode.EXTERNALLY_MODIFIED,
           };
         }
-
-        // 文件大小相同，计算当前内容的哈希值进行比较
-        // 标准化换行符以确保跨平台一致性（Windows CRLF -> LF）
-        const normalizedContent = originalContent.replaceAll('\r\n', '\n');
-        const currentHash = computeContentHash(normalizedContent);
-
-        // 如果内容哈希不同，说明文件确实被修改了
-        if (currentHash !== readRecord.contentHash) {
-          return {
-            success: false,
-            error: 'File has been modified since it was read, either by the user or by a linter. Read it again before attempting to write it.',
-            errorCode: EditErrorCode.EXTERNALLY_MODIFIED,
-          };
-        }
-        // 如果内容哈希相同，说明只是时间戳变化但内容未变
-        // 这种情况在 Windows 上很常见，不应该报错
+        // 如果 content 相同，说明只是时间戳变化但内容未变
+        // 这种情况在 Windows 上很常见（linter/prettier 触碰文件），不应该报错
       }
 
       // 6. 特殊情况：old_string 为空表示写入/覆盖整个文件
@@ -1391,6 +1413,18 @@ Usage:
       try {
         fs.writeFileSync(file_path, modifiedContent, 'utf-8');
 
+        // v3.7: 写入成功后更新 FileReadTracker（对齐官网实现）
+        // 官网逻辑: z.set(X,{content:G, timestamp:dP(X), offset:void 0, limit:void 0})
+        // 重新读取文件获取最新的 mtime 和 content（linter 可能在写入后立即修改文件）
+        try {
+          const newStat = fs.statSync(file_path);
+          const newContent = fs.readFileSync(file_path, 'utf-8');
+          const normalizedNewContent = newContent.replaceAll('\r\n', '\n');
+          fileReadTracker.markAsRead(file_path, normalizedNewContent, newStat.mtimeMs);
+        } catch {
+          // 如果更新失败，不影响编辑结果
+        }
+
         // 构建输出消息
         let output = '';
 
@@ -1447,6 +1481,15 @@ Usage:
       }
 
       fs.writeFileSync(filePath, content, 'utf-8');
+
+      // v3.7: 创建文件后更新 FileReadTracker（对齐官网实现）
+      try {
+        const stat = fs.statSync(filePath);
+        const normalizedContent = content.replaceAll('\r\n', '\n');
+        fileReadTracker.markAsRead(filePath, normalizedContent, stat.mtimeMs);
+      } catch {
+        // 如果更新失败，不影响创建结果
+      }
 
       const lineCount = content.split('\n').length;
       return {

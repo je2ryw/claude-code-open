@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
+import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { Header } from './components/Header.js';
 import { Message } from './components/Message.js';
 import { Input } from './components/Input.js';
@@ -184,6 +185,8 @@ export const App: React.FC<AppProps> = ({
   organization,
 }) => {
   const { exit } = useApp();
+  // v2.1.8: 获取终端尺寸，用于固定底部输入框布局
+  const { rows: terminalRows } = useTerminalSize();
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallItem[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
@@ -1013,62 +1016,71 @@ export const App: React.FC<AppProps> = ({
     }
   }, [handleSubmit, initialPrompt]); // 添加依赖�?
 
+  // v2.1.8: 计算内容区域的最大高度
+  // 预留空间：头部(3行) + 输入框(3行) + 状态栏(2行) = 8行
+  const RESERVED_ROWS = 8;
+  const contentMaxHeight = Math.max(terminalRows - RESERVED_ROWS, 10);
+
   return (
-    <Box flexDirection="column" flexShrink={0}>
-      {/* 欢迎屏幕或头�?*/}
-      {showWelcome && messages.length === 0 ? (
-        <WelcomeScreen
-          version={VERSION_FULL}
-          username={username}
-          model={modelDisplayName[currentModel] || currentModel}
-          apiType={apiType as any}
-          organization={organization}
-          cwd={process.cwd()}
-          recentActivity={recentActivity}
+    <Box flexDirection="column" height={terminalRows}>
+      {/* 欢迎屏幕或头部 - 固定不可压缩 */}
+      <Box flexShrink={0}>
+        {showWelcome && messages.length === 0 ? (
+          <WelcomeScreen
+            version={VERSION_FULL}
+            username={username}
+            model={modelDisplayName[currentModel] || currentModel}
+            apiType={apiType as any}
+            organization={organization}
+            cwd={process.cwd()}
+            recentActivity={recentActivity}
+          />
+        ) : (
+          <Header
+            version={VERSION_FULL}
+            model={modelDisplayName[currentModel] || currentModel}
+            cwd={process.cwd()}
+            username={username}
+            apiType={apiType}
+            organization={organization}
+            isCompact={messages.length > 0}
+            isPlanMode={planMode}
+            connectionStatus={connectionStatus}
+            showShortcutHint={true}
+            hasUpdate={hasUpdate}
+            latestVersion={latestVersion}
+            backgroundTaskCount={backgroundTaskCount}
+            runningTaskCount={runningTaskCount}
+          />
+        )}
+      </Box>
+
+      {/* 快捷键帮助 - 弹窗层 */}
+      <Box flexShrink={0}>
+        <ShortcutHelp
+          isVisible={showShortcuts}
+          onClose={() => setShowShortcuts(false)}
         />
-      ) : (
-        <Header
-          version={VERSION_FULL}
-          model={modelDisplayName[currentModel] || currentModel}
-          cwd={process.cwd()}
-          username={username}
-          apiType={apiType}
-          organization={organization}
-          isCompact={messages.length > 0}
-          isPlanMode={planMode}
-          connectionStatus={connectionStatus}
-          showShortcutHint={true}
-          hasUpdate={hasUpdate}
-          latestVersion={latestVersion}
-          backgroundTaskCount={backgroundTaskCount}
-          runningTaskCount={runningTaskCount}
-        />
-      )}
 
-      {/* 快捷键帮�?*/}
-      <ShortcutHelp
-        isVisible={showShortcuts}
-        onClose={() => setShowShortcuts(false)}
-      />
+        {/* 登录选择器 */}
+        {showLoginScreen && (
+          <LoginSelector onSelect={handleLoginSelect} />
+        )}
 
-      {/* 登录选择器 */}
-      {showLoginScreen && (
-        <LoginSelector onSelect={handleLoginSelect} />
-      )}
+        {/* 信任对话框 - 修复 v2.1.3 home 目录信任问题 */}
+        {TrustDialogComponent}
 
-      {/* 信任对话框 - 修复 v2.1.3 home 目录信任问题 */}
-      {TrustDialogComponent}
-
-      {/* CLAUDE.md 导入审批对话框 - v2.1.6 新增 */}
-      {showClaudeMdDialog && (
-        <ClaudeMdImportDialog
-          files={claudeMdImport.pendingFiles}
-          cwd={process.cwd()}
-          onComplete={handleClaudeMdApprovalComplete}
-          onCancel={handleClaudeMdCancel}
-          showDetails={false}
-        />
-      )}
+        {/* CLAUDE.md 导入审批对话框 - v2.1.6 新增 */}
+        {showClaudeMdDialog && (
+          <ClaudeMdImportDialog
+            files={claudeMdImport.pendingFiles}
+            cwd={process.cwd()}
+            onComplete={handleClaudeMdApprovalComplete}
+            onCancel={handleClaudeMdCancel}
+            showDetails={false}
+          />
+        )}
+      </Box>
 
       {/* 官方 local-jsx 命令：显示命令返回的 JSX 组件（如 /chrome 设置界面�?resume 会话选择器）*/}
       {commandJsx && (
@@ -1140,6 +1152,7 @@ export const App: React.FC<AppProps> = ({
       )}
 
       {/* 历史消息 - 使用 Static 组件固化到终端历史，允许向上滚动查看 */}
+      {/* Static 组件不应该放在高度受限的容器中，它需要自由地将内容打印到终端 */}
       <Static items={messages}>
         {(msg) => (
           <Message
@@ -1151,145 +1164,161 @@ export const App: React.FC<AppProps> = ({
         )}
       </Static>
 
-      {/* 当前活动区域 - 流式输出和动态内�?*/}
-      <Box flexDirection="column" flexGrow={0} flexShrink={0} marginY={1}>
-        {/* 当前流式块（按时间顺序交织显示文本和工具）*/}
-        {streamBlocks.map((block) => {
-          if (block.type === 'text') {
-            // v2.1.0 改进：中断消息使用灰色显示
-            const isInterrupted = block.id.startsWith('interrupt-');
-            if (isInterrupted) {
+      {/* v2.1.8: 流式输出区域 - 使用 maxHeight 和 overflowY 限制高度 */}
+      {/* 这确保输入框始终固定在底部，不会被流式输出推走 */}
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        flexShrink={1}
+        overflowY="hidden"
+        height={contentMaxHeight}
+        marginY={1}
+      >
+          {/* 当前流式块（按时间顺序交织显示文本和工具）*/}
+          {streamBlocks.map((block) => {
+            if (block.type === 'text') {
+              // v2.1.0 改进：中断消息使用灰色显示
+              const isInterrupted = block.id.startsWith('interrupt-');
+              if (isInterrupted) {
+                return (
+                  <Box key={block.id} marginTop={1}>
+                    <Text color="gray" dimColor>
+                      {block.text || ''}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
-                <Box key={block.id} marginTop={1}>
-                  <Text color="gray" dimColor>
-                    {block.text || ''}
-                  </Text>
-                </Box>
+                <Message
+                  key={block.id}
+                  role="assistant"
+                  content={block.text || ''}
+                  timestamp={block.timestamp}
+                  streaming={block.isStreaming}
+                />
+              );
+            } else if (block.type === 'tool' && block.tool) {
+              return (
+                <ToolCall
+                  key={block.id}
+                  name={block.tool.name}
+                  status={block.tool.status}
+                  input={block.tool.input}
+                  result={block.tool.result}
+                  error={block.tool.error}
+                  duration={block.tool.duration}
+                />
               );
             }
-            return (
-              <Message
-                key={block.id}
-                role="assistant"
-                content={block.text || ''}
-                timestamp={block.timestamp}
-                streaming={block.isStreaming}
-              />
-            );
-          } else if (block.type === 'tool' && block.tool) {
-            return (
-              <ToolCall
-                key={block.id}
-                name={block.tool.name}
-                status={block.tool.status}
-                input={block.tool.input}
-                result={block.tool.result}
-                error={block.tool.error}
-                duration={block.tool.duration}
-              />
-            );
-          }
-          return null;
-        })}
+            return null;
+          })}
 
-        {/* v2.1.7 Turn Duration 显示 - 对齐官方 Lb5 组件 */}
-        {/* 只在 Turn 完成后显示，且耗时超过 30 秒 */}
-        {turnDuration && !isProcessing && (
-          <Box flexDirection="row" marginTop={1}>
-            <Box minWidth={2}>
-              <Text dimColor>○ </Text>
+          {/* v2.1.7 Turn Duration 显示 - 对齐官方 Lb5 组件 */}
+          {/* 只在 Turn 完成后显示，且耗时超过 30 秒 */}
+          {turnDuration && !isProcessing && (
+            <Box flexDirection="row" marginTop={1}>
+              <Box minWidth={2}>
+                <Text dimColor>○ </Text>
+              </Box>
+              <Text dimColor>
+                {turnDuration.verb} for {formatDuration(turnDuration.durationMs)}
+              </Text>
             </Box>
-            <Text dimColor>
-              {turnDuration.verb} for {formatDuration(turnDuration.durationMs)}
-            </Text>
-          </Box>
-        )}
+          )}
 
-        {/* 加载中指示器（仅在没有任何块时显示）*/}
-        {/* v2.1.0 改进：等待首个响应时的 spinner 反馈 */}
-        {/* v2.1.7 修复：本地命令执行时不显示 spinner */}
-        {isProcessing && !isLocalCommand && streamBlocks.length === 0 && (
-          <Box marginLeft={2}>
-            <Spinner
-              label="Thinking..."
-              waitingForFirstToken={true}
-              showElapsed={true}
-            />
-          </Box>
+          {/* 加载中指示器（仅在没有任何块时显示）*/}
+          {/* v2.1.0 改进：等待首个响应时的 spinner 反馈 */}
+          {/* v2.1.7 修复：本地命令执行时不显示 spinner */}
+          {isProcessing && !isLocalCommand && streamBlocks.length === 0 && (
+            <Box marginLeft={2}>
+              <Spinner
+                label="Thinking..."
+                waitingForFirstToken={true}
+                showElapsed={true}
+              />
+            </Box>
+          )}
+
+        {/* Todo List */}
+        {(todos.length > 0 || showTodosPanel) && <TodoList todos={todos} />}
+
+        {/* Background Tasks Panel */}
+        {/* v2.1.8: 只显示当前任务关联的后台任务，避免干扰用户 */}
+        <BackgroundTasksPanel
+          tasks={currentBackgroundTaskId
+            ? backgroundTasks.filter(t => t.id === currentBackgroundTaskId)
+            : backgroundTasks.filter(t => t.status === 'running')  // 无当前任务时只显示运行中的
+          }
+          isVisible={showBackgroundPanel}
+        />
+
+        {/* Rewind UI - 双击 ESC 触发 */}
+        {showRewindUI && (
+          <RewindUI
+            messages={messages.filter(m => m.role === 'user').map((m, idx) => ({
+              uuid: m.id,
+              index: idx,
+              role: m.role as 'user',
+              preview: typeof m.content === 'string' ? m.content.slice(0, 60) + (m.content.length > 60 ? '...' : '') : '[Complex content]',
+              hasFileChanges: false,
+              timestamp: m.timestamp.getTime(),
+            }))}
+            totalMessages={messages.length}
+            getPreview={() => ({
+              filesWillChange: [],
+              messagesWillRemove: 0,
+              insertions: 0,
+              deletions: 0,
+            })}
+            onRewind={async () => {
+              setShowRewindUI(false);
+            }}
+            onCancel={() => setShowRewindUI(false)}
+          />
         )}
       </Box>
 
-      {/* Todo List */}
-      {(todos.length > 0 || showTodosPanel) && <TodoList todos={todos} />}
+      {/* v2.1.8: 底部固定区域 - 输入框和状态栏 */}
+      {/* 使用 flexShrink={0} 确保这部分永远不会被压缩 */}
+      <Box flexDirection="column" flexShrink={0}>
+        {/* Input with suggestion - 当显示 JSX 命令组件、登录选择器、Rewind UI 或 OAuth 流程进行中时隐藏输入框 */}
+        {!hidePromptForJsx && !showRewindUI && !showLoginScreen && !isOAuthInProgress && (
+          <Box marginTop={1}>
+            <Input
+              onSubmit={handleSubmit}
+              disabled={isProcessing}
+              suggestion={showWelcome ? currentSuggestion : undefined}
+              onRewindRequest={handleRewindRequest}
+              onPermissionModeChange={handlePermissionModeChange}
+              permissionMode={quickPermissionMode}
+            />
+          </Box>
+        )}
 
-      {/* Background Tasks Panel */}
-      <BackgroundTasksPanel
-        tasks={backgroundTasks}
-        isVisible={showBackgroundPanel}
-      />
-
-      {/* Rewind UI - 双击 ESC 触发 */}
-      {showRewindUI && (
-        <RewindUI
-          messages={messages.filter(m => m.role === 'user').map((m, idx) => ({
-            uuid: m.id,
-            index: idx,
-            role: m.role as 'user',
-            preview: m.content.slice(0, 60) + (m.content.length > 60 ? '...' : ''),
-            hasFileChanges: false,
-            timestamp: m.timestamp.getTime(),
-          }))}
-          totalMessages={messages.length}
-          getPreview={() => ({
-            filesWillChange: [],
-            messagesWillRemove: 0,
-            insertions: 0,
-            deletions: 0,
-          })}
-          onRewind={async () => {
-            setShowRewindUI(false);
-          }}
-          onCancel={() => setShowRewindUI(false)}
-        />
-      )}
-
-      {/* Input with suggestion - 当显示 JSX 命令组件、登录选择器、Rewind UI 或 OAuth 流程进行中时隐藏输入框 */}
-      {!hidePromptForJsx && !showRewindUI && !showLoginScreen && !isOAuthInProgress && (
-        <Box marginTop={1}>
-          <Input
-            onSubmit={handleSubmit}
-            disabled={isProcessing}
-            suggestion={showWelcome ? currentSuggestion : undefined}
-            onRewindRequest={handleRewindRequest}
-            onPermissionModeChange={handlePermissionModeChange}
-            permissionMode={quickPermissionMode}
-          />
-        </Box>
-      )}
-
-      {/* Status Bar - 底部状态栏 */}
-      <Box justifyContent="space-between" paddingX={1} marginTop={1}>
-        <Box>
-          <Text color="gray" dimColor>
-            ? for shortcuts
-          </Text>
-          {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 */}
-          <Text color="gray" dimColor> · </Text>
-          <Text color="cyan" dimColor>
-            shift+tab: mode
-          </Text>
-        </Box>
-        <Box>
-          {/* 当正在处理时显示 esc to interrupt */}
-          {isProcessing && (
-            <Text color="yellow" bold>
-              esc to interrupt
+        {/* Status Bar - 底部状态栏 */}
+        <Box justifyContent="space-between" paddingX={1} marginTop={1}>
+          <Box>
+            <Text color="gray" dimColor>
+              ? for shortcuts
             </Text>
-          )}
-          {isProcessing && <Text color="gray" dimColor> · </Text>}
-          <Text color="gray" dimColor>
-            {isProcessing ? 'Processing...' : 'Ready'}
-          </Text>
+            {/* Shift+Tab 快捷键提示 - 官方 v2.1.2 */}
+            <Text color="gray" dimColor> · </Text>
+            <Text color="cyan" dimColor>
+              shift+tab: mode
+            </Text>
+          </Box>
+          <Box>
+            {/* 当正在处理时显示 esc to interrupt */}
+            {isProcessing && (
+              <Text color="yellow" bold>
+                esc to interrupt
+              </Text>
+            )}
+            {isProcessing && <Text color="gray" dimColor> · </Text>}
+            <Text color="gray" dimColor>
+              {isProcessing ? 'Processing...' : 'Ready'}
+            </Text>
+          </Box>
         </Box>
       </Box>
     </Box>

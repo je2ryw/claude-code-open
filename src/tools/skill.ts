@@ -824,7 +824,8 @@ export async function initializeSkills(): Promise<void> {
 
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const claudeDir = path.join(homeDir, '.claude');
-  const projectDir = path.join(getCurrentCwd(), '.claude');
+  const cwd = getCurrentCwd();
+  const projectDir = path.join(cwd, '.claude');
 
   // 清空注册表
   skillRegistry.clear();
@@ -854,7 +855,7 @@ export async function initializeSkills(): Promise<void> {
 
   // 4. v2.1.6+: 发现并加载嵌套的 .claude/skills 目录
   // 搜索当前工作目录下子目录中的 .claude/skills 目录
-  const nestedSkillsDirs = discoverNestedSkillsDirectories(getCurrentCwd());
+  const nestedSkillsDirs = discoverNestedSkillsDirectories(cwd);
   for (const nestedDir of nestedSkillsDirs) {
     // 避免重复加载根目录的 skills
     if (nestedDir === projectSkillsDir) continue;
@@ -862,7 +863,7 @@ export async function initializeSkills(): Promise<void> {
     const nestedSkills = await loadSkillsFromDirectory(nestedDir, 'projectSettings');
     for (const skill of nestedSkills) {
       // 添加子目录路径前缀以区分来源
-      const relativePath = path.relative(getCurrentCwd(), nestedDir);
+      const relativePath = path.relative(cwd, nestedDir);
       const parentDir = path.dirname(path.dirname(relativePath)); // 获取 .claude 的父目录
       const prefixedSkillName = parentDir ? `${skill.skillName}@${parentDir}` : skill.skillName;
 
@@ -919,6 +920,9 @@ export async function initializeSkills(): Promise<void> {
   skillsLoaded = true;
 
   console.log(`Loaded ${skillRegistry.size} unique skills (plugin: ${pluginSkills.length}, user: ${userSkills.length}, project: ${projectSkills.length})`);
+
+  // 初始化完成后自动启用热重载
+  enableSkillHotReload();
 }
 
 /**

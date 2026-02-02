@@ -328,6 +328,55 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
   }
 
   /**
+   * v5.7: 中止当前执行的任务
+   * 用于超时或用户取消时立即停止 Worker
+   *
+   * 工作原理：
+   * 1. 调用 ConversationLoop.abort() 中止 API 请求
+   * 2. 清理待处理的 AskUser 请求
+   * 3. 重置当前任务状态
+   *
+   * @returns 是否成功中止
+   */
+  abort(): boolean {
+    const hadActiveTask = this.currentLoop !== null;
+
+    // 中止 ConversationLoop（会取消正在进行的 API 请求）
+    if (this.currentLoop) {
+      this.log('正在中止任务执行...');
+      this.currentLoop.abort();
+      this.currentLoop = null;
+    }
+
+    // 拒绝所有待处理的 AskUser 请求
+    this.pendingAskUserResolvers.forEach((resolver, requestId) => {
+      resolver.reject(new Error('Task execution aborted'));
+    });
+    this.pendingAskUserResolvers.clear();
+
+    // 清理当前任务 ID
+    const taskId = this.currentTaskId;
+    this.currentTaskId = null;
+
+    if (hadActiveTask) {
+      this.log(`任务已中止: ${taskId || 'unknown'}`);
+      this.emit('task:aborted', {
+        workerId: this.workerId,
+        taskId,
+      });
+    }
+
+    return hadActiveTask;
+  }
+
+  /**
+   * v5.7: 检查是否有正在执行的任务
+   */
+  isExecuting(): boolean {
+    return this.currentLoop !== null && this.currentTaskId !== null;
+  }
+
+  /**
    * v4.2: 创建 askUserHandler 回调
    * 发射事件并等待响应
    */

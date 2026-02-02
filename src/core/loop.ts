@@ -1800,8 +1800,21 @@ export class ConversationLoop {
     setCurrentSessionId(this.session.sessionId);
 
     // 初始化提示词上下文
+    // 关键修复：subAgent（Worker）必须有明确的 workingDir，禁止回退到 process.cwd()
+    // 这避免了 Worker 在程序启动目录而非指定项目路径执行的 bug
+    let effectiveWorkingDir: string;
+    if (options.isSubAgent) {
+      if (!options.workingDir) {
+        throw new Error('SubAgent 必须指定 workingDir，禁止使用程序启动目录');
+      }
+      effectiveWorkingDir = options.workingDir;
+    } else {
+      // 主 CLI 可以使用 process.cwd()
+      effectiveWorkingDir = options.workingDir || process.cwd();
+    }
+
     this.promptContext = {
-      workingDir: options.workingDir || process.cwd(),
+      workingDir: effectiveWorkingDir,
       model: resolvedModel,
       permissionMode: options.permissionMode,
       planMode: options.planMode,
@@ -1809,7 +1822,7 @@ export class ConversationLoop {
       ideType: options.ideType,
       platform: process.platform,
       todayDate: new Date().toISOString().split('T')[0],
-      isGitRepo: this.checkIsGitRepo(options.workingDir || process.cwd()),
+      isGitRepo: this.checkIsGitRepo(effectiveWorkingDir),
       debug: options.debug,
     };
 
@@ -2378,12 +2391,14 @@ Guidelines:
           } else if (event.type === 'tool_use_start') {
             currentToolId = event.id || '';
             toolCalls.set(currentToolId, { name: event.name || '', input: '', isServerTool: false });
-            yield { type: 'tool_start', toolName: event.name, toolInput: undefined };
+            // v3.6: 移除此处的 tool_start 事件，只在工具执行前发送（带完整参数）
+            // 之前在这里发送空参数的 tool_start 会导致日志中出现两次事件
           } else if (event.type === 'server_tool_use_start') {
             // Server Tool (如 web_search) - 由 Anthropic 服务器执行
             // 不需要客户端执行，只记录
             currentToolId = event.id || '';
             toolCalls.set(currentToolId, { name: event.name || '', input: '', isServerTool: true });
+            // Server Tool 立即发送事件（不需要等待参数解析）
             yield { type: 'tool_start', toolName: `[Server] ${event.name}`, toolInput: undefined };
           } else if (event.type === 'tool_use_delta') {
             const tool = toolCalls.get(currentToolId);

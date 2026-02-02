@@ -22,6 +22,7 @@ import { parsePrCreateOutput, linkSessionToPr } from '../session/index.js';
 import { getCurrentSessionId } from '../core/session.js';
 import type { BashInput, BashResult, ToolDefinition } from '../types/index.js';
 import { needsElevation, getElevationReason, executeElevated } from '../permissions/elevated-commands.js';
+import { truncateString } from '../utils/truncated-buffer.js';
 
 const execAsync = promisify(exec);
 
@@ -649,9 +650,7 @@ Important:
         recordAudit(auditLog);
 
         let output = elevatedResult.stdout + (elevatedResult.stderr ? `\nSTDERR:\n${elevatedResult.stderr}` : '');
-        if (output.length > MAX_OUTPUT_LENGTH) {
-          output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
-        }
+        output = truncateString(output, MAX_OUTPUT_LENGTH);
 
         return {
           success: elevatedResult.success,
@@ -707,9 +706,7 @@ Important:
       });
 
       let output = sandboxResult.stdout + (sandboxResult.stderr ? `\nSTDERR:\n${sandboxResult.stderr}` : '');
-      if (output.length > MAX_OUTPUT_LENGTH) {
-        output = output.substring(0, MAX_OUTPUT_LENGTH) + '\n... [output truncated]';
-      }
+      output = truncateString(output, MAX_OUTPUT_LENGTH);
 
       // v2.1.23: 计算执行时间
       const duration = Date.now() - startTime;

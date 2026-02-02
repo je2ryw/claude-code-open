@@ -379,6 +379,7 @@ ${userInput}
   /**
    * 调用 Agent 获取决策结果
    * v5.5: 支持工具能力，让蜂王能用 Bash/Read/Grep 等工具来分析代码做决策
+   * v5.7: 添加重试机制，网络抖动时自动重试
    * @param prompt 提示词
    * @param model 模型选择
    * @param useTools 是否启用工具（默认 false，快速决策场景不需要工具）
@@ -390,52 +391,112 @@ ${userInput}
     useTools: boolean = false,
     projectPath?: string
   ): Promise<T | null> {
-    try {
-      if (this.debug) {
-        console.log(`[AgentDecisionMaker] Asking ${model} (tools=${useTools}):`, prompt.substring(0, 200));
-      }
+    const MAX_RETRIES = 3;
+    const INITIAL_DELAY_MS = 1000;
 
-      const systemPrompt = `你是一个专业的技术决策助手。
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (this.debug) {
+          console.log(`[AgentDecisionMaker] Asking ${model} (tools=${useTools}, attempt=${attempt}/${MAX_RETRIES}):`, prompt.substring(0, 200));
+        }
+
+        const systemPrompt = `你是一个专业的技术决策助手。
 ${useTools ? '你可以使用工具来分析代码、检查文件，获取更准确的信息来做决策。' : ''}
 你的最终回答必须是有效的 JSON 格式，不要包含任何其他文字。`;
 
-      let text: string;
+        let text: string;
 
-      if (useTools && projectPath) {
-        // v5.5: 使用 ConversationLoop，赋予蜂王工具能力
-        const loop = new ConversationLoop({
-          model,
-          maxTurns: 5,  // 蜂王决策不需要太多轮
-          verbose: false,
-          permissionMode: 'bypassPermissions',
-          workingDir: projectPath,
-          systemPrompt,
-          isSubAgent: true,
-          allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'LS'],  // 只读工具 + Bash
-        });
+        if (useTools && projectPath) {
+          // v5.5: 使用 ConversationLoop，赋予蜂王工具能力
+          const loop = new ConversationLoop({
+            model,
+            maxTurns: 5,  // 蜂王决策不需要太多轮
+            verbose: false,
+            permissionMode: 'bypassPermissions',
+            workingDir: projectPath,
+            systemPrompt,
+            isSubAgent: true,
+            allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'LS'],  // 只读工具 + Bash
+          });
 
-        text = await loop.processMessage(prompt);
-      } else {
-        // 快速决策模式：直接调用 API，不使用工具
-        const response = await this.client.createMessage(
-          [{ role: 'user', content: prompt }],
-          undefined,
-          systemPrompt
-        );
-        text = this.extractTextFromResponse(response);
+          text = await loop.processMessage(prompt);
+        } else {
+          // 快速决策模式：直接调用 API，不使用工具
+          const response = await this.client.createMessage(
+            [{ role: 'user', content: prompt }],
+            undefined,
+            systemPrompt
+          );
+          text = this.extractTextFromResponse(response);
+        }
+
+        const json = this.extractJSON(text);
+
+        if (this.debug) {
+          console.log('[AgentDecisionMaker] Response:', json);
+        }
+
+        return json as T;
+      } catch (error: any) {
+        const isRetryable = this.isRetryableError(error);
+        console.error(`[AgentDecisionMaker] Error (attempt ${attempt}/${MAX_RETRIES}, retryable=${isRetryable}):`, error.message);
+
+        if (!isRetryable || attempt === MAX_RETRIES) {
+          // 不可重试的错误，或已达到最大重试次数
+          return null;
+        }
+
+        // 指数退避等待
+        const delayMs = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`[AgentDecisionMaker] Retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
-
-      const json = this.extractJSON(text);
-
-      if (this.debug) {
-        console.log('[AgentDecisionMaker] Response:', json);
-      }
-
-      return json as T;
-    } catch (error: any) {
-      console.error('[AgentDecisionMaker] Error:', error.message);
-      return null;
     }
+
+    return null;
+  }
+
+  /**
+   * 判断错误是否可重试
+   * 网络错误、超时、5xx 服务器错误可以重试
+   * 4xx 客户端错误（如 401、400）不重试
+   */
+  private isRetryableError(error: any): boolean {
+    const message = error.message?.toLowerCase() || '';
+
+    // 网络相关错误
+    if (message.includes('connection') ||
+        message.includes('network') ||
+        message.includes('timeout') ||
+        message.includes('econnrefused') ||
+        message.includes('econnreset') ||
+        message.includes('socket') ||
+        message.includes('etimedout')) {
+      return true;
+    }
+
+    // HTTP 5xx 错误
+    if (message.includes('500') ||
+        message.includes('502') ||
+        message.includes('503') ||
+        message.includes('504') ||
+        message.includes('overloaded') ||
+        message.includes('rate limit')) {
+      return true;
+    }
+
+    // HTTP 4xx 错误不重试
+    if (message.includes('400') ||
+        message.includes('401') ||
+        message.includes('403') ||
+        message.includes('404') ||
+        message.includes('invalid') ||
+        message.includes('unauthorized')) {
+      return false;
+    }
+
+    // 默认重试（乐观策略）
+    return true;
   }
 
   /**

@@ -37,7 +37,7 @@ import { NotebookEditTool } from './notebook.js';
 import { EnterPlanModeTool, ExitPlanModeTool } from './planmode.js';
 import { MCPSearchTool, ListMcpResourcesTool, ReadMcpResourceTool } from './mcp.js';
 import { AskUserQuestionTool } from './ask.js';
-import { SkillTool, initializeSkills, enableSkillHotReload } from './skill.js';
+import { SkillTool } from './skill.js';
 import { LSPTool } from './lsp.js';
 import { BlueprintTool } from './blueprint.js';
 import { UpdateTaskStatusTool } from './task-status.js';
@@ -89,12 +89,8 @@ export function registerAllTools(): void {
   toolRegistry.register(new AskUserQuestionTool());
 
   // 9. Skill 系统 (1个)
-  initializeSkills()
-    .then(() => {
-      // 启用技能热重载（2.1.0 新功能）
-      enableSkillHotReload();
-    })
-    .catch(err => console.error('Failed to initialize skills:', err));
+  // Skills 初始化延迟到 initializeSkillsLazy() 调用时
+  // 因为 skills 需要工作目录上下文，而模块加载时可能还没有设置
   toolRegistry.register(new SkillTool());
 
   // 10. 代码智能 (1个)
@@ -118,7 +114,9 @@ export function registerAllTools(): void {
   toolRegistry.register(new ReadMcpResourceTool());
 }
 
-// 自动注册
+// 自动注册工具（不包括 skills 初始化）
+// Skills 会在 SkillTool.execute() 第一次调用时延迟初始化
+// 此时已经在 runWithCwd 上下文中，可以正确获取工作目录
 registerAllTools();
 registerBlueprintHooks();
 

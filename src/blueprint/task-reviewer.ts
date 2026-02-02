@@ -608,12 +608,9 @@ Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己�
       console.error('[TaskReviewer] AI 重新解析失败:', aiError);
     }
 
-    // AI 也无法解析，返回 needs_revision 让人工处理
-    return {
-      verdict: 'needs_revision',
-      confidence: 'low',
-      reasoning: `无法解析审查结果，需要人工审核。原始响应: ${text.substring(0, 200)}`,
-    };
+    // v5.7: AI 也无法解析时，抛出异常让上层降级为信任 Worker
+    // 不再返回 needs_revision + "需要人工审核"，因为系统设计为全自动化
+    throw new Error(`无法解析审查结果，原始响应: ${text.substring(0, 200)}`);
   }
 
   /**

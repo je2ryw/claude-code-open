@@ -91,8 +91,9 @@ export const coordinatorRouter = router({
         };
       }
 
+      // v4.1: 使用 getLogsByTaskId 按任务ID过滤日志，而不是返回整个 Worker 的日志
       return {
-        logs: workerTracker.getLogs(workerId, input.limit),
+        logs: workerTracker.getLogsByTaskId(input.taskId, input.limit),
         workerId,
       };
     }),

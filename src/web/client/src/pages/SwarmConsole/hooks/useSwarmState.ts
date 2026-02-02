@@ -66,25 +66,51 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
     switch (message.type) {
       case 'swarm:state':
         // 完整状态更新
-        setState(prev => ({
-          ...prev,
-          blueprint: message.payload.blueprint,
-          taskTree: message.payload.taskTree,
-          workers: message.payload.workers,
-          stats: message.payload.stats,
-          error: null,
-          // v2.0 新增字段
-          // v2.1 修复：只有当 payload 中明确包含这些字段时才更新，避免意外覆盖
-          executionPlan: 'executionPlan' in message.payload
+        setState(prev => {
+          const newPlan = 'executionPlan' in message.payload
             ? (message.payload.executionPlan || null)
-            : prev.executionPlan,
-          gitBranches: 'gitBranches' in message.payload
-            ? (message.payload.gitBranches || [])
-            : prev.gitBranches,
-          costEstimate: 'costEstimate' in message.payload
-            ? (message.payload.costEstimate || null)
-            : prev.costEstimate,
-        }));
+            : prev.executionPlan;
+
+          // v4.2 修复：检测到新执行开始或执行计划变化时，清空旧的任务日志状态
+          // 这样可以避免 Task ID 复用时，新任务关联到旧日志的问题
+          let newTaskLogs = prev.taskLogs;
+          let newTaskStreams = prev.taskStreams;
+
+          if (newPlan && prev.executionPlan) {
+            // 如果执行计划 ID 变化，说明是新的执行
+            if (newPlan.id !== prev.executionPlan.id) {
+              console.log('[SwarmState] 检测到新执行，清空旧的任务日志状态');
+              newTaskLogs = {};
+              newTaskStreams = {};
+            }
+          } else if (newPlan && !prev.executionPlan) {
+            // 从无执行计划到有执行计划，也清空旧状态
+            console.log('[SwarmState] 新的执行计划，清空任务日志状态');
+            newTaskLogs = {};
+            newTaskStreams = {};
+          }
+
+          return {
+            ...prev,
+            blueprint: message.payload.blueprint,
+            taskTree: message.payload.taskTree,
+            workers: message.payload.workers,
+            stats: message.payload.stats,
+            error: null,
+            // v2.0 新增字段
+            // v2.1 修复：只有当 payload 中明确包含这些字段时才更新，避免意外覆盖
+            executionPlan: newPlan,
+            gitBranches: 'gitBranches' in message.payload
+              ? (message.payload.gitBranches || [])
+              : prev.gitBranches,
+            costEstimate: 'costEstimate' in message.payload
+              ? (message.payload.costEstimate || null)
+              : prev.costEstimate,
+            // v4.2 修复：根据执行计划变化决定是否清空日志
+            taskLogs: newTaskLogs,
+            taskStreams: newTaskStreams,
+          };
+        });
         setIsLoading(false);
         break;
 

@@ -6,7 +6,7 @@
 
 🌐 **[visit website](https://www.chatbi.site)** | 📖 **[中文文档](README.zh-CN.md)**
 
-A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.1.14.
+A reverse-engineered restoration based on `@anthropic-ai/claude-code` v2.1.29.
 
 **For educational and research purposes only.**
 

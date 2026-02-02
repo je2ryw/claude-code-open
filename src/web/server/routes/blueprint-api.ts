@@ -56,6 +56,8 @@ import {
   type DependencyOutput,
 } from '../../../blueprint/index.js';
 
+// 导入日志数据库
+import { getSwarmLogDB } from '../database/swarm-logs.js';
 
 // ============================================================================
 // 分析缓存 - v3.0: 使用 lru-cache 替代手写实现
@@ -570,6 +572,10 @@ class RealTaskExecutor implements TaskExecutor {
   }
 
   constructor(blueprint: Blueprint) {
+    // 关键检查：确保 projectPath 存在，避免后续执行时回退到 process.cwd()
+    if (!blueprint.projectPath) {
+      throw new Error(`无法创建 RealTaskExecutor：蓝图 "${blueprint.name}" (${blueprint.id}) 缺少 projectPath 配置`);
+    }
     this.blueprint = blueprint;
     // v5.0: 一次性构建共享的 System Prompt 基础部分
     // v5.6: 简化为串行模式
@@ -823,6 +829,19 @@ class RealTaskExecutor implements TaskExecutor {
 
     try {
       // 串行执行，直接使用主项目路径
+      // 关键检查：确保 projectPath 存在，避免回退到 process.cwd()
+      if (!this.blueprint.projectPath) {
+        console.error(`[RealTaskExecutor] 蓝图缺少 projectPath:`, {
+          blueprintId: this.blueprint.id,
+          blueprintName: this.blueprint.name,
+        });
+        return {
+          success: false,
+          changes: [],
+          decisions: [],
+          error: `蓝图 "${this.blueprint.name}" 缺少 projectPath 配置，无法执行任务。请确保蓝图关联了正确的项目路径。`,
+        };
+      }
       const effectiveProjectPath = this.blueprint.projectPath;
       console.log(`[RealTaskExecutor] 执行任务: ${task.name}, 工作目录: ${effectiveProjectPath}`);
 
@@ -985,10 +1004,59 @@ class RealTaskExecutor implements TaskExecutor {
   }
 
   /**
+   * v5.7: 中止指定 Worker 的任务执行
+   * 超时时由 RealtimeCoordinator 调用
+   * @param workerId 要中止的 Worker ID
+   */
+  abort(workerId: string): void {
+    const worker = this.workerPool.get(workerId);
+    if (worker) {
+      console.log(`[RealTaskExecutor] 中止 Worker: ${workerId}`);
+
+      // 调用 Worker 的 abort 方法
+      worker.abort();
+
+      // 发送中止日志
+      const currentTask = this.currentTaskMap.get(workerId);
+      executionEventEmitter.emit('worker:log', {
+        blueprintId: this.blueprint.id,
+        workerId,
+        taskId: currentTask?.id,
+        log: {
+          id: `${workerId}-${Date.now()}-abort`,
+          timestamp: new Date().toISOString(),
+          level: 'warn' as const,
+          type: 'status' as const,
+          message: `⏹️ 任务执行被中止（超时）`,
+          details: { taskId: currentTask?.id, reason: 'timeout' },
+        },
+      });
+
+      // 清理当前任务映射
+      this.currentTaskMap.delete(workerId);
+
+      // 从 activeWorkers 中移除
+      const workerKey = `${this.blueprint.id}:${workerId}`;
+      activeWorkers.delete(workerKey);
+    } else {
+      console.warn(`[RealTaskExecutor] 无法中止 Worker ${workerId}：未找到 Worker 实例`);
+    }
+  }
+
+  /**
    * 清理 Worker 池
    */
   async cleanup(): Promise<void> {
+    // v5.7: 先中止所有正在执行的 Worker
+    this.workerPool.forEach((worker, workerId) => {
+      if (worker.isExecuting()) {
+        console.log(`[RealTaskExecutor] 清理时中止 Worker: ${workerId}`);
+        worker.abort();
+      }
+    });
     this.workerPool.clear();
+    this.currentTaskMap.clear();
+    this.taskOutputs.clear();
   }
 }
 
@@ -1093,6 +1161,28 @@ class ExecutionManager {
       this.planner.off('planner:decomposing', plannerDecomposingHandler);
     }
 
+    // v4.1 修复: 清除旧的任务映射和日志，避免新任务关联到旧的执行记录
+    // 这是因为任务ID在蓝图重新执行时会被复用
+    const taskIds = plan.tasks.map(t => t.id);
+
+    // 1. 清除内存中的任务-Worker 映射
+    const removedMappings = workerTracker.removeTaskWorkers(taskIds);
+    if (removedMappings > 0) {
+      console.log(`[ExecutionManager] 清除了 ${removedMappings} 个旧的任务-Worker 映射`);
+    }
+
+    // 2. 清除 SQLite 中的旧日志（保留执行历史，但清除日志详情）
+    try {
+      const logDB = getSwarmLogDB();
+      for (const taskId of taskIds) {
+        logDB.clearTaskLogs(taskId, false);
+      }
+      console.log(`[ExecutionManager] 清除了 ${taskIds.length} 个任务的旧日志`);
+    } catch (err) {
+      // 日志清除失败不应阻止执行，只记录警告
+      console.warn('[ExecutionManager] 清除旧日志失败:', err);
+    }
+
     // 创建协调器（串行执行）
     const coordinator = createRealtimeCoordinator({
       maxWorkers: 1,           // 串行执行，只需要 1 个 Worker
@@ -1168,13 +1258,13 @@ class ExecutionManager {
       // 建立任务和 Worker 的关联
       workerTracker.setTaskWorker(data.taskId, data.workerId);
 
-      // 添加日志条目
+      // 添加日志条目（v4.1: 传入 taskId）
       const logEntry = workerTracker.addLog(data.workerId, {
         level: 'info',
         type: 'status',
         message: `开始执行任务: ${data.taskName || data.taskId}`,
         details: { taskId: data.taskId, taskName: data.taskName },
-      });
+      }, data.taskId);
 
       // 发送日志事件
       executionEventEmitter.emit('worker:log', {
@@ -1206,7 +1296,7 @@ class ExecutionManager {
 
     // 任务完成事件
     coordinator.on('task:completed', (data: any) => {
-      // 添加日志条目
+      // 添加日志条目（v4.1: 传入 taskId）
       const workerId = workerTracker.getWorkerByTaskId(data.taskId);
       if (workerId) {
         const logEntry = workerTracker.addLog(workerId, {
@@ -1214,7 +1304,7 @@ class ExecutionManager {
           type: 'status',
           message: `任务完成: ${data.taskName || data.taskId}`,
           details: { taskId: data.taskId, success: true },
-        });
+        }, data.taskId);
         executionEventEmitter.emit('worker:log', {
           blueprintId: blueprint.id,
           workerId,
@@ -1235,7 +1325,7 @@ class ExecutionManager {
 
     // 任务失败事件
     coordinator.on('task:failed', (data: any) => {
-      // 添加日志条目
+      // 添加日志条目（v4.1: 传入 taskId）
       const workerId = workerTracker.getWorkerByTaskId(data.taskId);
       if (workerId) {
         const logEntry = workerTracker.addLog(workerId, {
@@ -1243,7 +1333,7 @@ class ExecutionManager {
           type: 'error',
           message: `任务失败: ${data.error || '未知错误'}`,
           details: { taskId: data.taskId, error: data.error },
-        });
+        }, data.taskId);
         executionEventEmitter.emit('worker:log', {
           blueprintId: blueprint.id,
           workerId,
@@ -1328,6 +1418,22 @@ class ExecutionManager {
     // 更新蓝图状态，同时保存执行计划
     blueprint.status = 'executing';
     blueprint.lastExecutionPlan = this.serializeExecutionPlan(plan);
+
+    // v3.1: 初始化 executionState，确保异常退出后可以恢复
+    // 这是恢复执行的关键字段，必须在执行开始时就初始化
+    (blueprint as any).executionState = {
+      currentGroupIndex: 0,
+      completedTaskIds: [],
+      failedTaskIds: [],
+      skippedTaskIds: [],
+      taskResults: [],
+      currentCost: 0,
+      startedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      isPaused: false,
+      isCancelled: false,
+    };
+
     blueprintStore.save(blueprint);
 
     // 异步执行
@@ -1850,12 +1956,13 @@ class ExecutionManager {
       });
       workerTracker.setTaskWorker(data.taskId, data.workerId);
 
+      // v4.1: 传入 taskId
       const logEntry = workerTracker.addLog(data.workerId, {
         level: 'info',
         type: 'status',
         message: `开始执行任务: ${data.taskName || data.taskId}`,
         details: { taskId: data.taskId, taskName: data.taskName },
-      });
+      }, data.taskId);
 
       executionEventEmitter.emit('worker:log', {
         blueprintId: blueprint.id,
@@ -1873,12 +1980,13 @@ class ExecutionManager {
 
     // 任务完成事件
     coordinator.on('task:completed', (data: any) => {
+      // v4.1: 传入 taskId
       const logEntry = workerTracker.addLog(data.workerId, {
         level: 'info',
         type: 'status',
         message: `✅ 任务完成: ${data.taskName || data.taskId}`,
         details: { taskId: data.taskId },
-      });
+      }, data.taskId);
 
       executionEventEmitter.emit('worker:log', {
         blueprintId: blueprint.id,
@@ -1896,12 +2004,13 @@ class ExecutionManager {
 
     // 任务失败事件
     coordinator.on('task:failed', (data: any) => {
+      // v4.1: 传入 taskId
       const logEntry = workerTracker.addLog(data.workerId, {
         level: 'error',
         type: 'status',
         message: `❌ 任务执行出错: ${data.error || '未知错误'}`,
         details: { taskId: data.taskId, error: data.error },
-      });
+      }, data.taskId);
 
       executionEventEmitter.emit('worker:log', {
         blueprintId: blueprint.id,
@@ -2618,6 +2727,7 @@ router.post('/execution/recover', async (req: Request, res: Response) => {
 
 /**
  * Worker 日志条目类型
+ * v4.1: 添加 taskId 字段，用于按任务过滤日志
  */
 export interface WorkerLogEntry {
   id: string;
@@ -2626,6 +2736,7 @@ export interface WorkerLogEntry {
   type: 'tool' | 'decision' | 'status' | 'output' | 'error';
   message: string;
   details?: any;
+  taskId?: string;  // v4.1: 关联的任务 ID
 }
 
 /**
@@ -2695,13 +2806,15 @@ class WorkerStateTracker {
 
   /**
    * 添加日志条目
+   * v4.1: 支持传入 taskId，用于按任务过滤日志
    */
-  addLog(workerId: string, entry: Omit<WorkerLogEntry, 'id' | 'timestamp'>): WorkerLogEntry {
+  addLog(workerId: string, entry: Omit<WorkerLogEntry, 'id' | 'timestamp'>, taskId?: string): WorkerLogEntry {
     const worker = this.getOrCreate(workerId);
     const logEntry: WorkerLogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toISOString(),
       ...entry,
+      taskId,  // v4.1: 存储任务 ID
     };
     worker.logs.push(logEntry);
     // 只保留最近 100 条日志
@@ -2722,11 +2835,19 @@ class WorkerStateTracker {
 
   /**
    * 通过任务 ID 获取日志
+   * v4.1: 按 taskId 过滤日志，而不是返回整个 Worker 的日志
    */
   getLogsByTaskId(taskId: string, limit: number = 50): WorkerLogEntry[] {
     const workerId = this.taskWorkerMap.get(taskId);
     if (!workerId) return [];
-    return this.getLogs(workerId, limit);
+
+    const worker = this.workers.get(workerId);
+    if (!worker) return [];
+
+    // v4.1: 只返回属于该任务的日志
+    return worker.logs
+      .filter(log => log.taskId === taskId)
+      .slice(-limit);
   }
 
   /**
@@ -2768,6 +2889,27 @@ class WorkerStateTracker {
    */
   clear() {
     this.workers.clear();
+    this.taskWorkerMap.clear();  // 同时清除任务映射
+  }
+
+  /**
+   * 移除任务的 Worker 映射（用于任务重新执行时清除旧关联）
+   */
+  removeTaskWorker(taskId: string): boolean {
+    return this.taskWorkerMap.delete(taskId);
+  }
+
+  /**
+   * 清除多个任务的 Worker 映射
+   */
+  removeTaskWorkers(taskIds: string[]): number {
+    let removed = 0;
+    for (const taskId of taskIds) {
+      if (this.taskWorkerMap.delete(taskId)) {
+        removed++;
+      }
+    }
+    return removed;
   }
 
   /**
@@ -2825,6 +2967,7 @@ router.get('/coordinator/workers/:workerId/logs', (req: Request, res: Response) 
 /**
  * GET /coordinator/tasks/:taskId/logs
  * 通过任务 ID 获取关联的 Worker 执行日志
+ * v4.1: 按 taskId 过滤日志，而不是返回整个 Worker 的日志
  */
 router.get('/coordinator/tasks/:taskId/logs', (req: Request, res: Response) => {
   try {
@@ -2838,7 +2981,8 @@ router.get('/coordinator/tasks/:taskId/logs', (req: Request, res: Response) => {
         message: '该任务尚未分配 Worker',
       });
     }
-    const logs = workerTracker.getLogs(workerId, limit);
+    // v4.1: 使用 getLogsByTaskId 按任务ID过滤日志
+    const logs = workerTracker.getLogsByTaskId(taskId, limit);
     res.json({
       success: true,
       data: logs,
@@ -6392,8 +6536,6 @@ router.post('/coordinator/conflicts/:conflictId/resolve', (req: Request, res: Re
 // ============================================================================
 // v4.0: 执行日志 API（SQLite 存储）
 // ============================================================================
-
-import { getSwarmLogDB } from '../database/swarm-logs.js';
 
 /**
  * GET /logs/task/:taskId

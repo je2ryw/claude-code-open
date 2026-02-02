@@ -897,20 +897,30 @@ export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, select
       {queen && <QueenStatus queen={queen} />}
 
       {/* Worker 卡片列表 */}
-      {workers.length > 0 ? (
-        workers.map((worker) => (
-          <WorkerCard key={worker.id} worker={worker} />
-        ))
-      ) : !selectedTask && (
-        <div className={styles.emptyState}>
-          <div className={styles.emptyStateIcon}>👷</div>
-          <div className={styles.emptyStateText}>
-            暂无 Worker 数据
-            <br />
-            等待任务分配...
+      {/* v4.5: 过滤逻辑 - 选中任务时只显示关联 worker，否则只显示非空闲的 worker */}
+      {(() => {
+        // 过滤 workers：
+        // 1. 如果选中了任务，只显示与该任务关联的 worker
+        // 2. 否则只显示非空闲状态的 worker（正在工作或等待的）
+        const filteredWorkers = selectedTask
+          ? workers.filter(w => w.taskId === selectedTask.id)
+          : workers.filter(w => w.status !== 'idle');
+
+        return filteredWorkers.length > 0 ? (
+          filteredWorkers.map((worker) => (
+            <WorkerCard key={worker.id} worker={worker} />
+          ))
+        ) : !selectedTask && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateIcon}>👷</div>
+            <div className={styles.emptyStateText}>
+              暂无 Worker 数据
+              <br />
+              等待任务分配...
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

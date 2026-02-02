@@ -540,6 +540,9 @@ export { getAttribution, getCommitAttribution, getPRAttribution, isAttributionEn
 // Re-export git helper utilities
 export { addCommitAttribution, isGitCommitCommand, processGitCommitCommand, hasCommitAttribution } from './git-helper.js';
 
+// Re-export truncated buffer utilities
+export { TruncatedBuffer, truncateString, truncateLines } from './truncated-buffer.js';
+
 // Re-export package manager utilities
 export {
   isHomebrewInstallation,

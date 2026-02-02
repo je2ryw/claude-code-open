@@ -255,6 +255,9 @@ export class ConversationManager {
       console.warn('[ConversationManager] 警告: 未找到认证信息，请先运行 /login 登录');
     }
 
+    // Skills 会在 SkillTool 第一次执行时延迟初始化
+    // 此时在 runWithCwd 上下文中，可以正确获取工作目录
+
     // 确保工具已注册
     console.log(`[ConversationManager] 已注册 ${toolRegistry.getAll().length} 个工具`);
   }
