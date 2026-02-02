@@ -92,16 +92,24 @@ const RETRYABLE_ERRORS = [
   'fetch failed',
 ];
 
-// 官方 Claude Code 的 beta 头
+// 官方 Claude Code 的 beta 头 (v2.1.29 对齐)
 // 重要发现：claude-code-20250219 beta 需要与特定的 system prompt 配合使用
 // system prompt 的第一个 block 必须以下列字符串之一开头：
 // - "You are Claude Code, Anthropic's official CLI for Claude."
 // - "You are a Claude agent, built on Anthropic's Claude Agent SDK."
-const CLAUDE_CODE_BETA = 'claude-code-20250219';
-const OAUTH_BETA = 'oauth-2025-04-20';
-const THINKING_BETA = 'interleaved-thinking-2025-05-14';
+const CLAUDE_CODE_BETA = 'claude-code-20250219';           // tFA
+const OAUTH_BETA = 'oauth-2025-04-20';                     // zE
+const THINKING_BETA = 'interleaved-thinking-2025-05-14';   // eFA
+const CONTEXT_1M_BETA = 'context-1m-2025-08-07';           // xZ1
+const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';  // md1
+const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-12-15';  // ad
+const WEB_SEARCH_BETA = 'web-search-2025-03-05';           // sV6
+const TOOL_EXAMPLES_BETA = 'tool-examples-2025-10-29';     // Fd1
+const ADVANCED_TOOL_USE_BETA = 'advanced-tool-use-2025-11-20';    // AgA
+const TOOL_SEARCH_BETA = 'tool-search-tool-2025-10-19';    // qgA
+const PROMPT_CACHING_SCOPE_BETA = 'prompt-caching-scope-2026-01-05';  // bZ1
 
-// v2.1.25: Bedrock 和 Vertex 不支持的 betas (对应官方 AT6 集合)
+// v2.1.29: Bedrock 和 Vertex 不支持的 betas (对应官方 eV6 集合)
 // 这些 betas 会导致网关用户出现 beta header 验证错误
 const UNSUPPORTED_GATEWAY_BETAS = new Set([
   'interleaved-thinking-2025-05-14',
@@ -110,8 +118,9 @@ const UNSUPPORTED_GATEWAY_BETAS = new Set([
   'tool-examples-2025-10-29',
 ]);
 
-// v2.1.25: Provider 类型 (对应官方 F4 函数)
-type ProviderType = 'anthropic' | 'bedrock' | 'vertex' | 'foundry';
+// v2.1.29: Provider 类型 (对应官方 F4 函数)
+// 'firstParty' 是直接使用 Anthropic API，'anthropic' 作为默认值兼容旧代码
+type ProviderType = 'firstParty' | 'anthropic' | 'bedrock' | 'vertex' | 'foundry';
 
 /**
  * 获取当前 Provider 类型 (对应官方 F4 函数)
@@ -127,16 +136,68 @@ function getProviderType(): ProviderType {
   if (process.env.CLAUDE_CODE_USE_FOUNDRY === 'true' || process.env.CLAUDE_CODE_USE_FOUNDRY === '1') {
     return 'foundry';
   }
-  return 'anthropic';
+  // v2.1.29: 默认使用 'firstParty' 表示直接使用 Anthropic API
+  return 'firstParty';
 }
 
 /**
- * 检查是否禁用实验性 betas (对应官方 ir1 函数的部分逻辑)
- * 通过 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS 环境变量控制
+ * 检查环境变量是否被设置为 true/1
  */
-function isExperimentalBetasDisabled(): boolean {
-  const value = process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS;
+function isEnvEnabled(value: string | undefined): boolean {
   return value === 'true' || value === '1';
+}
+
+/**
+ * v2.1.29: 检查是否应该启用实验性 betas (对应官方 lr1 函数)
+ *
+ * 只有以下情况才启用实验性 betas：
+ * 1. Provider 是 firstParty 或 foundry
+ * 2. 且未设置 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
+ *
+ * 这是 v2.1.29 修复 beta header 验证错误的关键：
+ * Bedrock 和 Vertex 网关用户不会获得实验性 betas
+ */
+function isExperimentalBetasEnabled(): boolean {
+  const provider = getProviderType();
+  if (provider !== 'firstParty' && provider !== 'foundry') {
+    return false;
+  }
+  return !isEnvEnabled(process.env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS);
+}
+
+/**
+ * v2.1.29: 检查模型是否支持 structured outputs (对应官方 zu6 函数)
+ *
+ * 只有 firstParty 或 foundry provider 且使用支持的模型才返回 true
+ */
+function supportsStructuredOutputs(model: string): boolean {
+  const provider = getProviderType();
+  if (provider !== 'firstParty' && provider !== 'foundry') {
+    return false;
+  }
+  return model.includes('claude-sonnet-4-5') ||
+         model.includes('claude-opus-4-1') ||
+         model.includes('claude-opus-4-5') ||
+         model.includes('claude-haiku-4-5');
+}
+
+/**
+ * v2.1.29: 检查模型是否支持 interleaved thinking (对应官方 XOK 函数)
+ */
+function supportsInterleavedThinking(model: string): boolean {
+  // 大多数 Claude 4 模型支持 interleaved thinking
+  return model.includes('claude-sonnet-4') ||
+         model.includes('claude-opus-4') ||
+         model.includes('claude-haiku-4');
+}
+
+/**
+ * v2.1.29: 检查模型是否支持 web search (对应官方 DOK 函数)
+ */
+function supportsWebSearch(model: string): boolean {
+  return model.includes('claude-sonnet-4') ||
+         model.includes('claude-opus-4') ||
+         model.includes('claude-haiku-4');
 }
 
 // Claude Code 身份验证的 magic string
@@ -309,47 +370,81 @@ function buildMetadata(accountUuid?: string): { user_id: string } {
 }
 
 /**
- * 构建 betas 数组 (模拟官方 Hu6/xV 函数)
+ * v2.1.29: 构建 betas 数组 (对应官方 wu6 函数)
  *
  * 重要发现：
  * - claude-code-20250219 beta 需要与特定的 system prompt 配合使用
  * - system prompt 必须以 CLAUDE_CODE_IDENTITY 或 CLAUDE_AGENT_IDENTITY 开头
  * - 只有满足这个条件，OAuth token 才能使用 sonnet/opus 模型
  *
- * v2.1.25 修复：
- * - 对于 Bedrock 网关用户，过滤掉不支持的 betas (UNSUPPORTED_GATEWAY_BETAS)
+ * v2.1.29 修复：
+ * - 完全重写以对齐官方实现
+ * - 对于 Bedrock/Vertex 网关用户，不添加实验性 betas
  * - 支持 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 完全禁用实验性 betas
+ * - 添加 structured-outputs beta 支持
  */
 function buildBetas(model: string, isOAuth: boolean): string[] {
   const betas: string[] = [];
   const providerType = getProviderType();
-
-  // 非 haiku 模型添加 claude-code beta（官方逻辑：if(!q)K.push(Ld6)）
-  // 这个 beta 允许使用 Claude Code 特定功能
+  const experimentalEnabled = isExperimentalBetasEnabled();
   const isHaiku = model.toLowerCase().includes('haiku');
+
+  // 1. 非 haiku 模型添加 claude-code beta（官方: if(!K)q.push(tFA)）
   if (!isHaiku) {
     betas.push(CLAUDE_CODE_BETA);
   }
 
-  // OAuth 订阅用户额外添加 oauth beta（官方逻辑：if(W4())K.push(Th)）
-  // 这个 beta 配合正确的 system prompt 可以解锁 sonnet/opus 模型
+  // 2. OAuth 订阅用户添加 oauth beta（官方: if(O7())q.push(zE)）
   if (isOAuth) {
     betas.push(OAUTH_BETA);
   }
 
-  // v2.1.25: 检查是否禁用实验性 betas
-  // 如果设置了 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1，不添加 thinking beta
-  if (!isExperimentalBetasDisabled()) {
-    // 添加 thinking beta（仅当未禁用实验性 betas 时）
-    // 注意：如果没有禁用 interleaved thinking，则添加
-    if (!process.env.DISABLE_INTERLEAVED_THINKING) {
-      betas.push(THINKING_BETA);
-    }
+  // 3. 带 "[1m]" 标记的模型添加 context-1m beta（官方: if(A.includes("[1m]"))q.push(xZ1)）
+  if (model.includes('[1m]')) {
+    betas.push(CONTEXT_1M_BETA);
   }
 
-  // v2.1.25: 对于 Bedrock 网关用户，过滤掉不支持的 betas
+  // 4. 未禁用 thinking 且模型支持时添加 thinking beta
+  // （官方: if(!X6(process.env.DISABLE_INTERLEAVED_THINKING)&&XOK(A))q.push(eFA)）
+  if (!isEnvEnabled(process.env.DISABLE_INTERLEAVED_THINKING) && supportsInterleavedThinking(model)) {
+    betas.push(THINKING_BETA);
+  }
+
+  // 5. 实验性 betas 启用时，添加 structured outputs beta（如果模型支持）
+  // （官方: let O=BY("tengu_tool_pear"); if(zu6(A)&&O)q.push(ad)）
+  // 注意：这里简化了 feature flag 检查，默认启用
+  if (supportsStructuredOutputs(model)) {
+    betas.push(STRUCTURED_OUTPUTS_BETA);
+  }
+
+  // 6. Vertex 模型支持 web search 时添加 web-search beta
+  // （官方: if(Y==="vertex"&&DOK(A))q.push(sV6)）
+  if (providerType === 'vertex' && supportsWebSearch(model)) {
+    betas.push(WEB_SEARCH_BETA);
+  }
+
+  // 7. Foundry 总是添加 web-search beta
+  // （官方: if(Y==="foundry")q.push(sV6)）
+  if (providerType === 'foundry') {
+    betas.push(WEB_SEARCH_BETA);
+  }
+
+  // 8. 实验性 betas 启用时添加 prompt-caching-scope beta
+  // （官方: if(z)q.push(bZ1)）
+  if (experimentalEnabled) {
+    betas.push(PROMPT_CACHING_SCOPE_BETA);
+  }
+
+  // 9. 支持环境变量 ANTHROPIC_BETAS 添加自定义 betas
+  // （官方: if(process.env.ANTHROPIC_BETAS&&!K)q.push(...)）
+  if (process.env.ANTHROPIC_BETAS && !isHaiku) {
+    const customBetas = process.env.ANTHROPIC_BETAS.split(',').map(b => b.trim()).filter(Boolean);
+    betas.push(...customBetas);
+  }
+
+  // v2.1.29: 对于 Bedrock/Vertex 网关用户，过滤掉不支持的 betas
   // 这是修复 beta header 验证错误的关键
-  if (providerType === 'bedrock') {
+  if (providerType === 'bedrock' || providerType === 'vertex') {
     return betas.filter(beta => !UNSUPPORTED_GATEWAY_BETAS.has(beta));
   }
 
