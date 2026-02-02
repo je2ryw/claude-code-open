@@ -1,9 +1,11 @@
 /**
  * 需求收集进度条组件
+ *
+ * 简化版：使用小圆点显示进度，减少视觉干扰
  */
 
 import React from 'react';
-import styles from './BlueprintRequirementDialog.module.css';
+import styles from './RequirementProgress.module.css';
 import type { DialogPhase } from './index';
 
 export interface Progress {
@@ -17,14 +19,14 @@ interface RequirementProgressProps {
   currentPhase?: DialogPhase;
 }
 
-const PHASES: { key: DialogPhase; label: string; icon: string }[] = [
-  { key: 'welcome', label: '欢迎', icon: '👋' },
-  { key: 'project_background', label: '背景', icon: '📝' },
-  { key: 'business_process', label: '流程', icon: '🔄' },
-  { key: 'system_module', label: '模块', icon: '📦' },
-  { key: 'nfr', label: '要求', icon: '⚙️' },
-  { key: 'summary', label: '汇总', icon: '📋' },
-  { key: 'complete', label: '完成', icon: '✅' },
+// 6个阶段（移除了welcome）
+const PHASES: { key: DialogPhase; label: string }[] = [
+  { key: 'project_background', label: '背景' },
+  { key: 'business_process', label: '流程' },
+  { key: 'system_module', label: '模块' },
+  { key: 'nfr', label: '要求' },
+  { key: 'summary', label: '汇总' },
+  { key: 'complete', label: '完成' },
 ];
 
 export function RequirementProgress({ progress, currentPhase }: RequirementProgressProps) {
@@ -33,7 +35,7 @@ export function RequirementProgress({ progress, currentPhase }: RequirementProgr
     : progress.current - 1;
 
   return (
-    <div className={styles.progressContainer}>
+    <div className={styles.container}>
       {/* 进度条 */}
       <div className={styles.progressBar}>
         <div
@@ -42,32 +44,26 @@ export function RequirementProgress({ progress, currentPhase }: RequirementProgr
         />
       </div>
 
-      {/* 步骤指示器 */}
-      <div className={styles.progressSteps}>
-        {PHASES.map((phase, index) => (
-          <div
-            key={phase.key}
-            className={`${styles.progressStep} ${
-              index < currentIndex
-                ? styles.completed
-                : index === currentIndex
-                ? styles.active
-                : ''
-            }`}
-            title={phase.label}
-          >
-            <span className={styles.stepIcon}>{phase.icon}</span>
-            <span className={styles.stepLabel}>{phase.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* 进度文字 */}
-      <div className={styles.progressLabel}>
-        <span className={styles.progressCurrent}>{progress.current}</span>
-        <span className={styles.progressSeparator}>/</span>
-        <span className={styles.progressTotal}>{progress.total}</span>
-        <span className={styles.progressText}> - {progress.label}</span>
+      {/* 简化的进度指示器：小圆点 + 当前阶段文字 */}
+      <div className={styles.progressInfo}>
+        <div className={styles.dots}>
+          {PHASES.map((phase, index) => (
+            <span
+              key={phase.key}
+              className={`${styles.dot} ${
+                index < currentIndex
+                  ? styles.dotCompleted
+                  : index === currentIndex
+                  ? styles.dotActive
+                  : styles.dotPending
+              }`}
+              title={phase.label}
+            />
+          ))}
+        </div>
+        <span className={styles.label}>
+          {progress.label} {progress.current}/{progress.total}
+        </span>
       </div>
     </div>
   );

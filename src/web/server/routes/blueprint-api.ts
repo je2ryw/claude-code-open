@@ -54,8 +54,6 @@ import {
   AutonomousWorkerExecutor,
   createAutonomousWorker,
   type DependencyOutput,
-  // Git 并发
-  GitConcurrency,
 } from '../../../blueprint/index.js';
 
 
@@ -507,7 +505,7 @@ interface ExecutionSession {
   blueprintId: string;
   plan: ExecutionPlan;
   coordinator: RealtimeCoordinator;
-  gitConcurrency: GitConcurrency;  // Git并发控制
+  projectPath: string;  // 项目路径（串行执行，无需 Git 并发控制）
   result?: ExecutionResult;
   startedAt: Date;
   completedAt?: Date;
@@ -521,10 +519,9 @@ interface ExecutionSession {
 
 /**
  * 真正的任务执行器
- * 使用 AutonomousWorkerExecutor 执行任务，并通过 GitConcurrency 管理代码变更
+ * 使用 AutonomousWorkerExecutor 执行任务，串行执行无需并发控制
  */
 class RealTaskExecutor implements TaskExecutor {
-  private gitConcurrency: GitConcurrency;
   private blueprint: Blueprint;
   private workerPool: Map<string, AutonomousWorkerExecutor> = new Map();
   private currentTaskMap: Map<string, SmartTask> = new Map();
@@ -572,14 +569,12 @@ class RealTaskExecutor implements TaskExecutor {
     return lines.join('\n');
   }
 
-  constructor(gitConcurrency: GitConcurrency, blueprint: Blueprint) {
-    this.gitConcurrency = gitConcurrency;
+  constructor(blueprint: Blueprint) {
     this.blueprint = blueprint;
     // v5.0: 一次性构建共享的 System Prompt 基础部分
-    // v5.1: 传递 projectPath 以提供完整环境信息
+    // v5.6: 简化为串行模式
     this.sharedSystemPromptBase = AutonomousWorkerExecutor.buildSharedSystemPromptBase(
       blueprint.techStack || { language: 'typescript', packageManager: 'npm' },
-      false,  // hasMergeContext
       blueprint.projectPath
     );
   }
@@ -827,12 +822,9 @@ class RealTaskExecutor implements TaskExecutor {
     });
 
     try {
-      // 为 Worker 创建独立的 Worktree（包含独立分支和工作目录）
-      const branchName = await this.gitConcurrency.createWorkerBranch(workerId);
-      const workerWorkingDir = this.gitConcurrency.getWorkerWorkingDir(workerId);
-      console.log(`[RealTaskExecutor] 创建分支: ${branchName}, 工作目录: ${workerWorkingDir}`);
-
-      const effectiveProjectPath = workerWorkingDir || this.blueprint.projectPath;
+      // 串行执行，直接使用主项目路径
+      const effectiveProjectPath = this.blueprint.projectPath;
+      console.log(`[RealTaskExecutor] 执行任务: ${task.name}, 工作目录: ${effectiveProjectPath}`);
 
       // 收集依赖任务的产出
       const dependencyOutputs: DependencyOutput[] = [];
@@ -890,11 +882,6 @@ class RealTaskExecutor implements TaskExecutor {
         constraints: this.blueprint.constraints,
         dependencyOutputs: dependencyOutputs.length > 0 ? dependencyOutputs : undefined,
         designImages: this.blueprint.designImages,
-        // v4.0: 合并上下文 - Worker 自己负责提交和合并代码
-        mergeContext: {
-          workerId,
-          gitConcurrency: this.gitConcurrency,
-        },
         // v4.1: Blueprint 信息 - 传递给 Reviewer 用于全局审查
         blueprint: {
           id: this.blueprint.id,
@@ -945,16 +932,6 @@ class RealTaskExecutor implements TaskExecutor {
         });
       }
 
-      // v4.0: Worker 已经自己负责合并了，这里只处理任务失败的情况
-      if (!result.success) {
-        // 任务失败，尝试清理分支
-        try {
-          await this.gitConcurrency.deleteWorkerBranch(workerId);
-        } catch (e) {
-          // 忽略清理错误
-        }
-      }
-
       console.log(`[RealTaskExecutor] 任务完成: ${task.name}, 成功: ${result.success}`);
 
       // v2.1: 发送任务完成日志
@@ -998,13 +975,6 @@ class RealTaskExecutor implements TaskExecutor {
       // 清理当前任务映射
       this.currentTaskMap.delete(workerId);
 
-      // 清理分支
-      try {
-        await this.gitConcurrency.deleteWorkerBranch(workerId);
-      } catch (e) {
-        // 忽略清理错误
-      }
-
       return {
         success: false,
         changes: [],
@@ -1015,21 +985,16 @@ class RealTaskExecutor implements TaskExecutor {
   }
 
   /**
-   * 清理所有 Worker 分支
+   * 清理 Worker 池
    */
   async cleanup(): Promise<void> {
-    try {
-      await this.gitConcurrency.cleanupAllWorkerBranches();
-    } catch (e) {
-      console.warn('[RealTaskExecutor] 清理分支失败:', e);
-    }
     this.workerPool.clear();
   }
 }
 
 /**
  * 执行管理器
- * 管理所有蓝图的执行，集成 AutonomousWorkerExecutor 和 GitConcurrency
+ * 管理所有蓝图的执行，使用串行任务队列
  */
 class ExecutionManager {
   private sessions: Map<string, ExecutionSession> = new Map();
@@ -1128,21 +1093,16 @@ class ExecutionManager {
       this.planner.off('planner:decomposing', plannerDecomposingHandler);
     }
 
-    // 创建 Git 并发控制器
-    const gitConcurrency = new GitConcurrency(blueprint.projectPath);
-
-    // 创建协调器
+    // 创建协调器（串行执行）
     const coordinator = createRealtimeCoordinator({
-      maxWorkers: 5,
-      workerTimeout: 600000,  // 10分钟
+      maxWorkers: 1,           // 串行执行，只需要 1 个 Worker
+      workerTimeout: 600000,   // 10分钟
       skipOnFailure: true,
-      stopOnGroupFailure: true, // 当并行组全部失败时停止
-      useGitBranches: true,
-      autoMerge: true,
+      stopOnGroupFailure: true,
     });
 
     // 设置真正的任务执行器（使用 AutonomousWorkerExecutor）
-    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
+    const executor = new RealTaskExecutor(blueprint);
     coordinator.setTaskExecutor(executor);
 
     // 监听事件并转发到全局事件发射器
@@ -1353,24 +1313,13 @@ class ExecutionManager {
       });
     });
 
-    // 监听 Git 事件
-    gitConcurrency.on('branch:created', (data) => {
-      console.log(`[Git] 分支已创建: ${data.branchName}`);
-    });
-    gitConcurrency.on('merge:success', (data) => {
-      console.log(`[Git] 合并成功: ${data.branchName}`);
-    });
-    gitConcurrency.on('merge:conflict', (data) => {
-      console.warn(`[Git] 合并冲突: ${data.branchName}`);
-    });
-
     // 创建会话
     const session: ExecutionSession = {
       id: plan.id,
       blueprintId: blueprint.id,
       plan,
       coordinator,
-      gitConcurrency,
+      projectPath: blueprint.projectPath,
       startedAt: new Date(),
     };
 
@@ -1484,11 +1433,6 @@ class ExecutionManager {
 
     session.coordinator.cancel();
     session.completedAt = new Date();
-
-    // 清理 Git 分支
-    session.gitConcurrency.cleanupAllWorkerBranches().catch(e => {
-      console.warn('[ExecutionManager] 清理分支失败:', e);
-    });
 
     // 更新蓝图状态
     const blueprint = blueprintStore.get(session.blueprintId);
@@ -1775,21 +1719,16 @@ class ExecutionManager {
 
     console.log(`[ExecutionManager] 从蓝图文件恢复执行状态: ${blueprint.id}`);
 
-    // 创建 Git 并发控制器
-    const gitConcurrency = new GitConcurrency(blueprint.projectPath);
-
-    // 创建协调器
+    // 创建协调器（串行执行）
     const coordinator = createRealtimeCoordinator({
-      maxWorkers: 5,
+      maxWorkers: 1,
       workerTimeout: 600000,
       skipOnFailure: true,
       stopOnGroupFailure: true,
-      useGitBranches: true,
-      autoMerge: true,
     });
 
     // 设置任务执行器
-    const executor = new RealTaskExecutor(gitConcurrency, blueprint);
+    const executor = new RealTaskExecutor(blueprint);
     coordinator.setTaskExecutor(executor);
 
     // 设置项目路径
@@ -1819,7 +1758,7 @@ class ExecutionManager {
       coordinator.restoreFromState(savedState);
 
       // 监听事件
-      this.setupCoordinatorEvents(coordinator, blueprint, gitConcurrency);
+      this.setupCoordinatorEvents(coordinator, blueprint);
 
       // 从协调器获取恢复后的计划
       const restoredPlan = coordinator.getCurrentPlan();
@@ -1834,7 +1773,7 @@ class ExecutionManager {
         blueprintId: blueprint.id,
         plan: restoredPlan,
         coordinator,
-        gitConcurrency,
+        projectPath: blueprint.projectPath,
         startedAt: new Date(savedState.startedAt),
       };
 
@@ -1877,8 +1816,7 @@ class ExecutionManager {
    */
   private setupCoordinatorEvents(
     coordinator: RealtimeCoordinator,
-    blueprint: Blueprint,
-    gitConcurrency: GitConcurrency
+    blueprint: Blueprint
   ): void {
     // Worker 创建事件
     coordinator.on('worker:created', (data: any) => {
@@ -3275,31 +3213,14 @@ router.get('/coordinator/plan/:blueprintId', (req: Request, res: Response) => {
 
 /**
  * GET /coordinator/git-branches/:blueprintId
- * 获取 Git 分支状态
+ * 获取 Git 分支状态（已弃用，串行执行无需分支管理）
  */
 router.get('/coordinator/git-branches/:blueprintId', async (req: Request, res: Response) => {
-  try {
-    const { blueprintId } = req.params;
-    const session = executionManager.getSessionByBlueprint(blueprintId);
-
-    if (!session || !session.gitConcurrency) {
-      return res.json({
-        success: true,
-        data: [],
-      });
-    }
-
-    // 从 GitConcurrency 获取分支状态
-    const gitConcurrency = session.gitConcurrency;
-    const branches = await gitConcurrency.getAllBranches();
-
-    res.json({
-      success: true,
-      data: branches,
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  // 串行执行模式下，不使用独立分支
+  res.json({
+    success: true,
+    data: [],
+  });
 });
 
 /**
@@ -3369,47 +3290,17 @@ router.get('/coordinator/cost/:blueprintId', (req: Request, res: Response) => {
 
 /**
  * POST /coordinator/merge
- * 手动触发合并
+ * 手动触发合并（已弃用，串行执行无需分支合并）
  */
 router.post('/coordinator/merge', async (req: Request, res: Response) => {
-  try {
-    const { workerId } = req.body;
-
-    if (!workerId) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少 workerId 参数',
-      });
-    }
-
-    // 查找包含该 Worker 的会话
-    const sessions = Array.from((executionManager as any).sessions?.values() || []);
-    for (const session of sessions) {
-      const gitConcurrency = (session as any).gitConcurrency;
-      if (gitConcurrency) {
-        const result = await gitConcurrency.mergeWorkerBranch?.(workerId);
-        if (result) {
-          return res.json({
-            success: true,
-            data: {
-              success: result.success,
-              branchName: result.branchName,
-              autoResolved: result.autoResolved || false,
-              needsHumanReview: result.needsHumanReview || false,
-              conflictFiles: result.conflict?.files || [],
-            },
-          });
-        }
-      }
-    }
-
-    res.status(404).json({
-      success: false,
-      error: '未找到该 Worker 的分支',
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  // 串行执行模式下，不需要手动合并
+  res.json({
+    success: true,
+    data: {
+      success: true,
+      message: '串行执行模式无需手动合并',
+    },
+  });
 });
 
 /**

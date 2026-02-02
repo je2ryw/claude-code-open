@@ -1,5 +1,5 @@
 /**
- * Blueprint 工具 - 蜂群架构 v2.0
+ * Blueprint 工具 - 蜂群架构 v3.0 串行执行版
  *
  * 简化的蓝图管理接口：
  * - plan: 开始需求对话并生成蓝图
@@ -13,7 +13,7 @@
  * - SmartPlanner: 需求对话、蓝图生成、任务分解
  * - RealtimeCoordinator: 执行协调
  * - AutonomousWorkerExecutor: Worker执行
- * - GitConcurrency: Git并发
+ * - TaskQueue: 串行任务队列
  */
 
 import { BaseTool } from './base.js';
@@ -26,7 +26,6 @@ import {
   createRealtimeCoordinator,
   AutonomousWorkerExecutor,
   createAutonomousWorker,
-  GitConcurrency,
   type Blueprint,
   type ExecutionPlan,
   type ExecutionStatus,

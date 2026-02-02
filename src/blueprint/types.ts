@@ -861,11 +861,11 @@ export type ModelType = 'opus' | 'sonnet' | 'haiku';
 
 /**
  * 模型选择结果
+ * v5.0: 移除 estimatedCost，成本应该是执行后的实际统计，而不是拍脑袋的预估
  */
 export interface ModelSelection {
   model: ModelType;
   reason: string;
-  estimatedCost: number;
 }
 
 // ============================================================================

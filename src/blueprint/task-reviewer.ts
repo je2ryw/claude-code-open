@@ -12,6 +12,7 @@
 
 import { SmartTask, ModelType, Blueprint, TechStack } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
+import { getAgentDecisionMaker } from './agent-decision-maker.js';
 
 // ============== 审查上下文 ==============
 
@@ -83,13 +84,6 @@ export interface WorkerExecutionSummary {
 
   // 文件变更
   fileChanges: FileChangeRecord[];
-
-  // 合并状态（如果有）
-  mergeStatus?: {
-    attempted: boolean;
-    success: boolean;
-    error?: string;
-  };
 
   // 测试状态（如果有）
   testStatus?: {
@@ -351,9 +345,6 @@ ${summary.selfReported.message ? `- **汇报信息**: ${summary.selfReported.mes
 ### 文件变更 (共 ${summary.fileChanges.length} 个)
 ${this.formatFileChanges(summary.fileChanges)}
 
-### 合并状态
-${this.formatMergeStatus(summary.mergeStatus, summary.fileChanges.length > 0)}
-
 ### 测试状态
 ${this.formatTestStatus(summary.testStatus)}
 
@@ -367,15 +358,25 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
 **重要：在做出判断之前，你必须使用工具主动验证！**
 
 ### 验证步骤（必须执行）
-1. **检查文件是否存在**：用 Glob 搜索任务相关的文件
-2. **查看文件内容**：用 Read 查看关键文件，确认代码质量
-3. **搜索关键代码**：用 Grep 搜索任务要求的功能点是否实现
+1. **检查 Git 提交**：用 Bash 运行 \`git log -1 --oneline\` 查看最新提交
+   - 如果提交消息包含 "[Task]" 前缀，说明 Worker 已成功提交代码
+   - 如果没有新提交，检查 \`git status\` 是否有未提交的改动
+2. **检查文件是否存在**：用 Glob 搜索任务相关的文件
+3. **查看文件内容**：用 Read 查看关键文件，确认代码质量
+4. **搜索关键代码**：用 Grep 搜索任务要求的功能点是否实现
 
 ### 判断标准
-- **【最重要】如果有文件变更但合并状态不是"✅ 合并成功"** → **failed**（代码必须合并到主分支才算完成）
+- **【最重要】验证 Git 提交**：
+  1. \`git log -1\` 显示包含 "[Task]" 的提交消息 → Worker 已完成提交，继续验证代码质量
+  2. \`git status\` 显示有未提交改动 → **needs_revision**（Worker 写了代码但没提交）
+  3. 没有代码改动也没有新提交 → 检查现有代码是否满足要求
 - 如果 Worker 说完成了但你验证发现代码不存在 → **failed**
 - 如果 Worker 没修改文件但现有代码已满足要求 → **passed**
 - 如果代码存在但有明显问题需要修复 → **needs_revision**
+
+**关于 Git 提交失败**：
+Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己诊断并修复问题（如配置 user.email）。
+如果 Reviewer 发现有未提交的改动，判定 **needs_revision** 并建议 Worker 完成 Git 提交。
 
 ### 完成验证后，返回 JSON 格式的审查结果：
 
@@ -412,27 +413,6 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
   }
 
   /**
-   * 格式化合并状态
-   * v4.3: 结合文件变更情况，给出更准确的状态描述
-   */
-  private formatMergeStatus(status?: WorkerExecutionSummary['mergeStatus'], hasFileChanges?: boolean): string {
-    if (!status) {
-      // 如果有文件变更但没有合并状态，说明 Worker 没有调用合并工具
-      if (hasFileChanges) {
-        return '❌ 未调用合并工具（代码未合并到主分支）';
-      }
-      return '（无文件变更，不需要合并）';
-    }
-    if (!status.attempted) {
-      return '❌ 未尝试合并';
-    }
-    if (status.success) {
-      return '✅ 合并成功';
-    }
-    return `❌ 合并失败: ${status.error || '未知错误'}`;
-  }
-
-  /**
    * 格式化测试状态
    */
   private formatTestStatus(status?: WorkerExecutionSummary['testStatus']): string {
@@ -454,7 +434,8 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
    */
   private async callReviewer(prompt: string, projectPath?: string): Promise<Omit<ReviewResult, 'durationMs'>> {
     // v4.0: Reviewer 现在拥有只读工具，可以主动验证 Worker 的工作
-    const REVIEWER_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
+    // v5.5: 增加 Bash 工具，用于验证 Git 提交状态（git log, git status）
+    const REVIEWER_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'Bash'];
 
     // 使用 ConversationLoop，自动处理认证（支持 OAuth 和 API Key）
     const loop = new ConversationLoop({
@@ -523,8 +504,8 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
       throw new Error('Reviewer 响应为空，无法完成审查');
     }
 
-    // 解析响应
-    const result = this.parseReviewResponse(responseText);
+    // 解析响应（现在是异步的，因为可能需要 AI 重新解析）
+    const result = await this.parseReviewResponse(responseText);
 
     return {
       ...result,
@@ -535,8 +516,9 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
   /**
    * 解析 Reviewer 的响应
    * v4.1: 查找最后一个 JSON 块（因为 Reviewer 可能在验证过程中输出多段文本）
+   * v5.0: 当 JSON 解析失败时，使用 AI 重新解析，而不是脆弱的关键词匹配
    */
-  private parseReviewResponse(text: string): Omit<ReviewResult, 'durationMs' | 'tokensUsed'> {
+  private async parseReviewResponse(text: string): Promise<Omit<ReviewResult, 'durationMs' | 'tokensUsed'>> {
     // v4.1: 查找所有 JSON 块，使用最后一个（Reviewer 验证过程中可能输出多段文本）
     const jsonMatches = text.match(/```json\s*([\s\S]*?)\s*```/g);
     if (jsonMatches && jsonMatches.length > 0) {
@@ -603,27 +585,34 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
       }
     }
 
-    // 无法解析，基于关键词判断
-    const lowerText = text.toLowerCase();
-    if (lowerText.includes('passed') || lowerText.includes('通过') || lowerText.includes('完成')) {
-      return {
-        verdict: 'passed',
-        confidence: 'low',
-        reasoning: text.substring(0, 200),
-      };
-    } else if (lowerText.includes('failed') || lowerText.includes('失败')) {
-      return {
-        verdict: 'failed',
-        confidence: 'low',
-        reasoning: text.substring(0, 200),
-      };
+    // v5.0: 无法解析 JSON 时，使用 AI 重新理解响应内容
+    // 不再使用脆弱的关键词匹配（如 includes('passed')），而是让 AI 真正理解文本含义
+    console.log('[TaskReviewer] JSON 解析失败，使用 AI 重新解析响应...');
+
+    try {
+      const agentDecision = getAgentDecisionMaker();
+      // 构造一个虚拟任务用于 AI 解析
+      const parseResult = await agentDecision.askAgentForVerdict(text);
+
+      if (parseResult) {
+        console.log('[TaskReviewer] AI 重新解析成功:', parseResult.verdict);
+        return {
+          verdict: parseResult.verdict,
+          confidence: parseResult.confidence,
+          reasoning: parseResult.reasoning,
+          issues: parseResult.issues,
+          suggestions: parseResult.suggestions,
+        };
+      }
+    } catch (aiError) {
+      console.error('[TaskReviewer] AI 重新解析失败:', aiError);
     }
 
-    // 默认：需要修改
+    // AI 也无法解析，返回 needs_revision 让人工处理
     return {
       verdict: 'needs_revision',
       confidence: 'low',
-      reasoning: `无法解析审查结果: ${text.substring(0, 100)}`,
+      reasoning: `无法解析审查结果，需要人工审核。原始响应: ${text.substring(0, 200)}`,
     };
   }
 
@@ -658,9 +647,6 @@ export function collectWorkerSummary(
   const toolCalls: ToolCallRecord[] = [];
   let selfReportedCompleted = false;
   let selfReportedMessage: string | undefined;
-  let mergeAttempted = false;
-  let mergeSuccess = false;
-  let mergeError: string | undefined;
   let testRan = false;
   let testPassed = false;
   let testOutput: string | undefined;
@@ -683,13 +669,6 @@ export function collectWorkerSummary(
         }
       }
 
-      // 检测合并
-      if (event.toolName === 'CommitAndMergeChanges') {
-        mergeAttempted = true;
-        mergeSuccess = !event.toolError;
-        mergeError = event.toolError;
-      }
-
       // 检测测试
       if (event.toolName === 'Bash') {
         const input = event.toolInput as { command?: string } | undefined;
@@ -710,11 +689,6 @@ export function collectWorkerSummary(
     },
     toolCalls,
     fileChanges,
-    mergeStatus: mergeAttempted ? {
-      attempted: true,
-      success: mergeSuccess,
-      error: mergeError,
-    } : undefined,
     testStatus: testRan ? {
       ran: true,
       passed: testPassed,

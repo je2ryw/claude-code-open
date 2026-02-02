@@ -94,102 +94,7 @@
   color: var(--text-primary, #fff);
 }
 
-/* ==================== 进度条区域 ==================== */
-
-.progressContainer {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color, #333);
-  background: var(--bg-secondary, #252525);
-}
-
-.progressBar {
-  height: 4px;
-  background: var(--bg-tertiary, #333);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-
-.progressFill {
-  height: 100%;
-  background: linear-gradient(90deg, #4CAF50, #8BC34A);
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
-.progressSteps {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.progressStep {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  opacity: 0.4;
-  transition: all 0.2s;
-}
-
-.progressStep.active {
-  opacity: 1;
-}
-
-.progressStep.active .stepIcon {
-  background: #4CAF50;
-  transform: scale(1.15);
-  box-shadow: 0 0 12px rgba(76, 175, 80, 0.4);
-}
-
-.progressStep.completed {
-  opacity: 0.7;
-}
-
-.progressStep.completed .stepIcon {
-  background: #2E7D32;
-}
-
-.stepIcon {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary, #333);
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.stepLabel {
-  font-size: 11px;
-  color: var(--text-secondary, #888);
-  white-space: nowrap;
-}
-
-.progressLabel {
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-secondary, #888);
-}
-
-.progressCurrent {
-  color: #4CAF50;
-  font-weight: 600;
-}
-
-.progressSeparator {
-  margin: 0 2px;
-}
-
-.progressTotal {
-  color: var(--text-tertiary, #666);
-}
-
-.progressText {
-  color: var(--text-primary, #fff);
-}
+/* 进度条样式已移到 RequirementProgress.module.css */
 
 /* ==================== 消息区域 ==================== */
 
@@ -304,80 +209,98 @@
   min-height: 0;
 }
 
-/* 蓝图预览包装器 */
-.previewWrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-bottom: 1px solid var(--border-color, #333);
-  transition: all 0.3s ease;
-}
-
-/* 展开状态 - 覆盖整个对话框 */
-.previewExpanded {
-  position: fixed;
-  top: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 1000px;
-  height: calc(100vh - 120px);
-  background: var(--bg-primary, #1e1e1e);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  z-index: 1001;
-  border: 1px solid var(--border-color, #333);
-}
-
-/* 预览头部 */
-.previewHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border-color, #333);
-  background: var(--bg-secondary, #252525);
-  flex-shrink: 0;
-}
-
-.previewMainTitle {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary, #fff);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.previewExpandButton {
-  background: var(--bg-tertiary, #333);
-  border: 1px solid var(--border-color, #444);
-  color: var(--text-secondary, #888);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.previewExpandButton:hover {
-  background: var(--bg-hover, #444);
-  color: var(--text-primary, #fff);
-}
-
-/* 汇总阶段的消息区域 - 更小 */
+/* 汇总阶段的消息区域 - 紧凑 */
 .summaryMessagesContainer {
-  max-height: 120px;
+  max-height: 100px;
   overflow-y: auto;
   padding: 12px 20px;
   background: var(--bg-secondary, #252525);
-  border-bottom: 1px solid var(--border-color, #333);
   flex-shrink: 0;
 }
 
-/* ==================== 预览区域 ==================== */
+/* ==================== 生成阶段布局 ==================== */
+
+.generatingLayout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 流式输出卡片 */
+.streamingCard {
+  margin: 0 16px 16px;
+  background: var(--bg-tertiary, #2a2a2a);
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #333);
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.streamingCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(139, 195, 74, 0.1));
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
+.streamingCardIcon {
+  font-size: 18px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.streamingCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.streamingCardContent {
+  flex: 1;
+  padding: 16px 18px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.streamingCardFooter {
+  padding: 12px 18px;
+  background: var(--bg-secondary, #252525);
+  border-top: 1px solid var(--border-color, #333);
+}
+
+.streamingProgress {
+  height: 3px;
+  background: var(--bg-tertiary, #333);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.streamingProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* 流式步骤文本 - 生成阶段 */
+.streamingStep {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+}
+
+/* ==================== 预览区域（旧样式，保留兼容） ==================== */
 
 .previewContainer {
   padding: 16px 20px;

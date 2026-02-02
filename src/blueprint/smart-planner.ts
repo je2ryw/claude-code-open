@@ -1515,20 +1515,8 @@ export class SmartPlanner extends EventEmitter {
     blueprint: Blueprint,
     explorationContext: string
   ): Promise<APIContract | null> {
-    // 只有包含前后端的项目才需要生成 API 契约
-    const hasBackend = blueprint.requirements?.some(r =>
-      /api|后端|backend|接口|路由|endpoint/i.test(r)
-    );
-    const hasFrontend = blueprint.requirements?.some(r =>
-      /前端|frontend|ui|界面|页面|组件/i.test(r)
-    );
-
-    if (!hasBackend || !hasFrontend) {
-      console.log('[SmartPlanner] 项目不需要 API 契约（非前后端分离项目）');
-      return null;
-    }
-
-    console.log('[SmartPlanner] 开始生成 API 契约...');
+    // 让 AI 自己判断是否需要 API 契约，而不是用脆弱的正则匹配
+    console.log('[SmartPlanner] 分析项目是否需要 API 契约...');
 
     try {
       const loop = new ConversationLoop({
@@ -1537,17 +1525,30 @@ export class SmartPlanner extends EventEmitter {
         verbose: false,
         permissionMode: 'bypassPermissions',
         workingDir: blueprint.projectPath,
-        systemPrompt: `你是 API 契约设计专家。根据项目需求，设计 RESTful API 契约。
+        systemPrompt: `你是 API 契约设计专家。你需要先判断项目是否需要 API 契约，然后根据需求设计契约。
 
-设计原则：
-1. 使用统一的 API 前缀（如 /api/v1）
-2. 遵循 RESTful 规范
-3. 路径命名使用小写和连字符
-4. 确保路径完整（包含前缀）
+## 判断标准
+以下项目类型**需要** API 契约：
+- 前后端分离项目（前端通过 HTTP/REST 调用后端）
+- 提供 API 给第三方调用的服务
+- 微服务架构中的服务间通信
 
-输出 JSON 格式：
+以下项目类型**不需要** API 契约：
+- 纯前端项目（静态网站、SPA 无后端）
+- 纯后端项目（CLI 工具、脚本、库）
+- 单体全栈项目（模板渲染，无 API 层）
+- 移动端 App（除非有自建后端）
+
+## 输出格式
+如果**不需要**契约：
+\`\`\`json
+{ "needsContract": false, "reason": "简述原因" }
+\`\`\`
+
+如果**需要**契约，设计完整的 API：
 \`\`\`json
 {
+  "needsContract": true,
   "apiPrefix": "/api/v1",
   "endpoints": [
     {
@@ -1559,11 +1560,16 @@ export class SmartPlanner extends EventEmitter {
     }
   ]
 }
-\`\`\``,
+\`\`\`
+
+设计原则（仅当需要契约时）：
+1. 使用统一的 API 前缀
+2. 遵循 RESTful 规范
+3. 路径命名使用小写和连字符`,
         isSubAgent: true,
       });
 
-      const prompt = `根据以下需求，设计 API 契约：
+      const prompt = `分析以下项目，判断是否需要 API 契约，如需要则设计完整契约：
 
 ## 项目需求
 ${blueprint.requirements?.join('\n') || blueprint.description}
@@ -1573,17 +1579,22 @@ ${JSON.stringify(blueprint.techStack, null, 2)}
 
 ${explorationContext ? `## 现有代码结构\n${explorationContext}` : ''}
 
-请设计完整的 API 契约，包含所有需要的端点。`;
+请先判断是否需要 API 契约，然后按要求输出 JSON。`;
 
       const result = await loop.processMessage(prompt);
 
       if (result) {
-        // 提取 JSON
         const jsonMatch = result.match(/```json\s*([\s\S]*?)```/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[1]);
-          console.log('[SmartPlanner] API 契约生成成功:', parsed.endpoints?.length, '个端点');
 
+          // AI 判断不需要契约
+          if (parsed.needsContract === false) {
+            console.log('[SmartPlanner] AI 判断项目不需要 API 契约:', parsed.reason);
+            return null;
+          }
+
+          console.log('[SmartPlanner] API 契约生成成功:', parsed.endpoints?.length, '个端点');
           return {
             apiPrefix: parsed.apiPrefix || '/api/v1',
             endpoints: parsed.endpoints || [],

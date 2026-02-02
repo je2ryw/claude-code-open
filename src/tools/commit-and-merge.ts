@@ -1,8 +1,10 @@
 /**
  * CommitAndMergeChanges 工具 - Worker 提交并合并代码到主分支
  *
- * 设计理念：让 Worker 自己负责合并，这样 Worker 能知道合并是否成功
- * 如果合并失败，Worker 可以尝试解决冲突或报告任务失败
+ * 注意：在串行执行模式下，此工具不再使用。
+ * Worker 直接在主分支上工作，由 TaskQueue 负责提交。
+ *
+ * 保留此工具是为了向后兼容，如果需要恢复并发模式可以重新启用。
  */
 
 import { AsyncLocalStorage } from 'async_hooks';
@@ -39,8 +41,8 @@ export interface CommitAndMergeResult extends ToolResult {
 }
 
 /**
- * 合并上下文 - 由外部注入
- * 这样工具可以访问到 GitConcurrency 和 workerId
+ * 合并上下文 - 由外部注入（串行模式下不使用）
+ * 保留此接口是为了向后兼容
  */
 export interface MergeContext {
   workerId: string;

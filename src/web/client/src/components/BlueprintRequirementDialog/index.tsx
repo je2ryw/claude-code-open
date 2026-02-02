@@ -11,8 +11,8 @@ import { BlueprintPreview } from './BlueprintPreview';
 import { useProject } from '../../contexts/ProjectContext';
 
 // 对话阶段类型（映射到前端显示）
+// 移除了 welcome 阶段，直接从 project_background 开始
 export type DialogPhase =
-  | 'welcome'
   | 'project_background'
   | 'business_process'
   | 'system_module'
@@ -62,15 +62,15 @@ export function BlueprintRequirementDialog({
   // 状态
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DialogMessage[]>([]);
-  const [currentPhase, setCurrentPhase] = useState<DialogPhase>('welcome');
+  const [currentPhase, setCurrentPhase] = useState<DialogPhase>('project_background');
   const [collectedData, setCollectedData] = useState<CollectedData>({
     requirements: [],
     constraints: [],
   });
   const [progress, setProgress] = useState<Progress>({
     current: 1,
-    total: 7,
-    label: '欢迎',
+    total: 6,
+    label: '背景',
   });
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,7 +79,6 @@ export function BlueprintRequirementDialog({
   const [generationMessage, setGenerationMessage] = useState(''); // 真实的进度消息
   const [streamingText, setStreamingText] = useState(''); // Chat 模式：流式文本内容
   const [error, setError] = useState<string | null>(null);
-  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -113,20 +112,19 @@ export function BlueprintRequirementDialog({
   // 映射后端 phase 到前端 phase
   const mapPhase = (backendPhase: string): DialogPhase => {
     const phaseMap: Record<string, DialogPhase> = {
-      greeting: 'welcome',
+      greeting: 'project_background',  // greeting 映射到 project_background
       requirements: 'project_background',
       clarification: 'business_process',
       tech_choice: 'system_module',
       confirmation: 'summary',
       done: 'complete',
     };
-    return phaseMap[backendPhase] || 'welcome';
+    return phaseMap[backendPhase] || 'project_background';
   };
 
   // 获取阶段标签
   const getPhaseLabel = (phase: DialogPhase): string => {
     const labels: Record<DialogPhase, string> = {
-      welcome: '欢迎',
       project_background: '背景',
       business_process: '流程',
       system_module: '模块',
@@ -139,8 +137,7 @@ export function BlueprintRequirementDialog({
 
   // 计算进度
   const updateProgress = (phase: DialogPhase) => {
-    const phaseOrder = [
-      'welcome',
+    const phaseOrder: DialogPhase[] = [
       'project_background',
       'business_process',
       'system_module',
@@ -151,7 +148,7 @@ export function BlueprintRequirementDialog({
     const currentIndex = phaseOrder.indexOf(phase) + 1;
     setProgress({
       current: currentIndex,
-      total: 7,
+      total: 6,
       label: getPhaseLabel(phase),
     });
   };
@@ -189,14 +186,14 @@ export function BlueprintRequirementDialog({
         projectPath: projectPath,
       });
 
-      // 添加欢迎消息
+      // 添加首条消息（直接进入背景收集阶段）
       if (msgs && msgs.length > 0) {
-        const welcomeMsg = msgs[msgs.length - 1];
+        const firstMsg = msgs[msgs.length - 1];
         setMessages([
           {
-            id: `welcome-${Date.now()}`,
+            id: `init-${Date.now()}`,
             role: 'assistant',
-            content: welcomeMsg.content,
+            content: firstMsg.content,
             timestamp: new Date().toISOString(),
             phase: mappedPhase,
           },
@@ -576,29 +573,55 @@ export function BlueprintRequirementDialog({
         {/* 进度条 */}
         <RequirementProgress progress={progress} currentPhase={currentPhase} />
 
-        {/* 汇总阶段：蓝图预览作为主内容 */}
-        {isSummaryPhase ? (
-          <div className={styles.summaryLayout}>
-            {/* 蓝图预览区域 */}
-            <div className={`${styles.previewWrapper} ${isPreviewExpanded ? styles.previewExpanded : ''}`}>
-              <div className={styles.previewHeader}>
-                <h3 className={styles.previewMainTitle}>
-                  <span>📋</span> 需求汇总
-                </h3>
-                <button
-                  className={styles.previewExpandButton}
-                  onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
-                  title={isPreviewExpanded ? '收起' : '展开全屏'}
-                >
-                  {isPreviewExpanded ? '收起 ↙' : '展开 ↗'}
-                </button>
-              </div>
-              <BlueprintPreview data={previewData} sessionId={sessionId || undefined} />
-            </div>
+        {/* 生成中：折叠需求摘要 + 流式输出卡片 */}
+        {confirming ? (
+          <div className={styles.generatingLayout}>
+            {/* 折叠的需求摘要 */}
+            <BlueprintPreview data={previewData} sessionId={sessionId || undefined} collapsed={true} />
 
-            {/* 消息区域 */}
+            {/* 流式输出卡片 */}
+            <div className={styles.streamingCard}>
+              <div className={styles.streamingCardHeader}>
+                <span className={styles.streamingCardIcon}>🚀</span>
+                <span className={styles.streamingCardTitle}>AI 正在生成蓝图</span>
+              </div>
+              <div className={styles.streamingCardContent} ref={streamingContentRef}>
+                {streamingText ? (
+                  <div className={styles.streamingMarkdown}>
+                    {streamingText.split('\n').map((line, i) => (
+                      <p key={i}>{line || '\u00A0'}</p>
+                    ))}
+                    <span className={styles.streamingCursor}>▌</span>
+                  </div>
+                ) : (
+                  <div className={styles.streamingPlaceholder}>
+                    <span className={styles.spinnerIcon}>⚙️</span>
+                    <span>{generationMessage || generationSteps[generationStep]}</span>
+                  </div>
+                )}
+              </div>
+              <div className={styles.streamingCardFooter}>
+                <div className={styles.streamingProgress}>
+                  <div
+                    className={styles.streamingProgressFill}
+                    style={{ width: `${((generationStep + 1) / 5) * 100}%` }}
+                  />
+                </div>
+                <span className={styles.streamingStep}>
+                  步骤 {generationStep + 1}/5 · {generationMessage || 'AI 正在思考...'}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : isSummaryPhase ? (
+          /* 汇总阶段：需求卡片 + 对话 */
+          <div className={styles.summaryLayout}>
+            {/* 需求汇总卡片 */}
+            <BlueprintPreview data={previewData} sessionId={sessionId || undefined} />
+
+            {/* 最近消息 */}
             <div className={styles.summaryMessagesContainer}>
-              {messages.slice(-3).map((msg) => (
+              {messages.slice(-2).map((msg) => (
                 <div
                   key={msg.id}
                   className={`${styles.message} ${
@@ -613,45 +636,15 @@ export function BlueprintRequirementDialog({
                   </div>
                 </div>
               ))}
-              {(loading || confirming) && (
+              {loading && (
                 <div className={`${styles.message} ${styles.assistantMessage}`}>
                   <div className={styles.messageRole}>AI</div>
                   <div className={styles.messageContent}>
-                    {confirming ? (
-                      <div className={styles.streamingChat}>
-                        {/* 流式文本内容 */}
-                        <div className={styles.streamingContent} ref={streamingContentRef}>
-                          {streamingText ? (
-                            <div className={styles.streamingMarkdown}>
-                              {streamingText.split('\n').map((line, i) => (
-                                <p key={i}>{line || '\u00A0'}</p>
-                              ))}
-                              <span className={styles.streamingCursor}>▌</span>
-                            </div>
-                          ) : (
-                            <div className={styles.streamingPlaceholder}>
-                              <span className={styles.spinnerIcon}>⚙️</span>
-                              <span>{generationMessage || generationSteps[generationStep]}</span>
-                            </div>
-                          )}
-                        </div>
-                        {/* 进度指示 */}
-                        <div className={styles.streamingFooter}>
-                          <span className={styles.streamingStep}>
-                            步骤 {generationStep + 1}/5
-                          </span>
-                          <span className={styles.streamingStatus}>
-                            {generationMessage || 'AI 正在思考...'}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className={styles.typing}>
-                        <span className={styles.typingDot} />
-                        <span className={styles.typingDot} />
-                        <span className={styles.typingDot} />
-                      </span>
-                    )}
+                    <span className={styles.typing}>
+                      <span className={styles.typingDot} />
+                      <span className={styles.typingDot} />
+                      <span className={styles.typingDot} />
+                    </span>
                   </div>
                 </div>
               )}

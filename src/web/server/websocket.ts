@@ -4181,7 +4181,7 @@ async function handleSwarmSubscribe(
         stats: statsData,
         // v2.0 核心字段：执行计划（现在包含实时状态）
         executionPlan: executionPlanData,
-        gitBranches: [],     // 将在执行时由 GitConcurrency 填充
+        gitBranches: [],     // 串行执行模式，不使用独立分支
         costEstimate: costEstimateData,
       },
     });

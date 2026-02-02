@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execSync } from 'child_process';
 
 import type {
   SmartTask,
@@ -22,10 +23,6 @@ import type {
   DesignImage,
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
-import {
-  type MergeContext,
-  runGeneratorWithMergeContext,
-} from '../tools/commit-and-merge.js';
 import {
   TaskReviewer,
   collectWorkerSummary,
@@ -57,8 +54,6 @@ export interface WorkerContext {
   designImages?: DesignImage[];
   /** 共享的 System Prompt（跨 Worker 复用） */
   sharedSystemPromptBase?: string;
-  /** 合并上下文（可选，如果提供则 Worker 负责合并代码） */
-  mergeContext?: Omit<MergeContext, 'getFileChanges'>;
   /** v4.0: Blueprint 信息（传递给 Reviewer 用于全局审查） */
   blueprint?: {
     id: string;
@@ -74,8 +69,6 @@ export interface WorkerContext {
     name: string;
     status: string;
   }>;
-  /** v4.1: 主仓库路径（Reviewer 用，因为 worktree 可能已删除） */
-  mainRepoPath?: string;
   /** v5.0: 蜂群共享记忆文本（精简版，直接注入 Prompt） */
   swarmMemoryText?: string;
   /** v5.0: 蓝图文件路径（Worker 可用 Read 工具查看详情） */
@@ -140,21 +133,27 @@ export class AutonomousWorkerExecutor extends EventEmitter {
    * v5.0: 构建共享的 System Prompt 基础部分
    * 在 RealTaskExecutor 中调用一次，然后复用给所有 Worker
    * 节省 ~3000 tokens × (N-1) Workers
+   * v5.6: 简化为串行模式，移除并行模式相关代码
    */
-  static buildSharedSystemPromptBase(techStack: TechStack, hasMergeContext: boolean = false, projectPath?: string): string {
-    // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
-    // v3.9: 增加冲突解决指导 - 让 Worker 像人类程序员一样处理冲突
-    const mergeRule = hasMergeContext
-      ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
-- 合并成功后调用 UpdateTaskStatus(status="completed")
-- **合并冲突处理**：如果 CommitAndMergeChanges 返回冲突（conflictDetails），你需要：
-  1. 分析 conflictDetails 中 oursContent（主分支）和 theirsContent（你的改动）
-  2. 理解双方修改意图，决定如何合并
-  3. 用 Write 工具写入正确的合并结果（不要包含 <<<<<<< ======= >>>>>>> 标记）
-  4. 再次调用 CommitAndMergeChanges 完成合并
-- 只有在无法解决冲突时才调用 UpdateTaskStatus(status="failed")`
-      : `- 完成后调用 UpdateTaskStatus(status="completed")
-- 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
+  static buildSharedSystemPromptBase(techStack: TechStack, projectPath?: string): string {
+    // v5.6: 串行模式 - Worker 用 Bash 提交 Git
+    const gitCommitRule = `## ⚠️ 最重要规则 - Git 提交（必须遵守！）
+
+**任务完成流程（顺序不能变）：**
+1. 用 Write/Edit 工具完成代码编写
+2. 用 Bash 提交 Git：
+   \`\`\`bash
+   git add -A && git commit -m "[Task] 你的任务名称: 简要描述"
+   \`\`\`
+3. **只有 Git 提交成功后**，才能调用 UpdateTaskStatus(status="completed")
+
+⛔ **禁止**：写完代码后直接调用 UpdateTaskStatus(completed) 而不提交 Git！
+   这样做会被 Reviewer 判定为失败，浪费你的工作！
+
+💡 **Git 问题自己修复**：
+- user.email 未配置 → \`git config user.email "worker@local"\`
+- index.lock 存在 → \`rm -f .git/index.lock\`（Windows: \`del .git\\index.lock\`）
+- 其他问题 → 根据错误信息自己诊断修复`;
 
     // v5.1: 添加完整环境信息，与官方 CLI 保持一致
     const platform = os.platform();
@@ -166,16 +165,51 @@ export class AutonomousWorkerExecutor extends EventEmitter {
     // 检查是否是 git 仓库
     const isGitRepo = projectPath ? fs.existsSync(path.join(projectPath, '.git')) : false;
 
+    // v5.6: 获取 Git 状态信息，注入到环境中让 Worker 知道当前状态
+    let gitStatusInfo = '';
+    let gitBranch = '';
+    if (isGitRepo && projectPath) {
+      try {
+        // 获取当前分支
+        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 5000,
+        }).trim();
+
+        // 获取简短的 Git 状态（只显示修改的文件）
+        const status = execSync('git status --short', {
+          cwd: projectPath,
+          encoding: 'utf-8',
+          timeout: 5000,
+        }).trim();
+
+        if (status) {
+          // 限制显示的文件数量
+          const lines = status.split('\n');
+          const displayLines = lines.slice(0, 10);
+          const moreCount = lines.length > 10 ? lines.length - 10 : 0;
+          gitStatusInfo = `\nGit status (uncommitted changes):\n${displayLines.join('\n')}${moreCount > 0 ? `\n... and ${moreCount} more files` : ''}`;
+        } else {
+          gitStatusInfo = '\nGit status: Clean (no uncommitted changes)';
+        }
+      } catch {
+        // Git 命令失败，忽略
+        gitStatusInfo = '\nGit status: Unable to retrieve';
+      }
+    }
+
     // 获取今天的日期
     const today = new Date().toISOString().split('T')[0];
 
     return `你是自治开发 Worker，直接用工具执行任务。
 
-## 规则
-- 直接执行，不讨论${shellHint}
-${mergeRule}
+${gitCommitRule}
 
-## 环境问题处理（重要！）
+## 基本规则
+- 直接执行，不讨论${shellHint}
+
+## 环境问题处理
 **你没有解决不了的问题！** 你能力很强，可以解决几乎所有问题。
 
 ### 自己直接解决
@@ -210,7 +244,7 @@ ${mergeRule}
 
 <env>
 Working directory: ${projectPath || process.cwd()}
-Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
+Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}${gitBranch ? `\nCurrent branch: ${gitBranch}` : ''}${gitStatusInfo}
 Platform: ${platformInfo}
 Today's date: ${today}
 </env>
@@ -337,9 +371,6 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     let testsPassed = false;
     // v3.7: 追踪 AI 是否主动汇报了任务完成
     let aiReportedCompleted = false;
-    // v4.0: 追踪合并结果
-    let mergeSuccess: boolean | null = null;  // null 表示未调用合并工具
-    let mergeError: string | undefined;
     // v4.2: 收集事件流（用于 Reviewer 审查）
     const collectedEvents: Array<{
       type: string;
@@ -355,7 +386,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     const model = this.selectModel(task);
     decisions.push({
       type: 'strategy',
-      description: `选择模型: ${model}，任务复杂度: ${task.complexity}`,
+      description: `模型: ${model}（${task.complexity}）`,
       timestamp: new Date(),
     });
 
@@ -391,22 +422,8 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         });
       }
 
-      // v4.0: 构建合并上下文（如果提供）
-      const fullMergeContext: MergeContext | null = context.mergeContext
-        ? {
-            ...context.mergeContext,
-            taskDescription: task.description,
-            getFileChanges: () => writtenFiles,
-          }
-        : null;
-
-      // 获取原始的消息流
-      const rawStream = loop.processMessageStream(taskPrompt);
-
-      // v4.0: 如果有合并上下文，包装 generator 以在正确的上下文中执行
-      const messageStream = fullMergeContext
-        ? runGeneratorWithMergeContext(fullMergeContext, rawStream)
-        : rawStream;
+      // 获取消息流
+      const messageStream = loop.processMessageStream(taskPrompt);
 
       for await (const event of messageStream) {
         // v3.2: 统计工具调用
@@ -427,19 +444,6 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
             const input = event.toolInput as { status?: string };
             if (input.status === 'completed') {
               aiReportedCompleted = true;
-            }
-          }
-          // v4.1: 检测合并工具调用结果
-          // CommitAndMergeTool 内部已判断合并成功/失败：
-          // - 成功 → return { success: true } → loop.ts 设置 toolError = undefined
-          // - 失败 → return { success: false, error } → loop.ts 设置 toolError = error
-          // 所以只需检查 toolError 是否存在
-          if (event.toolName === 'CommitAndMergeChanges') {
-            if (event.toolError) {
-              mergeSuccess = false;
-              mergeError = event.toolError;
-            } else {
-              mergeSuccess = true;
             }
           }
           // v3.3: 检测测试运行
@@ -497,6 +501,9 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         executionDuration,
       );
 
+      // v5.5: Worker 自己用 Bash 提交 Git（通过 system prompt 指导）
+      // 不再程序化处理，充分利用 Agent 智能来诊断和修复 Git 问题
+
       // 创建 Reviewer 并审查（使用 ConversationLoop，与 Worker 相同的认证方式）
       // v4.0: Reviewer 必须使用 opus（最强推理能力 + 拥有只读工具验证能力）
       const reviewer = new TaskReviewer({
@@ -509,7 +516,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       // v4.0: 传递全局上下文给 Reviewer（Blueprint + 相关任务）
       // v4.1: 使用主仓库路径（worktree 可能已被删除/合并）
       const reviewResult = await reviewer.review(task, workerSummary, {
-        projectPath: context.mainRepoPath || context.projectPath,  // 优先使用主仓库
+        projectPath: context.projectPath,
         isRetry: false,  // TODO: 从上下文获取
         blueprint: context.blueprint,
         relatedTasks: context.relatedTasks,
@@ -607,17 +614,10 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
 
   /**
    * v3.6: 简化验收逻辑
+   * v5.6: 进一步简化，移除并行模式相关检查
    *
    * 设计理念：信任 AI 的判断，只做最小必要验证
-   *
-   * 原因：
-   * 1. AI 已经按照任务描述执行工作，并给出了完成结论
-   * 2. 机械式的检查（如检查 writtenFiles 数量）无法覆盖 Bash 命令等场景
-   * 3. 过度验证会导致假阴性（任务实际完成但被标记为失败）
-   *
-   * 只在以下场景验证：
-   * - 完全没有工具调用 → 明显的空执行
-   * - test 类型任务必须运行测试 → 测试必须验证通过
+   * 注意：实际的任务验收由 Reviewer 完成，此方法作为备用
    */
   private validateTaskCompletion(
     task: SmartTask,
@@ -627,42 +627,17 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       writtenFiles: FileChange[];
       testsRan?: boolean;
       aiReportedCompleted?: boolean;
-      // v4.0: 合并结果
-      mergeSuccess?: boolean | null;
-      mergeError?: string;
-      hasMergeContext?: boolean;
     }
   ): { success: boolean; error?: string } {
-    const { toolCallCount, hasCodeToolCall, testsRan, aiReportedCompleted, mergeSuccess, mergeError, hasMergeContext } = metrics;
+    const { toolCallCount, hasCodeToolCall, testsRan, aiReportedCompleted } = metrics;
 
-    // v4.1: 优先处理 AI 主动汇报完成 + 无代码变更的场景
-    // 场景：重新执行任务时，AI 判断"配置已存在，无需修改"，直接汇报完成
-    // 此时没有代码变更，不应强制要求调用合并工具
+    // AI 主动汇报完成 + 无代码变更：信任其判断
     if (aiReportedCompleted && !hasCodeToolCall) {
       this.log(`AI 主动汇报任务完成且无代码变更，信任其判断`);
       return { success: true };
     }
 
-    // v4.0: 如果有合并上下文 + 有代码变更，必须检查合并结果
-    // 这是最重要的验证：代码写完了但没有成功合并 = 任务失败
-    if (hasMergeContext && hasCodeToolCall) {
-      if (mergeSuccess === false) {
-        return {
-          success: false,
-          error: `代码合并失败: ${mergeError || '未知错误'}`,
-        };
-      }
-      if (mergeSuccess === null) {
-        // Worker 写了代码但没有调用合并工具
-        return {
-          success: false,
-          error: '任务未完成：代码未合并到主分支（请调用 CommitAndMergeChanges 工具）',
-        };
-      }
-      // 合并成功，继续其他验证
-    }
-
-    // v3.7: 如果 AI 主动汇报了完成状态（有代码变更但已合并的情况）
+    // AI 主动汇报完成：信任其判断
     if (aiReportedCompleted) {
       this.log(`AI 主动汇报任务完成，信任其判断`);
       return { success: true };
@@ -676,7 +651,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       };
     }
 
-    // test 类型任务：必须运行测试（这是唯一需要强制验证的场景）
+    // test 类型任务：必须运行测试
     if (task.type === 'test' && task.needsTest !== false) {
       if (!testsRan) {
         return {
@@ -690,10 +665,18 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     return { success: true };
   }
 
+  /**
+   * 根据任务复杂度选择模型
+   * 任务分解时已确定 complexity，直接映射即可，不需要 AI 再"选择"
+   */
   private selectModel(task: SmartTask): ModelType {
-    if (task.complexity === 'complex') return 'opus';
-    if (task.complexity === 'moderate') return 'sonnet';
-    return this.defaultModel;
+    switch (task.complexity) {
+      case 'complex': return 'opus';
+      case 'moderate': return 'sonnet';
+      case 'simple': return this.defaultModel;
+      case 'trivial': return 'haiku';
+      default: return this.defaultModel;
+    }
   }
 
   private buildSystemPrompt(task: SmartTask, context: WorkerContext): string {
@@ -703,97 +686,13 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       return context.sharedSystemPromptBase + this.buildTaskSpecificPrompt(task, context);
     }
 
-    // v4.0: 如果有合并上下文，Worker 需要自己负责合并代码
-    // v3.9: 增加冲突解决指导 - 让 Worker 像人类程序员一样处理冲突
-    const hasMergeContext = !!context.mergeContext;
-    const mergeRule = hasMergeContext
-      ? `- 完成代码后，调用 CommitAndMergeChanges 工具提交并合并代码
-- 合并成功后调用 UpdateTaskStatus(status="completed")
-- **合并冲突处理**：如果 CommitAndMergeChanges 返回冲突（conflictDetails），你需要：
-  1. 分析 conflictDetails 中 oursContent（主分支）和 theirsContent（你的改动）
-  2. 理解双方修改意图，决定如何合并
-  3. 用 Write 工具写入正确的合并结果（不要包含 <<<<<<< ======= >>>>>>> 标记）
-  4. 再次调用 CommitAndMergeChanges 完成合并
-- 只有在无法解决冲突时才调用 UpdateTaskStatus(status="failed")`
-      : `- 完成后调用 UpdateTaskStatus(status="completed")
-- 失败时调用 UpdateTaskStatus(status="failed", error="...")`;
+    // v5.6: 复用静态方法构建基础 Prompt
+    const basePrompt = AutonomousWorkerExecutor.buildSharedSystemPromptBase(
+      context.techStack,
+      context.projectPath
+    );
 
-    // v5.1: 添加完整环境信息，与官方 CLI 保持一致
-    const platform = os.platform();
-    const platformInfo = platform === 'win32' ? 'win32' : platform === 'darwin' ? 'darwin' : 'linux';
-    const shellHint = platform === 'win32'
-      ? '\n- Windows 系统：使用 dir 代替 ls，使用 cd 代替 pwd，使用 type 代替 cat'
-      : '';
-
-    // 检查是否是 git 仓库
-    const isGitRepo = fs.existsSync(path.join(context.projectPath, '.git'));
-
-    // 获取今天的日期
-    const today = new Date().toISOString().split('T')[0];
-
-    // 构建精简版 System Prompt
-    let prompt = `你是自治开发 Worker，直接用工具执行任务。
-
-## 规则
-- 直接执行，不讨论${shellHint}
-${mergeRule}
-
-## 环境问题处理（重要！）
-**你没有解决不了的问题！** 你能力很强，可以解决几乎所有问题。
-
-### 自己直接解决
-1. **缺少 npm/pip 包** → npm install xxx / pip install xxx
-2. **缺少配置文件** → 复制 .env.example 为 .env
-3. **需要构建** → npm run build / cargo build
-4. **程序未启动** → 用系统命令启动
-5. **docker-compose 服务** → docker-compose up -d
-6. **本地数据库** → 检查 sqlite 选项或内存模式
-
-### 安装软件（你可以做到！）
-软件未安装？直接安装它！
-
-**Windows:** \`winget install Docker.DockerDesktop\` / \`winget install OpenJS.NodeJS.LTS\`
-**macOS:** \`brew install node\` / \`brew install --cask docker\`
-**Linux:** \`sudo apt-get install -y nodejs npm\` / \`sudo apt-get install -y docker.io\`
-
-安装后记得验证：\`node --version\`、\`docker --version\`
-
-### 请求用户帮助（使用 AskUserQuestion）
-只有以下情况才需要询问用户：
-- **需要 API 密钥/敏感信息** → 询问用户提供
-- **安装失败需要手动操作** → 询问用户处理
-- **有多种方案不确定选哪个** → 询问用户选择
-- **需要付费服务** → 询问用户是否愿意
-
-**原则**：
-- 先尝试自己解决，包括安装软件
-- 只有真正需要用户输入信息时才询问
-- 不要含糊地说"环境问题"，要说清楚具体问题
-- 遇到问题先用 Bash 探索（\`where docker\`、\`which python\`）
-
-<env>
-Working directory: ${context.projectPath}
-Is directory a git repo: ${isGitRepo ? 'Yes' : 'No'}
-Platform: ${platformInfo}
-Today's date: ${today}
-</env>
-
-## 技术栈
-${context.techStack.language}${context.techStack.framework ? ' + ' + context.techStack.framework : ''}`;
-
-    // 只在需要时添加测试指导
-    if (task.type === 'test' || task.needsTest) {
-      prompt += `\n\n## 测试
-运行 ${context.techStack.testFramework || 'npm test'} 验证`;
-    }
-
-    // 只在 UI 任务且有设计图时添加指导
-    if (this.isUITask(task) && context.designImages?.length) {
-      prompt += `\n\n## UI
-严格按设计图还原，注意布局颜色间距`;
-    }
-
-    return prompt;
+    return basePrompt + this.buildTaskSpecificPrompt(task, context);
   }
 
   /**

@@ -405,7 +405,8 @@ export class RealtimeCoordinator extends EventEmitter {
 
   /**
    * 按 parallelGroups 顺序执行
-   * v7.0: Agent 已规划好分组，按组串行、组内并行
+   * v7.0: Agent 已规划好分组
+   * v7.1: 按组串行、组内也串行（确保任务间代码变更可见）
    */
   private async executeFromGroup(startGroupIndex: number): Promise<ExecutionResult> {
     const plan = this.currentPlan!;
@@ -443,7 +444,7 @@ export class RealtimeCoordinator extends EventEmitter {
           continue;
         }
 
-        // 并行执行本组任务
+        // v7.1: 串行执行本组任务（确保任务间代码变更可见）
         const results = await this.executeParallelGroup(executableTasks);
 
         // 更新失败状态
@@ -1120,8 +1121,9 @@ export class RealtimeCoordinator extends EventEmitter {
   // ============================================================================
 
   /**
-   * 并行执行一组任务
-   * 组内所有任务同时启动，等待全部完成后返回
+   * 串行执行一组任务
+   * v7.1: 组内任务串行执行，确保后续任务能读取前序任务的代码变更
+   * 虽然叫 "ParallelGroup"，但实际执行是串行的（保留方法名兼容性）
    */
   private async executeParallelGroup(tasks: SmartTask[]): Promise<(TaskResult & { taskId: string })[]> {
     // 检查是否被取消
@@ -1148,11 +1150,25 @@ export class RealtimeCoordinator extends EventEmitter {
       return skippedResults;
     }
 
-    // 同时启动组内所有任务
-    const promises = executableTasks.map(task => this.executeSingleTask(task));
+    // v7.1: 组内任务也串行执行（确保后续任务能看到前序任务的代码变更）
+    // 原因：即使在同一组内，任务之间可能存在隐式依赖（如 API 定义 → API 使用）
+    // 串行执行确保每个任务都能读取到前序任务的最新代码
+    const results: (TaskResult & { taskId: string })[] = [];
+    for (const task of executableTasks) {
+      // 检查是否被取消
+      if (this.isCancelled) {
+        break;
+      }
+      await this.waitIfPaused();
 
-    // 等待所有任务完成
-    const results = await Promise.all(promises);
+      const result = await this.executeSingleTask(task);
+      results.push(result);
+
+      // 如果任务失败且配置了组内失败即停止，则中断
+      if (!result.success && this.config.stopOnGroupFailure) {
+        break;
+      }
+    }
 
     return [...skippedResults, ...results];
   }

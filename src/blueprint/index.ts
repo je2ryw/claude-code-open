@@ -1,11 +1,11 @@
 /**
- * 蜂群架构 v2.0 - 极简版
+ * 蜂群架构 v3.0 - 串行执行版
  *
- * 核心理念：需求即代码
+ * 核心理念：质量优先，简单可靠
  * - Blueprint（蓝图）：需求锚点，所有Worker参照执行
  * - SmartPlanner：智能规划器，快速需求对话+任务分解
  * - AutonomousWorker：自治Worker，自主决策无需逐步批准
- * - GitConcurrency：Git并发，分支代替文件锁
+ * - TaskQueue：串行任务队列，简单可靠无冲突
  * - RealtimeCoordinator：轻量级协调器，只做调度
  *
  * 使用流程：
@@ -13,7 +13,7 @@
  * 2. 生成蓝图 → 作为需求锚点
  * 3. 创建执行计划 → 智能分解任务
  * 4. RealtimeCoordinator 调度执行
- * 5. AutonomousWorker 自治完成任务
+ * 5. AutonomousWorker 串行完成任务
  */
 
 // ============================================================================
@@ -56,12 +56,15 @@ export {
 } from '../tools/task-status.js';
 
 // ============================================================================
-// Git 并发控制（分支代替文件锁）
+// 串行任务队列（简单优先，质量至上）
 // ============================================================================
 
 export {
-  GitConcurrency,
-} from './git-concurrency.js';
+  TaskQueue,
+  createTaskQueue,
+  type TaskExecutor as QueueTaskExecutor,
+  type QueueResult,
+} from './task-queue.js';
 
 // ============================================================================
 // 实时协调器（轻量级调度，只做调度不做决策）
@@ -83,7 +86,6 @@ export {
   ModelSelector,
   modelSelector,
   MODEL_PRICING,
-  type CostEstimate,
 } from './model-selector.js';
 
 // ============================================================================
