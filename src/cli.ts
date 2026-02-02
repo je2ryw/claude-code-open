@@ -528,6 +528,33 @@ program
       // 从配置管理器获取完整配置（包括环境变量）
       const config = configManager.getAll();
 
+      // v2.1.29: 处理 --json-schema 选项，创建 StructuredOutput 工具
+      let structuredOutputTool: any = null;
+      if (options.jsonSchema) {
+        const { parseJsonSchema, createStructuredOutputTool } = await import('./tools/structured-output.js');
+        const schema = parseJsonSchema(options.jsonSchema);
+
+        if (schema) {
+          structuredOutputTool = createStructuredOutputTool(schema);
+
+          if (structuredOutputTool) {
+            // 注册 StructuredOutput 工具
+            toolRegistry.register(structuredOutputTool);
+
+            if (options.verbose) {
+              console.log(chalk.dim('[StructuredOutput] Schema validated and tool registered'));
+              console.log(chalk.dim(`[StructuredOutput] Properties: ${Object.keys(schema.properties || {}).join(', ')}`));
+            }
+          } else {
+            console.error(chalk.red('Error: Invalid JSON Schema provided'));
+            process.exit(1);
+          }
+        } else {
+          console.error(chalk.red('Error: Failed to parse JSON Schema'));
+          process.exit(1);
+        }
+      }
+
       const loop = new ConversationLoop({
         model: modelMap[options.model] || options.model,
         maxTokens: parseInt(options.maxTokens),
@@ -548,11 +575,41 @@ program
 
       if (outputFormat === 'json') {
         const response = await loop.processMessage(prompt);
-        console.log(JSON.stringify({
+
+        // v2.1.29: 如果使用了 structured output，包含 structured_output 字段
+        const result: any = {
           type: 'result',
           content: response,
           session_id: loop.getSession().sessionId,
-        }));
+        };
+
+        // 检查是否有 structured output 结果
+        if (structuredOutputTool) {
+          const session = loop.getSession();
+          const messages = session.getMessageHistory();
+          // 查找最后一个 tool_result 消息
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const msg = messages[i];
+            if (msg.role === 'user' && Array.isArray(msg.content)) {
+              const toolResult = msg.content.find((c: any) =>
+                c.type === 'tool_result' && c.content?.includes('structured_output')
+              );
+              if (toolResult) {
+                try {
+                  const parsed = JSON.parse(toolResult.content);
+                  if (parsed.structured_output) {
+                    result.structured_output = parsed.structured_output;
+                  }
+                } catch {
+                  // 忽略解析错误
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        console.log(JSON.stringify(result));
       } else if (outputFormat === 'stream-json') {
         for await (const event of loop.processMessageStream(prompt)) {
           console.log(JSON.stringify(event));
