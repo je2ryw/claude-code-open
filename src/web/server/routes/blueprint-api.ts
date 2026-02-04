@@ -531,6 +531,8 @@ class RealTaskExecutor implements TaskExecutor {
   private taskOutputs: Map<string, { files: string[]; summary?: string }> = new Map();
   /** v5.0: 共享的 System Prompt 基础部分（所有 Worker 复用，节省 token） */
   private sharedSystemPromptBase: string;
+  /** v8.4: Coordinator 引用（用于 Worker 注册/广播） */
+  private coordinator: RealtimeCoordinator | null = null;
 
   /**
    * v5.0: 获取精简的共享记忆文本
@@ -585,6 +587,14 @@ class RealTaskExecutor implements TaskExecutor {
     );
   }
 
+  /**
+   * v8.4: 设置 Coordinator 引用
+   * 用于在 Worker 创建时注册到 Coordinator，实现广播功能
+   */
+  setCoordinator(coordinator: RealtimeCoordinator): void {
+    this.coordinator = coordinator;
+  }
+
   async execute(task: SmartTask, workerId: string): Promise<TaskResult> {
     // 防御性检查：确保 task 对象有效
     if (!task || typeof task !== 'object') {
@@ -610,7 +620,9 @@ class RealTaskExecutor implements TaskExecutor {
 
     // 获取或创建 Worker
     let worker = this.workerPool.get(workerId);
+    let isNewWorker = false;
     if (!worker) {
+      isNewWorker = true;
       worker = createAutonomousWorker({
         maxRetries: 3,
         testTimeout: 60000,
@@ -698,6 +710,38 @@ class RealTaskExecutor implements TaskExecutor {
 
       worker.on('test:failed', (data: any) => {
         emitWorkerLog('warn', 'error', `❌ 测试失败: ${data.result?.error || '未知错误'}`, { result: data.result });
+      });
+
+      // 🔧 代码审查中
+      worker.on('task:reviewing', (data: any) => {
+        emitWorkerLog('info', 'status', `🔍 正在进行代码审查...`, { task: data.task });
+        executionEventEmitter.emit('task:reviewing', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: data.task?.id,
+        });
+      });
+
+      // v5.0: 审查进度反馈
+      worker.on('reviewer:progress', (data: any) => {
+        const stageMessages: Record<string, string> = {
+          checking_git: '🔍 验证 Git 提交状态',
+          verifying_files: '📄 验证文件内容和代码质量',
+          analyzing_quality: '🔬 分析代码质量',
+          completing: '✅ 完成审查',
+        };
+        const displayMessage = stageMessages[data.stage] || data.message;
+        emitWorkerLog('info', 'status', displayMessage, { stage: data.stage, details: data.details });
+
+        // 转发到前端
+        executionEventEmitter.emit('reviewer:progress', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: data.taskId,
+          stage: data.stage,
+          message: data.message,
+          details: data.details,
+        });
       });
 
       // 任务完成
@@ -788,6 +832,18 @@ class RealTaskExecutor implements TaskExecutor {
         });
       });
 
+      // v4.6: 监听 Worker 的 System Prompt 事件（透明展示 Agent 指令）
+      worker.on('stream:system_prompt', (data: any) => {
+        executionEventEmitter.emit('worker:stream', {
+          blueprintId: this.blueprint.id,
+          workerId,
+          taskId: this.currentTaskMap.get(workerId)?.id,
+          streamType: 'system_prompt',
+          systemPrompt: data.systemPrompt,
+          agentType: data.agentType || 'worker',
+        });
+      });
+
       // v4.2: 监听 Worker 的 AskUserQuestion 请求事件
       worker.on('ask:request', (askData: { workerId: string; taskId: string; requestId: string; questions: any[] }) => {
         console.log(`[RealTaskExecutor] Worker ${workerId} AskUserQuestion request: ${askData.requestId}`);
@@ -807,6 +863,11 @@ class RealTaskExecutor implements TaskExecutor {
       });
 
       this.workerPool.set(workerId, worker);
+
+      // v8.4: 注册 Worker 到 Coordinator（用于广播更新）
+      if (this.coordinator) {
+        this.coordinator.registerWorkerExecutor(workerId, worker);
+      }
     }
 
     // v2.1: 设置当前任务（用于事件监听器获取正确的 taskId）
@@ -885,7 +946,7 @@ class RealTaskExecutor implements TaskExecutor {
         },
         config: {
           maxWorkers: 5,
-          workerTimeout: 600000,
+          workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查）
           defaultModel: 'sonnet' as const,
           complexTaskModel: 'opus' as const,
           simpleTaskModel: 'sonnet' as const,
@@ -1038,6 +1099,11 @@ class RealTaskExecutor implements TaskExecutor {
       // 从 activeWorkers 中移除
       const workerKey = `${this.blueprint.id}:${workerId}`;
       activeWorkers.delete(workerKey);
+
+      // v8.4: 从 Coordinator 注销 Worker
+      if (this.coordinator) {
+        this.coordinator.unregisterWorkerExecutor(workerId);
+      }
     } else {
       console.warn(`[RealTaskExecutor] 无法中止 Worker ${workerId}：未找到 Worker 实例`);
     }
@@ -1052,6 +1118,10 @@ class RealTaskExecutor implements TaskExecutor {
       if (worker.isExecuting()) {
         console.log(`[RealTaskExecutor] 清理时中止 Worker: ${workerId}`);
         worker.abort();
+      }
+      // v8.4: 从 Coordinator 注销 Worker
+      if (this.coordinator) {
+        this.coordinator.unregisterWorkerExecutor(workerId);
       }
     });
     this.workerPool.clear();
@@ -1186,13 +1256,14 @@ class ExecutionManager {
     // 创建协调器（串行执行）
     const coordinator = createRealtimeCoordinator({
       maxWorkers: 1,           // 串行执行，只需要 1 个 Worker
-      workerTimeout: 600000,   // 10分钟
+      workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查）
       skipOnFailure: true,
       stopOnGroupFailure: true,
     });
 
     // 设置真正的任务执行器（使用 AutonomousWorkerExecutor）
     const executor = new RealTaskExecutor(blueprint);
+    executor.setCoordinator(coordinator);  // v8.4: 设置 Coordinator 引用（用于广播）
     coordinator.setTaskExecutor(executor);
 
     // 监听事件并转发到全局事件发射器
@@ -1321,6 +1392,21 @@ class ExecutionManager {
           completedAt: new Date().toISOString(),
         },
       });
+
+      // v5.0: 同步 swarmMemory 到 blueprintStore 并通知前端
+      const swarmMemory = coordinator.getSwarmMemory();
+      if (swarmMemory) {
+        const storedBlueprint = blueprintStore.get(blueprint.id);
+        if (storedBlueprint) {
+          storedBlueprint.swarmMemory = swarmMemory;
+          blueprintStore.save(storedBlueprint);
+          // 通知前端 swarmMemory 已更新
+          executionEventEmitter.emit('swarm:memory_update', {
+            blueprintId: blueprint.id,
+            swarmMemory,
+          });
+        }
+      }
     });
 
     // 任务失败事件
@@ -1828,13 +1914,14 @@ class ExecutionManager {
     // 创建协调器（串行执行）
     const coordinator = createRealtimeCoordinator({
       maxWorkers: 1,
-      workerTimeout: 600000,
+      workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查）
       skipOnFailure: true,
       stopOnGroupFailure: true,
     });
 
     // 设置任务执行器
     const executor = new RealTaskExecutor(blueprint);
+    executor.setCoordinator(coordinator);  // v8.4: 设置 Coordinator 引用（用于广播）
     coordinator.setTaskExecutor(executor);
 
     // 设置项目路径

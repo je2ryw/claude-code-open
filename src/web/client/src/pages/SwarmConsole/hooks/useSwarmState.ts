@@ -48,6 +48,8 @@ const initialState: SwarmState = {
   conflicts: { conflicts: [], resolvingId: null },
   // v4.2: AskUserQuestion 对话框
   askUserDialog: { visible: false, requestId: null, questions: [] },
+  // v4.5: 用户插嘴状态
+  interjectStatus: null,
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -90,6 +92,18 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             newTaskStreams = {};
           }
 
+          // v4.8: 恢复 E2E 验收测试状态（刷新浏览器后恢复上下文）
+          let newVerification = prev.verification;
+          if ('verification' in message.payload && message.payload.verification) {
+            const v = message.payload.verification as { status: string; e2eTaskId?: string; result?: any };
+            console.log(`[SwarmState] 从服务器恢复验收测试状态: ${v.status}, e2eTaskId=${v.e2eTaskId}`);
+            newVerification = {
+              status: v.status as any,
+              e2eTaskId: v.e2eTaskId,
+              result: v.result,
+            };
+          }
+
           return {
             ...prev,
             blueprint: message.payload.blueprint,
@@ -109,6 +123,8 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             // v4.2 修复：根据执行计划变化决定是否清空日志
             taskLogs: newTaskLogs,
             taskStreams: newTaskStreams,
+            // v4.8: 恢复验收测试状态
+            verification: newVerification,
           };
         });
         setIsLoading(false);
@@ -259,6 +275,21 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
         }));
         break;
 
+      case 'swarm:memory_update':
+        // v5.0: 蜂群共享记忆更新
+        setState(prev => {
+          if (!prev.blueprint) return prev;
+          return {
+            ...prev,
+            blueprint: {
+              ...prev.blueprint,
+              swarmMemory: message.payload.swarmMemory,
+            },
+          };
+        });
+        console.log(`[SwarmState] Memory update: ${message.payload.swarmMemory?.completedTasks?.length || 0} completed tasks`);
+        break;
+
       case 'swarm:planner_update':
         // v2.0: Planner 状态更新（探索/分解）
         setState(prev => ({
@@ -376,13 +407,27 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
                 }
               }
               break;
+
+            // v4.6: 处理 system_prompt 事件（存储但不添加到 content 流中）
+            case 'system_prompt':
+              // systemPrompt 单独存储，不添加到 content 数组
+              break;
           }
+
+          // v4.6: 获取 systemPrompt 和 agentType（如果有）
+          const { systemPrompt, agentType } = message.payload;
 
           return {
             ...prev,
             taskStreams: {
               ...prev.taskStreams,
-              [taskId]: { content: newContent.slice(-100), lastUpdated: timestamp },
+              [taskId]: {
+                content: newContent.slice(-100),
+                lastUpdated: timestamp,
+                // v4.6: 保存 systemPrompt（首次收到时设置）
+                systemPrompt: systemPrompt || existingStream.systemPrompt,
+                agentType: agentType || existingStream.agentType,
+              },
             },
           };
         });
@@ -391,14 +436,32 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
       case 'swarm:verification_update':
         // v3.4: 验收测试状态更新
         // v4.1: 保存 e2eTaskId 用于显示流式日志
-        setState(prev => ({
-          ...prev,
-          verification: {
-            status: message.payload.status,
-            e2eTaskId: message.payload.e2eTaskId || prev.verification.e2eTaskId,
-            result: message.payload.result || prev.verification.result,
-          },
-        }));
+        setState(prev => {
+          const payloadResult = message.payload.result;
+          const prevResult = prev.verification.result;
+          // 确保 result 对象有完整的默认值，防止 undefined 错误
+          const mergedResult = payloadResult ? {
+            totalTests: payloadResult.totalTests ?? prevResult?.totalTests ?? 0,
+            passedTests: payloadResult.passedTests ?? prevResult?.passedTests ?? 0,
+            failedTests: payloadResult.failedTests ?? prevResult?.failedTests ?? 0,
+            skippedTests: payloadResult.skippedTests ?? prevResult?.skippedTests ?? 0,
+            testOutput: payloadResult.testOutput ?? prevResult?.testOutput ?? '',
+            failures: payloadResult.failures ?? prevResult?.failures ?? [],
+            fixAttempts: payloadResult.fixAttempts ?? prevResult?.fixAttempts ?? [],
+            envIssues: payloadResult.envIssues ?? prevResult?.envIssues ?? [],
+            startedAt: payloadResult.startedAt ?? prevResult?.startedAt ?? new Date().toISOString(),
+            completedAt: payloadResult.completedAt ?? prevResult?.completedAt,
+          } : prevResult;
+
+          return {
+            ...prev,
+            verification: {
+              status: message.payload.status,
+              e2eTaskId: message.payload.e2eTaskId || prev.verification.e2eTaskId,
+              result: mergedResult,
+            },
+          };
+        });
         console.log(`[SwarmState] Verification status: ${message.payload.status}, e2eTaskId: ${message.payload.e2eTaskId || 'N/A'}`);
         break;
 
@@ -450,6 +513,48 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             taskId: message.payload.taskId,
           },
         }));
+        break;
+
+      case 'task:interject_success':
+        // v4.5: 用户插嘴成功
+        console.log(`[SwarmState] ✅ 插嘴成功: 任务 ${message.payload.taskId}`);
+        setState(prev => ({
+          ...prev,
+          interjectStatus: {
+            taskId: message.payload.taskId,
+            success: true,
+            message: message.payload.message,
+            timestamp: message.payload.timestamp,
+          },
+        }));
+        // 3秒后自动清除状态
+        setTimeout(() => {
+          setState(prev => ({
+            ...prev,
+            interjectStatus: null,
+          }));
+        }, 3000);
+        break;
+
+      case 'task:interject_failed':
+        // v4.5: 用户插嘴失败
+        console.log(`[SwarmState] ❌ 插嘴失败: 任务 ${message.payload.taskId}, 原因: ${message.payload.error}`);
+        setState(prev => ({
+          ...prev,
+          interjectStatus: {
+            taskId: message.payload.taskId,
+            success: false,
+            message: message.payload.error,
+            timestamp: message.payload.timestamp,
+          },
+        }));
+        // 5秒后自动清除状态（失败消息显示更久）
+        setTimeout(() => {
+          setState(prev => ({
+            ...prev,
+            interjectStatus: null,
+          }));
+        }, 5000);
         break;
 
       default:

@@ -203,6 +203,27 @@
   50% { opacity: 0.5; }
 }
 
+/* v4.6: E2E 按钮样式 - 顶部操作栏中的 E2E 验收测试按钮 */
+.e2eHeaderButton {
+  position: relative;
+  min-width: 32px;
+}
+
+.e2eHeaderButton:not(:disabled) {
+  border-color: #4CAF50;
+  color: #4CAF50;
+}
+
+.e2eHeaderButton:not(:disabled):hover {
+  background: rgba(76, 175, 80, 0.1);
+  border-color: #4CAF50;
+}
+
+.e2eHeaderButton.active {
+  color: white !important;
+  border-color: transparent !important;
+}
+
 /* 时间线拖拽调整手柄 */
 .timelineResizeHandle {
   height: 4px;
@@ -2545,4 +2566,119 @@
 .askUserSubmitBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ============================================================================
+   v5.0: 蜂群共享记忆面板样式
+   ============================================================================ */
+
+.memoryPanel {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.memoryPanel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.memoryContent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.memorySection {
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.memorySectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.memoryOverview {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 8px 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  border-left: 3px solid #3b82f6;
+}
+
+.memoryApiList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memoryApiItem {
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  padding: 4px 8px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.memoryApiMore {
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.memoryTaskList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memoryTaskItem {
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  border-left: 3px solid #22c55e;
+}
+
+.memoryTaskName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.memoryTaskSummary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.memoryUpdateTime {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
 }

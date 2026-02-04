@@ -289,9 +289,6 @@ export interface SwarmMemory {
   /** 已完成任务的摘要 */
   completedTasks: SwarmTaskSummary[];
 
-  /** 重要决策记录 */
-  decisions: SwarmDecision[];
-
   /** 最后更新时间 */
   updatedAt: Date | string;
 }
@@ -315,15 +312,6 @@ export interface SwarmTaskSummary {
   category: TaskCategory;
   summary: string;  // 最多 50 字
   completedAt: Date | string;
-}
-
-/**
- * 蜂群决策记录
- */
-export interface SwarmDecision {
-  taskId: string;
-  decision: string;  // 最多 30 字
-  timestamp: Date | string;
 }
 
 // ============================================================================
@@ -434,6 +422,7 @@ export type TaskComplexity = 'trivial' | 'simple' | 'moderate' | 'complex';
 export type TaskStatus =
   | 'pending'     // 等待
   | 'running'     // 执行中
+  | 'reviewing'   // 代码审查中
   | 'completed'   // 完成
   | 'failed'      // 失败
   | 'skipped';    // 跳过
@@ -1009,7 +998,7 @@ export interface SwarmEvent {
 export interface SwarmConfig {
   // Worker配置
   maxWorkers: number;           // 最大并发Worker数（默认5）
-  workerTimeout: number;        // Worker超时（毫秒，默认600000）
+  workerTimeout: number;        // Worker超时（毫秒，默认1800000 = 30分钟）
 
   // 模型配置
   defaultModel: ModelType;      // 默认模型（默认sonnet）
@@ -1058,7 +1047,7 @@ export interface SwarmConfig {
  */
 export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
   maxWorkers: 10,
-  workerTimeout: 600000,  // 10分钟（从5分钟增加）
+  workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查，opus 审查需要更长时间）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
   simpleTaskModel: 'sonnet',
@@ -1321,149 +1310,3 @@ export interface VerificationResult {
   completedAt?: string;
 }
 
-// ============================================================================
-// v4.0: 集成验证类型（前后端一致性检查）
-// ============================================================================
-
-/**
- * 集成问题类型
- */
-export type IntegrationIssueType =
-  // 前后端一致性问题
-  | 'api_path_mismatch'    // API 路径不匹配
-  | 'type_mismatch'        // 类型定义不一致
-  | 'missing_endpoint'     // 缺少端点
-  | 'extra_endpoint'       // 多余端点
-  | 'env_config'           // 环境配置问题
-  // v4.1: 构建和质量问题
-  | 'build_error'          // 构建失败（TypeScript/编译错误）
-  | 'lint_error'           // Lint 错误
-  | 'test_failure'         // 测试失败
-  | 'security_vulnerability' // 安全漏洞
-  | 'dead_code'            // 死代码（未使用的导出）
-  | 'circular_dependency'  // 循环依赖
-  | 'missing_dependency'   // 缺少依赖
-  | 'other';               // 其他问题
-
-/**
- * 集成问题
- */
-export interface IntegrationIssue {
-  id: string;
-  type: IntegrationIssueType;
-  severity: 'error' | 'warning';
-  summary: string;
-  description: string;
-
-  // 影响的文件
-  affectedFiles: string[];
-
-  // 影响的端（前端/后端/两者）
-  affectedSide: 'frontend' | 'backend' | 'both';
-
-  // 修复建议
-  fixSuggestion: string;
-
-  // 详细信息（如：期望路径 vs 实际路径）
-  details?: {
-    expected?: string;
-    actual?: string;
-    location?: string;
-  };
-}
-
-/**
- * 集成验证结果
- */
-export interface IntegrationValidationResult {
-  success: boolean;
-
-  // 问题列表
-  issues: IntegrationIssue[];
-
-  // 检查统计
-  checksPerformed: number;
-  issuesFound: number;
-
-  // 摘要
-  summary: string;
-
-  // 时间
-  startedAt: Date;
-  completedAt: Date;
-}
-
-/**
- * 集成修复结果
- */
-export interface IntegrationFixResult {
-  success: boolean;
-
-  // 修复的问题
-  fixedIssues: string[];  // issue ids
-
-  // 仍然存在的问题
-  remainingIssues: string[];  // issue ids
-
-  // 修改的文件
-  modifiedFiles: string[];
-
-  // 修复描述
-  fixDescription: string;
-}
-
-/**
- * 集成验证配置
- */
-export interface IntegrationValidationConfig {
-  // 是否启用集成验证
-  enabled: boolean;
-
-  // 最大修复尝试次数
-  maxFixAttempts: number;
-
-  // 是否自动修复
-  autoFix: boolean;
-
-  // 检查项
-  checks: {
-    // 前后端一致性检查
-    apiPathConsistency: boolean;    // API 路径一致性
-    typeConsistency: boolean;       // 类型定义一致性
-    envConfig: boolean;             // 环境配置
-
-    // v4.1: 代码质量兜底检查
-    build: boolean;                 // 构建检查（TypeScript/编译）
-    lint: boolean;                  // Lint 检查
-    test: boolean;                  // 测试运行
-    security: boolean;              // 安全漏洞扫描
-  };
-
-  // v4.1: 检查命令自定义（可选，默认自动检测）
-  commands?: {
-    build?: string;                 // 如 "npm run build"
-    lint?: string;                  // 如 "npm run lint"
-    test?: string;                  // 如 "npm test"
-    security?: string;              // 如 "npm audit"
-  };
-}
-
-/**
- * 默认集成验证配置
- */
-export const DEFAULT_INTEGRATION_VALIDATION_CONFIG: IntegrationValidationConfig = {
-  enabled: true,
-  maxFixAttempts: 3,
-  autoFix: true,
-  checks: {
-    // 前后端一致性
-    apiPathConsistency: true,
-    typeConsistency: true,
-    envConfig: true,
-    // 代码质量兜底
-    build: true,
-    lint: true,
-    test: true,
-    security: false,  // 默认关闭，因为可能较慢
-  },
-};

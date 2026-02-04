@@ -33,8 +33,6 @@ import type {
   HumanDecisionRequest,
   HumanDecisionResult,
   ConflictFileForUI,
-  IntegrationValidationConfig,
-  IntegrationValidationResult,
   TechStack,
   Blueprint,
   // v5.0: 蜂群共享记忆
@@ -42,8 +40,36 @@ import type {
   SwarmAPI,
   SwarmTaskSummary,
 } from './types.js';
-import { DEFAULT_INTEGRATION_VALIDATION_CONFIG } from './types.js';
-import { IntegrationValidator } from './integration-validator.js';
+import type { AutonomousWorkerExecutor } from './autonomous-worker.js';
+
+// ============================================================================
+// v8.4: 蜂群广播更新类型
+// ============================================================================
+
+/**
+ * 蜂群广播更新
+ * 当 SwarmMemory 有重要变化时，广播给所有活跃的 Worker
+ */
+export interface SwarmBroadcastUpdate {
+  /** 更新类型 */
+  type: 'api_registered' | 'task_completed' | 'memory_updated';
+  /** 更新摘要（简短描述） */
+  summary: string;
+  /** 详细内容（可选） */
+  details?: {
+    /** 新注册的 API */
+    apis?: SwarmAPI[];
+    /** 完成的任务 */
+    completedTask?: {
+      id: string;
+      name: string;
+      category: string;
+      summary: string;
+    };
+  };
+  /** 时间戳 */
+  timestamp: Date;
+}
 
 // v3.0: 状态持久化已移至蓝图文件（通过 state:changed 事件）
 // 执行状态版本号（用于兼容性检查）
@@ -101,7 +127,7 @@ export interface TaskExecutor {
 
 const getDefaultConfig = (): SwarmConfig => ({
   maxWorkers: 5,
-  workerTimeout: 1200000,  // 20分钟（Worker 执行 + Reviewer 审查）
+  workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查，opus 审查需要更长时间）
   defaultModel: 'sonnet',
   complexTaskModel: 'opus',
   simpleTaskModel: 'sonnet',
@@ -122,10 +148,7 @@ export interface ExtendedSwarmConfig extends SwarmConfig {
   /** 当一个并行组有任务失败时，是否停止后续组的执行 (默认: true) */
   stopOnGroupFailure?: boolean;
 
-  /** v4.0: 集成验证配置 */
-  integrationValidation?: IntegrationValidationConfig;
-
-  /** v4.0: 技术栈信息（用于集成验证） */
+  /** v4.0: 技术栈信息 */
   techStack?: TechStack;
 }
 
@@ -152,6 +175,12 @@ export class RealtimeCoordinator extends EventEmitter {
   private isCancelled: boolean = false;
   private pauseResolve: (() => void) | null = null;
   private isExecuting: boolean = false;  // v2.3: 跟踪执行循环是否真的在运行
+
+  // v8.2: 任务执行锁 - 防止同一任务被多个 Worker 同时执行
+  private executingTaskIds: Set<string> = new Set();
+
+  // v8.4: 活跃的 Worker Executor 实例（用于广播更新）
+  private activeWorkerExecutors: Map<string, AutonomousWorkerExecutor> = new Map();
 
   // 任务修改队列（运行时修改）
   private taskModifications: Map<string, { newDescription?: string; skip?: boolean }> = new Map();
@@ -257,13 +286,95 @@ export class RealtimeCoordinator extends EventEmitter {
       overview: '0/0 完成',
       apis: [],
       completedTasks: [],
-      decisions: [],
       updatedAt: new Date(),
     };
   }
 
+  // ============================================================================
+  // v8.4: Worker 实例管理和广播机制
+  // ============================================================================
+
+  /**
+   * v8.4: 注册活跃的 Worker Executor 实例
+   * 在 RealTaskExecutor 中创建 Worker 时调用
+   */
+  registerWorkerExecutor(workerId: string, executor: AutonomousWorkerExecutor): void {
+    this.activeWorkerExecutors.set(workerId, executor);
+    console.log(`[RealtimeCoordinator] Worker 已注册: ${workerId} (活跃: ${this.activeWorkerExecutors.size})`);
+  }
+
+  /**
+   * v8.4: 注销 Worker Executor 实例
+   * 在 Worker 完成或失败时调用
+   */
+  unregisterWorkerExecutor(workerId: string): void {
+    this.activeWorkerExecutors.delete(workerId);
+    console.log(`[RealtimeCoordinator] Worker 已注销: ${workerId} (活跃: ${this.activeWorkerExecutors.size})`);
+  }
+
+  /**
+   * v8.4: 广播更新到所有活跃的 Worker
+   * 使用 Worker 的 interject 机制注入系统消息
+   */
+  broadcastToActiveWorkers(update: SwarmBroadcastUpdate): void {
+    if (this.activeWorkerExecutors.size === 0) {
+      return;
+    }
+
+    // 构建广播消息
+    const message = this.buildBroadcastMessage(update);
+
+    console.log(`[RealtimeCoordinator] 广播更新到 ${this.activeWorkerExecutors.size} 个活跃 Worker: ${update.summary}`);
+
+    // 向所有活跃的 Worker 注入消息
+    for (const [workerId, executor] of this.activeWorkerExecutors) {
+      try {
+        // 使用 interject 机制注入消息（如果 Worker 正在执行）
+        if (executor.isExecuting()) {
+          const success = executor.interject(message);
+          if (success) {
+            console.log(`[RealtimeCoordinator] 已向 Worker ${workerId} 广播更新`);
+          }
+        }
+      } catch (error) {
+        console.error(`[RealtimeCoordinator] 向 Worker ${workerId} 广播失败:`, error);
+      }
+    }
+
+    // 发射广播事件（供 UI 显示）
+    this.emitEvent('swarm:broadcast', {
+      update,
+      workerCount: this.activeWorkerExecutors.size,
+    });
+  }
+
+  /**
+   * v8.4: 构建广播消息文本
+   */
+  private buildBroadcastMessage(update: SwarmBroadcastUpdate): string {
+    let message = `[蜂群更新] ${update.summary}`;
+
+    if (update.details?.apis?.length) {
+      const apiList = update.details.apis
+        .map(a => `${a.method} ${a.path}`)
+        .join(', ');
+      message += `\n新 API: ${apiList}`;
+    }
+
+    if (update.details?.completedTask) {
+      const task = update.details.completedTask;
+      message += `\n已完成: ${task.name} (${task.category})`;
+      if (task.summary) {
+        message += ` - ${task.summary}`;
+      }
+    }
+
+    return message;
+  }
+
   /**
    * v5.0: 任务完成后更新共享记忆
+   * v8.4: 增加实时广播 - 通知所有活跃的 Worker
    */
   private updateSwarmMemory(task: SmartTask, result: TaskResult): void {
     if (!this.swarmMemory || !this.currentPlan) {
@@ -278,19 +389,40 @@ export class RealtimeCoordinator extends EventEmitter {
 
     // 如果任务成功，添加到已完成列表
     if (result.success) {
+      const taskSummary = (result.summary || '已完成').slice(0, 50);
+
       this.swarmMemory.completedTasks.push({
         taskId: task.id,
         taskName: task.name,
         category: task.category || 'other',
-        summary: (result.summary || '已完成').slice(0, 50),
+        summary: taskSummary,
         completedAt: new Date(),
       });
 
+      // v8.4: 广播任务完成更新
+      let newApis: SwarmAPI[] = [];
+
       // 从后端任务的 summary 中提取 API
       if (task.category === 'backend' && result.summary) {
-        const apis = this.extractAPIsFromSummary(result.summary, task.id);
-        this.swarmMemory.apis.push(...apis);
+        newApis = this.extractAPIsFromSummary(result.summary, task.id);
+        this.swarmMemory.apis.push(...newApis);
       }
+
+      // v8.4: 向所有活跃的 Worker 广播更新
+      this.broadcastToActiveWorkers({
+        type: newApis.length > 0 ? 'api_registered' : 'task_completed',
+        summary: `${task.name} 已完成`,
+        details: {
+          apis: newApis.length > 0 ? newApis : undefined,
+          completedTask: {
+            id: task.id,
+            name: task.name,
+            category: task.category || 'other',
+            summary: taskSummary,
+          },
+        },
+        timestamp: new Date(),
+      });
     }
 
     this.swarmMemory.updatedAt = new Date();
@@ -480,39 +612,6 @@ export class RealtimeCoordinator extends EventEmitter {
         }
       }
 
-      // ===== v4.0: 集成验证阶段 =====
-      const integrationConfig = (this.config as ExtendedSwarmConfig).integrationValidation;
-      if (integrationConfig?.enabled) {
-        const validationResult = await this.runIntegrationValidation();
-
-        if (!validationResult.success) {
-          if (integrationConfig.autoFix) {
-            const fixSuccess = await this.runIntegrationFixLoop(
-              validationResult,
-              integrationConfig.maxFixAttempts
-            );
-
-            if (!fixSuccess) {
-              this.emitEvent('plan:failed', {
-                planId: plan.id,
-                success: false,
-                totalCost: this.currentCost,
-                reason: '集成验证失败，自动修复未成功',
-              });
-              return this.buildResult(false, validationResult.summary);
-            }
-          } else {
-            this.emitEvent('plan:failed', {
-              planId: plan.id,
-              success: false,
-              totalCost: this.currentCost,
-              reason: validationResult.summary,
-            });
-            return this.buildResult(false, validationResult.summary);
-          }
-        }
-      }
-
       // 计划完成
       const success = this.issues.filter(i => i.type === 'error' && !i.resolved).length === 0;
       this.emitEvent(success ? 'plan:completed' : 'plan:failed', {
@@ -667,9 +766,20 @@ export class RealtimeCoordinator extends EventEmitter {
       return false;
     }
 
+    // 🔧 修复：使用与 getTasksWithStatus 相同的状态推断逻辑
+    const result = this.taskResults.get(taskId);
+    let actualStatus: TaskStatus = task.status || 'pending';
+    if (result) {
+      if (result.error === '任务被跳过') {
+        actualStatus = 'skipped';
+      } else {
+        actualStatus = result.success ? 'completed' : 'failed';
+      }
+    }
+
     // 只能跳过失败或待执行的任务
-    if (task.status !== 'failed' && task.status !== 'pending') {
-      console.warn(`[RealtimeCoordinator] 无法跳过任务：任务 ${taskId} 状态为 ${task.status}`);
+    if (actualStatus !== 'failed' && actualStatus !== 'pending') {
+      console.warn(`[RealtimeCoordinator] 无法跳过任务：任务 ${taskId} 状态为 ${actualStatus}`);
       return false;
     }
 
@@ -739,22 +849,42 @@ export class RealtimeCoordinator extends EventEmitter {
       return false;
     }
 
+    // 🔧 v8.2: 并发保护 - 使用任务执行锁（唯一可靠的真相来源）
+    if (this.executingTaskIds.has(taskId)) {
+      console.warn(`[RealtimeCoordinator] 无法重试任务：任务 ${taskId} 正在执行中（已锁定）`);
+      return false;
+    }
+
+    // 🔧 修复：使用与 getTasksWithStatus 相同的状态推断逻辑
+    const result = this.taskResults.get(taskId);
+    let actualStatus: TaskStatus = task.status || 'pending';
+    if (result) {
+      if (result.error === '任务被跳过') {
+        actualStatus = 'skipped';
+      } else {
+        actualStatus = result.success ? 'completed' : 'failed';
+      }
+    }
+
     // 允许重试失败的任务，或者有未解决 error issues 的任务
     const hasUnresolvedError = this.issues.some(
       issue => issue.taskId === taskId && issue.type === 'error' && !issue.resolved
     );
 
-    if (task.status !== 'failed' && !hasUnresolvedError) {
-      console.warn(`[RealtimeCoordinator] 无法重试任务：任务 ${taskId} 状态为 ${task.status}，且没有未解决的错误`);
+    if (actualStatus !== 'failed' && !hasUnresolvedError) {
+      console.warn(`[RealtimeCoordinator] 无法重试任务：任务 ${taskId} 状态为 ${actualStatus}，且没有未解决的错误`);
       return false;
     }
 
     // 如果任务状态不是 failed 但有未解决的错误，也允许重试
-    if (task.status !== 'failed' && hasUnresolvedError) {
+    if (actualStatus !== 'failed' && hasUnresolvedError) {
       console.log(`[RealtimeCoordinator] 任务 ${taskId} 有未解决的错误，允许重试`);
     }
 
     console.log(`[RealtimeCoordinator] 开始重试任务: ${task.name} (${taskId})`);
+
+    // 🔧 v8.2: 获取任务执行锁（在任何状态修改之前）
+    this.executingTaskIds.add(taskId);
 
     // 重置任务状态（保留 lastReviewFeedback 和 attemptCount，供 Worker 参考）
     task.status = 'pending';
@@ -779,6 +909,7 @@ export class RealtimeCoordinator extends EventEmitter {
 
     // 创建 Worker 执行任务
     const worker = this.createWorker();
+    worker.currentTaskId = task.id;
     this.activeWorkers.set(worker.id, worker);
 
     // 发送任务开始事件
@@ -801,6 +932,11 @@ export class RealtimeCoordinator extends EventEmitter {
       // 记录结果
       this.taskResults.set(task.id, result);
       this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
+
+      // 🔧 v8.3: 任务成功时解决相关的 error issues，避免警告图标
+      if (result.success) {
+        this.resolveTaskIssues(task.id);
+      }
 
       // v5.0: 更新蜂群共享记忆
       this.updateSwarmMemory(task, result);
@@ -862,6 +998,9 @@ export class RealtimeCoordinator extends EventEmitter {
       return false;
 
     } finally {
+      // 🔧 v8.2: 释放任务执行锁
+      this.executingTaskIds.delete(task.id);
+
       // 清理 Worker
       this.activeWorkers.delete(worker.id);
       this.emitEvent('worker:idle', {
@@ -984,14 +1123,35 @@ export class RealtimeCoordinator extends EventEmitter {
       const activeWorker = Array.from(this.activeWorkers.entries()).find(
         ([_, worker]) => worker.currentTaskId === task.id
       );
+      // 🔧 v8.3: 检查任务是否正在执行中（有执行锁）
+      const isExecuting = this.executingTaskIds.has(task.id);
+
+      // 🔧 v8.3: 修复刷新后执行中任务显示失败的问题
+      // 优先级：
+      // 1. 如果任务正在执行（有活跃 Worker 或执行锁），强制使用 running 状态
+      // 2. 如果有 result，使用 result 的成功/失败状态
+      // 3. 否则使用 task.status
+      // 4. 如果都没有，默认为 pending
+      let finalStatus: TaskStatus = task.status || 'pending';
+
+      // 如果有活跃 Worker 或执行锁，强制使用 running 状态（忽略旧的 taskResults）
+      if (activeWorker || isExecuting) {
+        finalStatus = 'running';
+      } else if (result) {
+        if (result.error === '任务被跳过') {
+          finalStatus = 'skipped';
+        } else {
+          finalStatus = result.success ? 'completed' : 'failed';
+        }
+      }
 
       return {
         ...task,
-        // 从 result 推断状态（如果任务状态还没更新的话）
-        status: task.status || (result ? (result.success ? 'completed' : 'failed') : 'pending'),
+        status: finalStatus,
         workerId: activeWorker?.[0] || task.workerId,
-        error: result?.error,
-        result: result,
+        // 🔧 v8.3: 正在执行的任务不显示旧的错误
+        error: (activeWorker || isExecuting) ? undefined : result?.error,
+        result: (activeWorker || isExecuting) ? undefined : result,
       };
     });
   }
@@ -1004,132 +1164,20 @@ export class RealtimeCoordinator extends EventEmitter {
   }
 
   // ============================================================================
-  // 私有方法 - 集成验证（v4.0 新增）
-  // ============================================================================
-
-  /**
-   * 执行集成验证
-   * 在所有任务完成后检查前后端一致性
-   */
-  private async runIntegrationValidation(): Promise<IntegrationValidationResult> {
-    console.log('[RealtimeCoordinator] 开始集成验证...');
-
-    this.emitEvent('integration:validation_started', {
-      planId: this.currentPlan?.id,
-      projectPath: this.projectPath,
-    });
-
-    const techStack = (this.config as ExtendedSwarmConfig).techStack;
-    const validator = new IntegrationValidator(
-      this.projectPath,
-      (this.config as ExtendedSwarmConfig).integrationValidation,
-      techStack,
-      this.currentBlueprint || undefined  // v4.0: 传入蓝图以使用 API 契约
-    );
-
-    // 转发验证器事件
-    validator.on('validation:checking', (data) => {
-      this.emitEvent('integration:checking', data);
-    });
-
-    const result = await validator.validate();
-
-    console.log(`[RealtimeCoordinator] 集成验证完成: ${result.success ? '通过' : '发现问题'}`);
-    console.log(`[RealtimeCoordinator] ${result.summary}`);
-
-    this.emitEvent('integration:validation_completed', {
-      planId: this.currentPlan?.id,
-      success: result.success,
-      issuesFound: result.issuesFound,
-      summary: result.summary,
-    });
-
-    return result;
-  }
-
-  /**
-   * 执行集成修复循环
-   * 最多尝试 maxAttempts 次修复
-   *
-   * @param initialResult 初始验证结果
-   * @param maxAttempts 最大修复尝试次数
-   * @returns 是否最终修复成功
-   */
-  private async runIntegrationFixLoop(
-    initialResult: IntegrationValidationResult,
-    maxAttempts: number
-  ): Promise<boolean> {
-    let currentResult = initialResult;
-    let attempt = 0;
-
-    console.log(`[RealtimeCoordinator] 开始集成修复循环（最多 ${maxAttempts} 次）...`);
-
-    while (attempt < maxAttempts && !currentResult.success) {
-      attempt++;
-
-      console.log(`[RealtimeCoordinator] 修复尝试 ${attempt}/${maxAttempts}...`);
-
-      this.emitEvent('integration:fix_started', {
-        planId: this.currentPlan?.id,
-        attempt,
-        maxAttempts,
-        issuesCount: currentResult.issues.length,
-      });
-
-      // 创建验证器并尝试修复
-      const techStack = (this.config as ExtendedSwarmConfig).techStack;
-      const validator = new IntegrationValidator(
-        this.projectPath,
-        (this.config as ExtendedSwarmConfig).integrationValidation,
-        techStack,
-        this.currentBlueprint || undefined  // v4.0: 传入蓝图以使用 API 契约
-      );
-
-      const fixResult = await validator.fix(currentResult.issues);
-
-      this.emitEvent('integration:fix_completed', {
-        planId: this.currentPlan?.id,
-        attempt,
-        success: fixResult.success,
-        fixedCount: fixResult.fixedIssues.length,
-        remainingCount: fixResult.remainingIssues.length,
-        modifiedFiles: fixResult.modifiedFiles,
-      });
-
-      if (fixResult.success) {
-        // 修复后重新验证
-        console.log(`[RealtimeCoordinator] 修复完成，重新验证...`);
-        currentResult = await this.runIntegrationValidation();
-
-        if (currentResult.success) {
-          console.log(`[RealtimeCoordinator] ✅ 集成验证通过（第 ${attempt} 次修复后）`);
-          return true;
-        } else {
-          console.log(`[RealtimeCoordinator] 验证仍有问题，继续修复...`);
-        }
-      } else {
-        console.log(`[RealtimeCoordinator] 修复尝试 ${attempt} 失败: ${fixResult.fixDescription}`);
-      }
-    }
-
-    console.log(`[RealtimeCoordinator] ❌ 集成修复失败（已尝试 ${attempt} 次）`);
-    this.emitEvent('integration:fix_failed', {
-      planId: this.currentPlan?.id,
-      attempts: attempt,
-      remainingIssues: currentResult.issues.length,
-    });
-
-    return false;
-  }
-
-  // ============================================================================
   // 私有方法 - 任务执行
   // ============================================================================
 
   /**
-   * 串行执行一组任务
-   * v7.1: 组内任务串行执行，确保后续任务能读取前序任务的代码变更
-   * 虽然叫 "ParallelGroup"，但实际执行是串行的（保留方法名兼容性）
+   * 并行执行一组任务
+   * v8.1: 基于 Edit 工具乐观锁的真正并行策略
+   *
+   * 设计理念：
+   * - SmartPlanner 已经规划好了 parallelGroups（宏观并行组）
+   * - 同组内任务全部并行启动，Worker 直接开工，不等待
+   * - 文件冲突由 Edit 工具的 EXTERNALLY_MODIFIED 机制天然检测：
+   *   Edit 在写入前比较文件 mtime，如果另一个 Worker 已修改则返回错误
+   * - Agent 看到 "File has been modified" 错误后自动 Re-Read + Re-Edit
+   * - 无需代码层面的冲突控制，充分利用工具错误反馈 + Agent 自愿重试
    */
   private async executeParallelGroup(tasks: SmartTask[]): Promise<(TaskResult & { taskId: string })[]> {
     // 检查是否被取消
@@ -1156,24 +1204,21 @@ export class RealtimeCoordinator extends EventEmitter {
       return skippedResults;
     }
 
-    // v7.1: 组内任务也串行执行（确保后续任务能看到前序任务的代码变更）
-    // 原因：即使在同一组内，任务之间可能存在隐式依赖（如 API 定义 → API 使用）
-    // 串行执行确保每个任务都能读取到前序任务的最新代码
-    const results: (TaskResult & { taskId: string })[] = [];
-    for (const task of executableTasks) {
-      // 检查是否被取消
-      if (this.isCancelled) {
-        break;
-      }
-      await this.waitIfPaused();
+    console.log(`[RealtimeCoordinator] 并行执行 ${executableTasks.length} 个任务（Agent 自主协调）`);
+    executableTasks.forEach(task => {
+      console.log(`  - ${task.name} (文件: ${task.files.join(', ') || '未指定'})`);
+    });
 
-      const result = await this.executeSingleTask(task);
-      results.push(result);
+    // v8.1: 全部并行启动，Worker 直接开工
+    // 文件冲突由 Edit 工具的 EXTERNALLY_MODIFIED 机制天然处理，Agent 自动 Re-Read + Re-Edit
+    const results = await Promise.all(
+      executableTasks.map(task => this.executeSingleTask(task))
+    );
 
-      // 如果任务失败且配置了组内失败即停止，则中断
-      if (!result.success && this.config.stopOnGroupFailure) {
-        break;
-      }
+    // 检查是否有失败
+    const groupFailed = results.some(r => !r.success);
+    if (groupFailed && this.config.stopOnGroupFailure) {
+      console.log(`[RealtimeCoordinator] 组内有任务失败，停止后续组的执行`);
     }
 
     return [...skippedResults, ...results];
@@ -1186,6 +1231,20 @@ export class RealtimeCoordinator extends EventEmitter {
   private async executeSingleTask(task: SmartTask): Promise<TaskResult & { taskId: string }> {
     const maxRetries = this.config.maxRetries || 3;
 
+    // 🔧 v8.2: 并发保护 - 检查并获取任务执行锁
+    if (this.executingTaskIds.has(task.id)) {
+      console.warn(`[RealtimeCoordinator] 任务 ${task.name} 已在执行中，跳过重复执行`);
+      return {
+        taskId: task.id,
+        success: false,
+        changes: [],
+        decisions: [],
+        error: '任务已在执行中，跳过重复执行',
+      };
+    }
+    this.executingTaskIds.add(task.id);
+
+    try {
     // 自动重试循环
     while (true) {
       const currentAttempt = task.attemptCount || 0;
@@ -1240,6 +1299,11 @@ export class RealtimeCoordinator extends EventEmitter {
         this.taskResults.set(task.id, result);
         this.updateTaskStatus(task.id, result.success ? 'completed' : 'failed');
 
+        // 🔧 v8.3: 任务成功时解决相关的 error issues，避免警告图标
+        if (result.success) {
+          this.resolveTaskIssues(task.id);
+        }
+
         // v5.0: 更新蜂群共享记忆
         this.updateSwarmMemory(task, result);
 
@@ -1281,7 +1345,8 @@ export class RealtimeCoordinator extends EventEmitter {
         }
 
         // v3.7: 自动重试 - 重置任务状态，继续循环
-        console.log(`[RealtimeCoordinator] 任务 ${task.name} 失败，自动重试 (第 ${(task.attemptCount || 0) + 1}/${maxRetries} 次)`);
+        // currentAttempt 是更新前的值，用于显示正确的重试次数
+        console.log(`[RealtimeCoordinator] 任务 ${task.name} 失败，自动重试 (第 ${currentAttempt + 1}/${maxRetries} 次)`);
         task.status = 'pending';
         task.startedAt = undefined;
         task.completedAt = undefined;
@@ -1290,7 +1355,7 @@ export class RealtimeCoordinator extends EventEmitter {
         // 发送重试事件
         this.emitEvent('task:auto_retry', {
           taskId: task.id,
-          attempt: task.attemptCount || 0,
+          attempt: currentAttempt + 1,  // 使用 currentAttempt 而非 task.attemptCount
           maxRetries,
           reason: result.reviewFeedback?.reasoning || result.error,
         });
@@ -1337,8 +1402,9 @@ export class RealtimeCoordinator extends EventEmitter {
         this.emitEvent('worker:idle', { workerId: worker.id });
 
         // v3.8: 超时异常也应该自动重试（之前直接返回，不给重试机会）
-        if (isTimeout && (task.attemptCount || 0) < maxRetries) {
-          console.log(`[RealtimeCoordinator] 任务 ${task.name} 超时，自动重试 (第 ${(task.attemptCount || 0) + 1}/${maxRetries} 次)`);
+        if (isTimeout && currentAttempt < maxRetries) {
+          // currentAttempt 是更新前的值，用于显示正确的重试次数
+          console.log(`[RealtimeCoordinator] 任务 ${task.name} 超时，自动重试 (第 ${currentAttempt + 1}/${maxRetries} 次)`);
 
           // 重置任务状态，继续循环重试
           task.status = 'pending';
@@ -1348,7 +1414,7 @@ export class RealtimeCoordinator extends EventEmitter {
           // 发送重试事件
           this.emitEvent('task:auto_retry', {
             taskId: task.id,
-            attempt: task.attemptCount || 0,
+            attempt: currentAttempt + 1,  // 使用 currentAttempt 而非 task.attemptCount
             maxRetries,
             reason: '任务超时',
           });
@@ -1364,6 +1430,10 @@ export class RealtimeCoordinator extends EventEmitter {
           ...failedResult,
         };
       }
+    }
+    } finally {
+      // 🔧 v8.2: 释放任务执行锁
+      this.executingTaskIds.delete(task.id);
     }
   }
 
@@ -1481,6 +1551,8 @@ export class RealtimeCoordinator extends EventEmitter {
     this.isCancelled = false;
     this.pauseResolve = null;
     this.taskModifications.clear();
+    this.executingTaskIds.clear();  // v8.2: 清空任务执行锁
+    this.activeWorkerExecutors.clear();  // v8.4: 清空 Worker Executor 实例
     this.startTime = null;
     this.currentCost = 0;
   }
@@ -1593,6 +1665,23 @@ export class RealtimeCoordinator extends EventEmitter {
       resolved: false,
     };
     this.issues.push(issue);
+  }
+
+  /**
+   * 🔧 v8.3: 解决任务相关的 error issues
+   * 当任务成功完成时调用，避免成功任务显示警告图标
+   */
+  private resolveTaskIssues(taskId: string): void {
+    let resolvedCount = 0;
+    for (const issue of this.issues) {
+      if (issue.taskId === taskId && issue.type === 'error' && !issue.resolved) {
+        issue.resolved = true;
+        resolvedCount++;
+      }
+    }
+    if (resolvedCount > 0) {
+      console.log(`[RealtimeCoordinator] 已解决任务 ${taskId} 的 ${resolvedCount} 个 error issues`);
+    }
   }
 
   /**

@@ -21,6 +21,7 @@ import type {
   SwarmConfig,
   TechStack,
   DesignImage,
+  Blueprint,
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
 import {
@@ -55,14 +56,8 @@ export interface WorkerContext {
   /** 共享的 System Prompt（跨 Worker 复用） */
   sharedSystemPromptBase?: string;
   /** v4.0: Blueprint 信息（传递给 Reviewer 用于全局审查） */
-  blueprint?: {
-    id: string;
-    name: string;
-    description: string;
-    requirements?: string[];
-    techStack?: TechStack;
-    constraints?: string[];
-  };
+  /** v6.1: 使用 Pick 引用 Blueprint 类型，避免内联重复定义 */
+  blueprint?: Pick<Blueprint, 'id' | 'name' | 'description' | 'requirements' | 'techStack' | 'constraints'>;
   /** v4.0: 相关任务状态（传递给 Reviewer 用于上下文判断） */
   relatedTasks?: Array<{
     id: string;
@@ -81,6 +76,7 @@ export type WorkerEventType =
   | 'stream:thinking'
   | 'stream:tool_start'
   | 'stream:tool_end'
+  | 'stream:system_prompt'  // v4.6: Agent System Prompt（透明展示）
   | 'task:completed'
   | 'task:failed'
   | 'ask:request';  // v4.2: AskUserQuestion 请求
@@ -208,6 +204,19 @@ ${gitCommitRule}
 
 ## 基本规则
 - 直接执行，不讨论${shellHint}
+
+## 蜂群协作
+你在一个多 Worker 团队中工作。执行过程中可能收到 **[蜂群更新]** 或 **[用户插嘴]** 消息：
+
+**处理原则**：
+- **不要被打断** - 收到更新后继续当前工作，不要停下来讨论
+- **记住信息** - 更新中的 API 路径、完成的任务等信息，在需要时使用
+- **不主动询问** - 不要问"我看到了更新，需要我做什么吗？"
+
+**示例**：
+- 收到 "[蜂群更新] 用户管理后端 已完成, 新 API: POST /api/users"
+- 正确做法：记住这个 API，继续你的前端任务，需要调用时直接用
+- 错误做法：停下来说"我注意到后端完成了，请问..."
 
 ## 环境问题处理
 **你没有解决不了的问题！** 你能力很强，可以解决几乎所有问题。
@@ -443,13 +452,16 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     this.currentTaskId = task.id;
 
     try {
+      // v4.6: 构建并保存 systemPrompt，用于透明展示
+      const systemPrompt = this.buildSystemPrompt(task, context);
+
       const loop = new ConversationLoop({
         model,
         maxTurns: this.maxTurns,
         verbose: false,
         permissionMode: 'bypassPermissions',
         workingDir: context.projectPath,
-        systemPrompt: this.buildSystemPrompt(task, context),
+        systemPrompt,
         isSubAgent: true,
         // v4.2: 使用自定义 askUserHandler 支持 WebUI 交互
         askUserHandler: this.createAskUserHandler(task.id),
@@ -457,6 +469,14 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
 
       // v4.5: 保存 loop 引用以支持插嘴功能
       this.currentLoop = loop;
+
+      // v4.6: 发射 system_prompt 事件，让前端可以查看 Agent 的指令
+      this.emit('stream:system_prompt', {
+        workerId: this.workerId,
+        task,
+        systemPrompt,
+        agentType: 'worker',
+      });
 
       // v3.5: 使用多模态任务提示（当是 UI 任务且有设计图时）
       const taskPrompt = this.buildMultimodalTaskPrompt(task, context);
@@ -562,14 +582,44 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       });
 
       this.log(`开始 Reviewer 审查...`);
+      // 🔧 发送 reviewing 状态事件
+      this.emit('task:reviewing', {
+        workerId: this.workerId,
+        task,
+      });
+
       // v4.0: 传递全局上下文给 Reviewer（Blueprint + 相关任务）
       // v4.1: 使用主仓库路径（worktree 可能已被删除/合并）
-      const reviewResult = await reviewer.review(task, workerSummary, {
-        projectPath: context.projectPath,
-        isRetry: false,  // TODO: 从上下文获取
-        blueprint: context.blueprint,
-        relatedTasks: context.relatedTasks,
-      });
+      // v5.0: 添加进度回调，让用户知道 Reviewer 在做什么
+      // v6.1: 传递完整的重试上下文给 Reviewer
+      const isRetry = (task.attemptCount ?? 0) > 0;
+      const reviewResult = await reviewer.review(
+        task,
+        workerSummary,
+        {
+          projectPath: context.projectPath,
+          isRetry,
+          previousAttempts: task.attemptCount,
+          lastReviewFeedback: task.lastReviewFeedback ? {
+            verdict: task.lastReviewFeedback.verdict,
+            reasoning: task.lastReviewFeedback.reasoning,
+            issues: task.lastReviewFeedback.issues,
+            suggestions: task.lastReviewFeedback.suggestions,
+          } : undefined,
+          blueprint: context.blueprint,
+          relatedTasks: context.relatedTasks,
+        },
+        // v5.0: 进度回调 - 转发 Reviewer 的进度到前端
+        (progress) => {
+          this.emit('reviewer:progress', {
+            workerId: this.workerId,
+            taskId: task.id,
+            stage: progress.stage,
+            message: progress.message,
+            details: progress.details,
+          });
+        }
+      );
 
       this.log(`Reviewer 结论: ${reviewResult.verdict} (置信度: ${reviewResult.confidence})`);
       this.log(`Reviewer 理由: ${reviewResult.reasoning}`);
@@ -808,6 +858,29 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
         const extra = dep.files.length > 3 ? ` (+${dep.files.length - 3})` : '';
         prompt += `- ${dep.taskName}: ${files}${extra}\n`;
       }
+    }
+
+    // v8.1: 团队协作提示（乐观并发策略）
+    // 不让 Worker 等待，直接开工。冲突在所有任务完成后由 Coordinator 检测并处理。
+    if (task.files.length > 0) {
+      prompt += `\n## 团队协作说明
+
+你正在一个并行团队中工作。同组可能有其他 Worker 同时执行任务。
+
+**规则很简单**：
+- 直接开始执行你的任务，**不需要等待**其他 Worker
+- 开始前读取你需要修改的文件，了解当前状态
+- 完成后正常提交你的变更
+- 如果发现文件内容不对或者有意外变化，正常执行即可，冲突会在事后自动检测和处理
+
+**冲突处理**：
+- 如果 Edit 工具返回 "File has been modified since it was read" 错误，说明另一个 Worker 刚修改了同一文件
+- 这是正常的，**重新 Read 该文件，然后再 Edit 即可**
+
+**不要做的事**：
+- 不要用 sleep 或循环轮询等待其他任务
+- 不要因为担心冲突而停止执行
+`;
     }
 
     // v3.7: 如果有上次的 Review 反馈，添加到 prompt 中

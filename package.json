@@ -6,7 +6,8 @@
   "bin": {
     "claude": "./dist/cli.js",
     "claude-code-open": "./dist/cli.js",
-    "claude-web": "./dist/web-cli.js"
+    "claude-web": "./dist/web-cli.js",
+    "claude-proxy": "./dist/proxy-cli.js"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -24,6 +25,8 @@
     "web:debug": "node --inspect --import tsx src/web-cli.ts",
     "web:start": "node dist/web-cli.js",
     "web:dev": "tsx watch src/web-cli.ts",
+    "proxy": "tsx src/proxy-cli.ts",
+    "proxy:start": "node dist/proxy-cli.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:integration": "vitest tests/integration",

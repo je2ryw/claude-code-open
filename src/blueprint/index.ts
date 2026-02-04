@@ -76,6 +76,7 @@ export {
   createMockTaskExecutor,
   type ExecutionResult,
   type TaskExecutor,
+  type SwarmBroadcastUpdate,
 } from './realtime-coordinator.js';
 
 // ============================================================================
@@ -88,11 +89,3 @@ export {
   MODEL_PRICING,
 } from './model-selector.js';
 
-// ============================================================================
-// 集成验证器（v4.0 新增：前后端一致性检查）
-// ============================================================================
-
-export {
-  IntegrationValidator,
-  createIntegrationValidator,
-} from './integration-validator.js';

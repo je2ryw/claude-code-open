@@ -61,10 +61,21 @@ export interface SelectedTask {
 }
 
 /**
+ * v4.5: 用户插嘴状态
+ */
+export interface InterjectStatus {
+  taskId: string;
+  success: boolean;
+  message: string;
+  timestamp: string;
+}
+
+/**
  * WorkerPanel 组件属性
  * v2.0: queen 变为可选，因为 RealtimeCoordinator 直接调度
  * v2.1: 新增 selectedTask 和 taskLogs 用于显示任务详情和日志
  * v4.4: 新增 onInterject 用于用户插嘴
+ * v4.5: 新增 interjectStatus 用于显示插嘴反馈
  */
 interface WorkerPanelProps {
   queen?: QueenAgent | null;
@@ -73,6 +84,8 @@ interface WorkerPanelProps {
   taskStream?: TaskStreamContent | null;
   // v4.4: 用户插嘴回调
   onInterject?: (taskId: string, message: string) => void;
+  // v4.5: 用户插嘴状态反馈
+  interjectStatus?: InterjectStatus | null;
 }
 
 /**
@@ -103,6 +116,7 @@ const COMPLEXITY_CONFIG = {
 const STATUS_CONFIG = {
   pending: { icon: '⏳', label: '等待中', color: '#9ca3af' },
   running: { icon: '🔄', label: '执行中', color: '#60a5fa' },
+  reviewing: { icon: '🔍', label: '审核中', color: '#c084fc' },
   completed: { icon: '✅', label: '已完成', color: '#4ade80' },
   failed: { icon: '❌', label: '失败', color: '#f87171' },
   skipped: { icon: '⏭️', label: '已跳过', color: '#9ca3af' },
@@ -139,7 +153,7 @@ const TaskDetailCard: React.FC<{
   workers: WorkerAgent[];
   stream?: TaskStreamContent | null;
 }> = ({ task, workers, stream }) => {
-  const statusConfig = task.status ? STATUS_CONFIG[task.status] : STATUS_CONFIG.pending;
+  const statusConfig = (task.status && STATUS_CONFIG[task.status as keyof typeof STATUS_CONFIG]) ?? STATUS_CONFIG.pending;
 
   // v2.2: 任务信息折叠状态（默认折叠，聚焦于 Worker 执行日志）
   const [showTaskInfo, setShowTaskInfo] = useState(false);
@@ -341,6 +355,7 @@ const TaskDetailCard: React.FC<{
 /**
  * v2.2: Worker 聊天式执行日志组件
  * 以类似聊天界面的形式展示 Worker 的工具调用、思考、输出
+ * v4.6: 新增 System Prompt 展示功能（透明展示 Agent 指令）
  */
 const WorkerChatLog: React.FC<{
   taskStatus?: string;
@@ -348,6 +363,8 @@ const WorkerChatLog: React.FC<{
   stream?: TaskStreamContent | null;
 }> = ({ taskStatus, worker, stream }) => {
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  // v4.6: 控制 System Prompt 展开/折叠
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
 
   // v4.3: 过滤掉冗余的日志消息，保留正常的模型回复和工具调用
   // 冗余日志格式: "[EnvAgent] 执行工具: xxx" 或 "[E2ETestAgent] xxx" 等
@@ -426,7 +443,45 @@ const WorkerChatLog: React.FC<{
         {taskStatus === 'running' && (
           <span className={styles.chatLiveIndicator}>🔴 实时</span>
         )}
+        {/* v4.6: System Prompt 查看按钮 */}
+        {stream?.systemPrompt && (
+          <button
+            className={styles.systemPromptToggle}
+            onClick={() => setShowSystemPrompt(!showSystemPrompt)}
+            title="查看 Agent 指令（System Prompt）"
+          >
+            🧠 {showSystemPrompt ? '隐藏指令' : '查看指令'}
+          </button>
+        )}
       </div>
+
+      {/* v4.6: System Prompt 展示区域（可折叠） */}
+      {showSystemPrompt && stream?.systemPrompt && (
+        <div className={styles.systemPromptContainer}>
+          <div className={styles.systemPromptHeader}>
+            <span className={styles.systemPromptIcon}>🧠</span>
+            <span className={styles.systemPromptTitle}>
+              Agent System Prompt
+              {stream.agentType && (
+                <span className={styles.agentTypeBadge}>
+                  {stream.agentType === 'worker' ? '🐝 Worker' :
+                   stream.agentType === 'e2e' ? '🧪 E2E' :
+                   stream.agentType === 'reviewer' ? '🔍 Reviewer' : stream.agentType}
+                </span>
+              )}
+            </span>
+            <button
+              className={styles.systemPromptClose}
+              onClick={() => setShowSystemPrompt(false)}
+            >
+              ✕
+            </button>
+          </div>
+          <pre className={styles.systemPromptContent}>
+            {stream.systemPrompt}
+          </pre>
+        </div>
+      )}
 
       <div className={styles.workerChatMessages} ref={logsContainerRef}>
         {/* v4.3: 显示过滤后的内容块（工具调用 + 正常文本，排除日志消息） */}
@@ -828,7 +883,7 @@ const WorkerLogSection: React.FC<{
  * v2.1: 支持显示选中任务的详情和执行日志
  * v4.4: 支持用户插嘴（发送消息给正在执行的任务）
  */
-export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskStream, onInterject }) => {
+export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, selectedTask, taskStream, onInterject, interjectStatus }) => {
   // v4.4: 用户插嘴输入状态
   const [interjectInput, setInterjectInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -887,9 +942,16 @@ export const WorkerPanel: React.FC<WorkerPanelProps> = ({ queen, workers, select
               {isSending ? '发送中...' : '发送'}
             </button>
           </div>
-          <div className={styles.interjectHint}>
-            提示：Worker 会在下一轮对话中收到您的消息
-          </div>
+          {/* v4.5: 插嘴状态反馈 */}
+          {interjectStatus && interjectStatus.taskId === selectedTask.id ? (
+            <div className={`${styles.interjectFeedback} ${interjectStatus.success ? styles.success : styles.error}`}>
+              {interjectStatus.success ? '✅' : '❌'} {interjectStatus.message}
+            </div>
+          ) : (
+            <div className={styles.interjectHint}>
+              提示：Worker 会在下一轮对话中收到您的消息
+            </div>
+          )}
         </div>
       )}
 
