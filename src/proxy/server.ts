@@ -825,15 +825,31 @@ export async function createProxyServer(config: ProxyConfig) {
       const isOAuthMessages = authMode === 'oauth' && path.startsWith('/v1/messages') && body.length > 0;
 
       if (isOAuthMessages) {
-        // ===== SDK 驱动模式 =====
-        // 用 SDK 的自定义 fetch 截获请求，然后自己发送
+        // ===== SDK 驱动模式（v2: SDK 同时构建 headers + body）=====
+        //
+        // 核心原理：让 SDK 完全掌控请求构建。
+        //
+        // 之前的 v1 问题：我们用自己的 body（从客户端 body 修改而来）覆盖了
+        // SDK 构建的 body。虽然内容相同，但 SDK 的序列化格式可能有微妙差异
+        // （如字段排序、默认值、内部转换）导致 CC 身份校验失败。
+        //
+        // v2 策略：
+        //   1. 从客户端 body 提取参数，做必要修改（identity、cache_control、metadata）
+        //   2. 把修改后的参数传给 SDK，让 SDK 序列化为 body
+        //   3. custom fetch 中只修补 stream 字段，其他全部使用 SDK 原生输出
+        //   4. 响应直接 pipe 回客户端
         try {
+          // parsedBody 来自我们修改过的 body（已注入 identity、cache_control、metadata）
           const parsedBody = JSON.parse(body.toString());
 
           // 构建 betas（参考 client.ts 的 buildBetas）
           const betas = buildProxyBetas(requestModel);
 
-          // 创建 SDK 实例，使用自定义 fetch 截获请求
+          // 从修改后的 body 中提取 SDK 参数
+          // 移除 stream（SDK 单独处理）和 betas（SDK 放 header 里）
+          const { stream: clientStream, betas: _clientBetas, ...sdkParams } = parsedBody;
+
+          // 创建 SDK 实例，使用自定义 fetch 截获 SDK 构建的完美请求
           const sdk = new Anthropic({
             apiKey: null as any,
             authToken: oauthState!.accessToken,
@@ -846,7 +862,9 @@ export async function createProxyServer(config: ProxyConfig) {
               'anthropic-dangerous-direct-browser-access': 'true',
             },
             fetch: async (url: any, init: any) => {
-              // SDK 已构建完美请求，我们直接用 globalThis.fetch 发出
+              // === SDK 已构建完美请求（headers + body），直接转发 ===
+
+              // 提取 SDK 生成的 headers
               const sdkHeaders: Record<string, string> = {};
               if (init?.headers) {
                 if (init.headers instanceof Headers) {
@@ -858,7 +876,26 @@ export async function createProxyServer(config: ProxyConfig) {
                 }
               }
 
+              // SDK 生成的 body（可能需要修补 stream 字段）
+              let requestBody = init?.body;
+              if (isStreaming && requestBody) {
+                // SDK 收到 stream:false，但客户端需要流式
+                // 修补 body 中的 stream 字段
+                try {
+                  const bodyStr = typeof requestBody === 'string'
+                    ? requestBody
+                    : Buffer.from(requestBody).toString();
+                  const bodyObj = JSON.parse(bodyStr);
+                  bodyObj.stream = true;
+                  requestBody = JSON.stringify(bodyObj);
+                } catch {
+                  // 解析失败，保持原样
+                }
+              }
+
+              // 日志
               console.log(`[SDK-FETCH] URL: ${url}`);
+              console.log(`[SDK-FETCH] Method: ${init?.method || 'POST'}`);
               console.log(`[SDK-FETCH] Headers from SDK:`);
               for (const [k, v] of Object.entries(sdkHeaders)) {
                 if (k === 'authorization') {
@@ -867,13 +904,31 @@ export async function createProxyServer(config: ProxyConfig) {
                   console.log(`  ${k}: ${v.slice(0, 200)}`);
                 }
               }
+              // 打印 SDK body 的关键字段（调试用）
+              try {
+                const bodyPeek = JSON.parse(typeof requestBody === 'string' ? requestBody : Buffer.from(requestBody).toString());
+                console.log(`[SDK-FETCH] Body keys: ${Object.keys(bodyPeek).join(', ')}`);
+                console.log(`[SDK-FETCH] Body model: ${bodyPeek.model}`);
+                console.log(`[SDK-FETCH] Body stream: ${bodyPeek.stream}`);
+                console.log(`[SDK-FETCH] Body metadata: ${JSON.stringify(bodyPeek.metadata)}`);
+                if (Array.isArray(bodyPeek.system)) {
+                  console.log(`[SDK-FETCH] Body system: array[${bodyPeek.system.length}], first_text_len=${bodyPeek.system[0]?.text?.length || 0}`);
+                  console.log(`[SDK-FETCH] Body system[0] starts: ${(bodyPeek.system[0]?.text || '').slice(0, 120)}`);
+                  console.log(`[SDK-FETCH] Body system[0] cache: ${JSON.stringify(bodyPeek.system[0]?.cache_control)}`);
+                } else if (typeof bodyPeek.system === 'string') {
+                  console.log(`[SDK-FETCH] Body system: string(${bodyPeek.system.length}), starts: ${bodyPeek.system.slice(0, 120)}`);
+                }
+                if (Array.isArray(bodyPeek.tools) && bodyPeek.tools.length > 0) {
+                  console.log(`[SDK-FETCH] Body tools: ${bodyPeek.tools.length} tools, first cache: ${JSON.stringify(bodyPeek.tools[0]?.cache_control)}`);
+                }
+                console.log(`[SDK-FETCH] Body size: ${typeof requestBody === 'string' ? requestBody.length : requestBody?.length || 0} bytes`);
+              } catch {}
 
-              // 用我们修改过的 body（已注入 CC identity、metadata、cache_control）
-              // 而不是 SDK 构造的 body（SDK 只看到我们传入的 params）
+              // 发送 SDK 构建的完美请求
               const realResponse = await globalThis.fetch(url, {
                 method: init?.method || 'POST',
                 headers: sdkHeaders,
-                body: body, // 使用代理修改过的 body
+                body: requestBody, // SDK 生成的 body（仅修补了 stream 字段）
                 signal: init?.signal,
                 // @ts-ignore - duplex needed for streaming request body
                 duplex: 'half',
@@ -933,7 +988,7 @@ export async function createProxyServer(config: ProxyConfig) {
                 console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)`);
               }
 
-              // 返回一个假响应给 SDK（SDK 会尝试解析，但我们不在乎结果）
+              // 返回假响应给 SDK（实际响应已 pipe 给客户端）
               return new Response(JSON.stringify({ type: 'message', id: 'proxy-handled' }), {
                 status: 200,
                 headers: { 'content-type': 'application/json' },
@@ -941,14 +996,13 @@ export async function createProxyServer(config: ProxyConfig) {
             },
           });
 
-          // 触发 SDK 构建请求（通过 beta.messages.create 发送带 betas 的请求）
-          // SDK 会调用我们的自定义 fetch，我们在那里完成实际转发
-          const { stream: _streamParam, ...bodyWithoutStream } = parsedBody;
+          // 把修改后的参数传给 SDK，让 SDK 构建完整请求（headers + body）
+          // SDK 会调用我们的 custom fetch，在那里完成实际转发
           try {
             await sdk.beta.messages.create({
-              ...bodyWithoutStream,
-              stream: false, // 我们自己处理流式，这里只是触发 SDK 构建请求
-              betas,
+              ...sdkParams,       // 来自修改后的 body（含 identity、cache_control、metadata）
+              stream: false,      // SDK 以非流式模式构建（我们在 fetch 中修补 stream）
+              betas,              // SDK 放入 anthropic-beta header
             });
           } catch {
             // SDK 解析假响应可能报错，忽略（实际响应已经 pipe 给客户端了）

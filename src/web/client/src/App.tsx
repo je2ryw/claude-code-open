@@ -56,7 +56,7 @@ function getWebSocketUrl(): string {
 
 interface AppProps {
   onNavigateToBlueprint?: (blueprintId: string) => void;
-  onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
+  onNavigateToSwarm?: (blueprintId?: string) => void;  // 跳转到蜂群页面的回调
 }
 
 /**
@@ -589,11 +589,22 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
            // 可以选择显示 toast 或忽略
            console.log('[Dev] Server ACK:', (payload as any).message);
            break;
+
+        case 'navigate_to_swarm':
+          // v10.0: LeadAgent 启动后自动跳转到 SwarmConsole
+          console.log('[App] Navigate to swarm:', payload);
+          onNavigateToSwarm?.((payload as any).blueprintId);
+          break;
+
+        case 'blueprint_created':
+          // v10.0: 蓝图创建通知
+          console.log('[App] Blueprint created:', (payload as any).name);
+          break;
       }
     });
 
     return unsubscribe;
-  }, [addMessageHandler, model, send, refreshSessions]);
+  }, [addMessageHandler, model, send, refreshSessions, onNavigateToSwarm]);
 
   // 自动滚动到底部
   useEffect(() => {
