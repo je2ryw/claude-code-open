@@ -278,8 +278,11 @@ function buildProxyBetas(model: string): string[] {
     betas.push(THINKING_BETA);
   }
 
-  // 4. prompt-caching-scope beta（官方: if(z)q.push(bZ1)）
-  betas.push(PROMPT_CACHING_SCOPE_BETA);
+  // 4. prompt-caching-scope beta — 不添加！
+  //    官方 CC 只在 experimentalEnabled 时才添加此 beta（client.ts:434）
+  //    此 beta 会强制执行 "maximum 4 cache_control blocks" 限制，
+  //    而真实 CC 客户端发来的请求通常有 3 system + 1 tool + 1 message = 5 个，
+  //    超过限制就会报 400 错误。
 
   return betas;
 }
