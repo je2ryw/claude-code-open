@@ -864,281 +864,213 @@ export async function createProxyServer(config: ProxyConfig) {
       const isOAuthMessages = authMode === 'oauth' && path.startsWith('/v1/messages') && body.length > 0;
 
       if (isOAuthMessages) {
-        // ===== SDK 驱动模式（v2: SDK 同时构建 headers + body）=====
+        // ===== v4: 直接转发模式（不使用 SDK）=====
         //
-        // 核心原理：让 SDK 完全掌控请求构建。
+        // 核心原理：完全保留 CC 客户端的原始 headers 和 body，只替换 auth。
         //
-        // 之前的 v1 问题：我们用自己的 body（从客户端 body 修改而来）覆盖了
-        // SDK 构建的 body。虽然内容相同，但 SDK 的序列化格式可能有微妙差异
-        // （如字段排序、默认值、内部转换）导致 CC 身份校验失败。
+        // 之前的 v1-v3 都通过 SDK 重新生成 headers/body，导致与真正的 CC 客户端
+        // 存在微妙差异（如 User-Agent 版本不匹配、stainless 参数不同等），
+        // Anthropic 的 CC 凭证校验（由 claude-code-20250219 beta 触发）因此失败。
         //
-        // v2 策略：
-        //   1. 从客户端 body 提取参数，做必要修改（identity、cache_control、metadata）
-        //   2. 把修改后的参数传给 SDK，让 SDK 序列化为 body
-        //   3. custom fetch 中只修补 stream 字段，其他全部使用 SDK 原生输出
+        // v4 策略：
+        //   1. 取 CC 客户端的原始 headers，只替换 auth + 修补 betas
+        //   2. 取代理修改后的 body（identity、metadata、cache_control 已注入）
+        //   3. 用 globalThis.fetch 直接转发
         //   4. 响应直接 pipe 回客户端
         try {
-          // parsedBody 来自我们修改过的 body（已注入 identity、cache_control、metadata）
           const parsedBody = JSON.parse(body.toString());
 
-          // 构建 betas（参考 client.ts 的 buildBetas）
-          const betas = buildProxyBetas(requestModel);
+          // ── 构建转发 headers：基于客户端原始 headers ──
+          const fwdHeaders: Record<string, string> = {};
+          for (const [key, value] of Object.entries(req.headers)) {
+            const lk = key.toLowerCase();
+            if (HOP_BY_HOP_HEADERS.has(lk)) continue;
+            if (lk === 'x-api-key') continue;       // 去掉代理 key
+            if (lk === 'authorization') continue;    // 去掉代理 key
+            if (lk === 'content-length') continue;   // 后面重新计算
+            if (typeof value === 'string') fwdHeaders[lk] = value;
+            else if (Array.isArray(value)) fwdHeaders[lk] = value[0]; // 取第一个
+          }
 
-          // 从修改后的 body 中提取 SDK 参数
-          // 移除 stream（SDK 单独处理）和 betas（SDK 放 header 里）
-          const { stream: clientStream, betas: _clientBetas, ...sdkParams } = parsedBody;
+          // OAuth auth
+          fwdHeaders['authorization'] = `Bearer ${oauthState!.accessToken}`;
 
-          // 创建 SDK 实例，使用自定义 fetch 截获 SDK 构建的完美请求
-          const sdk = new Anthropic({
-            apiKey: null as any,
-            authToken: oauthState!.accessToken,
-            dangerouslyAllowBrowser: true,
-            maxRetries: 0,
-            timeout: 600 * 1000,
-            defaultHeaders: {
-              'x-app': 'cli',
-              'User-Agent': `claude-cli/${VERSION_BASE} (external, cli)`,
-              'anthropic-dangerous-direct-browser-access': 'true',
-            },
-            fetch: async (url: any, init: any) => {
-              // === SDK 已构建完美请求（headers + body），直接转发 ===
+          // 确保 anthropic-dangerous-direct-browser-access 存在（OAuth 必须）
+          fwdHeaders['anthropic-dangerous-direct-browser-access'] = 'true';
 
-              // 提取 SDK 生成的 headers
-              const sdkHeaders: Record<string, string> = {};
-              if (init?.headers) {
-                if (init.headers instanceof Headers) {
-                  init.headers.forEach((v: string, k: string) => { sdkHeaders[k] = v; });
-                } else if (typeof init.headers === 'object' && !Array.isArray(init.headers)) {
-                  for (const [k, v] of Object.entries(init.headers)) {
-                    if (typeof v === 'string') sdkHeaders[k] = v;
+          // 修补 betas: 添加 oauth beta（如果没有）
+          const existingBetas = fwdHeaders['anthropic-beta'] || '';
+          const betaParts = existingBetas ? existingBetas.split(',').map((s: string) => s.trim()) : [];
+          if (!betaParts.includes(OAUTH_BETA)) {
+            betaParts.push(OAUTH_BETA);
+          }
+          fwdHeaders['anthropic-beta'] = betaParts.join(',');
+
+          // ── 构建转发 body：基于代理修改后的 parsedBody ──
+          const bodyObj: any = { ...parsedBody };
+
+          // 确保 stream 正确
+          if (isStreaming) {
+            bodyObj.stream = true;
+          }
+
+          // cache_control 注入 — 对齐 src/core/client.ts
+          {
+            const CC = { type: 'ephemeral' };
+
+            // system: 仅 first + last text block（最多 2 个）
+            if (Array.isArray(bodyObj.system)) {
+              for (const block of bodyObj.system) {
+                if (block && typeof block === 'object') delete block.cache_control;
+              }
+              const textIdxs: number[] = [];
+              for (let i = 0; i < bodyObj.system.length; i++) {
+                if (bodyObj.system[i]?.type === 'text') textIdxs.push(i);
+              }
+              if (textIdxs.length > 0) {
+                bodyObj.system[textIdxs[0]].cache_control = { ...CC };
+                if (textIdxs.length > 1) {
+                  bodyObj.system[textIdxs[textIdxs.length - 1]].cache_control = { ...CC };
+                }
+              }
+            }
+
+            // tools: 清除全部，仅最后一个
+            if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
+              for (const tool of bodyObj.tools) {
+                if (tool && typeof tool === 'object') delete tool.cache_control;
+              }
+              bodyObj.tools[bodyObj.tools.length - 1].cache_control = { ...CC };
+            }
+
+            // messages: 清除全部，仅最后一条的最后一个非 thinking block
+            if (Array.isArray(bodyObj.messages) && bodyObj.messages.length > 0) {
+              for (const msg of bodyObj.messages) {
+                if (Array.isArray(msg.content)) {
+                  for (const block of msg.content) {
+                    if (block && typeof block === 'object') delete block.cache_control;
                   }
                 }
               }
-
-              // v3 策略：SDK 只提供 headers（auth + stainless），body 用原始 CC 客户端的
-              //
-              // 为什么不用 SDK 序列化的 body？
-              //   SDK 的 beta.messages.create() 可能剥离 CC 客户端发送的特殊字段
-              //   （如 billing header、output_config、context_management 等），
-              //   导致 Anthropic 无法识别这是 CC 请求。
-              //   用原始 body 确保所有 CC 客户端的字段都完整保留。
-
-              // 从原始 parsedBody 构建 body（已包含代理的 identity/metadata 修改）
-              const bodyObj: any = { ...parsedBody };
-
-                // betas 放在 headers 里，不要在 body 中
-                delete bodyObj.betas;
-
-                // 修补 stream
-                if (isStreaming) {
-                  bodyObj.stream = true;
-                } else if (bodyObj.stream === undefined) {
-                  bodyObj.stream = false;
-                }
-
-                  // 2. 注入 cache_control — 对齐 src/core/client.ts
-                  //    全部使用 {type:"ephemeral"}，不用 ttl/scope
-                  {
-                    const CC = { type: 'ephemeral' };
-
-                    // system: 仅 first + last text block 加（最多 2 个）
-                    //   formatSystemPrompt 最多产生 2 个 block，但客户端可能发 3+ 个
-                    //   限制为 2 个确保总计不超过 4（2 system + 1 tool + 1 message）
-                    if (Array.isArray(bodyObj.system)) {
-                      // 先清除所有 system block 的 cache_control
-                      for (const block of bodyObj.system) {
-                        if (block && typeof block === 'object') delete block.cache_control;
-                      }
-                      // 找出所有 text block 的索引
-                      const textIdxs: number[] = [];
-                      for (let i = 0; i < bodyObj.system.length; i++) {
-                        if (bodyObj.system[i]?.type === 'text') textIdxs.push(i);
-                      }
-                      if (textIdxs.length > 0) {
-                        // first text block
-                        bodyObj.system[textIdxs[0]].cache_control = { ...CC };
-                        // last text block（如果不同于 first）
-                        if (textIdxs.length > 1) {
-                          bodyObj.system[textIdxs[textIdxs.length - 1]].cache_control = { ...CC };
-                        }
-                      }
-                    }
-
-                    // tools: 清除全部，仅最后一个
-                    if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
-                      for (const tool of bodyObj.tools) {
-                        if (tool && typeof tool === 'object') delete tool.cache_control;
-                      }
-                      bodyObj.tools[bodyObj.tools.length - 1].cache_control = { ...CC };
-                    }
-
-                    // messages: 清除全部，仅最后一条的最后一个非 thinking block
-                    if (Array.isArray(bodyObj.messages) && bodyObj.messages.length > 0) {
-                      for (const msg of bodyObj.messages) {
-                        if (Array.isArray(msg.content)) {
-                          for (const block of msg.content) {
-                            if (block && typeof block === 'object') delete block.cache_control;
-                          }
-                        }
-                      }
-                      const lastMsg = bodyObj.messages[bodyObj.messages.length - 1];
-                      if (Array.isArray(lastMsg?.content)) {
-                        for (let i = lastMsg.content.length - 1; i >= 0; i--) {
-                          const b = lastMsg.content[i];
-                          if (b && b.type !== 'thinking' && b.type !== 'redacted_thinking') {
-                            b.cache_control = { ...CC };
-                            break;
-                          }
-                        }
-                      }
-                    }
+              const lastMsg = bodyObj.messages[bodyObj.messages.length - 1];
+              if (Array.isArray(lastMsg?.content)) {
+                for (let i = lastMsg.content.length - 1; i >= 0; i--) {
+                  const b = lastMsg.content[i];
+                  if (b && b.type !== 'thinking' && b.type !== 'redacted_thinking') {
+                    b.cache_control = { ...CC };
+                    break;
                   }
-
-              const requestBody = JSON.stringify(bodyObj);
-
-              // 日志
-              console.log(`[SDK-FETCH] URL: ${url}`);
-              console.log(`[SDK-FETCH] Method: ${init?.method || 'POST'}`);
-              console.log(`[SDK-FETCH] Headers from SDK:`);
-              for (const [k, v] of Object.entries(sdkHeaders)) {
-                if (k === 'authorization') {
-                  console.log(`  ${k}: ${v.slice(0, 20)}...(len=${v.length})`);
-                } else {
-                  console.log(`  ${k}: ${v.slice(0, 200)}`);
                 }
               }
-              // 打印 body 的关键字段（调试用）
-              try {
-                console.log(`[SDK-FETCH] Body keys: ${Object.keys(bodyObj).join(', ')}`);
-                console.log(`[SDK-FETCH] Body model: ${bodyObj.model}`);
-                console.log(`[SDK-FETCH] Body stream: ${bodyObj.stream}`);
-                console.log(`[SDK-FETCH] Body metadata: ${JSON.stringify(bodyObj.metadata)}`);
-                if (Array.isArray(bodyObj.system)) {
-                  const sysLen = bodyObj.system.length;
-                  const lastSys = bodyObj.system[sysLen - 1];
-                  console.log(`[SDK-FETCH] Body system: array[${sysLen}], first_text_len=${bodyObj.system[0]?.text?.length || 0}`);
-                  console.log(`[SDK-FETCH] Body system[0] starts: ${(bodyObj.system[0]?.text || '').slice(0, 120)}`);
-                  console.log(`[SDK-FETCH] Body system[0] cache: ${JSON.stringify(bodyObj.system[0]?.cache_control)}`);
-                  console.log(`[SDK-FETCH] Body system[${sysLen - 1}] cache: ${JSON.stringify(lastSys?.cache_control)}`);
-                  const sysCacheCount = bodyObj.system.filter((b: any) => b?.cache_control).length;
-                  console.log(`[SDK-FETCH] Body system cache_control count: ${sysCacheCount}/${sysLen}`);
-                } else if (typeof bodyObj.system === 'string') {
-                  console.log(`[SDK-FETCH] Body system: string(${bodyObj.system.length}), starts: ${bodyObj.system.slice(0, 120)}`);
-                }
-                if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
-                  const toolsLen = bodyObj.tools.length;
-                  const lastToolCache = bodyObj.tools[toolsLen - 1]?.cache_control;
-                  console.log(`[SDK-FETCH] Body tools: ${toolsLen} tools, first cache: ${JSON.stringify(bodyObj.tools[0]?.cache_control)}, last cache: ${JSON.stringify(lastToolCache)}`);
-                }
-                if (Array.isArray(bodyObj.messages)) {
-                  let msgCacheCount = 0;
-                  for (const msg of bodyObj.messages) {
-                    if (Array.isArray(msg.content)) {
-                      for (const b of msg.content) { if (b?.cache_control) msgCacheCount++; }
-                    }
-                  }
-                  console.log(`[SDK-FETCH] Body messages cache_control count: ${msgCacheCount}/${bodyObj.messages.length} msgs`);
-                }
-                console.log(`[SDK-FETCH] Body size: ${requestBody.length} bytes`);
-              } catch {}
+            }
+          }
 
-              // 发送请求：SDK headers + 原始 CC 客户端 body
-              const realResponse = await globalThis.fetch(url, {
-                method: init?.method || 'POST',
-                headers: sdkHeaders,
-                body: requestBody,
-                signal: init?.signal,
-                // @ts-ignore - duplex needed for streaming request body
-                duplex: 'half',
-              });
+          const requestBody = JSON.stringify(bodyObj);
 
-              // 把原始响应 pipe 回代理客户端
-              const statusCode = realResponse.status;
-              const responseHeaders: Record<string, string> = {
-                'access-control-allow-origin': '*',
-                'access-control-expose-headers': '*',
-              };
-              // globalThis.fetch 会自动解压 gzip/br/deflate，
-              // 所以必须去掉 content-encoding 和 content-length（解压后长度已变）
-              const STRIP_RESPONSE_HEADERS = new Set([
-                ...HOP_BY_HOP_HEADERS,
-                'content-encoding',
-                'content-length',
-              ]);
-              realResponse.headers.forEach((v, k) => {
-                if (!STRIP_RESPONSE_HEADERS.has(k.toLowerCase())) {
-                  responseHeaders[k] = v;
-                }
-              });
+          // 更新 content-length
+          fwdHeaders['content-length'] = Buffer.byteLength(requestBody, 'utf-8').toString();
 
-              if (isStreaming && statusCode === 200) {
-                responseHeaders['cache-control'] = 'no-cache';
-                responseHeaders['x-accel-buffering'] = 'no';
-              }
+          // 目标 URL
+          const targetUrl = `${config.targetBaseUrl}${path}`;
 
-              res.writeHead(statusCode, responseHeaders);
+          // 日志
+          console.log(`[FWD] URL: ${targetUrl}`);
+          console.log(`[FWD] Headers:`);
+          for (const [k, v] of Object.entries(fwdHeaders)) {
+            if (k === 'authorization') {
+              console.log(`  ${k}: ${v.slice(0, 20)}...(len=${v.length})`);
+            } else {
+              console.log(`  ${k}: ${v.slice(0, 200)}`);
+            }
+          }
+          try {
+            console.log(`[FWD] Body keys: ${Object.keys(bodyObj).join(', ')}`);
+            console.log(`[FWD] Body model: ${bodyObj.model}`);
+            console.log(`[FWD] Body stream: ${bodyObj.stream}`);
+            if (Array.isArray(bodyObj.system)) {
+              const sysLen = bodyObj.system.length;
+              console.log(`[FWD] Body system: array[${sysLen}]`);
+              console.log(`[FWD] Body system[0] starts: ${(bodyObj.system[0]?.text || '').slice(0, 120)}`);
+              const sysCacheCount = bodyObj.system.filter((b: any) => b?.cache_control).length;
+              console.log(`[FWD] Body system cache_control count: ${sysCacheCount}/${sysLen}`);
+            }
+            if (Array.isArray(bodyObj.tools)) {
+              console.log(`[FWD] Body tools: ${bodyObj.tools.length} tools, last cache: ${JSON.stringify(bodyObj.tools[bodyObj.tools.length - 1]?.cache_control)}`);
+            }
+            console.log(`[FWD] Body size: ${requestBody.length} bytes`);
+          } catch {}
 
-              if (realResponse.body) {
-                const reader = realResponse.body.getReader();
-                const errChunks: Uint8Array[] = [];
-                try {
-                  while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    res.write(value);
-                    if (statusCode >= 400) errChunks.push(value);
-                  }
-                } catch (pipeErr: any) {
-                  console.error(`[SDK-FETCH] Pipe error: ${pipeErr.message}`);
-                } finally {
-                  res.end();
-                }
-
-                const duration = Date.now() - startTime;
-                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
-                if (logs.length > 1000) logs.splice(0, logs.length - 1000);
-                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
-                if (statusCode >= 400) {
-                  const errBody = Buffer.from(errChunks.reduce((acc, chunk) => {
-                    const merged = new Uint8Array(acc.length + chunk.length);
-                    merged.set(acc); merged.set(chunk, acc.length);
-                    return merged;
-                  }, new Uint8Array())).toString().slice(0, 500);
-                  console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
-                }
-              } else {
-                res.end();
-                const duration = Date.now() - startTime;
-                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
-                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)`);
-              }
-
-              // 返回假响应给 SDK（实际响应已 pipe 给客户端）
-              return new Response(JSON.stringify({ type: 'message', id: 'proxy-handled' }), {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-              });
-            },
+          // 直接转发
+          const realResponse = await globalThis.fetch(targetUrl, {
+            method: 'POST',
+            headers: fwdHeaders,
+            body: requestBody,
+            // @ts-ignore - duplex needed for streaming request body
+            duplex: 'half',
           });
 
-          // 把修改后的参数传给 SDK，让 SDK 构建完整请求（headers + body）
-          // SDK 会调用我们的 custom fetch，在那里完成实际转发
-          try {
-            await sdk.beta.messages.create({
-              ...sdkParams,       // 来自修改后的 body（含 identity、cache_control、metadata）
-              stream: false,      // SDK 以非流式模式构建（我们在 fetch 中修补 stream）
-              betas,              // SDK 放入 anthropic-beta header
-            });
-          } catch {
-            // SDK 解析假响应可能报错，忽略（实际响应已经 pipe 给客户端了）
+          // 把原始响应 pipe 回代理客户端
+          const statusCode = realResponse.status;
+          const responseHeaders: Record<string, string> = {
+            'access-control-allow-origin': '*',
+            'access-control-expose-headers': '*',
+          };
+          // globalThis.fetch 自动解压 gzip/br，必须去掉 content-encoding/content-length
+          const STRIP_RESP = new Set([...HOP_BY_HOP_HEADERS, 'content-encoding', 'content-length']);
+          realResponse.headers.forEach((v, k) => {
+            if (!STRIP_RESP.has(k.toLowerCase())) {
+              responseHeaders[k] = v;
+            }
+          });
+
+          if (isStreaming && statusCode === 200) {
+            responseHeaders['cache-control'] = 'no-cache';
+            responseHeaders['x-accel-buffering'] = 'no';
           }
-        } catch (sdkErr: any) {
-          console.error(`[SDK-ERROR] ${sdkErr.message}`);
+
+          res.writeHead(statusCode, responseHeaders);
+
+          if (realResponse.body) {
+            const reader = realResponse.body.getReader();
+            const errChunks: Uint8Array[] = [];
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+                if (statusCode >= 400) errChunks.push(value);
+              }
+            } catch (pipeErr: any) {
+              console.error(`[FWD] Pipe error: ${pipeErr.message}`);
+            } finally {
+              res.end();
+            }
+
+            const duration = Date.now() - startTime;
+            logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+            if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+            console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+            if (statusCode >= 400) {
+              const errBody = Buffer.from(errChunks.reduce((acc, chunk) => {
+                const merged = new Uint8Array(acc.length + chunk.length);
+                merged.set(acc); merged.set(chunk, acc.length);
+                return merged;
+              }, new Uint8Array())).toString().slice(0, 500);
+              console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
+            }
+          } else {
+            res.end();
+            const duration = Date.now() - startTime;
+            logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+            console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)`);
+          }
+        } catch (fwdErr: any) {
+          console.error(`[FWD-ERROR] ${fwdErr.message}`);
           if (!res.headersSent) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
               type: 'error',
-              error: { type: 'proxy_error', message: `SDK fetch failed: ${sdkErr.message}` },
+              error: { type: 'proxy_error', message: `Forward failed: ${fwdErr.message}` },
             }));
           }
         }
