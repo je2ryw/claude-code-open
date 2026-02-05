@@ -445,9 +445,27 @@ export async function createProxyServer(config: ProxyConfig) {
           if (authMode === 'oauth' && parsed.messages) {
             // 保存原始 body 快照（修改前），用于 dump 对比
             const originalBodySnapshot: Record<string, string> = {};
+            // 深度记录原始 system prompt 结构（修改前）
+            let originalSystemDetail = '';
             for (const [k, v] of Object.entries(parsed)) {
               if (k === 'messages') originalBodySnapshot[k] = `[${(v as any[])?.length || 0} msgs]`;
-              else if (k === 'system') originalBodySnapshot[k] = typeof v === 'string' ? `string(${(v as string).length})` : Array.isArray(v) ? `array[${(v as any[]).length}]` : typeof v;
+              else if (k === 'system') {
+                if (typeof v === 'string') {
+                  originalBodySnapshot[k] = `string(${(v as string).length})`;
+                  originalSystemDetail = `string(${(v as string).length}): ${(v as string).slice(0, 200)}`;
+                } else if (Array.isArray(v)) {
+                  originalBodySnapshot[k] = `array[${(v as any[]).length}]`;
+                  originalSystemDetail = `array[${(v as any[]).length}]:\n`;
+                  for (let si = 0; si < (v as any[]).length; si++) {
+                    const sb = (v as any[])[si];
+                    originalSystemDetail += `      [${si}] type=${sb.type}, text.len=${sb.text?.length || 0}, cache_control=${JSON.stringify(sb.cache_control || null)}\n`;
+                    originalSystemDetail += `          text前200字符: ${(sb.text || '').slice(0, 200)}\n`;
+                  }
+                } else {
+                  originalBodySnapshot[k] = typeof v;
+                  originalSystemDetail = `${typeof v}`;
+                }
+              }
               else if (k === 'tools') originalBodySnapshot[k] = `[${(v as any[])?.length || 0} tools]`;
               else originalBodySnapshot[k] = JSON.stringify(v)?.slice(0, 300) || 'undefined';
             }
@@ -528,6 +546,83 @@ export async function createProxyServer(config: ProxyConfig) {
             for (const [bk, bv] of Object.entries(originalBodySnapshot)) {
               console.log(`    ${bk}: ${bv}`);
             }
+            // 原始 system prompt 详细结构（修改前）
+            if (originalSystemDetail) {
+              console.log(`  [原始 system prompt 详情 - 修改前]`);
+              console.log(`    ${originalSystemDetail}`);
+            }
+
+            // ===== 详细 DUMP：system prompt 结构 =====
+            console.log(`  [system prompt 详情 - 修改后]`);
+            if (!parsed.system) {
+              console.log(`    <无 system prompt>`);
+            } else if (typeof parsed.system === 'string') {
+              console.log(`    格式: string (len=${parsed.system.length})`);
+              console.log(`    内容前300字符: ${parsed.system.slice(0, 300)}`);
+            } else if (Array.isArray(parsed.system)) {
+              console.log(`    格式: array[${parsed.system.length}]`);
+              for (let si = 0; si < parsed.system.length; si++) {
+                const sb = parsed.system[si];
+                console.log(`    [${si}] type=${sb.type}, text.len=${sb.text?.length || 0}, cache_control=${JSON.stringify(sb.cache_control || null)}`);
+                console.log(`        text前200字符: ${(sb.text || '').slice(0, 200)}`);
+              }
+            }
+
+            // ===== 详细 DUMP：消息列表 =====
+            if (parsed.messages && Array.isArray(parsed.messages)) {
+              const msgs = parsed.messages;
+              console.log(`  [messages 详情] 共 ${msgs.length} 条`);
+              // 显示前3条和后2条
+              const showIndices = new Set<number>();
+              for (let mi = 0; mi < Math.min(3, msgs.length); mi++) showIndices.add(mi);
+              for (let mi = Math.max(0, msgs.length - 2); mi < msgs.length; mi++) showIndices.add(mi);
+              for (const mi of Array.from(showIndices).sort((a, b) => a - b)) {
+                const msg = msgs[mi];
+                const role = msg.role || '?';
+                let contentSummary = '';
+                if (typeof msg.content === 'string') {
+                  contentSummary = `string(${msg.content.length}): ${msg.content.slice(0, 150)}`;
+                } else if (Array.isArray(msg.content)) {
+                  const blocks = msg.content.map((b: any) => {
+                    if (b.type === 'text') return `text(${(b.text || '').length})`;
+                    if (b.type === 'tool_use') return `tool_use(${b.name})`;
+                    if (b.type === 'tool_result') return `tool_result(${b.tool_use_id?.slice(0, 12)})`;
+                    if (b.type === 'thinking') return `thinking(${(b.thinking || '').length})`;
+                    if (b.type === 'redacted_thinking') return `redacted_thinking`;
+                    return `${b.type || 'unknown'}`;
+                  });
+                  contentSummary = `[${blocks.join(', ')}]`;
+                  // 显示第一个 text block 的内容
+                  const firstText = msg.content.find((b: any) => b.type === 'text');
+                  if (firstText?.text) {
+                    contentSummary += ` first_text: ${firstText.text.slice(0, 150)}`;
+                  }
+                }
+                console.log(`    [${mi}] ${role}: ${contentSummary}`);
+                // 显示 cache_control
+                if (Array.isArray(msg.content)) {
+                  for (const b of msg.content) {
+                    if (b.cache_control) {
+                      console.log(`        ^ cache_control on ${b.type}: ${JSON.stringify(b.cache_control)}`);
+                    }
+                  }
+                }
+              }
+              if (msgs.length > 5) {
+                console.log(`    ... 省略 ${msgs.length - 5} 条中间消息 ...`);
+              }
+            }
+
+            // ===== 详细 DUMP：工具列表 =====
+            if (parsed.tools && Array.isArray(parsed.tools) && parsed.tools.length > 0) {
+              const toolNames = parsed.tools.map((t: any) => t.name || '?').join(', ');
+              console.log(`  [tools] ${parsed.tools.length} 个: ${toolNames}`);
+            }
+
+            // ===== 详细 DUMP：其他关键字段 =====
+            if (parsed.tool_choice) console.log(`  tool_choice:    ${JSON.stringify(parsed.tool_choice)}`);
+            if (parsed.output_config) console.log(`  output_config:  ${JSON.stringify(parsed.output_config)}`);
+            if (parsed.context_management) console.log(`  context_mgmt:   ${JSON.stringify(parsed.context_management)}`);
 
             console.log(`[DUMP] ═══ 代理转发请求 ═══`);
             // 代理修改后的 body 关键字段
@@ -536,6 +631,8 @@ export async function createProxyServer(config: ProxyConfig) {
             if (parsed.thinking) {
               console.log(`  thinking:       ${JSON.stringify(parsed.thinking)}`);
             }
+            console.log(`  max_tokens:     ${parsed.max_tokens}`);
+            console.log(`  stream:         ${parsed.stream}`);
             // 转发的所有 header
             console.log(`  [转发 headers - 全部]`);
             for (const [hk, hv] of Object.entries(forwardHeaders)) {
