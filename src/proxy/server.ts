@@ -596,18 +596,36 @@ export async function createProxyServer(config: ProxyConfig) {
                 parsed.system = [{ type: 'text', text: CLAUDE_CODE_IDENTITY }];
                 needsRewrite = true;
               } else {
-                // 找到第一个 text block 检查身份
-                const firstTextIdx = parsed.system.findIndex((b: any) => b?.type === 'text');
-                if (firstTextIdx >= 0) {
-                  const block = parsed.system[firstTextIdx];
-                  if (!hasValidIdentity(block.text || '')) {
-                    block.text = CLAUDE_CODE_IDENTITY + '\n\n' + (block.text || '');
-                    needsRewrite = true;
-                  }
+                // 官方 CC 的 system prompt 结构（cli.js:3117-3123）：
+                //   Block 0: "x-anthropic-billing-header: cc_version=...; cc_entrypoint=...;" (cacheScope: null)
+                //   Block 1: identity string (cacheScope: "org")
+                //   Block 2: rest of prompt (cacheScope: "org")
+                //
+                // 关键：billing header 块必须保持独立！不能把 identity 拼接进去。
+                // 只在非 billing header 的 text block 中查找/注入 identity。
+
+                // 辅助：检查是否是 billing header block
+                const isBillingBlock = (b: any): boolean =>
+                  b?.type === 'text' && typeof b.text === 'string' && b.text.startsWith('x-anthropic-billing-header');
+
+                // 在非 billing header 的 text block 中查找 identity
+                const identityIdx = parsed.system.findIndex(
+                  (b: any) => b?.type === 'text' && !isBillingBlock(b) && hasValidIdentity(b.text || '')
+                );
+
+                if (identityIdx >= 0) {
                   // 已有有效身份标识，不做任何修改
                 } else {
-                  // 没有 text block，在数组开头插入
-                  parsed.system.unshift({ type: 'text', text: CLAUDE_CODE_IDENTITY });
+                  // 没有 identity block，需要插入一个
+                  // 找到 billing header 后面的位置插入（保持官方结构：billing → identity → rest）
+                  let insertIdx = 0;
+                  for (let i = 0; i < parsed.system.length; i++) {
+                    if (isBillingBlock(parsed.system[i])) {
+                      insertIdx = i + 1;
+                      break;
+                    }
+                  }
+                  parsed.system.splice(insertIdx, 0, { type: 'text', text: CLAUDE_CODE_IDENTITY });
                   needsRewrite = true;
                 }
               }
@@ -898,9 +916,16 @@ export async function createProxyServer(config: ProxyConfig) {
           // 确保 anthropic-dangerous-direct-browser-access 存在（OAuth 必须）
           fwdHeaders['anthropic-dangerous-direct-browser-access'] = 'true';
 
-          // 修补 betas: 添加 oauth beta（如果没有）
+          // 修补 betas: 去掉 prompt-caching-scope + 添加 oauth beta
+          //
+          // 与 buildForwardHeaders() 对齐：
+          //   - 去掉 prompt-caching-scope（客户端 API key 模式可能添加了，但 OAuth 转发会导致
+          //     cache_control scope/ttl 格式与实际 body 中的 {type:"ephemeral"} 不匹配）
+          //   - 确保包含 oauth beta
           const existingBetas = fwdHeaders['anthropic-beta'] || '';
-          const betaParts = existingBetas ? existingBetas.split(',').map((s: string) => s.trim()) : [];
+          let betaParts = existingBetas ? existingBetas.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+          // 去掉 prompt-caching-scope（与 buildForwardHeaders 一致）
+          betaParts = betaParts.filter((b: string) => !b.startsWith('prompt-caching-scope'));
           if (!betaParts.includes(OAUTH_BETA)) {
             betaParts.push(OAUTH_BETA);
           }
