@@ -986,14 +986,32 @@ export async function createProxyServer(config: ProxyConfig) {
                 console.log(`[SDK-FETCH] Body stream: ${bodyPeek.stream}`);
                 console.log(`[SDK-FETCH] Body metadata: ${JSON.stringify(bodyPeek.metadata)}`);
                 if (Array.isArray(bodyPeek.system)) {
-                  console.log(`[SDK-FETCH] Body system: array[${bodyPeek.system.length}], first_text_len=${bodyPeek.system[0]?.text?.length || 0}`);
+                  const sysLen = bodyPeek.system.length;
+                  const lastSys = bodyPeek.system[sysLen - 1];
+                  console.log(`[SDK-FETCH] Body system: array[${sysLen}], first_text_len=${bodyPeek.system[0]?.text?.length || 0}`);
                   console.log(`[SDK-FETCH] Body system[0] starts: ${(bodyPeek.system[0]?.text || '').slice(0, 120)}`);
                   console.log(`[SDK-FETCH] Body system[0] cache: ${JSON.stringify(bodyPeek.system[0]?.cache_control)}`);
+                  console.log(`[SDK-FETCH] Body system[${sysLen - 1}] cache: ${JSON.stringify(lastSys?.cache_control)}`);
+                  // 统计有 cache_control 的 system block 数量
+                  const sysCacheCount = bodyPeek.system.filter((b: any) => b?.cache_control).length;
+                  console.log(`[SDK-FETCH] Body system cache_control count: ${sysCacheCount}/${sysLen}`);
                 } else if (typeof bodyPeek.system === 'string') {
                   console.log(`[SDK-FETCH] Body system: string(${bodyPeek.system.length}), starts: ${bodyPeek.system.slice(0, 120)}`);
                 }
                 if (Array.isArray(bodyPeek.tools) && bodyPeek.tools.length > 0) {
-                  console.log(`[SDK-FETCH] Body tools: ${bodyPeek.tools.length} tools, first cache: ${JSON.stringify(bodyPeek.tools[0]?.cache_control)}`);
+                  const toolsLen = bodyPeek.tools.length;
+                  const lastToolCache = bodyPeek.tools[toolsLen - 1]?.cache_control;
+                  console.log(`[SDK-FETCH] Body tools: ${toolsLen} tools, first cache: ${JSON.stringify(bodyPeek.tools[0]?.cache_control)}, last cache: ${JSON.stringify(lastToolCache)}`);
+                }
+                // messages cache_control 统计
+                if (Array.isArray(bodyPeek.messages)) {
+                  let msgCacheCount = 0;
+                  for (const msg of bodyPeek.messages) {
+                    if (Array.isArray(msg.content)) {
+                      for (const b of msg.content) { if (b?.cache_control) msgCacheCount++; }
+                    }
+                  }
+                  console.log(`[SDK-FETCH] Body messages cache_control count: ${msgCacheCount}/${bodyPeek.messages.length} msgs`);
                 }
                 console.log(`[SDK-FETCH] Body size: ${typeof requestBody === 'string' ? requestBody.length : requestBody?.length || 0} bytes`);
               } catch {}
@@ -1014,8 +1032,15 @@ export async function createProxyServer(config: ProxyConfig) {
                 'access-control-allow-origin': '*',
                 'access-control-expose-headers': '*',
               };
+              // globalThis.fetch 会自动解压 gzip/br/deflate，
+              // 所以必须去掉 content-encoding 和 content-length（解压后长度已变）
+              const STRIP_RESPONSE_HEADERS = new Set([
+                ...HOP_BY_HOP_HEADERS,
+                'content-encoding',
+                'content-length',
+              ]);
               realResponse.headers.forEach((v, k) => {
-                if (!HOP_BY_HOP_HEADERS.has(k.toLowerCase())) {
+                if (!STRIP_RESPONSE_HEADERS.has(k.toLowerCase())) {
                   responseHeaders[k] = v;
                 }
               });
