@@ -257,6 +257,9 @@ function buildForwardHeaders(
     // 移除客户端的认证头，由代理重新设置
     if (lk === 'x-api-key') continue;
     if (lk === 'authorization') continue;
+    // 移除浏览器直接访问标志 — 官方 CC CLI 不发送此头，
+    // 带上它可能影响服务器的 Claude Code 身份识别
+    if (lk === 'anthropic-dangerous-direct-browser-access') continue;
     if (value !== undefined) {
       headers[key] = value;
     }
@@ -271,16 +274,10 @@ function buildForwardHeaders(
     // 注入必需的 beta headers（订阅 token 必须带这些才能通过 Anthropic 验证）
     let betaStr = (originalHeaders['anthropic-beta'] as string) || '';
 
-    // OAuth 模式下移除 prompt-caching-scope beta
-    // 原因：该 beta 要求 cache_control 必须包含 scope 字段（官方 gW1() 函数），
-    // 但客户端以 API key 模式连接代理时，cache_control 只有 {type: "ephemeral"} 没有 scope。
-    // 这种 beta 与 cache_control 的不匹配会导致 Anthropic 服务器判定请求不是来自 Claude Code，
-    // 对 opus 等高价值模型返回 400 "This credential is only authorized for use with Claude Code"
-    if (betaStr) {
-      betaStr = betaStr.split(',')
-        .filter(b => !b.trim().startsWith('prompt-caching-scope'))
-        .join(',');
-    }
+    // 注意：保留 prompt-caching-scope beta！
+    // 这是 Claude Code 身份验证的关键信号之一。
+    // 移除它会导致服务器返回 "credential not authorized"。
+    // 配合下方的 cache_control 转换（统一 ttl 为 1h），可以避免 ttl 排序错误。
 
     const requiredBetas = [OAUTH_BETA, CLAUDE_CODE_BETA];
     for (const beta of requiredBetas) {
@@ -519,39 +516,55 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：清理整个请求体中所有 cache_control 的 scope/ttl 字段
-            // 因为已移除 prompt-caching-scope beta，这些字段会导致排序冲突或不兼容
-            // 处理顺序与 API 一致：tools → system → messages
+            // OAuth 模式：将所有 cache_control 转换为 OAuth 格式
+            //
+            // 官方 CC 的 gW1() 在 OAuth 模式下生成：
+            //   gW1()        → {type: "ephemeral", ttl: "1h"}         (messages)
+            //   gW1("global") → {type: "ephemeral", ttl: "1h", scope: "global"} (system prompt / 最后一个 tool)
+            //
+            // 客户端以 API key 模式连接，cache_control 只有 {type: "ephemeral"}
+            // prompt-caching-scope beta 将无 ttl 的 blocks 默认为 5m
+            // 混合 5m 和 1h 会触发 "ttl='1h' must not come after ttl='5m'" 排序错误
+            // 解决方案：统一所有 cache_control 为 OAuth 格式的 1h ttl
             {
-              const cleanCacheControl = (obj: any) => {
-                if (obj && typeof obj === 'object' && obj.cache_control) {
-                  if (obj.cache_control.scope || obj.cache_control.ttl) {
-                    obj.cache_control = { type: obj.cache_control.type || 'ephemeral' };
+              const OAUTH_CC = { type: 'ephemeral', ttl: '1h' };
+              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+
+              // 1. tools: 转换已有的 cache_control，最后一个带 cache_control 的 tool 使用 global scope
+              if (Array.isArray(parsed.tools)) {
+                let lastCachedToolIdx = -1;
+                for (let i = 0; i < parsed.tools.length; i++) {
+                  if (parsed.tools[i]?.cache_control) {
+                    parsed.tools[i].cache_control = { ...OAUTH_CC };
+                    lastCachedToolIdx = i;
                     needsRewrite = true;
                   }
                 }
-              };
-
-              // 1. 清理 tools 中的 cache_control
-              if (Array.isArray(parsed.tools)) {
-                for (const tool of parsed.tools) {
-                  cleanCacheControl(tool);
+                // 最后一个有 cache_control 的 tool 使用 global scope（匹配官方 CC 行为）
+                if (lastCachedToolIdx >= 0) {
+                  parsed.tools[lastCachedToolIdx].cache_control = { ...OAUTH_CC_GLOBAL };
                 }
               }
 
-              // 2. 清理 system prompt 中的 cache_control
+              // 2. system prompt: 所有 block 都使用 global scope（匹配官方 KtY() 行为）
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
-                  cleanCacheControl(block);
+                  // 无论是否已有 cache_control，都设置为 OAuth global 格式
+                  // 官方 CC 的 KtY() 对所有 system prompt blocks 都添加 gW1("global")
+                  block.cache_control = { ...OAUTH_CC_GLOBAL };
+                  needsRewrite = true;
                 }
               }
 
-              // 3. 清理 messages 中每个 content block 的 cache_control
+              // 3. messages: 转换已有的 cache_control（不加 scope，匹配官方 tsY/esY 行为）
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
                     for (const block of msg.content) {
-                      cleanCacheControl(block);
+                      if (block.cache_control) {
+                        block.cache_control = { ...OAUTH_CC };
+                        needsRewrite = true;
+                      }
                     }
                   }
                 }

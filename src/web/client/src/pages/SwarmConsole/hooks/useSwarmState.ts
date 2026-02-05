@@ -142,9 +142,34 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
 
       case 'swarm:task_update':
         // 任务更新 - 同时更新 taskTree 和 executionPlan
-        console.log(`[SwarmState] Received task update: taskId=${message.payload.taskId}, updates=`, message.payload.updates);
+        console.log(`[SwarmState] Received task update: taskId=${message.payload.taskId}, action=${(message.payload as any).action || 'update'}, updates=`, message.payload.updates);
         setState(prev => {
           let newState = { ...prev };
+
+          // v9.0: 处理动态新增任务
+          if ((message.payload as any).action === 'add' && (message.payload as any).task) {
+            const newTask = (message.payload as any).task;
+            console.log(`[SwarmState] 动态新增任务: ${newTask.id} - ${newTask.name}`);
+
+            if (prev.executionPlan) {
+              // 检查是否已存在（避免重复）
+              const exists = prev.executionPlan.tasks.some(t => t.id === newTask.id);
+              if (!exists) {
+                newState.executionPlan = {
+                  ...prev.executionPlan,
+                  tasks: [...prev.executionPlan.tasks, newTask],
+                  // 添加到最后一个并行组
+                  parallelGroups: prev.executionPlan.parallelGroups.length > 0
+                    ? [
+                        ...prev.executionPlan.parallelGroups.slice(0, -1),
+                        [...prev.executionPlan.parallelGroups[prev.executionPlan.parallelGroups.length - 1], newTask.id],
+                      ]
+                    : [[newTask.id]],
+                };
+              }
+            }
+            return newState;
+          }
 
           // 更新 taskTree
           if (prev.taskTree) {
