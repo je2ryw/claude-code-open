@@ -277,20 +277,26 @@ function buildProxyBetas(model: string): string[] {
 /**
  * 构建转发到目标服务器的请求头
  *
- * 核心策略变更：不再转发客户端 headers，完全从零构建。
- * 参考 src/core/client.ts 的 ClaudeClient 构造函数中的 defaultHeaders + SDK 设置。
+ * 策略：转发客户端 SDK 生成的 headers + 定向修补认证和 betas。
  *
- * 原因：本地 CLI 能正常工作，因为 SDK 从零生成所有 headers。
- * 之前的"转发+补丁"方式导致 headers 与 OAuth 模式不匹配。
+ * 实验证明：转发客户端 headers（SDK 自动生成的 x-stainless-*、User-Agent 等）
+ * 是唯一通过 CC 身份验证的方式。从零构建会遗漏 SDK 内部的微妙差异。
+ *
+ * 修补内容：
+ *   - 认证：x-api-key → Authorization: Bearer（OAuth 模式）
+ *   - betas：去掉 prompt-caching-scope（实验证明去掉后 CC 验证通过）
+ *   - 添加 oauth beta（如果客户端没有）
+ *   - 保留其他所有 SDK 生成的 headers
  */
 function buildForwardHeaders(
   authMode: AuthMode,
   authValue: string,
   model: string,
   bodyLength: number,
+  clientHeaders: http.IncomingHttpHeaders,
 ): http.OutgoingHttpHeaders {
   if (authMode === 'api-key') {
-    // API Key 模式：简单直转（不需要特殊处理）
+    // API Key 模式：简单直转
     return {
       'content-type': 'application/json',
       'accept': 'application/json',
@@ -300,33 +306,62 @@ function buildForwardHeaders(
     };
   }
 
-  // OAuth 模式：完全从零构建 headers，与本地 CLI 的 SDK 输出一致
-  // 参考 client.ts 第 542-562 行的 defaultHeaders + anthropicConfig
-  // + SDK 内部 r27() 生成的 X-Stainless-* 平台指纹
-  const betas = buildProxyBetas(model);
+  // OAuth 模式：转发客户端 headers + 定向修补
+  const headers: http.OutgoingHttpHeaders = {};
 
-  return {
-    'content-type': 'application/json',
-    'accept': 'application/json',
-    'accept-encoding': 'gzip, deflate, br, zstd',
-    'authorization': `Bearer ${authValue}`,
-    'anthropic-version': '2023-06-01',
-    'anthropic-beta': betas.join(','),
-    // 以下 headers 与本地 CLI 的 SDK 设置完全一致
-    'anthropic-dangerous-direct-browser-access': 'true',
-    'x-app': 'cli',
-    'User-Agent': `claude-cli/${VERSION_BASE} (external, cli)`,
-    // SDK 内部 r27() 生成的 X-Stainless 平台指纹 — 服务器可能用于验证请求来自正规 SDK 客户端
-    'x-stainless-lang': 'js',
-    'x-stainless-package-version': '0.70.0',
-    'x-stainless-os': process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux',
-    'x-stainless-arch': process.arch,
-    'x-stainless-runtime': 'node',
-    'x-stainless-runtime-version': process.versions.node,
-    'x-stainless-retry-count': '0',
-    'x-stainless-timeout': '600',
-    'content-length': String(bodyLength),
-  };
+  // 1. 复制客户端的所有 headers（保留 SDK 的 x-stainless-*、User-Agent 等）
+  for (const [key, value] of Object.entries(clientHeaders)) {
+    // 跳过 hop-by-hop headers 和需要替换的 headers
+    if (key === 'host' || key === 'connection' || key === 'transfer-encoding' ||
+        key === 'x-api-key' || key === 'authorization' || key === 'content-length') {
+      continue;
+    }
+    if (value !== undefined) {
+      headers[key] = typeof value === 'string' ? value : Array.isArray(value) ? value.join(', ') : String(value);
+    }
+  }
+
+  // 2. 替换认证头
+  headers['authorization'] = `Bearer ${authValue}`;
+  // 删除客户端的 x-api-key（如果有）
+  delete headers['x-api-key'];
+
+  // 3. 修补 betas：去掉 prompt-caching-scope + 确保有 oauth beta
+  //    实验证明：去掉 prompt-caching-scope 后 CC 验证通过
+  //    ttl ordering 问题通过 body 中统一 cache_control 解决
+  const clientBeta = (headers['anthropic-beta'] as string) || '';
+  let betaList = clientBeta.split(',').map(b => b.trim()).filter(Boolean);
+
+  // 去掉 prompt-caching-scope（这是通过 CC 验证的关键）
+  betaList = betaList.filter(b => !b.startsWith('prompt-caching-scope'));
+
+  // 确保包含 claude-code beta
+  if (!betaList.includes(CLAUDE_CODE_BETA) && !model.toLowerCase().includes('haiku')) {
+    betaList.push(CLAUDE_CODE_BETA);
+  }
+
+  // 确保包含 oauth beta
+  if (!betaList.includes(OAUTH_BETA)) {
+    betaList.push(OAUTH_BETA);
+  }
+
+  // 确保包含 thinking beta（如果模型支持）
+  if (!betaList.includes(THINKING_BETA) &&
+      (model.includes('claude-sonnet-4') || model.includes('claude-opus-4') || model.includes('claude-haiku-4'))) {
+    betaList.push(THINKING_BETA);
+  }
+
+  headers['anthropic-beta'] = betaList.join(',');
+
+  // 4. 确保有 anthropic-dangerous-direct-browser-access
+  if (!headers['anthropic-dangerous-direct-browser-access']) {
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  }
+
+  // 5. 更新 content-length
+  headers['content-length'] = String(bodyLength);
+
+  return headers;
 }
 
 // ============ 服务器 ============
@@ -559,32 +594,31 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：将 cache_control 转换为 OAuth 格式
+            // OAuth 模式：统一 cache_control 为 {type:"ephemeral", ttl:"1h"}
             //
-            // 官方 CC 的 gW1(A) 在 OAuth 模式下生成：
-            //   gW1("global") → {type:"ephemeral", ttl:"1h", scope:"global"}  (用于 tools)
-            //   gW1()         → {type:"ephemeral", ttl:"1h"}                  (用于 system/messages)
+            // 实验证明 cache_control 中的 ttl 是 CC 身份识别信号之一：
+            //   去掉 prompt-caching-scope beta + 保留 ttl → CC 验证通过
+            //   去掉 prompt-caching-scope beta + 去掉 ttl → CC 验证失败
             //
-            // 实验证明 ttl/scope 是 CC 身份识别信号之一：
-            //   去掉 beta + 保留 ttl/scope → CC 验证通过
-            //   去掉 beta + 去掉 ttl/scope → CC 验证失败
+            // 统一为 ttl:"1h" 解决两个问题：
+            //   1. CC 身份信号（ttl 存在 = CC 客户端）
+            //   2. ttl ordering（全部 "1h" 不会违反非递减要求）
             //
-            // 客户端（我们的 clone）发送 bare ephemeral，代理必须注入 ttl/scope。
+            // 不加 scope（因为 prompt-caching-scope beta 已移除，scope 可能引起错误）
             {
-              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
               const OAUTH_CC = { type: 'ephemeral', ttl: '1h' };
 
-              // 1. tools → 全部转换为 global scope
+              // 1. tools
               if (Array.isArray(parsed.tools)) {
                 for (const tool of parsed.tools) {
                   if (tool && typeof tool === 'object' && tool.cache_control) {
-                    tool.cache_control = { ...OAUTH_CC_GLOBAL };
+                    tool.cache_control = { ...OAUTH_CC };
                     needsRewrite = true;
                   }
                 }
               }
 
-              // 2. system prompt blocks → ttl 但不加 scope
+              // 2. system prompt blocks
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
                   if (block && typeof block === 'object' && block.cache_control) {
@@ -594,7 +628,7 @@ export async function createProxyServer(config: ProxyConfig) {
                 }
               }
 
-              // 3. messages content blocks → ttl 但不加 scope
+              // 3. messages content blocks
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
@@ -739,8 +773,8 @@ export async function createProxyServer(config: ProxyConfig) {
             console.log(`  max_tokens:     ${parsed.max_tokens}`);
             console.log(`  stream:         ${parsed.stream}`);
             // 预览转发 headers（最终版在 body 处理后构建）
-            const previewHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length);
-            console.log(`  [转发 headers - 全部] (从零构建)`);
+            const previewHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length, req.headers);
+            console.log(`  [转发 headers - 全部] (转发+修补)`);
             for (const [hk, hv] of Object.entries(previewHeaders)) {
               const val = typeof hv === 'string' ? hv : String(hv);
               if (hk === 'authorization') {
@@ -757,9 +791,9 @@ export async function createProxyServer(config: ProxyConfig) {
         }
       }
 
-      // 构建转发 headers（完全从零生成，参考 CLI 模块）
+      // 构建转发 headers（转发客户端 headers + 定向修补认证/betas）
       // 放在 body 处理之后，确保 model 已提取、body 已最终确定
-      const forwardHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length);
+      const forwardHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length, req.headers);
       forwardHeaders['host'] = forwardUrl.host;
 
       console.log(
