@@ -395,8 +395,20 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
       const blueprint = await planner.generateBlueprint(state);
       executionState.setCurrentBlueprint(blueprint);
 
-      // 生成执行计划
-      const plan = await planner.createExecutionPlan(blueprint);
+      // v9.0: 不再预生成 ExecutionPlan
+      // LeadAgent 自己负责探索代码库和规划任务
+      // 创建空壳计划供 CLI 模式使用
+      const plan = {
+        id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        blueprintId: blueprint.id,
+        tasks: [] as any[],
+        parallelGroups: [] as string[][],
+        estimatedMinutes: 0,
+        estimatedCost: 0,
+        autoDecisions: [] as any[],
+        status: 'ready' as const,
+        createdAt: new Date(),
+      };
       executionState.setCurrentPlan(plan);
 
       // 清除对话状态
@@ -430,25 +442,14 @@ export class BlueprintTool extends BaseTool<BlueprintToolInput, ToolResult> {
       blueprint.modules.forEach((mod) => {
         lines.push(`  - ${mod.name} (${mod.type}): ${mod.description}`);
       });
-      lines.push('');
-      lines.push('========================================');
-      lines.push(`执行计划 ID: ${plan.id}`);
-      lines.push(`总任务数: ${plan.tasks.length}`);
-      lines.push(`并行组数: ${plan.parallelGroups.length}`);
-      lines.push(`预估时间: ${plan.estimatedMinutes} 分钟`);
-      lines.push(`预估成本: $${plan.estimatedCost.toFixed(3)}`);
-      lines.push('');
-      lines.push('AI 决策说明:');
-      plan.autoDecisions.forEach((decision) => {
-        lines.push(`  - ${decision.description}`);
-        if (decision.reasoning) {
-          lines.push(`    理由: ${decision.reasoning}`);
-        }
-      });
+      if (blueprint.apiContract) {
+        lines.push('');
+        lines.push(`API 契约: ${blueprint.apiContract.endpoints.length} 个端点`);
+      }
       lines.push('');
       lines.push('========================================');
       lines.push('');
-      lines.push('下一步: 调用 execute 开始执行');
+      lines.push('下一步: 调用 execute 开始执行（LeadAgent 将自动规划和执行任务）');
 
       return {
         success: true,

@@ -157,6 +157,8 @@ ${requirementsSummary}
 
 ${this.blueprint.constraints?.length ? `### 约束\n${this.blueprint.constraints.map(c => `- ${c}`).join('\n')}` : ''}
 
+${this.buildAPIContractPrompt()}
+
 ## 工作流程
 
 ### Phase 1: 探索代码库
@@ -166,15 +168,15 @@ ${this.blueprint.constraints?.length ? `### 约束\n${this.blueprint.constraints
 - 已有的模块和组件
 - 技术栈和依赖
 
-### Phase 2: 审视执行计划
-${this.buildTaskListPrompt()}
-
-基于探索结果审视任务列表，决定执行策略：
-- 哪些任务是**基础设施**（数据库schema、项目配置）→ 自己做
-- 哪些任务是**独立的**（互不依赖的API、页面）→ 派给Worker并行做
-- 哪些任务是**关键的**（集成测试、架构决策）→ 自己做
-- 发现不合理的任务 → 用 UpdateTaskPlan 跳过
-- 发现缺失的任务 → 用 UpdateTaskPlan 新增
+### Phase 2: 制定执行计划
+基于蓝图需求和代码探索结果，自己制定任务计划：
+1. 分析需求，拆分为具体的开发任务
+2. 每个任务通过 \`UpdateTaskPlan({ action: "add_task", taskId: "task_xxx", name: "...", description: "...", complexity: "...", type: "..." })\` 注册到前端
+3. 确定任务间的依赖关系和执行顺序
+4. 决定执行策略：
+   - **基础设施**（数据库schema、项目配置）→ 自己做
+   - **独立的**（互不依赖的API、页面）→ 派给Worker并行做
+   - **关键的**（集成测试、架构决策）→ 自己做
 
 ### Phase 3: 执行任务
 对于每个任务：
@@ -217,7 +219,7 @@ ${this.buildTaskListPrompt()}
   "constraints": ["使用camelCase命名", "错误处理用AppError类"]
 }
 \`\`\`
-**taskId 必须使用执行计划中的 ID**（或用 UpdateTaskPlan 新增的 ID）。
+**taskId 必须使用你在 Phase 2 中通过 add_task 创建的 ID**。
 
 **Brief 写作指南**：
 - ✅ "数据库schema在schema.prisma，User模型有id/email/name字段。路由入口在src/routes/index.ts，按authRoutes的模式添加。"
@@ -239,50 +241,41 @@ git add -A && git commit -m "[LeadAgent] 任务描述"
   }
 
   /**
-   * 构建任务列表提示词（嵌入到系统提示词中）
+   * 构建 API 契约提示词（如果蓝图中有 API 契约，嵌入到系统提示词中）
    */
-  private buildTaskListPrompt(): string {
-    if (!this.executionPlan || this.executionPlan.tasks.length === 0) {
-      return '（暂无预定义任务列表，你需要自己规划任务并用 UpdateTaskPlan 工具创建）';
+  private buildAPIContractPrompt(): string {
+    const contract = this.blueprint.apiContract;
+    if (!contract || !contract.endpoints || contract.endpoints.length === 0) {
+      return '';
     }
 
-    const tasks = this.executionPlan.tasks;
-    const lines = tasks.map(t => {
-      const deps = t.dependencies.length > 0 ? t.dependencies.join(', ') : '无';
-      return `| ${t.id} | ${t.name} | ${t.complexity} | ${t.type} | ${deps} | ${t.files.slice(0, 3).join(', ')}${t.files.length > 3 ? '...' : ''} |`;
-    });
+    const endpointLines = contract.endpoints.map(ep =>
+      `| ${ep.method} | ${contract.apiPrefix}${ep.path} | ${ep.description} | ${ep.requestBody || '-'} | ${ep.responseType || '-'} |`
+    );
 
-    return `以下是 SmartPlanner 预生成的任务列表，请使用这些 **taskId** 执行任务：
+    return `### API 契约（前后端统一标准）
+以下 API 设计已在需求收集阶段确认，开发时**必须遵循**这些路径和接口定义：
 
-| ID | 名称 | 复杂度 | 类型 | 依赖 | 相关文件 |
-|---|---|---|---|---|---|
-${lines.join('\n')}
+API 前缀: \`${contract.apiPrefix}\`
 
-你可以：
-- 按原计划执行（推荐）
-- 跳过不合理的任务（UpdateTaskPlan skip_task）
-- 新增缺失的任务（UpdateTaskPlan add_task）
-- 调整执行顺序（但要尊重依赖关系）`;
+| 方法 | 路径 | 描述 | 请求体 | 响应 |
+|------|------|------|--------|------|
+${endpointLines.join('\n')}
+
+**重要**：前端和后端任务都必须使用上述 API 路径，不要自行发明新路径。`;
   }
 
   /**
    * 构建初始用户提示词
    */
   private buildInitialPrompt(): string {
-    const taskCount = this.executionPlan?.tasks.length || 0;
-    const taskHint = taskCount > 0
-      ? `执行计划已包含 ${taskCount} 个任务。`
-      : '暂无预定义任务，你需要自己规划。';
-
     return `现在开始执行项目: ${this.blueprint.name}
-
-${taskHint}
 
 请按以下步骤进行：
 1. 先用 Read/Glob 工具探索项目目录结构和关键文件
-2. 审视执行计划中的任务列表，结合代码理解决定执行策略
+2. 基于需求和代码理解，制定任务计划（每个任务用 UpdateTaskPlan add_task 注册）
 3. 按计划执行每个任务：
-   - 自己做的任务：用 UpdateTaskPlan 标记开始/完成
+   - 自己做的任务：用 UpdateTaskPlan 标记 start_task/complete_task
    - 派给 Worker 的任务：用 DispatchWorker（自动更新状态）
 4. 所有任务完成后进行集成检查
 
@@ -303,17 +296,30 @@ ${taskHint}
     });
 
     // 设置 UpdateTaskPlan 工具的上下文
-    if (this.executionPlan) {
-      UpdateTaskPlanTool.setContext({
-        executionPlan: this.executionPlan,
+    // 即使 executionPlan 为空壳（tasks=[]），也需要设置上下文
+    // LeadAgent 会通过 add_task 动态填充任务
+    if (!this.executionPlan) {
+      this.executionPlan = {
+        id: `plan-${Date.now()}`,
         blueprintId: this.blueprint.id,
-        onPlanUpdate: (update: TaskPlanUpdateInput) => {
-          // 转发任务计划更新事件 → Coordinator → WebSocket → 前端
-          this.emit('task:plan_update', update);
-          this.emitLeadEvent('lead:plan_update', { update });
-        },
-      });
+        tasks: [],
+        parallelGroups: [],
+        estimatedMinutes: 0,
+        estimatedCost: 0,
+        autoDecisions: [],
+        status: 'ready',
+        createdAt: new Date(),
+      };
     }
+    UpdateTaskPlanTool.setContext({
+      executionPlan: this.executionPlan,
+      blueprintId: this.blueprint.id,
+      onPlanUpdate: (update: TaskPlanUpdateInput) => {
+        // 转发任务计划更新事件 → Coordinator → WebSocket → 前端
+        this.emit('task:plan_update', update);
+        this.emitLeadEvent('lead:plan_update', { update });
+      },
+    });
 
     // 设置 DispatchWorker 工具的上下文
     DispatchWorkerTool.setLeadAgentContext({

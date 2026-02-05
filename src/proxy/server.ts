@@ -13,6 +13,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as crypto from 'node:crypto';
 import { URL } from 'node:url';
+import { VERSION_BASE } from '../version.js';
 
 // ============ OAuth 常量 ============
 
@@ -20,6 +21,8 @@ const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const OAUTH_TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token';
 const OAUTH_BETA = 'oauth-2025-04-20';
 const CLAUDE_CODE_BETA = 'claude-code-20250219';
+const THINKING_BETA = 'interleaved-thinking-2025-05-14';
+const PROMPT_CACHING_SCOPE_BETA = 'prompt-caching-scope-2026-01-05';
 
 // Claude Code 身份标识（Anthropic 订阅 token 要求 system prompt 必须以此开头）
 const CLAUDE_CODE_IDENTITY =
@@ -242,53 +245,78 @@ async function ensureValidOAuthToken(state: OAuthState): Promise<boolean> {
 }
 
 /**
+ * 构建 betas 数组（参考 src/core/client.ts 的 buildBetas 函数）
+ *
+ * 完全从零生成，不从客户端请求中取。
+ * 客户端以 API key 模式连接代理，其 beta 组合可能与 OAuth 模式不同。
+ * 代理必须以 OAuth 身份发请求，所以 betas 必须匹配 OAuth 模式。
+ */
+function buildProxyBetas(model: string): string[] {
+  const betas: string[] = [];
+  const isHaiku = model.toLowerCase().includes('haiku');
+
+  // 1. 非 haiku 模型添加 claude-code beta（官方: if(!K)q.push(tFA)）
+  if (!isHaiku) {
+    betas.push(CLAUDE_CODE_BETA);
+  }
+
+  // 2. OAuth 订阅用户必须添加 oauth beta（官方: if(O7())q.push(zE)）
+  betas.push(OAUTH_BETA);
+
+  // 3. 支持 thinking 的模型添加 thinking beta
+  if (model.includes('claude-sonnet-4') || model.includes('claude-opus-4') || model.includes('claude-haiku-4')) {
+    betas.push(THINKING_BETA);
+  }
+
+  // 4. prompt-caching-scope beta（官方: if(z)q.push(bZ1)）
+  betas.push(PROMPT_CACHING_SCOPE_BETA);
+
+  return betas;
+}
+
+/**
  * 构建转发到目标服务器的请求头
+ *
+ * 核心策略变更：不再转发客户端 headers，完全从零构建。
+ * 参考 src/core/client.ts 的 ClaudeClient 构造函数中的 defaultHeaders + SDK 设置。
+ *
+ * 原因：本地 CLI 能正常工作，因为 SDK 从零生成所有 headers。
+ * 之前的"转发+补丁"方式导致 headers 与 OAuth 模式不匹配。
  */
 function buildForwardHeaders(
-  originalHeaders: http.IncomingHttpHeaders,
   authMode: AuthMode,
   authValue: string,
+  model: string,
+  bodyLength: number,
 ): http.OutgoingHttpHeaders {
-  const headers: http.OutgoingHttpHeaders = {};
-
-  for (const [key, value] of Object.entries(originalHeaders)) {
-    const lk = key.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lk)) continue;
-    // 移除客户端的认证头，由代理重新设置
-    if (lk === 'x-api-key') continue;
-    if (lk === 'authorization') continue;
-    // 移除浏览器直接访问标志 — 官方 CC CLI 不发送此头，
-    // 带上它可能影响服务器的 Claude Code 身份识别
-    if (lk === 'anthropic-dangerous-direct-browser-access') continue;
-    if (value !== undefined) {
-      headers[key] = value;
-    }
-  }
-
   if (authMode === 'api-key') {
-    headers['x-api-key'] = authValue;
-  } else {
-    // OAuth 模式：使用 Bearer token
-    headers['authorization'] = `Bearer ${authValue}`;
-
-    // 注入必需的 beta headers（订阅 token 必须带这些才能通过 Anthropic 验证）
-    let betaStr = (originalHeaders['anthropic-beta'] as string) || '';
-
-    // 注意：保留 prompt-caching-scope beta！
-    // 这是 Claude Code 身份验证的关键信号之一。
-    // 移除它会导致服务器返回 "credential not authorized"。
-    // 配合下方的 cache_control 转换（统一 ttl 为 1h），可以避免 ttl 排序错误。
-
-    const requiredBetas = [OAUTH_BETA, CLAUDE_CODE_BETA];
-    for (const beta of requiredBetas) {
-      if (!betaStr.includes(beta)) {
-        betaStr = betaStr ? `${betaStr},${beta}` : beta;
-      }
-    }
-    headers['anthropic-beta'] = betaStr;
+    // API Key 模式：简单直转（不需要特殊处理）
+    return {
+      'content-type': 'application/json',
+      'accept': 'application/json',
+      'x-api-key': authValue,
+      'anthropic-version': '2023-06-01',
+      'content-length': String(bodyLength),
+    };
   }
 
-  return headers;
+  // OAuth 模式：完全从零构建 headers，与本地 CLI 的 SDK 输出一致
+  // 参考 client.ts 第 542-562 行的 defaultHeaders + anthropicConfig
+  const betas = buildProxyBetas(model);
+
+  return {
+    'content-type': 'application/json',
+    'accept': 'application/json',
+    'accept-encoding': 'gzip, deflate, br, zstd',
+    'authorization': `Bearer ${authValue}`,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': betas.join(','),
+    // 以下 headers 与本地 CLI 的 SDK 设置完全一致
+    'anthropic-dangerous-direct-browser-access': 'true',
+    'x-app': 'cli',
+    'User-Agent': `claude-cli/${VERSION_BASE} (external, cli)`,
+    'content-length': String(bodyLength),
+  };
 }
 
 // ============ 服务器 ============
@@ -438,9 +466,14 @@ export async function createProxyServer(config: ProxyConfig) {
         ? config.anthropicApiKey!
         : oauthState!.accessToken;
 
-      // 构建转发头部
-      const forwardHeaders = buildForwardHeaders(req.headers, authMode, authValue);
-      forwardHeaders['host'] = forwardUrl.host;
+      // 提取 model（用于构建 betas）
+      let requestModel = 'claude-sonnet-4-20250514'; // 默认值
+      if (body.length > 0) {
+        try {
+          const peek = JSON.parse(body.toString());
+          if (peek.model) requestModel = peek.model;
+        } catch { /* ignore */ }
+      }
 
       // 检测是否是流式请求 + OAuth 模式下注入 Claude Code 身份
       let isStreaming = false;
@@ -516,55 +549,49 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：将所有 cache_control 转换为 OAuth 格式
+            // 统一所有 cache_control 为 {type: "ephemeral"}（bare，无 ttl/scope）
             //
-            // 官方 CC 的 gW1() 在 OAuth 模式下生成：
-            //   gW1()        → {type: "ephemeral", ttl: "1h"}         (messages)
-            //   gW1("global") → {type: "ephemeral", ttl: "1h", scope: "global"} (system prompt / 最后一个 tool)
+            // 参考 src/core/client.ts：
+            //   formatSystemPrompt()  → cache_control: { type: 'ephemeral' }
+            //   formatMessages()      → cache_control: { type: 'ephemeral' }
+            //   buildApiTools()       → cache_control: { type: 'ephemeral' }
             //
-            // 客户端以 API key 模式连接，cache_control 只有 {type: "ephemeral"}
-            // prompt-caching-scope beta 将无 ttl 的 blocks 默认为 5m
-            // 混合 5m 和 1h 会触发 "ttl='1h' must not come after ttl='5m'" 排序错误
-            // 解决方案：统一所有 cache_control 为 OAuth 格式的 1h ttl
+            // 本地 CLI 在 OAuth 模式下只用 bare ephemeral 且能正常工作。
+            // 客户端（可能是官方 CC 新版本）可能发送 ttl/scope 字段，
+            // 统一清理以避免 ttl 排序冲突或与代理生成的 betas 不匹配。
             {
-              const OAUTH_CC = { type: 'ephemeral', ttl: '1h' };
-              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+              const BARE_CC = { type: 'ephemeral' };
 
-              // 1. tools: 转换已有的 cache_control，最后一个带 cache_control 的 tool 使用 global scope
-              if (Array.isArray(parsed.tools)) {
-                let lastCachedToolIdx = -1;
-                for (let i = 0; i < parsed.tools.length; i++) {
-                  if (parsed.tools[i]?.cache_control) {
-                    parsed.tools[i].cache_control = { ...OAUTH_CC };
-                    lastCachedToolIdx = i;
+              const normalizeCacheControl = (obj: any) => {
+                if (obj && typeof obj === 'object' && obj.cache_control) {
+                  // 只要有 cache_control，统一为 bare ephemeral
+                  if (obj.cache_control.ttl || obj.cache_control.scope) {
+                    obj.cache_control = { ...BARE_CC };
                     needsRewrite = true;
                   }
                 }
-                // 最后一个有 cache_control 的 tool 使用 global scope（匹配官方 CC 行为）
-                if (lastCachedToolIdx >= 0) {
-                  parsed.tools[lastCachedToolIdx].cache_control = { ...OAUTH_CC_GLOBAL };
+              };
+
+              // 1. tools
+              if (Array.isArray(parsed.tools)) {
+                for (const tool of parsed.tools) {
+                  normalizeCacheControl(tool);
                 }
               }
 
-              // 2. system prompt: 所有 block 都使用 global scope（匹配官方 KtY() 行为）
+              // 2. system prompt blocks
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
-                  // 无论是否已有 cache_control，都设置为 OAuth global 格式
-                  // 官方 CC 的 KtY() 对所有 system prompt blocks 都添加 gW1("global")
-                  block.cache_control = { ...OAUTH_CC_GLOBAL };
-                  needsRewrite = true;
+                  normalizeCacheControl(block);
                 }
               }
 
-              // 3. messages: 转换已有的 cache_control（不加 scope，匹配官方 tsY/esY 行为）
+              // 3. messages content blocks
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
                     for (const block of msg.content) {
-                      if (block.cache_control) {
-                        block.cache_control = { ...OAUTH_CC };
-                        needsRewrite = true;
-                      }
+                      normalizeCacheControl(block);
                     }
                   }
                 }
@@ -592,6 +619,9 @@ export async function createProxyServer(config: ProxyConfig) {
               body = Buffer.from(JSON.stringify(parsed));
               console.log('[INJECT] 请求已重写');
             }
+
+            // body 处理完毕，从模型名提取 requestModel（用于 betas）
+            if (parsed.model) requestModel = parsed.model;
 
             // ===== 完整请求 DUMP：客户端原始 vs 代理转发 =====
             console.log(`[DUMP] ═══ 客户端原始请求 ═══`);
@@ -697,9 +727,10 @@ export async function createProxyServer(config: ProxyConfig) {
             }
             console.log(`  max_tokens:     ${parsed.max_tokens}`);
             console.log(`  stream:         ${parsed.stream}`);
-            // 转发的所有 header
-            console.log(`  [转发 headers - 全部]`);
-            for (const [hk, hv] of Object.entries(forwardHeaders)) {
+            // 预览转发 headers（最终版在 body 处理后构建）
+            const previewHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length);
+            console.log(`  [转发 headers - 全部] (从零构建)`);
+            for (const [hk, hv] of Object.entries(previewHeaders)) {
               const val = typeof hv === 'string' ? hv : String(hv);
               if (hk === 'authorization') {
                 console.log(`    ${hk}: ${val.slice(0, 20)}...(len=${val.length})`);
@@ -715,10 +746,10 @@ export async function createProxyServer(config: ProxyConfig) {
         }
       }
 
-      // body 可能被修改过，重新设置 content-length
-      if (body.length > 0) {
-        forwardHeaders['content-length'] = body.length;
-      }
+      // 构建转发 headers（完全从零生成，参考 CLI 模块）
+      // 放在 body 处理之后，确保 model 已提取、body 已最终确定
+      const forwardHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length);
+      forwardHeaders['host'] = forwardUrl.host;
 
       console.log(
         `[PROXY] ${method} ${path} from ${clientIp}` +

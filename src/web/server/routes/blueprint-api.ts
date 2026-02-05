@@ -1197,61 +1197,20 @@ class ExecutionManager {
       throw new Error('该蓝图已有正在执行的任务');
     }
 
-    // v2.0: 监听 SmartPlanner 探索事件并转发到 WebSocket
-    const plannerExploringHandler = (data: any) => {
-      executionEventEmitter.emit('planner:exploring', {
-        blueprintId: blueprint.id,
-        requirements: blueprint.requirements || [],
-      });
+    // v9.0: 不再调用 SmartPlanner.createExecutionPlan()
+    // LeadAgent 自己负责探索代码库、规划任务、执行
+    // 创建空壳 ExecutionPlan，LeadAgent 通过 UpdateTaskPlan add_task 动态填充
+    const plan: ExecutionPlan = {
+      id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      blueprintId: blueprint.id,
+      tasks: [],
+      parallelGroups: [],
+      estimatedMinutes: 0,
+      estimatedCost: 0,
+      autoDecisions: [],
+      status: 'ready',
+      createdAt: new Date(),
     };
-    const plannerExploredHandler = (data: any) => {
-      executionEventEmitter.emit('planner:explored', {
-        blueprintId: blueprint.id,
-        exploration: data.exploration,
-      });
-    };
-    const plannerDecomposingHandler = () => {
-      executionEventEmitter.emit('planner:decomposing', {
-        blueprintId: blueprint.id,
-      });
-    };
-
-    this.planner.on('planner:exploring', plannerExploringHandler);
-    this.planner.on('planner:explored', plannerExploredHandler);
-    this.planner.on('planner:decomposing', plannerDecomposingHandler);
-
-    // 创建执行计划
-    let plan;
-    try {
-      plan = await this.planner.createExecutionPlan(blueprint);
-    } finally {
-      // 移除监听器避免内存泄漏
-      this.planner.off('planner:exploring', plannerExploringHandler);
-      this.planner.off('planner:explored', plannerExploredHandler);
-      this.planner.off('planner:decomposing', plannerDecomposingHandler);
-    }
-
-    // v4.1 修复: 清除旧的任务映射和日志，避免新任务关联到旧的执行记录
-    // 这是因为任务ID在蓝图重新执行时会被复用
-    const taskIds = plan.tasks.map(t => t.id);
-
-    // 1. 清除内存中的任务-Worker 映射
-    const removedMappings = workerTracker.removeTaskWorkers(taskIds);
-    if (removedMappings > 0) {
-      console.log(`[ExecutionManager] 清除了 ${removedMappings} 个旧的任务-Worker 映射`);
-    }
-
-    // 2. 清除 SQLite 中的旧日志（保留执行历史，但清除日志详情）
-    try {
-      const logDB = getSwarmLogDB();
-      for (const taskId of taskIds) {
-        logDB.clearTaskLogs(taskId, false);
-      }
-      console.log(`[ExecutionManager] 清除了 ${taskIds.length} 个任务的旧日志`);
-    } catch (err) {
-      // 日志清除失败不应阻止执行，只记录警告
-      console.warn('[ExecutionManager] 清除旧日志失败:', err);
-    }
 
     // 创建协调器（v9.0: 默认启用 LeadAgent 模式）
     const coordinator = createRealtimeCoordinator({
@@ -1269,6 +1228,9 @@ class ExecutionManager {
     const executor = new RealTaskExecutor(blueprint);
     executor.setCoordinator(coordinator);
     coordinator.setTaskExecutor(executor);
+
+    // v9.0 修复: 必须设置蓝图，否则 LeadAgent 启动时会抛错
+    coordinator.setBlueprint(blueprint);
 
     // 监听事件并转发到全局事件发射器
     if (onEvent) {
