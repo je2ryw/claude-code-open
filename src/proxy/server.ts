@@ -54,6 +54,8 @@ export interface ProxyConfig {
   oauthRefreshToken?: string;
   /** OAuth 模式：token 过期时间 (ms timestamp) */
   oauthExpiresAt?: number;
+  /** OAuth 模式：账户 UUID（从 ~/.claude/.credentials.json 的 oauthAccount 读取） */
+  oauthAccountUuid?: string;
   /** 转发目标地址，默认 https://api.anthropic.com */
   targetBaseUrl: string;
 }
@@ -259,7 +261,9 @@ export function createProxyServer(config: ProxyConfig) {
   // OAuth 状态管理
   let oauthState: OAuthState | null = null;
   if (authMode === 'oauth') {
-    const accountUUID = extractAccountUUID(config.oauthAccessToken || '');
+    // 优先 JWT 解码，回退到 credentials 文件中的 oauthAccount.accountUuid
+    const jwtUUID = extractAccountUUID(config.oauthAccessToken || '');
+    const accountUUID = jwtUUID || config.oauthAccountUuid || null;
     oauthState = {
       accessToken: config.oauthAccessToken!,
       refreshToken: config.oauthRefreshToken!,
@@ -268,10 +272,13 @@ export function createProxyServer(config: ProxyConfig) {
       accountUUID,
     };
     if (accountUUID) {
-      console.log(`[AUTH] Account UUID: ${accountUUID}`);
+      const source = jwtUUID ? 'JWT sub' : 'credentials oauthAccount';
+      console.log(`[AUTH] Account UUID: ${accountUUID} (来源: ${source})`);
     } else {
-      console.log('[AUTH] 警告: 无法从 access token 中提取 account UUID，metadata.user_id 可能不正确');
+      console.log('[AUTH] 警告: 无法获取 account UUID（JWT 解码失败且 credentials 无 oauthAccount），metadata 将使用空 account');
     }
+    console.log(`[AUTH] Proxy Device ID: ${PROXY_DEVICE_ID.slice(0, 16)}...`);
+    console.log(`[AUTH] Proxy Session ID: ${PROXY_SESSION_ID}`);
   }
 
   const logs: RequestLog[] = [];
@@ -425,25 +432,21 @@ export function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：重建 metadata
+            // OAuth 模式：总是重建 metadata
             //
             // 官方 CC 的 ho() 总是为 messages 请求生成 metadata：
-            //   { user_id: "user_${Sy()}_account_${accountUuid}_session_${B6()}" }
+            //   { user_id: "user_${Sy()}_account_${accountUuid ?? ''}_session_${B6()}" }
             //
             // 客户端以 API Key 模式连接代理，其 buildMetadata() 生成的
             // user_id 中 account 为空、device hex 是客户端的随机值。
-            // 代理必须用自己的 device ID + JWT 的 accountUUID 完整重建。
-            if (oauthState?.accountUUID) {
+            // 代理必须用自己的 device ID + accountUUID 完整重建。
+            {
+              const accountUuid = oauthState?.accountUUID || '';
               parsed.metadata = {
-                user_id: `user_${PROXY_DEVICE_ID}_account_${oauthState.accountUUID}_session_${PROXY_SESSION_ID}`
+                user_id: `user_${PROXY_DEVICE_ID}_account_${accountUuid}_session_${PROXY_SESSION_ID}`
               };
               needsRewrite = true;
-              console.log(`[INJECT] 重建 metadata: device=${PROXY_DEVICE_ID.slice(0, 8)}... account=${oauthState.accountUUID.slice(0, 8)}... session=${PROXY_SESSION_ID.slice(0, 8)}...`);
-            } else if (parsed.metadata) {
-              // 无法获取 accountUUID 时，移除有问题的 metadata
-              delete parsed.metadata;
-              needsRewrite = true;
-              console.log('[INJECT] 无 accountUUID，移除 metadata');
+              console.log(`[INJECT] 重建 metadata: device=${PROXY_DEVICE_ID.slice(0, 8)}... account=${accountUuid ? accountUuid.slice(0, 8) + '...' : '<空>'} session=${PROXY_SESSION_ID.slice(0, 8)}...`);
             }
 
             if (needsRewrite) {

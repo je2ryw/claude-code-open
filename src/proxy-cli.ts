@@ -67,6 +67,7 @@ interface DetectedAuth {
   refreshToken?: string;
   expiresAt?: number;
   scopes?: string[];
+  accountUuid?: string;
 }
 
 /**
@@ -106,6 +107,7 @@ function detectLocalAuth(): DetectedAuth | null {
   }
 
   // 3. 官方 Claude Code 的 .credentials.json（OAuth，未加密）
+  // 文件结构：{ claudeAiOauth: { accessToken, ... }, oauthAccount: { accountUuid, ... } }
   if (fs.existsSync(OFFICIAL_CREDENTIALS_FILE)) {
     try {
       const creds = JSON.parse(fs.readFileSync(OFFICIAL_CREDENTIALS_FILE, 'utf-8'));
@@ -117,6 +119,9 @@ function detectLocalAuth(): DetectedAuth | null {
           const expiresAt = oauth.expiresAt || 0;
           const remainMin = Math.max(0, Math.round((expiresAt - Date.now()) / 60000));
 
+          // 从 oauthAccount 中读取 accountUuid（官方 CC 的 tK() 函数返回此对象）
+          const accountUuid = creds.oauthAccount?.accountUuid || undefined;
+
           return {
             mode: 'oauth',
             source: `~/.claude/.credentials.json (订阅账户，token 剩余 ${remainMin} 分钟)`,
@@ -124,6 +129,7 @@ function detectLocalAuth(): DetectedAuth | null {
             refreshToken: oauth.refreshToken || '',
             expiresAt,
             scopes,
+            accountUuid,
           };
         }
       }
@@ -186,6 +192,7 @@ program
     let oauthAccessToken: string | undefined;
     let oauthRefreshToken: string | undefined;
     let oauthExpiresAt: number | undefined;
+    let oauthAccountUuid: string | undefined;
     let authSource: string;
 
     if (options.anthropicKey) {
@@ -226,6 +233,9 @@ program
         oauthRefreshToken = detected.refreshToken;
         oauthExpiresAt = detected.expiresAt;
       }
+
+      // 传递 accountUuid（从 oauthAccount 字段读取）
+      oauthAccountUuid = detected.accountUuid;
     }
 
     // 生成 proxy key
@@ -256,6 +266,7 @@ program
         oauthAccessToken,
         oauthRefreshToken,
         oauthExpiresAt,
+        oauthAccountUuid,
         targetBaseUrl,
       });
 
