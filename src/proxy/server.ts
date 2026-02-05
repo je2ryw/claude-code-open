@@ -57,6 +57,41 @@ interface OAuthState {
   refreshToken: string;
   expiresAt: number;
   refreshing: Promise<boolean> | null;
+  accountUUID: string | null;
+}
+
+/**
+ * 从 JWT access token 中解码出 account UUID
+ * Claude OAuth access token 是 JWT 格式，payload 中包含 sub (subject) 字段
+ */
+function extractAccountUUID(accessToken: string): string | null {
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return null;
+
+    // Base64url decode payload (第二段)
+    let payload = parts[1];
+    // 补齐 base64 padding
+    payload = payload.replace(/-/g, '+').replace(/_/g, '/');
+    while (payload.length % 4) payload += '=';
+
+    const decoded = Buffer.from(payload, 'base64').toString('utf-8');
+    const claims = JSON.parse(decoded);
+
+    // 尝试常见的 claim 名称
+    const uuid = claims.sub || claims.account_uuid || claims.account_id;
+    if (uuid && typeof uuid === 'string') {
+      console.log(`[AUTH] JWT 解码成功: sub=${uuid.slice(0, 12)}... claims=[${Object.keys(claims).join(',')}]`);
+      return uuid;
+    }
+
+    // 没找到 UUID，打印所有 claims 帮助调试
+    console.log(`[AUTH] JWT 解码成功但未找到 account UUID, claims: ${JSON.stringify(claims).slice(0, 200)}`);
+    return null;
+  } catch (e: any) {
+    console.log(`[AUTH] access token 不是 JWT 格式或解码失败: ${e.message}`);
+    return null;
+  }
 }
 
 interface RequestLog {
@@ -124,6 +159,12 @@ async function refreshOAuthToken(state: OAuthState): Promise<boolean> {
       state.refreshToken = data.refresh_token;
     }
     state.expiresAt = Date.now() + data.expires_in * 1000;
+
+    // 刷新后重新提取 account UUID
+    const newUUID = extractAccountUUID(data.access_token);
+    if (newUUID) {
+      state.accountUUID = newUUID;
+    }
 
     const remainMin = Math.round((state.expiresAt - Date.now()) / 60000);
     console.log(`[AUTH] Token 刷新成功，有效期 ${remainMin} 分钟`);
@@ -212,12 +253,19 @@ export function createProxyServer(config: ProxyConfig) {
   // OAuth 状态管理
   let oauthState: OAuthState | null = null;
   if (authMode === 'oauth') {
+    const accountUUID = extractAccountUUID(config.oauthAccessToken || '');
     oauthState = {
       accessToken: config.oauthAccessToken!,
       refreshToken: config.oauthRefreshToken!,
       expiresAt: config.oauthExpiresAt || 0,
       refreshing: null,
+      accountUUID,
     };
+    if (accountUUID) {
+      console.log(`[AUTH] Account UUID: ${accountUUID}`);
+    } else {
+      console.log('[AUTH] 警告: 无法从 access token 中提取 account UUID，metadata.user_id 可能不正确');
+    }
   }
 
   const logs: RequestLog[] = [];
@@ -371,9 +419,26 @@ export function createProxyServer(config: ProxyConfig) {
               }
             }
 
+            // OAuth 模式：修正 metadata.user_id 中的 accountUUID
+            // Anthropic 对 OAuth token 会验证 metadata.user_id 格式
+            // 格式: user_{hex}_account_{uuid}_session_{uuid}
+            if (oauthState?.accountUUID && parsed.metadata?.user_id) {
+              const uid = parsed.metadata.user_id as string;
+              // 检测空的 accountUUID: _account__session_ 或 _account_null_ 等
+              const accountMatch = uid.match(/_account_([^_]*)_session_/);
+              if (accountMatch && (!accountMatch[1] || accountMatch[1] === 'null' || accountMatch[1] === 'undefined')) {
+                parsed.metadata.user_id = uid.replace(
+                  /_account_[^_]*_session_/,
+                  `_account_${oauthState.accountUUID}_session_`
+                );
+                needsRewrite = true;
+                console.log(`[INJECT] 修正 metadata.user_id: 注入 accountUUID=${oauthState.accountUUID.slice(0, 8)}...`);
+              }
+            }
+
             if (needsRewrite) {
               body = Buffer.from(JSON.stringify(parsed));
-              console.log('[INJECT] 已注入 Claude Code 身份标识到 system prompt');
+              console.log('[INJECT] 请求已重写');
             }
 
             // 详细调试日志：转发到 Anthropic 的完整信息
