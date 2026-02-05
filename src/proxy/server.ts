@@ -13,6 +13,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as crypto from 'node:crypto';
 import { URL } from 'node:url';
+import Anthropic from '@anthropic-ai/sdk';
 import { VERSION_BASE } from '../version.js';
 
 // ============ OAuth 常量 ============
@@ -791,95 +792,231 @@ export async function createProxyServer(config: ProxyConfig) {
         }
       }
 
-      // 构建转发 headers（转发客户端 headers + 定向修补认证/betas）
-      // 放在 body 处理之后，确保 model 已提取、body 已最终确定
-      const forwardHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length, req.headers);
-      forwardHeaders['host'] = forwardUrl.host;
-
       console.log(
         `[PROXY] ${method} ${path} from ${clientIp}` +
         ` [${authMode}]` +
         (isStreaming ? ' (streaming)' : ''),
       );
 
-      // 发起转发请求
-      const proxyReq = requestModule.request(
-        forwardUrl.toString(),
-        {
-          method,
-          headers: forwardHeaders,
-          ...(isTargetHttps ? { rejectUnauthorized: true } : {}),
-        },
-        (proxyRes) => {
-          const statusCode = proxyRes.statusCode || 502;
+      // ===== 核心转发逻辑：OAuth messages 端点使用 SDK 驱动 =====
+      //
+      // 原理：直接抄袭 CLI 模块的实现方式。
+      // CLI 通过 Anthropic SDK 发请求，SDK 自动处理所有 headers、betas、认证。
+      // 代理做同样的事：创建 SDK 实例，用自定义 fetch 截获 SDK 构建的完美请求，
+      // 然后用 globalThis.fetch 发出真正请求，把原始响应 pipe 回客户端。
+      //
+      // 这样做的好处：
+      //   1. headers 由 SDK 生成，与官方 CC 完全一致（x-stainless-*、betas 等）
+      //   2. 不需要手动拼凑或猜测 headers
+      //   3. 响应直接 pipe，不经过 SDK 解析，客户端收到原始 SSE 流
+      const isOAuthMessages = authMode === 'oauth' && path.startsWith('/v1/messages') && body.length > 0;
 
-          const responseHeaders: http.OutgoingHttpHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Expose-Headers': '*',
-          };
+      if (isOAuthMessages) {
+        // ===== SDK 驱动模式 =====
+        // 用 SDK 的自定义 fetch 截获请求，然后自己发送
+        try {
+          const parsedBody = JSON.parse(body.toString());
 
-          for (const [key, value] of Object.entries(proxyRes.headers)) {
-            if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) continue;
-            if (value !== undefined) {
-              responseHeaders[key] = value;
-            }
-          }
+          // 构建 betas（参考 client.ts 的 buildBetas）
+          const betas = buildProxyBetas(requestModel);
 
-          // 流式响应: 禁用缓冲
-          if (isStreaming && statusCode === 200) {
-            responseHeaders['Cache-Control'] = 'no-cache';
-            responseHeaders['X-Accel-Buffering'] = 'no';
-          }
-
-          res.writeHead(statusCode, responseHeaders);
-
-          // 对非200响应，捕获 body 用于调试
-          if (statusCode >= 400) {
-            const errChunks: Buffer[] = [];
-            proxyRes.on('data', (chunk: Buffer) => {
-              errChunks.push(chunk);
-              res.write(chunk); // 同时转发给客户端
-            });
-            proxyRes.on('end', () => {
-              res.end();
-              const duration = Date.now() - startTime;
-              const errBody = Buffer.concat(errChunks).toString().slice(0, 500);
-              logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
-              if (logs.length > 1000) logs.splice(0, logs.length - 1000);
-              console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
-              console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
-            });
-          } else {
-            proxyRes.pipe(res);
-            proxyRes.on('end', () => {
-              const duration = Date.now() - startTime;
-              logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
-              if (logs.length > 1000) logs.splice(0, logs.length - 1000);
-              console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
-            });
-          }
-        },
-      );
-
-      proxyReq.on('error', (err) => {
-        const duration = Date.now() - startTime;
-        console.error(`[ERROR] ${method} ${path} -> ${err.message} (${duration}ms)`);
-        if (!res.headersSent) {
-          res.writeHead(502, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            type: 'error',
-            error: {
-              type: 'proxy_error',
-              message: `Failed to connect to upstream: ${err.message}`,
+          // 创建 SDK 实例，使用自定义 fetch 截获请求
+          const sdk = new Anthropic({
+            apiKey: null as any,
+            authToken: oauthState!.accessToken,
+            dangerouslyAllowBrowser: true,
+            maxRetries: 0,
+            timeout: 600 * 1000,
+            defaultHeaders: {
+              'x-app': 'cli',
+              'User-Agent': `claude-cli/${VERSION_BASE} (external, cli)`,
+              'anthropic-dangerous-direct-browser-access': 'true',
             },
-          }));
-        }
-      });
+            fetch: async (url: any, init: any) => {
+              // SDK 已构建完美请求，我们直接用 globalThis.fetch 发出
+              const sdkHeaders: Record<string, string> = {};
+              if (init?.headers) {
+                if (init.headers instanceof Headers) {
+                  init.headers.forEach((v: string, k: string) => { sdkHeaders[k] = v; });
+                } else if (typeof init.headers === 'object' && !Array.isArray(init.headers)) {
+                  for (const [k, v] of Object.entries(init.headers)) {
+                    if (typeof v === 'string') sdkHeaders[k] = v;
+                  }
+                }
+              }
 
-      if (body.length > 0) {
-        proxyReq.write(body);
+              console.log(`[SDK-FETCH] URL: ${url}`);
+              console.log(`[SDK-FETCH] Headers from SDK:`);
+              for (const [k, v] of Object.entries(sdkHeaders)) {
+                if (k === 'authorization') {
+                  console.log(`  ${k}: ${v.slice(0, 20)}...(len=${v.length})`);
+                } else {
+                  console.log(`  ${k}: ${v.slice(0, 200)}`);
+                }
+              }
+
+              // 用我们修改过的 body（已注入 CC identity、metadata、cache_control）
+              // 而不是 SDK 构造的 body（SDK 只看到我们传入的 params）
+              const realResponse = await globalThis.fetch(url, {
+                method: init?.method || 'POST',
+                headers: sdkHeaders,
+                body: body, // 使用代理修改过的 body
+                signal: init?.signal,
+                // @ts-ignore - duplex needed for streaming request body
+                duplex: 'half',
+              });
+
+              // 把原始响应 pipe 回代理客户端
+              const statusCode = realResponse.status;
+              const responseHeaders: Record<string, string> = {
+                'access-control-allow-origin': '*',
+                'access-control-expose-headers': '*',
+              };
+              realResponse.headers.forEach((v, k) => {
+                if (!HOP_BY_HOP_HEADERS.has(k.toLowerCase())) {
+                  responseHeaders[k] = v;
+                }
+              });
+
+              if (isStreaming && statusCode === 200) {
+                responseHeaders['cache-control'] = 'no-cache';
+                responseHeaders['x-accel-buffering'] = 'no';
+              }
+
+              res.writeHead(statusCode, responseHeaders);
+
+              if (realResponse.body) {
+                const reader = realResponse.body.getReader();
+                const errChunks: Uint8Array[] = [];
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    res.write(value);
+                    if (statusCode >= 400) errChunks.push(value);
+                  }
+                } catch (pipeErr: any) {
+                  console.error(`[SDK-FETCH] Pipe error: ${pipeErr.message}`);
+                } finally {
+                  res.end();
+                }
+
+                const duration = Date.now() - startTime;
+                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+                if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+                if (statusCode >= 400) {
+                  const errBody = Buffer.from(errChunks.reduce((acc, chunk) => {
+                    const merged = new Uint8Array(acc.length + chunk.length);
+                    merged.set(acc); merged.set(chunk, acc.length);
+                    return merged;
+                  }, new Uint8Array())).toString().slice(0, 500);
+                  console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
+                }
+              } else {
+                res.end();
+                const duration = Date.now() - startTime;
+                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)`);
+              }
+
+              // 返回一个假响应给 SDK（SDK 会尝试解析，但我们不在乎结果）
+              return new Response(JSON.stringify({ type: 'message', id: 'proxy-handled' }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              });
+            },
+          });
+
+          // 触发 SDK 构建请求（通过 beta.messages.create 发送带 betas 的请求）
+          // SDK 会调用我们的自定义 fetch，我们在那里完成实际转发
+          const { stream: _streamParam, ...bodyWithoutStream } = parsedBody;
+          try {
+            await sdk.beta.messages.create({
+              ...bodyWithoutStream,
+              stream: false, // 我们自己处理流式，这里只是触发 SDK 构建请求
+              betas,
+            });
+          } catch {
+            // SDK 解析假响应可能报错，忽略（实际响应已经 pipe 给客户端了）
+          }
+        } catch (sdkErr: any) {
+          console.error(`[SDK-ERROR] ${sdkErr.message}`);
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              type: 'error',
+              error: { type: 'proxy_error', message: `SDK fetch failed: ${sdkErr.message}` },
+            }));
+          }
+        }
+      } else {
+        // ===== 传统模式：非 OAuth 或非 messages 端点，用 http.request 直转 =====
+        const forwardHeaders = buildForwardHeaders(authMode, authValue, requestModel, body.length, req.headers);
+        forwardHeaders['host'] = forwardUrl.host;
+
+        const proxyReq = requestModule.request(
+          forwardUrl.toString(),
+          {
+            method,
+            headers: forwardHeaders,
+            ...(isTargetHttps ? { rejectUnauthorized: true } : {}),
+          },
+          (proxyRes) => {
+            const statusCode = proxyRes.statusCode || 502;
+            const responseHeaders: http.OutgoingHttpHeaders = {
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Expose-Headers': '*',
+            };
+            for (const [key, value] of Object.entries(proxyRes.headers)) {
+              if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) continue;
+              if (value !== undefined) responseHeaders[key] = value;
+            }
+            if (isStreaming && statusCode === 200) {
+              responseHeaders['Cache-Control'] = 'no-cache';
+              responseHeaders['X-Accel-Buffering'] = 'no';
+            }
+            res.writeHead(statusCode, responseHeaders);
+
+            if (statusCode >= 400) {
+              const errChunks: Buffer[] = [];
+              proxyRes.on('data', (chunk: Buffer) => { errChunks.push(chunk); res.write(chunk); });
+              proxyRes.on('end', () => {
+                res.end();
+                const duration = Date.now() - startTime;
+                const errBody = Buffer.concat(errChunks).toString().slice(0, 500);
+                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+                if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+                console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
+              });
+            } else {
+              proxyRes.pipe(res);
+              proxyRes.on('end', () => {
+                const duration = Date.now() - startTime;
+                logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+                if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+                console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+              });
+            }
+          },
+        );
+
+        proxyReq.on('error', (err) => {
+          const duration = Date.now() - startTime;
+          console.error(`[ERROR] ${method} ${path} -> ${err.message} (${duration}ms)`);
+          if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              type: 'error',
+              error: { type: 'proxy_error', message: `Failed to connect to upstream: ${err.message}` },
+            }));
+          }
+        });
+
+        if (body.length > 0) proxyReq.write(body);
+        proxyReq.end();
       }
-      proxyReq.end();
 
     } catch (err: any) {
       console.error(`[ERROR] ${method} ${path} -> ${err.message}`);
