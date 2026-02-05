@@ -622,30 +622,51 @@ export async function createProxyServer(config: ProxyConfig) {
               const OAUTH_CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
               const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
 
-              // 1. tools → scope:"global"（官方: gW1("global")）
-              //    OAuth 模式：无论客户端是否发送 cache_control，都强制添加
-              //    API Key 模式：只转换已有的
-              if (Array.isArray(parsed.tools)) {
+              // Anthropic 限制：最多 4 个 block 带 cache_control
+              // 官方 CC 的 cache breakpoint 策略：
+              //   1. 最后一个 system text block → gW1()
+              //   2. 最后一个 tool → gW1("global")
+              //   3. messages 中最多 2 个 breakpoint → gW1()
+              // 总计 ≤ 4
+
+              // 1. tools → 仅最后一个 tool 带 scope:"global"
+              if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
+                // 先清除所有 tools 上已有的 cache_control
                 for (const tool of parsed.tools) {
-                  if (tool && typeof tool === 'object' && (authMode === 'oauth' || tool.cache_control)) {
-                    tool.cache_control = { ...OAUTH_CC_GLOBAL };
+                  if (tool && typeof tool === 'object' && tool.cache_control) {
+                    delete tool.cache_control;
                     needsRewrite = true;
                   }
                 }
+                // 仅在最后一个 tool 上添加
+                const lastTool = parsed.tools[parsed.tools.length - 1];
+                if (lastTool && typeof lastTool === 'object') {
+                  lastTool.cache_control = { ...OAUTH_CC_GLOBAL };
+                  needsRewrite = true;
+                }
               }
 
-              // 2. system prompt blocks → 无 scope（官方: gW1()）
-              if (Array.isArray(parsed.system)) {
+              // 2. system prompt blocks → 仅最后一个 text block
+              if (Array.isArray(parsed.system) && parsed.system.length > 0) {
+                // 先清除所有 system block 上已有的 cache_control
                 for (const block of parsed.system) {
-                  if (block && typeof block === 'object' && (authMode === 'oauth' || block.cache_control)) {
+                  if (block && typeof block === 'object' && block.cache_control) {
+                    delete block.cache_control;
+                    needsRewrite = true;
+                  }
+                }
+                // 找到最后一个 text block，添加 cache_control
+                for (let i = parsed.system.length - 1; i >= 0; i--) {
+                  const block = parsed.system[i];
+                  if (block && typeof block === 'object' && block.type === 'text') {
                     block.cache_control = { ...OAUTH_CC_DEFAULT };
                     needsRewrite = true;
+                    break;
                   }
                 }
               }
 
-              // 3. messages content blocks → 无 scope（官方: gW1()）
-              //    messages 只转换已有的（不强制添加，避免过多 cache breakpoints）
+              // 3. messages content blocks → 转换已有的（客户端通常放 0~2 个 breakpoint）
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
@@ -899,32 +920,36 @@ export async function createProxyServer(config: ProxyConfig) {
                     bodyObj.stream = true;
                   }
 
-                  // 2. 强制注入 OAuth CC cache_control
-                  //    官方 CC: system/messages → gW1() = {type:"ephemeral", ttl:"1h"}
-                  //           tools → gW1("global") = {type:"ephemeral", ttl:"1h", scope:"global"}
+                  // 2. 注入 OAuth CC cache_control（最多 4 个 breakpoint）
+                  //    官方 CC: 最后 system block → gW1()，最后 tool → gW1("global")
+                  //    messages 中客户端已有的 breakpoint → 转换格式
                   {
                     const CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
                     const CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
 
-                    // system text blocks
+                    // system: 清除全部，仅最后一个 text block 添加
                     if (Array.isArray(bodyObj.system)) {
                       for (const block of bodyObj.system) {
-                        if (block && typeof block === 'object' && block.type === 'text') {
-                          block.cache_control = { ...CC_DEFAULT };
+                        if (block && typeof block === 'object') delete block.cache_control;
+                      }
+                      for (let i = bodyObj.system.length - 1; i >= 0; i--) {
+                        if (bodyObj.system[i]?.type === 'text') {
+                          bodyObj.system[i].cache_control = { ...CC_DEFAULT };
+                          break;
                         }
                       }
                     }
 
-                    // tools（全部添加 scope:"global"）
-                    if (Array.isArray(bodyObj.tools)) {
+                    // tools: 清除全部，仅最后一个添加
+                    if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
                       for (const tool of bodyObj.tools) {
-                        if (tool && typeof tool === 'object') {
-                          tool.cache_control = { ...CC_GLOBAL };
-                        }
+                        if (tool && typeof tool === 'object') delete tool.cache_control;
                       }
+                      const lastTool = bodyObj.tools[bodyObj.tools.length - 1];
+                      if (lastTool) lastTool.cache_control = { ...CC_GLOBAL };
                     }
 
-                    // messages: 只转换已有的（不强制添加）
+                    // messages: 只转换已有的（不新增）
                     if (Array.isArray(bodyObj.messages)) {
                       for (const msg of bodyObj.messages) {
                         if (Array.isArray(msg.content)) {
