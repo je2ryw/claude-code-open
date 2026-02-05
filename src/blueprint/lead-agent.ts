@@ -157,6 +157,7 @@ ${requirementsSummary}
 
 ${this.blueprint.constraints?.length ? `### 约束\n${this.blueprint.constraints.map(c => `- ${c}`).join('\n')}` : ''}
 
+${this.blueprint.brief ? `### 关键上下文（来自需求收集对话）\n${this.blueprint.brief}\n` : ''}
 ${this.buildAPIContractPrompt()}
 
 ## 工作流程

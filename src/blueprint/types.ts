@@ -74,6 +74,9 @@ export interface Blueprint {
 
   // v5.0: 蜂群共享记忆（Worker 协作的公共上下文）
   swarmMemory?: SwarmMemory;
+
+  // v10.0: 主 Agent 写的关键上下文简报（设计决策、用户偏好、技术选型理由）
+  brief?: string;
 }
 
 /**
