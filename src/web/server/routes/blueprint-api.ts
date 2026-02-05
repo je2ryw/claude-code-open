@@ -2144,6 +2144,27 @@ class ExecutionManager {
       });
     });
 
+    // v9.0: LeadAgent 任务状态变更 → 转发到前端任务树
+    coordinator.on('task:status_changed', (data: any) => {
+      if (data.action === 'add') {
+        // 新增任务：发送带 action='add' 的特殊 task_update
+        executionEventEmitter.emit('task:update', {
+          blueprintId: data.blueprintId || blueprint.id,
+          taskId: data.taskId,
+          action: 'add',
+          task: data.task,
+          updates: { status: 'pending' },
+        });
+      } else {
+        // 状态更新：复用现有 task:update 事件
+        executionEventEmitter.emit('task:update', {
+          blueprintId: data.blueprintId || blueprint.id,
+          taskId: data.taskId,
+          updates: data.updates,
+        });
+      }
+    });
+
     // 任务重试开始事件
     coordinator.on('task:retry_started', (data: any) => {
       console.log(`[Swarm v2.0] Task retry started: ${data.taskId} (${data.taskName})`);

@@ -519,15 +519,40 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：清理 system prompt 中的 scope/ttl 字段
-            // 因为已移除 prompt-caching-scope beta，cache_control 中的 scope 和 ttl 会不兼容
-            if (Array.isArray(parsed.system)) {
-              for (const block of parsed.system) {
-                if (block.cache_control) {
-                  // 只保留 type: "ephemeral"，移除 scope 和 ttl
-                  if (block.cache_control.scope || block.cache_control.ttl) {
-                    block.cache_control = { type: block.cache_control.type || 'ephemeral' };
+            // OAuth 模式：清理整个请求体中所有 cache_control 的 scope/ttl 字段
+            // 因为已移除 prompt-caching-scope beta，这些字段会导致排序冲突或不兼容
+            // 处理顺序与 API 一致：tools → system → messages
+            {
+              const cleanCacheControl = (obj: any) => {
+                if (obj && typeof obj === 'object' && obj.cache_control) {
+                  if (obj.cache_control.scope || obj.cache_control.ttl) {
+                    obj.cache_control = { type: obj.cache_control.type || 'ephemeral' };
                     needsRewrite = true;
+                  }
+                }
+              };
+
+              // 1. 清理 tools 中的 cache_control
+              if (Array.isArray(parsed.tools)) {
+                for (const tool of parsed.tools) {
+                  cleanCacheControl(tool);
+                }
+              }
+
+              // 2. 清理 system prompt 中的 cache_control
+              if (Array.isArray(parsed.system)) {
+                for (const block of parsed.system) {
+                  cleanCacheControl(block);
+                }
+              }
+
+              // 3. 清理 messages 中每个 content block 的 cache_control
+              if (Array.isArray(parsed.messages)) {
+                for (const msg of parsed.messages) {
+                  if (Array.isArray(msg.content)) {
+                    for (const block of msg.content) {
+                      cleanCacheControl(block);
+                    }
                   }
                 }
               }

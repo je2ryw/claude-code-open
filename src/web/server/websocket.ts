@@ -628,15 +628,18 @@ export function setupWebSocket(
     });
   });
 
-  // 任务状态更新
-  executionEventEmitter.on('task:update', (data: { blueprintId: string; taskId: string; updates: any }) => {
-    const errorInfo = data.updates.error ? ` error="${data.updates.error}"` : '';
-    console.log(`[Swarm v2.0] Task update: ${data.taskId} status=${data.updates.status}${errorInfo}`);
+  // 任务状态更新（含 v9.0 动态新增任务支持）
+  executionEventEmitter.on('task:update', (data: { blueprintId: string; taskId: string; updates: any; action?: string; task?: any }) => {
+    const errorInfo = data.updates?.error ? ` error="${data.updates.error}"` : '';
+    const actionInfo = data.action === 'add' ? ' [NEW]' : '';
+    console.log(`[Swarm v2.0] Task update${actionInfo}: ${data.taskId} status=${data.updates?.status}${errorInfo}`);
     broadcastToSubscribers(data.blueprintId, {
       type: 'swarm:task_update',
       payload: {
         taskId: data.taskId,
         updates: data.updates,
+        // v9.0: 动态新增任务时携带完整任务数据
+        ...(data.action === 'add' ? { action: 'add', task: data.task } : {}),
       },
     });
   });
