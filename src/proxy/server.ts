@@ -270,6 +270,18 @@ function buildForwardHeaders(
 
     // 注入必需的 beta headers（订阅 token 必须带这些才能通过 Anthropic 验证）
     let betaStr = (originalHeaders['anthropic-beta'] as string) || '';
+
+    // OAuth 模式下移除 prompt-caching-scope beta
+    // 原因：该 beta 要求 cache_control 必须包含 scope 字段（官方 gW1() 函数），
+    // 但客户端以 API key 模式连接代理时，cache_control 只有 {type: "ephemeral"} 没有 scope。
+    // 这种 beta 与 cache_control 的不匹配会导致 Anthropic 服务器判定请求不是来自 Claude Code，
+    // 对 opus 等高价值模型返回 400 "This credential is only authorized for use with Claude Code"
+    if (betaStr) {
+      betaStr = betaStr.split(',')
+        .filter(b => !b.trim().startsWith('prompt-caching-scope'))
+        .join(',');
+    }
+
     const requiredBetas = [OAUTH_BETA, CLAUDE_CODE_BETA];
     for (const beta of requiredBetas) {
       if (!betaStr.includes(beta)) {
@@ -503,6 +515,20 @@ export async function createProxyServer(config: ProxyConfig) {
                   // 没有 text block，在数组开头插入
                   parsed.system.unshift({ type: 'text', text: CLAUDE_CODE_IDENTITY });
                   needsRewrite = true;
+                }
+              }
+            }
+
+            // OAuth 模式：清理 system prompt 中的 scope/ttl 字段
+            // 因为已移除 prompt-caching-scope beta，cache_control 中的 scope 和 ttl 会不兼容
+            if (Array.isArray(parsed.system)) {
+              for (const block of parsed.system) {
+                if (block.cache_control) {
+                  // 只保留 type: "ephemeral"，移除 scope 和 ttl
+                  if (block.cache_control.scope || block.cache_control.ttl) {
+                    block.cache_control = { type: block.cache_control.type || 'ephemeral' };
+                    needsRewrite = true;
+                  }
                 }
               }
             }
