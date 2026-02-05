@@ -24,6 +24,7 @@ export * from './task-status.js';
 export * from './commit-and-merge.js';
 export * from './submit-review.js';
 export * from './submit-e2e-result.js';
+export * from './dispatch-worker.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -46,6 +47,7 @@ import { UpdateTaskStatusTool } from './task-status.js';
 import { CommitAndMergeTool } from './commit-and-merge.js';
 import { SubmitReviewTool } from './submit-review.js';
 import { SubmitE2EResultTool } from './submit-e2e-result.js';
+import { DispatchWorkerTool } from './dispatch-worker.js';
 import { registerBlueprintHooks } from '../hooks/blueprint-hooks.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
@@ -114,6 +116,9 @@ export function registerAllTools(): void {
 
   // 15. E2E 测试结果提交工具 (1个) - E2E Test Agent 专用
   toolRegistry.register(new SubmitE2EResultTool());
+
+  // 16. LeadAgent 专用工具 (1个) - 派发任务给 Worker
+  toolRegistry.register(new DispatchWorkerTool());
 
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留

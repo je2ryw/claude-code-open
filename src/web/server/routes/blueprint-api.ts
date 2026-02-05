@@ -1253,17 +1253,21 @@ class ExecutionManager {
       console.warn('[ExecutionManager] 清除旧日志失败:', err);
     }
 
-    // 创建协调器（串行执行）
+    // 创建协调器（v9.0: 默认启用 LeadAgent 模式）
     const coordinator = createRealtimeCoordinator({
-      maxWorkers: 1,           // 串行执行，只需要 1 个 Worker
-      workerTimeout: 1800000,  // 30分钟（Worker 执行 + Reviewer 审查）
+      maxWorkers: 1,
+      workerTimeout: 1800000,
       skipOnFailure: true,
       stopOnGroupFailure: true,
+      enableLeadAgent: true,           // v9.0: LeadAgent 持久大脑
+      leadAgentModel: 'sonnet',
+      leadAgentMaxTurns: 200,
+      leadAgentSelfExecuteComplexity: 'complex',
     });
 
-    // 设置真正的任务执行器（使用 AutonomousWorkerExecutor）
+    // 设置真正的任务执行器（LeadAgent 模式下仍需作为 fallback）
     const executor = new RealTaskExecutor(blueprint);
-    executor.setCoordinator(coordinator);  // v8.4: 设置 Coordinator 引用（用于广播）
+    executor.setCoordinator(coordinator);
     coordinator.setTaskExecutor(executor);
 
     // 监听事件并转发到全局事件发射器
@@ -2110,6 +2114,33 @@ class ExecutionManager {
         blueprintId: blueprint.id,
         taskId: data.taskId,
         updates: { status: 'failed', error: data.error, completedAt: new Date().toISOString() },
+      });
+    });
+
+    // ============================================================================
+    // v9.0: LeadAgent 事件转发
+    // ============================================================================
+
+    // LeadAgent 流式输出（文本、工具调用）
+    coordinator.on('lead:stream', (data: any) => {
+      executionEventEmitter.emit('lead:stream', {
+        blueprintId: blueprint.id,
+        streamType: data.type,  // 'text' | 'tool_start' | 'tool_end'
+        content: data.content,
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+        toolResult: data.toolResult,
+        toolError: data.toolError,
+      });
+    });
+
+    // LeadAgent 阶段事件（started, exploring, planning, dispatch, reviewing, completed）
+    coordinator.on('lead:event', (data: any) => {
+      executionEventEmitter.emit('lead:event', {
+        blueprintId: blueprint.id,
+        eventType: data.type,
+        data: data.data,
+        timestamp: data.timestamp,
       });
     });
 

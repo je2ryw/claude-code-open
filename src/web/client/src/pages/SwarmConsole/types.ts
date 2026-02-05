@@ -325,25 +325,19 @@ export type SwarmServerMessage =
   | { type: 'swarm:paused'; payload: SwarmControlPayload }
   | { type: 'swarm:resumed'; payload: SwarmControlPayload }
   | { type: 'swarm:stats_update'; payload: StatsUpdatePayload }
-  // v5.0 新增：蜂群共享记忆更新
   | { type: 'swarm:memory_update'; payload: SwarmMemoryUpdatePayload }
-  // v2.0 新增：Planner 探索/分解状态
   | { type: 'swarm:planner_update'; payload: PlannerUpdatePayload }
-  // v2.1 新增：Worker 日志消息
   | { type: 'swarm:worker_log'; payload: WorkerLogPayload }
-  // v2.1 新增：Worker 流式输出（思考、文本、工具调用）
   | { type: 'swarm:worker_stream'; payload: WorkerStreamPayload }
-  // v3.4 新增：验收测试状态更新
   | { type: 'swarm:verification_update'; payload: VerificationUpdatePayload }
-  // v3.5 新增：冲突需要人工处理
   | { type: 'conflict:needs_human'; payload: ConflictNeedsHumanPayload }
-  // v3.5 新增：冲突已解决
   | { type: 'conflict:resolved'; payload: ConflictResolvedPayload }
-  // v4.2 新增：E2E Agent 请求用户输入
   | { type: 'swarm:ask_user'; payload: AskUserPayload }
-  // v4.5 新增：用户插嘴响应
   | { type: 'task:interject_success'; payload: InterjectSuccessPayload }
   | { type: 'task:interject_failed'; payload: InterjectFailedPayload }
+  // v9.0: LeadAgent 事件
+  | { type: 'swarm:lead_stream'; payload: LeadStreamPayload }
+  | { type: 'swarm:lead_event'; payload: LeadEventPayload }
   | { type: 'pong' };
 
 // ============= v4.5 新增：用户插嘴响应类型 =============
@@ -533,6 +527,9 @@ export interface SwarmState {
 
   // v4.5: 用户插嘴状态（反馈消息）
   interjectStatus: InterjectStatus | null;
+
+  // v9.0: LeadAgent 持久大脑状态
+  leadAgent: LeadAgentState;
 }
 
 /**
@@ -777,4 +774,65 @@ export interface ConflictResolvedPayload {
   conflictId: string;
   success: boolean;
   message?: string;
+}
+
+// ============= v9.0: LeadAgent 持久大脑类型 =============
+
+/**
+ * LeadAgent 阶段
+ */
+export type LeadAgentPhase =
+  | 'idle'          // 未启动
+  | 'started'       // 刚启动
+  | 'exploring'     // 探索代码库
+  | 'planning'      // 制定计划
+  | 'executing'     // 执行中（自己做或派发Worker）
+  | 'reviewing'     // 审查Worker结果
+  | 'completed'     // 全部完成
+  | 'failed';       // 执行失败
+
+/**
+ * LeadAgent 流式内容块
+ */
+export type LeadStreamBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; input?: any; result?: string; error?: string; status: 'running' | 'completed' | 'error' };
+
+/**
+ * LeadAgent 状态
+ */
+export interface LeadAgentState {
+  /** 当前阶段 */
+  phase: LeadAgentPhase;
+  /** 流式内容（LeadAgent 的实时输出） */
+  stream: LeadStreamBlock[];
+  /** 阶段事件历史 */
+  events: Array<{
+    type: string;
+    data: Record<string, unknown>;
+    timestamp: string;
+  }>;
+  /** 最后更新时间 */
+  lastUpdated: string;
+}
+
+/**
+ * LeadAgent 流式输出 Payload
+ */
+export interface LeadStreamPayload {
+  streamType: 'text' | 'tool_start' | 'tool_end';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolResult?: string;
+  toolError?: string;
+}
+
+/**
+ * LeadAgent 阶段事件 Payload
+ */
+export interface LeadEventPayload {
+  eventType: string;
+  data: Record<string, unknown>;
+  timestamp: string;
 }

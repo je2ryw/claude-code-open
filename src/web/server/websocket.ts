@@ -742,6 +742,53 @@ export function setupWebSocket(
   });
 
   // ============================================================================
+  // v9.0: LeadAgent 流式输出事件
+  // ============================================================================
+
+  executionEventEmitter.on('lead:stream', (data: {
+    blueprintId: string;
+    streamType: 'text' | 'tool_start' | 'tool_end';
+    content?: string;
+    toolName?: string;
+    toolInput?: any;
+    toolResult?: string;
+    toolError?: string;
+  }) => {
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:lead_stream',
+      payload: {
+        streamType: data.streamType,
+        content: data.content,
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+        toolResult: data.toolResult,
+        toolError: data.toolError,
+      },
+    });
+  });
+
+  // ============================================================================
+  // v9.0: LeadAgent 阶段事件
+  // ============================================================================
+
+  executionEventEmitter.on('lead:event', (data: {
+    blueprintId: string;
+    eventType: string;
+    data: Record<string, unknown>;
+    timestamp: string;
+  }) => {
+    console.log(`[Swarm v9.0] LeadAgent event: ${data.eventType}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:lead_event',
+      payload: {
+        eventType: data.eventType,
+        data: data.data,
+        timestamp: data.timestamp,
+      },
+    });
+  });
+
+  // ============================================================================
   // v2.0 新增：Planner 探索事件（Agent 模式探索代码库）
   // ============================================================================
 

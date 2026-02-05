@@ -16,8 +16,6 @@ import type {
   ExecutionPlan,
   GitBranchStatus,
   CostEstimate,
-  PlanDecision,
-  VerificationStatus,
   ConflictDecision,
 } from './types';
 
@@ -1082,19 +1080,85 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
         <PanelResizeHandle className={styles.resizeHandle} />
 
-        {/* 右侧：Worker 面板（简化版，移除 TDD 和时光倒流） */}
+        {/* 右侧：v9.0 LeadAgent + Worker 面板 */}
         <Panel defaultSize="33" minSize="20" collapsible={true} className={styles.rightPanel}>
           <div className={styles.panelHeader}>
-            <h2>👷 Workers</h2>
-            {/* v3.0: 从 WebSocket 推送的 workers 计算 */}
-            <span className={styles.workerCount}>
-              {`${workers.filter(w => w.status !== 'idle').length}/${workers.length}`}
-            </span>
+            <h2>🧠 LeadAgent</h2>
+            {/* v9.0: LeadAgent 阶段指示 */}
+            {state.leadAgent.phase !== 'idle' && (
+              <span className={`${styles.leadPhase} ${styles[`lead_${state.leadAgent.phase}`]}`}>
+                {state.leadAgent.phase === 'started' ? '启动中' :
+                 state.leadAgent.phase === 'exploring' ? '探索代码' :
+                 state.leadAgent.phase === 'planning' ? '制定计划' :
+                 state.leadAgent.phase === 'executing' ? '执行中' :
+                 state.leadAgent.phase === 'reviewing' ? '审查中' :
+                 state.leadAgent.phase === 'completed' ? '已完成' :
+                 state.leadAgent.phase === 'failed' ? '失败' : ''}
+              </span>
+            )}
+            {workers.length > 0 && (
+              <span className={styles.workerCount}>
+                👷 {workers.filter(w => w.status !== 'idle').length}/{workers.length}
+              </span>
+            )}
             {isLoading && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {/* v4.4: 根据选中状态显示对应任务的聊天界面 */}
-            {/* 选中 E2E 测试时显示 E2E 任务，选中普通任务时显示普通任务 */}
+            {/* v9.0: LeadAgent 实时输出面板 */}
+            {state.leadAgent.phase !== 'idle' && !selectedTaskId && (
+              <FadeIn>
+                <div className={styles.leadAgentPanel}>
+                  <div className={styles.leadStreamContainer}>
+                    {state.leadAgent.stream.length === 0 ? (
+                      <div className={styles.leadStreamEmpty}>
+                        LeadAgent 正在启动...
+                      </div>
+                    ) : (
+                      state.leadAgent.stream.map((block, idx) => {
+                        if (block.type === 'text') {
+                          return (
+                            <div key={idx} className={styles.leadTextBlock}>
+                              {block.text}
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div key={block.id} className={`${styles.leadToolBlock} ${styles[block.status]}`}>
+                              <div className={styles.leadToolHeader}>
+                                <span className={styles.leadToolIcon}>
+                                  {block.status === 'running' ? '🔄' :
+                                   block.status === 'completed' ? '✅' : '❌'}
+                                </span>
+                                <span className={styles.leadToolName}>{block.name}</span>
+                              </div>
+                              {block.input && (
+                                <div className={styles.leadToolInput}>
+                                  {typeof block.input === 'string'
+                                    ? block.input.slice(0, 200)
+                                    : JSON.stringify(block.input, null, 0).slice(0, 200)}
+                                </div>
+                              )}
+                              {block.result && (
+                                <div className={styles.leadToolResult}>
+                                  {block.result.slice(0, 300)}
+                                </div>
+                              )}
+                              {block.error && (
+                                <div className={styles.leadToolError}>
+                                  {block.error}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                      })
+                    )}
+                  </div>
+                </div>
+              </FadeIn>
+            )}
+
+            {/* Worker 任务详情（选中任务时显示） */}
             {selectedTaskId === 'e2e-test' && e2eTask ? (
               <FadeIn>
                 <WorkerPanel
@@ -1117,22 +1181,22 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   interjectStatus={state.interjectStatus}
                 />
               </FadeIn>
-            ) : workers.length === 0 ? (
+            ) : state.leadAgent.phase === 'idle' && workers.length === 0 ? (
               <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}>👷</div>
+                <div className={styles.emptyStateIcon}>🧠</div>
                 <div className={styles.emptyStateText}>
-                  {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
+                  {!selectedBlueprintId ? '请选择一个蓝图' : 'LeadAgent 待命中'}
                   {selectedBlueprintId && (
                     <>
                       <br />
                       <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
-                        点击左侧任务查看执行详情和聊天记录
+                        点击 ▶️ 启动执行，LeadAgent 将接管整个项目
                       </span>
                     </>
                   )}
                 </div>
               </div>
-            ) : (
+            ) : state.leadAgent.phase === 'idle' ? (
               <FadeIn>
                 <WorkerPanel
                   queen={null}
@@ -1141,7 +1205,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   taskStream={null}
                 />
               </FadeIn>
-            )}
+            ) : null}
           </div>
         </Panel>
       </PanelGroup>

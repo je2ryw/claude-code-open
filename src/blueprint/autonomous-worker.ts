@@ -25,7 +25,6 @@ import type {
 } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
 import {
-  TaskReviewer,
   collectWorkerSummary,
   type FileChangeRecord,
 } from './task-reviewer.js';
@@ -55,10 +54,9 @@ export interface WorkerContext {
   designImages?: DesignImage[];
   /** 共享的 System Prompt（跨 Worker 复用） */
   sharedSystemPromptBase?: string;
-  /** v4.0: Blueprint 信息（传递给 Reviewer 用于全局审查） */
-  /** v6.1: 使用 Pick 引用 Blueprint 类型，避免内联重复定义 */
+  /** Blueprint 信息（用于全局上下文） */
   blueprint?: Pick<Blueprint, 'id' | 'name' | 'description' | 'requirements' | 'techStack' | 'constraints'>;
-  /** v4.0: 相关任务状态（传递给 Reviewer 用于上下文判断） */
+  /** 相关任务状态（用于上下文判断） */
   relatedTasks?: Array<{
     id: string;
     name: string;
@@ -112,7 +110,7 @@ export interface WorkerAskUserResponseData {
 // ============================================================================
 
 export class AutonomousWorkerExecutor extends EventEmitter {
-  private workerId: string;
+  public workerId: string;
   private defaultModel: ModelType;
   private maxTurns: number;
   // v4.2: 等待用户响应的 Promise 回调
@@ -144,7 +142,6 @@ export class AutonomousWorkerExecutor extends EventEmitter {
 3. **只有 Git 提交成功后**，才能调用 UpdateTaskStatus(status="completed")
 
 ⛔ **禁止**：写完代码后直接调用 UpdateTaskStatus(completed) 而不提交 Git！
-   这样做会被 Reviewer 判定为失败，浪费你的工作！
 
 💡 **Git 问题自己修复**：
 - user.email 未配置 → \`git config user.email "worker@local"\`
@@ -429,7 +426,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
     let testsPassed = false;
     // v3.7: 追踪 AI 是否主动汇报了任务完成
     let aiReportedCompleted = false;
-    // v4.2: 收集事件流（用于 Reviewer 审查）
+    // v4.2: 收集事件流（用于执行摘要）
     const collectedEvents: Array<{
       type: string;
       toolName?: string;
@@ -535,7 +532,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
             }
           }
         }
-        // v4.2: 收集事件（用于 Reviewer）
+        // v4.2: 收集事件
         if (event.type === 'tool_end') {
           collectedEvents.push({
             type: event.type,
@@ -548,8 +545,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         this.handleStreamEvent(event, task, writtenFiles, context);
       }
 
-      // v4.2: 使用 Reviewer Agent 进行任务审查（替代机械式验收规则）
-      // 设计理念：执行者(Worker) ≠ 审核者(Reviewer)，分权制衡
+      // v9.0: 收集执行摘要，由 LeadAgent 在持久上下文中审查
       const executionDuration = Date.now() - executionStartTime;
 
       // 收集 Worker 执行摘要
@@ -573,115 +569,8 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
       // v5.5: Worker 自己用 Bash 提交 Git（通过 system prompt 指导）
       // 不再程序化处理，充分利用 Agent 智能来诊断和修复 Git 问题
 
-      // 创建 Reviewer 并审查（使用 ConversationLoop，与 Worker 相同的认证方式）
-      // v4.0: Reviewer 必须使用 opus（最强推理能力 + 拥有只读工具验证能力）
-      const reviewer = new TaskReviewer({
-        enabled: context.config.enableReviewer !== false,  // 默认启用
-        model: context.config.reviewerModel || 'opus',  // v4.0: Reviewer 必须用 opus
-        strictness: context.config.reviewerStrictness || 'normal',
-      });
-
-      this.log(`开始 Reviewer 审查...`);
-      // 🔧 发送 reviewing 状态事件
-      this.emit('task:reviewing', {
-        workerId: this.workerId,
-        task,
-      });
-
-      // v4.0: 传递全局上下文给 Reviewer（Blueprint + 相关任务）
-      // v4.1: 使用主仓库路径（worktree 可能已被删除/合并）
-      // v5.0: 添加进度回调，让用户知道 Reviewer 在做什么
-      // v6.1: 传递完整的重试上下文给 Reviewer
-      const isRetry = (task.attemptCount ?? 0) > 0;
-      const reviewResult = await reviewer.review(
-        task,
-        workerSummary,
-        {
-          projectPath: context.projectPath,
-          isRetry,
-          previousAttempts: task.attemptCount,
-          lastReviewFeedback: task.lastReviewFeedback ? {
-            verdict: task.lastReviewFeedback.verdict,
-            reasoning: task.lastReviewFeedback.reasoning,
-            issues: task.lastReviewFeedback.issues,
-            suggestions: task.lastReviewFeedback.suggestions,
-          } : undefined,
-          blueprint: context.blueprint,
-          relatedTasks: context.relatedTasks,
-        },
-        // v5.0: 进度回调 - 转发 Reviewer 的进度到前端
-        (progress) => {
-          this.emit('reviewer:progress', {
-            workerId: this.workerId,
-            taskId: task.id,
-            stage: progress.stage,
-            message: progress.message,
-            details: progress.details,
-          });
-        }
-      );
-
-      this.log(`Reviewer 结论: ${reviewResult.verdict} (置信度: ${reviewResult.confidence})`);
-      this.log(`Reviewer 理由: ${reviewResult.reasoning}`);
-
-      // 记录审查决策
-      decisions.push({
-        type: 'strategy',
-        description: `Reviewer 审查: ${reviewResult.verdict} - ${reviewResult.reasoning}`,
-        timestamp: new Date(),
-      });
-
-      if (reviewResult.verdict === 'failed') {
-        const errorMsg = reviewResult.issues?.join('; ') || reviewResult.reasoning;
-        this.log(`任务审查失败: ${errorMsg}`);
-        this.emit('task:failed', {
-          workerId: this.workerId,
-          task,
-          error: errorMsg,
-          reason: 'review_failed',
-        });
-
-        return {
-          success: false,
-          changes: writtenFiles,
-          error: errorMsg,
-          decisions,
-          // v3.7: 包含 Review 反馈，供重试时使用
-          reviewFeedback: {
-            verdict: 'failed',
-            reasoning: reviewResult.reasoning,
-            issues: reviewResult.issues,
-            suggestions: reviewResult.suggestions,
-          },
-        };
-      }
-
-      if (reviewResult.verdict === 'needs_revision') {
-        const errorMsg = `需要修改: ${reviewResult.suggestions?.join('; ') || reviewResult.reasoning}`;
-        this.log(`任务需要修改: ${errorMsg}`);
-        this.emit('task:failed', {
-          workerId: this.workerId,
-          task,
-          error: errorMsg,
-          reason: 'needs_revision',
-        });
-
-        return {
-          success: false,
-          changes: writtenFiles,
-          error: errorMsg,
-          decisions,
-          // v3.7: 包含 Review 反馈，供重试时使用
-          reviewFeedback: {
-            verdict: 'needs_revision',
-            reasoning: reviewResult.reasoning,
-            issues: reviewResult.issues,
-            suggestions: reviewResult.suggestions,
-          },
-        };
-      }
-
-      // 审查通过
+      // v9.0: LeadAgent 模式 - 由 LeadAgent 在持久上下文中审查结果
+      // 直接返回完整结果，不截断 summary
       this.emit('task:completed', { workerId: this.workerId, task });
 
       return {
@@ -690,6 +579,9 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
         testsRan,
         testsPassed,
         decisions,
+        summary: workerSummary.selfReported?.message || '',
+        fullSummary: workerSummary.selfReported?.message || '',
+        reviewedBy: 'none' as const,
       };
 
     } catch (error) {
@@ -716,7 +608,7 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
    * v5.6: 进一步简化，移除并行模式相关检查
    *
    * 设计理念：信任 AI 的判断，只做最小必要验证
-   * 注意：实际的任务验收由 Reviewer 完成，此方法作为备用
+   * 注意：实际的任务验收由 LeadAgent 完成
    */
   private validateTaskCompletion(
     task: SmartTask,
@@ -817,6 +709,58 @@ ${techStack.language}${techStack.framework ? ' + ' + techStack.framework : ''}`;
   }
 
   private buildTaskPrompt(task: SmartTask, context: WorkerContext): string {
+    // v9.0: 如果有 LeadAgent 提供的 brief，优先使用
+    // brief 包含了 LeadAgent 基于完整上下文写的详细说明
+    if (task.brief) {
+      let prompt = `# 任务：${task.name}
+
+## 任务 ID
+${task.id}
+
+## LeadAgent 上下文简报
+${task.brief}
+
+## 目标文件
+${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行确定）'}
+`;
+
+      // 仍然附加技术栈、约束等基础信息
+      const tech = context.techStack;
+      const techInfo: string[] = [];
+      if (tech.framework) techInfo.push(`框架: ${tech.framework}`);
+      if (tech.uiFramework && tech.uiFramework !== 'none') techInfo.push(`UI库: ${tech.uiFramework}`);
+      if (tech.cssFramework && tech.cssFramework !== 'none') techInfo.push(`CSS: ${tech.cssFramework}`);
+      if (tech.testFramework) techInfo.push(`测试: ${tech.testFramework}`);
+      if (techInfo.length > 0) {
+        prompt += `\n## 技术栈\n${techInfo.join(' | ')}\n`;
+      }
+
+      if (context.constraints?.length) {
+        prompt += `\n## 约束\n${context.constraints.map(c => `- ${c}`).join('\n')}\n`;
+      }
+
+      // 重试信息（如果有）
+      if (task.lastReviewFeedback) {
+        const feedback = task.lastReviewFeedback;
+        prompt += `\n## ⚠️ 重试提醒（第 ${task.attemptCount || 1} 次尝试）\n上次失败原因: ${feedback.reasoning}\n`;
+        if (feedback.issues?.length) {
+          prompt += `问题: ${feedback.issues.join('; ')}\n`;
+        }
+        if (feedback.suggestions?.length) {
+          prompt += `建议: ${feedback.suggestions.join('; ')}\n`;
+        }
+      }
+
+      prompt += `\n## 执行要求
+1. 首先用 Read 工具查看相关文件，理解现有代码
+2. 使用 Write/Edit 工具完成代码编写
+3. 完成后调用 UpdateTaskStatus(taskId="${task.id}", status="completed", summary="...")
+   summary 必须包含你做了什么和关键的设计决策`;
+
+      return prompt;
+    }
+
+    // 原始模式：没有 brief，使用泛泛描述
     let prompt = `# 任务：${task.name}
 
 ## 任务 ID
@@ -888,7 +832,7 @@ ${task.files.length > 0 ? task.files.map(f => `- ${f}`).join('\n') : '（自行�
       const feedback = task.lastReviewFeedback;
       prompt += `\n## ⚠️ 重试提醒（第 ${task.attemptCount || 1} 次尝试）
 
-上次执行被 Reviewer 标记为 **${feedback.verdict === 'failed' ? '失败' : '需要修改'}**。
+上次执行被标记为 **${feedback.verdict === 'failed' ? '失败' : '需要修改'}**。
 
 ### 上次失败原因
 ${feedback.reasoning}

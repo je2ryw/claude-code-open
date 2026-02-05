@@ -17,6 +17,9 @@ import type {
   UseSwarmStateReturn,
   TaskNode,
   WorkerAgent,
+  LeadStreamPayload,
+  LeadEventPayload,
+  LeadAgentPhase,
 } from '../types';
 
 // 工具调用 ID 计数器，确保唯一性
@@ -50,6 +53,13 @@ const initialState: SwarmState = {
   askUserDialog: { visible: false, requestId: null, questions: [] },
   // v4.5: 用户插嘴状态
   interjectStatus: null,
+  // v9.0: LeadAgent 持久大脑状态
+  leadAgent: {
+    phase: 'idle' as const,
+    stream: [],
+    events: [],
+    lastUpdated: '',
+  },
 };
 
 export interface UseSwarmStateOptions extends Omit<UseSwarmWebSocketOptions, 'onMessage' | 'onError'> {
@@ -555,6 +565,124 @@ export function useSwarmState(options: UseSwarmStateOptions): UseSwarmStateRetur
             interjectStatus: null,
           }));
         }, 5000);
+        break;
+
+      case 'swarm:lead_stream':
+        // v9.0: LeadAgent 流式输出（文本、工具调用）
+        setState(prev => {
+          const payload = message.payload as LeadStreamPayload;
+          const newStream = [...prev.leadAgent.stream];
+
+          switch (payload.streamType) {
+            case 'text':
+              if (payload.content) {
+                const lastIdx = newStream.length - 1;
+                const last = newStream[lastIdx];
+                if (last?.type === 'text') {
+                  newStream[lastIdx] = { type: 'text', text: last.text + payload.content };
+                } else {
+                  newStream.push({ type: 'text', text: payload.content });
+                }
+              }
+              break;
+
+            case 'tool_start':
+              {
+                let found = false;
+                for (let i = newStream.length - 1; i >= 0; i--) {
+                  const block = newStream[i];
+                  if (block.type === 'tool' && block.status === 'running' && block.name === payload.toolName) {
+                    if (payload.toolInput !== undefined) {
+                      newStream[i] = { ...block, input: payload.toolInput };
+                    }
+                    found = true;
+                    break;
+                  }
+                }
+                if (!found) {
+                  newStream.push({
+                    type: 'tool',
+                    id: `lead-tool-${Date.now()}-${++toolIdCounter}`,
+                    name: payload.toolName || 'unknown',
+                    input: payload.toolInput,
+                    status: 'running',
+                  });
+                }
+              }
+              break;
+
+            case 'tool_end':
+              for (let i = newStream.length - 1; i >= 0; i--) {
+                const block = newStream[i];
+                if (block.type === 'tool' && block.status === 'running' && block.name === payload.toolName) {
+                  newStream[i] = {
+                    ...block,
+                    input: payload.toolInput ?? block.input,
+                    status: payload.toolError ? 'error' as const : 'completed' as const,
+                    result: payload.toolResult,
+                    error: payload.toolError,
+                  };
+                  break;
+                }
+              }
+              break;
+          }
+
+          return {
+            ...prev,
+            leadAgent: {
+              ...prev.leadAgent,
+              stream: newStream.slice(-200),
+              lastUpdated: new Date().toISOString(),
+            },
+          };
+        });
+        break;
+
+      case 'swarm:lead_event':
+        // v9.0: LeadAgent 阶段事件
+        setState(prev => {
+          const payload = message.payload as LeadEventPayload;
+          console.log(`[SwarmState] LeadAgent event: ${payload.eventType}`, payload.data);
+
+          // 根据事件类型推断阶段
+          let phase: LeadAgentPhase = prev.leadAgent.phase;
+          switch (payload.eventType) {
+            case 'lead:started':
+              phase = 'started';
+              break;
+            case 'lead:exploring':
+              phase = 'exploring';
+              break;
+            case 'lead:planning':
+              phase = 'planning';
+              break;
+            case 'lead:executing':
+            case 'lead:dispatch':
+              phase = 'executing';
+              break;
+            case 'lead:reviewing':
+              phase = 'reviewing';
+              break;
+            case 'lead:completed':
+              phase = (payload.data as any)?.success === false ? 'failed' : 'completed';
+              break;
+          }
+
+          return {
+            ...prev,
+            leadAgent: {
+              ...prev.leadAgent,
+              phase,
+              events: [...prev.leadAgent.events, {
+                type: payload.eventType,
+                data: payload.data,
+                timestamp: payload.timestamp,
+              }].slice(-100),
+              lastUpdated: payload.timestamp || new Date().toISOString(),
+            },
+          };
+        });
         break;
 
       default:

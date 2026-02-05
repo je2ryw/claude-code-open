@@ -1,10 +1,11 @@
 /**
- * 蜂群架构 v2.0 - 完整类型定义
+ * 蜂群架构 v3.0 - 完整类型定义
  *
  * 核心理念：
  * - Blueprint（蓝图）：需求锚点，所有Worker参照执行
+ * - LeadAgent（持久大脑）：贯穿整个项目的AI协调者，替代代码调度器
  * - SmartTask：智能任务，Worker自主决策是否需要测试
- * - AutonomousWorker：自治Worker，无需蜂王逐步批准
+ * - AutonomousWorker：执行手臂，接受LeadAgent的详细Brief
  * - Git并发：用分支代替文件锁
  */
 
@@ -486,6 +487,14 @@ export interface SmartTask {
   // 结果
   result?: TaskResult;
 
+  // v9.0: LeadAgent 模式
+  /** LeadAgent 写的详细上下文简报（替代泛泛的任务描述） */
+  brief?: string;
+  /** 执行模式：worker=派发给Worker，lead-agent=LeadAgent自己做 */
+  executionMode?: 'worker' | 'lead-agent';
+  /** 是否跳过独立 Reviewer 审查（LeadAgent 模式下由 LeadAgent 自己审查） */
+  skipReview?: boolean;
+
   // v3.7: 重试机制 - 将 Review 反馈传递给下次执行
   /** 已尝试次数 */
   attemptCount?: number;
@@ -523,6 +532,10 @@ export interface TaskResult {
   decisions: WorkerDecision[];
   /** 任务完成摘要（供依赖任务理解语义） */
   summary?: string;
+  /** v9.0: 完整摘要（LeadAgent 模式下不截断） */
+  fullSummary?: string;
+  /** v9.0: 审查者标记 */
+  reviewedBy?: 'lead-agent' | 'reviewer' | 'none';
   /** v3.7: Review 反馈（失败时包含，用于下次重试） */
   reviewFeedback?: {
     verdict: 'failed' | 'needs_revision';
@@ -977,7 +990,16 @@ export type SwarmEventType =
   // v3.4 验收测试事件
   | 'verification:started'      // 验收测试开始
   | 'verification:progress'     // 验收进度更新（环境检查、测试运行、修复等）
-  | 'verification:completed';   // 验收测试完成
+  | 'verification:completed'    // 验收测试完成
+  // v9.0 LeadAgent 事件
+  | 'lead:started'              // LeadAgent 启动
+  | 'lead:exploring'            // LeadAgent 正在探索代码库
+  | 'lead:planning'             // LeadAgent 正在规划任务
+  | 'lead:dispatch'             // LeadAgent 派发任务给 Worker
+  | 'lead:reviewing'            // LeadAgent 正在审查 Worker 结果
+  | 'lead:executing'            // LeadAgent 自己执行任务
+  | 'lead:plan_update'          // LeadAgent 动态调整计划
+  | 'lead:completed';           // LeadAgent 完成所有工作
 
 /**
  * 蜂群事件
@@ -1040,6 +1062,18 @@ export interface SwarmConfig {
   enableReviewer?: boolean;         // 是否启用 Reviewer Agent 审查（默认true）
   reviewerModel?: 'haiku' | 'sonnet' | 'opus';  // Reviewer 使用的模型（默认haiku）
   reviewerStrictness?: 'lenient' | 'normal' | 'strict';  // 审查严格程度（默认normal）
+
+  // ==========================================================================
+  // v9.0 新增：LeadAgent 持久大脑配置
+  // ==========================================================================
+  /** 是否启用 LeadAgent 模式（默认false，保持向后兼容） */
+  enableLeadAgent?: boolean;
+  /** LeadAgent 使用的模型（默认sonnet） */
+  leadAgentModel?: 'haiku' | 'sonnet' | 'opus';
+  /** LeadAgent 最大 turn 数（默认200） */
+  leadAgentMaxTurns?: number;
+  /** LeadAgent 自己执行任务的最大复杂度阈值（超过此复杂度的任务LeadAgent自己做） */
+  leadAgentSelfExecuteComplexity?: TaskComplexity;
 }
 
 /**
@@ -1068,6 +1102,11 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfig = {
   enableReviewer: true,
   reviewerModel: 'opus',  // 使用最强模型确保审查质量
   reviewerStrictness: 'normal',
+  // v9.0 新增：LeadAgent 配置
+  enableLeadAgent: true,   // v9.0: 默认启用 LeadAgent 持久大脑
+  leadAgentModel: 'sonnet',
+  leadAgentMaxTurns: 200,
+  leadAgentSelfExecuteComplexity: 'complex',  // complex 及以上由 LeadAgent 自己做
 };
 
 // ============================================================================
@@ -1308,5 +1347,148 @@ export interface VerificationResult {
   // 时间
   startedAt: string;
   completedAt?: string;
+}
+
+// ============================================================================
+// v9.0: LeadAgent 持久大脑类型
+// ============================================================================
+
+/**
+ * LeadAgent 配置
+ */
+export interface LeadAgentConfig {
+  /** 蓝图 */
+  blueprint: Blueprint;
+  /** 执行计划（SmartPlanner 生成的任务列表） */
+  executionPlan?: ExecutionPlan;
+  /** 项目路径 */
+  projectPath: string;
+  /** 使用的模型（默认 sonnet） */
+  model?: string;
+  /** 最大 turn 数（默认 200） */
+  maxTurns?: number;
+  /** 蜂群配置 */
+  swarmConfig?: SwarmConfig;
+  /** 事件回调（用于转发给 WebUI） */
+  onEvent?: (event: LeadAgentEvent) => void;
+  /** 用户交互处理器（WebUI 环境下） */
+  askUserHandler?: (input: unknown) => Promise<unknown>;
+}
+
+/**
+ * LeadAgent 事件
+ */
+export interface LeadAgentEvent {
+  type: SwarmEventType;
+  data: Record<string, unknown>;
+  timestamp: Date;
+}
+
+/**
+ * LeadAgent 执行结果
+ */
+export interface LeadAgentResult {
+  success: boolean;
+  /** 完成的任务 */
+  completedTasks: string[];
+  /** 失败的任务 */
+  failedTasks: string[];
+  /** 总 token 消耗（估算） */
+  estimatedTokens: number;
+  /** 总成本（估算） */
+  estimatedCost: number;
+  /** 执行时间（毫秒） */
+  durationMs: number;
+  /** LeadAgent 的最终总结 */
+  summary: string;
+  /** 所有任务结果 */
+  taskResults: Map<string, TaskResult>;
+}
+
+/**
+ * DispatchWorker 工具的输入
+ */
+export interface DispatchWorkerInput {
+  /** 任务 ID */
+  taskId: string;
+  /** LeadAgent 写的详细上下文简报 */
+  brief: string;
+  /** 目标文件列表 */
+  targetFiles: string[];
+  /** 约束条件 */
+  constraints?: string[];
+  /** 使用的模型（默认由任务复杂度决定） */
+  model?: 'haiku' | 'sonnet' | 'opus';
+}
+
+/**
+ * DispatchWorker 工具的结果
+ */
+export interface DispatchWorkerResult {
+  /** 是否成功 */
+  success: boolean;
+  /** 任务 ID */
+  taskId: string;
+  /** Worker ID */
+  workerId: string;
+  /** 完整的执行摘要（不截断） */
+  fullSummary: string;
+  /** 文件变更列表 */
+  fileChanges: FileChange[];
+  /** 是否运行了测试 */
+  testsRan?: boolean;
+  /** 测试是否通过 */
+  testsPassed?: boolean;
+  /** 错误信息 */
+  error?: string;
+  /** Worker 的决策记录 */
+  decisions: WorkerDecision[];
+}
+
+// ============================================================================
+// v9.0: UpdateTaskPlan 工具类型（LeadAgent 动态更新任务树）
+// ============================================================================
+
+/**
+ * UpdateTaskPlan 工具的输入
+ * LeadAgent 用此工具动态更新执行计划中的任务状态
+ */
+export interface TaskPlanUpdateInput {
+  /** 操作类型 */
+  action: 'start_task' | 'complete_task' | 'fail_task' | 'skip_task' | 'add_task';
+  /** 任务 ID（必须是 ExecutionPlan 中的 ID，或 add_task 时自定义） */
+  taskId: string;
+  /** 执行模式（start_task 时指定） */
+  executionMode?: 'worker' | 'lead-agent';
+  /** 完成摘要（complete_task 时使用） */
+  summary?: string;
+  /** 错误信息（fail_task 时使用） */
+  error?: string;
+  /** 跳过原因（skip_task 时使用） */
+  reason?: string;
+  /** 新任务名称（add_task 时使用） */
+  name?: string;
+  /** 新任务描述（add_task 时使用） */
+  description?: string;
+  /** 新任务复杂度（add_task 时使用） */
+  complexity?: TaskComplexity;
+  /** 新任务类型（add_task 时使用） */
+  type?: TaskType;
+  /** 新任务预期修改文件（add_task 时使用） */
+  files?: string[];
+  /** 新任务依赖（add_task 时使用） */
+  dependencies?: string[];
+}
+
+/**
+ * TaskPlan 上下文（由 LeadAgent 在启动前设置）
+ */
+export interface TaskPlanContext {
+  /** 当前执行计划 */
+  executionPlan: ExecutionPlan;
+  /** 蓝图 ID */
+  blueprintId: string;
+  /** 任务状态更新回调 → LeadAgent → Coordinator → WebSocket → 前端 */
+  onPlanUpdate: (update: TaskPlanUpdateInput) => void;
 }
 
