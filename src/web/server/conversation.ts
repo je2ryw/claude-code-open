@@ -22,6 +22,8 @@ import { UnifiedMemory, getUnifiedMemory } from '../../memory/unified-memory.js'
 import { type MemoryEvent, MemoryEmotion } from '../../memory/types.js';
 import { extractExplicitMemories, mergeExtractedMemories } from '../../memory/intent-extractor.js';
 import { oauthManager } from './oauth-manager.js';
+import { blueprintStore, executionManager } from './routes/blueprint-api.js';
+import type { Blueprint } from '../../blueprint/types.js';
 import {
   initSessionMemory,
   readSessionMemory,
@@ -1275,6 +1277,82 @@ export class ConversationManager {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`[Tool] AskUserQuestion 失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 GenerateBlueprint 工具 - 将对话需求结构化为蓝图
+      if (toolUse.name === 'GenerateBlueprint') {
+        const input = toolUse.input as any;
+        try {
+          const blueprintId = `bp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const blueprint: Blueprint = {
+            id: blueprintId,
+            name: input.name,
+            description: input.description,
+            projectPath: state.session.cwd,
+            status: 'confirmed',
+            requirements: input.requirements || [],
+            techStack: input.techStack || {},
+            constraints: input.constraints || [],
+            brief: input.brief,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            confirmedAt: new Date(),
+          };
+
+          blueprintStore.save(blueprint);
+
+          // 通知前端蓝图已创建
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'blueprint_created',
+              payload: { blueprintId: blueprint.id, name: blueprint.name },
+            }));
+          }
+
+          const output = `蓝图已生成并保存。\n蓝图ID: ${blueprint.id}\n项目名: ${blueprint.name}\n需求数: ${blueprint.requirements?.length || 0}\n\n现在可以调用 StartLeadAgent 启动执行。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] GenerateBlueprint 执行失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 StartLeadAgent 工具 - 启动 LeadAgent 执行蓝图
+      if (toolUse.name === 'StartLeadAgent') {
+        const input = toolUse.input as any;
+        const { blueprintId } = input;
+
+        try {
+          const blueprint = blueprintStore.get(blueprintId);
+          if (!blueprint) {
+            const error = `蓝图 ${blueprintId} 不存在`;
+            callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+            return { success: false, error };
+          }
+
+          // 复用现有的 executionManager.startExecution()
+          const session = await executionManager.startExecution(blueprint);
+
+          // 通知前端导航到 SwarmConsole
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'navigate_to_swarm',
+              payload: { blueprintId, executionId: session.id },
+            }));
+          }
+
+          const output = `LeadAgent 已启动，正在执行蓝图「${blueprint.name}」。\n执行ID: ${session.id}\n用户可切换到 SwarmConsole（蜂群面板）查看实时进度。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] StartLeadAgent 执行失败:`, errorMessage);
           callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
           return { success: false, error: errorMessage };
         }

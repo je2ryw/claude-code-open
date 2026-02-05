@@ -26,8 +26,17 @@ const THINKING_BETA = 'interleaved-thinking-2025-05-14';
 const PROMPT_CACHING_SCOPE_BETA = 'prompt-caching-scope-2026-01-05';
 
 // Claude Code 身份标识（Anthropic 订阅 token 要求 system prompt 必须以此开头）
-const CLAUDE_CODE_IDENTITY =
-  "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
+// 官方有三种有效身份标识，CC 客户端根据运行模式使用不同的版本：
+//   1. CLI 模式:       "You are Claude Code, Anthropic's official CLI for Claude."
+//   2. Agent SDK 模式: "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."
+//   3. 自定义 Agent:   "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+const CLAUDE_CODE_IDENTITIES = [
+  "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
+  "You are Claude Code, Anthropic's official CLI for Claude.",
+  "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+];
+// 注入时使用最短的 CLI 身份标识（兼容性最好）
+const CLAUDE_CODE_IDENTITY = CLAUDE_CODE_IDENTITIES[1];
 
 // Token 提前刷新时间：过期前 5 分钟
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -563,30 +572,36 @@ export async function createProxyServer(config: ProxyConfig) {
               : typeof parsed.system === 'string' ? 'string'
               : Array.isArray(parsed.system) ? `array[${parsed.system.length}]` : typeof parsed.system;
 
+            // 辅助函数：检查文本是否以任一有效 CC 身份标识开头
+            const hasValidIdentity = (text: string): boolean =>
+              CLAUDE_CODE_IDENTITIES.some(id => text.startsWith(id));
+
             if (!parsed.system) {
               // 没有 system prompt，直接添加
               parsed.system = CLAUDE_CODE_IDENTITY;
               needsRewrite = true;
             } else if (typeof parsed.system === 'string') {
               // string 格式的 system prompt
-              if (!parsed.system.startsWith(CLAUDE_CODE_IDENTITY)) {
+              if (!hasValidIdentity(parsed.system)) {
                 parsed.system = CLAUDE_CODE_IDENTITY + '\n\n' + parsed.system;
                 needsRewrite = true;
               }
+              // 已有有效身份标识，不做任何修改
             } else if (Array.isArray(parsed.system)) {
               if (parsed.system.length === 0) {
                 // 空数组，转成包含身份标识的数组
                 parsed.system = [{ type: 'text', text: CLAUDE_CODE_IDENTITY }];
                 needsRewrite = true;
               } else {
-                // 找到第一个 text block 来注入
+                // 找到第一个 text block 检查身份
                 const firstTextIdx = parsed.system.findIndex((b: any) => b?.type === 'text');
                 if (firstTextIdx >= 0) {
                   const block = parsed.system[firstTextIdx];
-                  if (!block.text?.startsWith(CLAUDE_CODE_IDENTITY)) {
+                  if (!hasValidIdentity(block.text || '')) {
                     block.text = CLAUDE_CODE_IDENTITY + '\n\n' + (block.text || '');
                     needsRewrite = true;
                   }
+                  // 已有有效身份标识，不做任何修改
                 } else {
                   // 没有 text block，在数组开头插入
                   parsed.system.unshift({ type: 'text', text: CLAUDE_CODE_IDENTITY });
@@ -595,47 +610,45 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：统一 cache_control 为 {type:"ephemeral", ttl:"1h"}
+            // OAuth 模式：转换 cache_control 为官方 CC 的 gW1() 格式
             //
-            // 实验证明 cache_control 中的 ttl 是 CC 身份识别信号之一：
-            //   去掉 prompt-caching-scope beta + 保留 ttl → CC 验证通过
-            //   去掉 prompt-caching-scope beta + 去掉 ttl → CC 验证失败
+            // 官方 CC 的 gW1() 函数行为：
+            //   gW1()          → {type:"ephemeral", ttl:"1h"}          用于 system/messages
+            //   gW1("global")  → {type:"ephemeral", ttl:"1h", scope:"global"}  用于 tools
             //
-            // 统一为 ttl:"1h" 解决两个问题：
-            //   1. CC 身份信号（ttl 存在 = CC 客户端）
-            //   2. ttl ordering（全部 "1h" 不会违反非递减要求）
-            //
-            // 不加 scope（因为 prompt-caching-scope beta 已移除，scope 可能引起错误）
+            // 当 prompt-caching-scope beta 存在时，tools 必须带 scope:"global"，
+            // 否则服务端 CC 身份校验会失败（特别是 opus 模型）。
             {
-              const OAUTH_CC = { type: 'ephemeral', ttl: '1h' };
+              const OAUTH_CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
+              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
 
-              // 1. tools
+              // 1. tools → scope:"global"（官方: gW1("global")）
               if (Array.isArray(parsed.tools)) {
                 for (const tool of parsed.tools) {
                   if (tool && typeof tool === 'object' && tool.cache_control) {
-                    tool.cache_control = { ...OAUTH_CC };
+                    tool.cache_control = { ...OAUTH_CC_GLOBAL };
                     needsRewrite = true;
                   }
                 }
               }
 
-              // 2. system prompt blocks
+              // 2. system prompt blocks → 无 scope（官方: gW1()）
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
                   if (block && typeof block === 'object' && block.cache_control) {
-                    block.cache_control = { ...OAUTH_CC };
+                    block.cache_control = { ...OAUTH_CC_DEFAULT };
                     needsRewrite = true;
                   }
                 }
               }
 
-              // 3. messages content blocks
+              // 3. messages content blocks → 无 scope（官方: gW1()）
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
                     for (const block of msg.content) {
                       if (block && typeof block === 'object' && block.cache_control) {
-                        block.cache_control = { ...OAUTH_CC };
+                        block.cache_control = { ...OAUTH_CC_DEFAULT };
                         needsRewrite = true;
                       }
                     }
