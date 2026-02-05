@@ -610,26 +610,30 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：转换 cache_control 为官方 CC 的 gW1() 格式
+            // cache_control 注入 — 完全对齐 src/core/client.ts 的实现
             //
-            // 官方 CC 的 gW1() 函数行为：
-            //   gW1()          → {type:"ephemeral", ttl:"1h"}          用于 system/messages
-            //   gW1("global")  → {type:"ephemeral", ttl:"1h", scope:"global"}  用于 tools
+            // 我们自己的 CLI（npm run dev）用的格式：
+            //   formatSystemPrompt(): 每个 system text block → { type: 'ephemeral' }
+            //   buildApiTools():      最后一个 tool → { type: 'ephemeral' }
+            //   formatMessages():     最后一条消息的最后一个非 thinking block → { type: 'ephemeral' }
             //
-            // 当 prompt-caching-scope beta 存在时，tools 必须带 scope:"global"，
-            // 否则服务端 CC 身份校验会失败（特别是 opus 模型）。
+            // 注意：不用 ttl:"1h" 或 scope:"global"！
+            //   ttl/scope 格式会触发 "maximum 4 blocks" 限制，
+            //   而简单的 {type:"ephemeral"} 没有这个限制。
             {
-              const OAUTH_CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
-              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+              const CC = { type: 'ephemeral' };
 
-              // Anthropic 限制：最多 4 个 block 带 cache_control
-              // 官方 CC 的 cache breakpoint 策略：
-              //   1. 最后一个 system text block → gW1()
-              //   2. 最后一个 tool → gW1("global")
-              //   3. messages 中最多 2 个 breakpoint → gW1()
-              // 总计 ≤ 4
+              // 1. system prompt blocks → 每个 text block 都加（对齐 formatSystemPrompt）
+              if (Array.isArray(parsed.system)) {
+                for (const block of parsed.system) {
+                  if (block && typeof block === 'object' && block.type === 'text') {
+                    block.cache_control = { ...CC };
+                    needsRewrite = true;
+                  }
+                }
+              }
 
-              // 1. tools → 仅最后一个 tool 带 scope:"global"
+              // 2. tools → 仅最后一个（对齐 buildApiTools）
               if (Array.isArray(parsed.tools) && parsed.tools.length > 0) {
                 // 先清除所有 tools 上已有的 cache_control
                 for (const tool of parsed.tools) {
@@ -638,43 +642,38 @@ export async function createProxyServer(config: ProxyConfig) {
                     needsRewrite = true;
                   }
                 }
-                // 仅在最后一个 tool 上添加
+                // 仅最后一个 tool
                 const lastTool = parsed.tools[parsed.tools.length - 1];
                 if (lastTool && typeof lastTool === 'object') {
-                  lastTool.cache_control = { ...OAUTH_CC_GLOBAL };
+                  lastTool.cache_control = { ...CC };
                   needsRewrite = true;
                 }
               }
 
-              // 2. system prompt blocks → 仅最后一个 text block
-              if (Array.isArray(parsed.system) && parsed.system.length > 0) {
-                // 先清除所有 system block 上已有的 cache_control
-                for (const block of parsed.system) {
-                  if (block && typeof block === 'object' && block.cache_control) {
-                    delete block.cache_control;
-                    needsRewrite = true;
-                  }
-                }
-                // 找到最后一个 text block，添加 cache_control
-                for (let i = parsed.system.length - 1; i >= 0; i--) {
-                  const block = parsed.system[i];
-                  if (block && typeof block === 'object' && block.type === 'text') {
-                    block.cache_control = { ...OAUTH_CC_DEFAULT };
-                    needsRewrite = true;
-                    break;
-                  }
-                }
-              }
-
-              // 3. messages content blocks → 转换已有的（客户端通常放 0~2 个 breakpoint）
-              if (Array.isArray(parsed.messages)) {
+              // 3. messages → 仅最后一条消息的最后一个非 thinking block（对齐 formatMessages）
+              if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+                // 先清除所有 messages 中已有的 cache_control
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
                     for (const block of msg.content) {
                       if (block && typeof block === 'object' && block.cache_control) {
-                        block.cache_control = { ...OAUTH_CC_DEFAULT };
+                        delete block.cache_control;
                         needsRewrite = true;
                       }
+                    }
+                  }
+                }
+                // 最后一条消息
+                const lastMsg = parsed.messages[parsed.messages.length - 1];
+                if (Array.isArray(lastMsg?.content) && lastMsg.content.length > 0) {
+                  // 从后往前找第一个非 thinking block
+                  for (let i = lastMsg.content.length - 1; i >= 0; i--) {
+                    const block = lastMsg.content[i];
+                    if (block && typeof block === 'object'
+                      && block.type !== 'thinking' && block.type !== 'redacted_thinking') {
+                      block.cache_control = { ...CC };
+                      needsRewrite = true;
+                      break;
                     }
                   }
                 }
@@ -920,43 +919,42 @@ export async function createProxyServer(config: ProxyConfig) {
                     bodyObj.stream = true;
                   }
 
-                  // 2. 注入 OAuth CC cache_control（最多 4 个 breakpoint）
-                  //    官方 CC: 最后 system block → gW1()，最后 tool → gW1("global")
-                  //    messages 中客户端已有的 breakpoint → 转换格式
+                  // 2. 注入 cache_control — 对齐 src/core/client.ts
+                  //    全部使用 {type:"ephemeral"}，不用 ttl/scope
                   {
-                    const CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
-                    const CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+                    const CC = { type: 'ephemeral' };
 
-                    // system: 清除全部，仅最后一个 text block 添加
+                    // system: 每个 text block 都加
                     if (Array.isArray(bodyObj.system)) {
                       for (const block of bodyObj.system) {
-                        if (block && typeof block === 'object') delete block.cache_control;
-                      }
-                      for (let i = bodyObj.system.length - 1; i >= 0; i--) {
-                        if (bodyObj.system[i]?.type === 'text') {
-                          bodyObj.system[i].cache_control = { ...CC_DEFAULT };
-                          break;
-                        }
+                        if (block?.type === 'text') block.cache_control = { ...CC };
                       }
                     }
 
-                    // tools: 清除全部，仅最后一个添加
+                    // tools: 清除全部，仅最后一个
                     if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
                       for (const tool of bodyObj.tools) {
                         if (tool && typeof tool === 'object') delete tool.cache_control;
                       }
-                      const lastTool = bodyObj.tools[bodyObj.tools.length - 1];
-                      if (lastTool) lastTool.cache_control = { ...CC_GLOBAL };
+                      bodyObj.tools[bodyObj.tools.length - 1].cache_control = { ...CC };
                     }
 
-                    // messages: 只转换已有的（不新增）
-                    if (Array.isArray(bodyObj.messages)) {
+                    // messages: 清除全部，仅最后一条的最后一个非 thinking block
+                    if (Array.isArray(bodyObj.messages) && bodyObj.messages.length > 0) {
                       for (const msg of bodyObj.messages) {
                         if (Array.isArray(msg.content)) {
                           for (const block of msg.content) {
-                            if (block && typeof block === 'object' && block.cache_control) {
-                              block.cache_control = { ...CC_DEFAULT };
-                            }
+                            if (block && typeof block === 'object') delete block.cache_control;
+                          }
+                        }
+                      }
+                      const lastMsg = bodyObj.messages[bodyObj.messages.length - 1];
+                      if (Array.isArray(lastMsg?.content)) {
+                        for (let i = lastMsg.content.length - 1; i >= 0; i--) {
+                          const b = lastMsg.content[i];
+                          if (b && b.type !== 'thinking' && b.type !== 'redacted_thinking') {
+                            b.cache_control = { ...CC };
+                            break;
                           }
                         }
                       }
