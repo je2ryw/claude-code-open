@@ -302,6 +302,7 @@ function buildForwardHeaders(
 
   // OAuth 模式：完全从零构建 headers，与本地 CLI 的 SDK 输出一致
   // 参考 client.ts 第 542-562 行的 defaultHeaders + anthropicConfig
+  // + SDK 内部 r27() 生成的 X-Stainless-* 平台指纹
   const betas = buildProxyBetas(model);
 
   return {
@@ -315,6 +316,15 @@ function buildForwardHeaders(
     'anthropic-dangerous-direct-browser-access': 'true',
     'x-app': 'cli',
     'User-Agent': `claude-cli/${VERSION_BASE} (external, cli)`,
+    // SDK 内部 r27() 生成的 X-Stainless 平台指纹 — 服务器可能用于验证请求来自正规 SDK 客户端
+    'x-stainless-lang': 'js',
+    'x-stainless-package-version': '0.70.0',
+    'x-stainless-os': process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux',
+    'x-stainless-arch': process.arch,
+    'x-stainless-runtime': 'node',
+    'x-stainless-runtime-version': process.versions.node,
+    'x-stainless-retry-count': '0',
+    'x-stainless-timeout': '600',
     'content-length': String(bodyLength),
   };
 }
