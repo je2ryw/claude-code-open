@@ -559,49 +559,50 @@ export async function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // 统一所有 cache_control 为 {type: "ephemeral"}（bare，无 ttl/scope）
+            // OAuth 模式：将 cache_control 转换为 OAuth 格式
             //
-            // 参考 src/core/client.ts：
-            //   formatSystemPrompt()  → cache_control: { type: 'ephemeral' }
-            //   formatMessages()      → cache_control: { type: 'ephemeral' }
-            //   buildApiTools()       → cache_control: { type: 'ephemeral' }
+            // 官方 CC 的 gW1(A) 在 OAuth 模式下生成：
+            //   gW1("global") → {type:"ephemeral", ttl:"1h", scope:"global"}  (用于 tools)
+            //   gW1()         → {type:"ephemeral", ttl:"1h"}                  (用于 system/messages)
             //
-            // 本地 CLI 在 OAuth 模式下只用 bare ephemeral 且能正常工作。
-            // 客户端（可能是官方 CC 新版本）可能发送 ttl/scope 字段，
-            // 统一清理以避免 ttl 排序冲突或与代理生成的 betas 不匹配。
+            // 实验证明 ttl/scope 是 CC 身份识别信号之一：
+            //   去掉 beta + 保留 ttl/scope → CC 验证通过
+            //   去掉 beta + 去掉 ttl/scope → CC 验证失败
+            //
+            // 客户端（我们的 clone）发送 bare ephemeral，代理必须注入 ttl/scope。
             {
-              const BARE_CC = { type: 'ephemeral' };
+              const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+              const OAUTH_CC = { type: 'ephemeral', ttl: '1h' };
 
-              const normalizeCacheControl = (obj: any) => {
-                if (obj && typeof obj === 'object' && obj.cache_control) {
-                  // 只要有 cache_control，统一为 bare ephemeral
-                  if (obj.cache_control.ttl || obj.cache_control.scope) {
-                    obj.cache_control = { ...BARE_CC };
+              // 1. tools → 全部转换为 global scope
+              if (Array.isArray(parsed.tools)) {
+                for (const tool of parsed.tools) {
+                  if (tool && typeof tool === 'object' && tool.cache_control) {
+                    tool.cache_control = { ...OAUTH_CC_GLOBAL };
                     needsRewrite = true;
                   }
                 }
-              };
-
-              // 1. tools
-              if (Array.isArray(parsed.tools)) {
-                for (const tool of parsed.tools) {
-                  normalizeCacheControl(tool);
-                }
               }
 
-              // 2. system prompt blocks
+              // 2. system prompt blocks → ttl 但不加 scope
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
-                  normalizeCacheControl(block);
+                  if (block && typeof block === 'object' && block.cache_control) {
+                    block.cache_control = { ...OAUTH_CC };
+                    needsRewrite = true;
+                  }
                 }
               }
 
-              // 3. messages content blocks
+              // 3. messages content blocks → ttl 但不加 scope
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
                     for (const block of msg.content) {
-                      normalizeCacheControl(block);
+                      if (block && typeof block === 'object' && block.cache_control) {
+                        block.cache_control = { ...OAUTH_CC };
+                        needsRewrite = true;
+                      }
                     }
                   }
                 }
