@@ -626,12 +626,25 @@ export async function createProxyServer(config: ProxyConfig) {
             {
               const CC = { type: 'ephemeral' };
 
-              // 1. system prompt blocks → 每个 text block 都加（对齐 formatSystemPrompt）
+              // 1. system prompt blocks → 仅 first + last text block（最多 2 个）
+              //    确保总计不超过 4（2 system + 1 tool + 1 message）
               if (Array.isArray(parsed.system)) {
+                // 先清除所有 system block 的 cache_control
                 for (const block of parsed.system) {
-                  if (block && typeof block === 'object' && block.type === 'text') {
-                    block.cache_control = { ...CC };
+                  if (block && typeof block === 'object' && block.cache_control) {
+                    delete block.cache_control;
                     needsRewrite = true;
+                  }
+                }
+                const textIdxs: number[] = [];
+                for (let i = 0; i < parsed.system.length; i++) {
+                  if (parsed.system[i]?.type === 'text') textIdxs.push(i);
+                }
+                if (textIdxs.length > 0) {
+                  parsed.system[textIdxs[0]].cache_control = { ...CC };
+                  needsRewrite = true;
+                  if (textIdxs.length > 1) {
+                    parsed.system[textIdxs[textIdxs.length - 1]].cache_control = { ...CC };
                   }
                 }
               }
@@ -927,10 +940,26 @@ export async function createProxyServer(config: ProxyConfig) {
                   {
                     const CC = { type: 'ephemeral' };
 
-                    // system: 每个 text block 都加
+                    // system: 仅 first + last text block 加（最多 2 个）
+                    //   formatSystemPrompt 最多产生 2 个 block，但客户端可能发 3+ 个
+                    //   限制为 2 个确保总计不超过 4（2 system + 1 tool + 1 message）
                     if (Array.isArray(bodyObj.system)) {
+                      // 先清除所有 system block 的 cache_control
                       for (const block of bodyObj.system) {
-                        if (block?.type === 'text') block.cache_control = { ...CC };
+                        if (block && typeof block === 'object') delete block.cache_control;
+                      }
+                      // 找出所有 text block 的索引
+                      const textIdxs: number[] = [];
+                      for (let i = 0; i < bodyObj.system.length; i++) {
+                        if (bodyObj.system[i]?.type === 'text') textIdxs.push(i);
+                      }
+                      if (textIdxs.length > 0) {
+                        // first text block
+                        bodyObj.system[textIdxs[0]].cache_control = { ...CC };
+                        // last text block（如果不同于 first）
+                        if (textIdxs.length > 1) {
+                          bodyObj.system[textIdxs[textIdxs.length - 1]].cache_control = { ...CC };
+                        }
                       }
                     }
 
