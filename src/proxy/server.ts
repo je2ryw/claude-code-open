@@ -11,6 +11,7 @@
 
 import * as http from 'node:http';
 import * as https from 'node:https';
+import * as crypto from 'node:crypto';
 import { URL } from 'node:url';
 
 // ============ OAuth 常量 ============
@@ -26,6 +27,11 @@ const CLAUDE_CODE_IDENTITY =
 
 // Token 提前刷新时间：过期前 5 分钟
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+// 代理的持久 ID（模拟官方 CC 的 Sy() 设备ID 和 B6() 会话ID）
+// 每次代理进程启动时重新生成，与官方 CC 行为一致
+const PROXY_DEVICE_ID = crypto.randomBytes(32).toString('hex');
+const PROXY_SESSION_ID = crypto.randomUUID();
 
 // ============ 类型定义 ============
 
@@ -419,23 +425,25 @@ export function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：移除客户端的 metadata
+            // OAuth 模式：重建 metadata
             //
-            // 关键证据：
-            //   - count_tokens 请求（无 metadata）→ 200 ✓
-            //   - Postman 请求（无 metadata）→ 200 ✓
-            //   - messages 请求（有 metadata）→ 400 ✗
+            // 官方 CC 的 ho() 总是为 messages 请求生成 metadata：
+            //   { user_id: "user_${Sy()}_account_${accountUuid}_session_${B6()}" }
             //
-            // 根因：客户端以 API Key 模式连接代理，buildMetadata() 生成的
-            // user_id 格式为 user_{randomHex}_account_{empty}_session_{uuid}，
-            // 代理虽然修正了 accountUUID，但 user_{randomHex} 部分与 OAuth
-            // token 的账户信息不匹配，Anthropic 服务器验证失败。
-            //
-            // 安全修复：移除 metadata（Anthropic API 不要求此字段）
-            if (parsed.metadata) {
+            // 客户端以 API Key 模式连接代理，其 buildMetadata() 生成的
+            // user_id 中 account 为空、device hex 是客户端的随机值。
+            // 代理必须用自己的 device ID + JWT 的 accountUUID 完整重建。
+            if (oauthState?.accountUUID) {
+              parsed.metadata = {
+                user_id: `user_${PROXY_DEVICE_ID}_account_${oauthState.accountUUID}_session_${PROXY_SESSION_ID}`
+              };
+              needsRewrite = true;
+              console.log(`[INJECT] 重建 metadata: device=${PROXY_DEVICE_ID.slice(0, 8)}... account=${oauthState.accountUUID.slice(0, 8)}... session=${PROXY_SESSION_ID.slice(0, 8)}...`);
+            } else if (parsed.metadata) {
+              // 无法获取 accountUUID 时，移除有问题的 metadata
               delete parsed.metadata;
               needsRewrite = true;
-              console.log('[INJECT] 移除客户端 metadata（避免 user_id 格式不匹配导致 OAuth 验证失败）');
+              console.log('[INJECT] 无 accountUUID，移除 metadata');
             }
 
             if (needsRewrite) {
