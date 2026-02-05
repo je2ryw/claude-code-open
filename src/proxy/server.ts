@@ -371,20 +371,37 @@ export function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // 调试日志：显示请求关键信息
-            const sysPreview = typeof parsed.system === 'string'
-              ? parsed.system.slice(0, 80)
-              : Array.isArray(parsed.system) && parsed.system[0]?.text
-                ? parsed.system[0].text.slice(0, 80)
-                : JSON.stringify(parsed.system).slice(0, 80);
-            console.log(`[DEBUG] model=${parsed.model} msgs=${parsed.messages?.length} sys=${systemType} injected=${needsRewrite}`);
-            console.log(`  └─ system preview: ${sysPreview}...`);
-            console.log(`  └─ anthropic-beta: ${forwardHeaders['anthropic-beta'] || '<none>'}`);
-
             if (needsRewrite) {
               body = Buffer.from(JSON.stringify(parsed));
               console.log('[INJECT] 已注入 Claude Code 身份标识到 system prompt');
             }
+
+            // 详细调试日志：转发到 Anthropic 的完整信息
+            const sysPreview = typeof parsed.system === 'string'
+              ? parsed.system.slice(0, 120)
+              : Array.isArray(parsed.system) && parsed.system[0]?.text
+                ? parsed.system[0].text.slice(0, 120)
+                : JSON.stringify(parsed.system).slice(0, 120);
+            console.log(`[FORWARD] ─── OAuth 请求详情 ───`);
+            console.log(`  model:          ${parsed.model}`);
+            console.log(`  stream:         ${parsed.stream}`);
+            console.log(`  max_tokens:     ${parsed.max_tokens}`);
+            console.log(`  msgs:           ${parsed.messages?.length}`);
+            console.log(`  sys_type:       ${systemType} → injected=${needsRewrite}`);
+            console.log(`  sys_preview:    ${sysPreview}...`);
+            console.log(`  metadata:       ${JSON.stringify(parsed.metadata || null)}`);
+            if (parsed.thinking) {
+              console.log(`  thinking:       ${JSON.stringify(parsed.thinking)}`);
+            }
+            // 关键头部
+            console.log(`  [headers]`);
+            console.log(`    anthropic-beta:    ${forwardHeaders['anthropic-beta'] || '<none>'}`);
+            console.log(`    x-app:             ${forwardHeaders['x-app'] || '<none>'}`);
+            console.log(`    user-agent:        ${(forwardHeaders['user-agent'] as string || '<none>').slice(0, 80)}`);
+            console.log(`    anthropic-version: ${forwardHeaders['anthropic-version'] || '<none>'}`);
+            console.log(`    content-type:      ${forwardHeaders['content-type'] || '<none>'}`);
+            console.log(`  [body keys]: ${Object.keys(parsed).join(', ')}`);
+            console.log(`[FORWARD] ─── end ───`);
           }
         } catch {
           // 非 JSON body，跳过
