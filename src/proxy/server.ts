@@ -335,6 +335,9 @@ export function createProxyServer(config: ProxyConfig) {
           // 这是 Anthropic 订阅 token 的硬性要求，否则返回 invalid_request_error
           if (authMode === 'oauth' && parsed.messages) {
             let needsRewrite = false;
+            const systemType = parsed.system == null ? 'none'
+              : typeof parsed.system === 'string' ? 'string'
+              : Array.isArray(parsed.system) ? `array[${parsed.system.length}]` : typeof parsed.system;
 
             if (!parsed.system) {
               // 没有 system prompt，直接添加
@@ -346,14 +349,37 @@ export function createProxyServer(config: ProxyConfig) {
                 parsed.system = CLAUDE_CODE_IDENTITY + '\n\n' + parsed.system;
                 needsRewrite = true;
               }
-            } else if (Array.isArray(parsed.system) && parsed.system.length > 0) {
-              // content block 数组格式
-              const first = parsed.system[0];
-              if (first?.type === 'text' && !first.text?.startsWith(CLAUDE_CODE_IDENTITY)) {
-                first.text = CLAUDE_CODE_IDENTITY + '\n\n' + (first.text || '');
+            } else if (Array.isArray(parsed.system)) {
+              if (parsed.system.length === 0) {
+                // 空数组，转成包含身份标识的数组
+                parsed.system = [{ type: 'text', text: CLAUDE_CODE_IDENTITY }];
                 needsRewrite = true;
+              } else {
+                // 找到第一个 text block 来注入
+                const firstTextIdx = parsed.system.findIndex((b: any) => b?.type === 'text');
+                if (firstTextIdx >= 0) {
+                  const block = parsed.system[firstTextIdx];
+                  if (!block.text?.startsWith(CLAUDE_CODE_IDENTITY)) {
+                    block.text = CLAUDE_CODE_IDENTITY + '\n\n' + (block.text || '');
+                    needsRewrite = true;
+                  }
+                } else {
+                  // 没有 text block，在数组开头插入
+                  parsed.system.unshift({ type: 'text', text: CLAUDE_CODE_IDENTITY });
+                  needsRewrite = true;
+                }
               }
             }
+
+            // 调试日志：显示请求关键信息
+            const sysPreview = typeof parsed.system === 'string'
+              ? parsed.system.slice(0, 80)
+              : Array.isArray(parsed.system) && parsed.system[0]?.text
+                ? parsed.system[0].text.slice(0, 80)
+                : JSON.stringify(parsed.system).slice(0, 80);
+            console.log(`[DEBUG] model=${parsed.model} msgs=${parsed.messages?.length} sys=${systemType} injected=${needsRewrite}`);
+            console.log(`  └─ system preview: ${sysPreview}...`);
+            console.log(`  └─ anthropic-beta: ${forwardHeaders['anthropic-beta'] || '<none>'}`);
 
             if (needsRewrite) {
               body = Buffer.from(JSON.stringify(parsed));
@@ -406,26 +432,32 @@ export function createProxyServer(config: ProxyConfig) {
           }
 
           res.writeHead(statusCode, responseHeaders);
-          proxyRes.pipe(res);
 
-          proxyRes.on('end', () => {
-            const duration = Date.now() - startTime;
-            logs.push({
-              time: new Date().toISOString(),
-              method,
-              path,
-              status: statusCode,
-              duration,
-              clientIp,
-              streaming: isStreaming,
+          // 对非200响应，捕获 body 用于调试
+          if (statusCode >= 400) {
+            const errChunks: Buffer[] = [];
+            proxyRes.on('data', (chunk: Buffer) => {
+              errChunks.push(chunk);
+              res.write(chunk); // 同时转发给客户端
             });
-            if (logs.length > 1000) logs.splice(0, logs.length - 1000);
-
-            console.log(
-              `[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` +
-              (isStreaming ? ' [stream]' : ''),
-            );
-          });
+            proxyRes.on('end', () => {
+              res.end();
+              const duration = Date.now() - startTime;
+              const errBody = Buffer.concat(errChunks).toString().slice(0, 500);
+              logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+              if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+              console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+              console.log(`  ⎿ API Error: ${statusCode} ${errBody}`);
+            });
+          } else {
+            proxyRes.pipe(res);
+            proxyRes.on('end', () => {
+              const duration = Date.now() - startTime;
+              logs.push({ time: new Date().toISOString(), method, path, status: statusCode, duration, clientIp, streaming: isStreaming });
+              if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+              console.log(`[DONE]  ${method} ${path} -> ${statusCode} (${duration}ms)` + (isStreaming ? ' [stream]' : ''));
+            });
+          }
         },
       );
 
