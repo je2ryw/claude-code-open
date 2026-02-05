@@ -915,25 +915,26 @@ export async function createProxyServer(config: ProxyConfig) {
                 }
               }
 
-              // SDK 生成的 body — 修补 stream + 强制注入 cache_control
+              // v3 策略：SDK 只提供 headers（auth + stainless），body 用原始 CC 客户端的
               //
-              // 为什么在 custom fetch 里再次注入 cache_control？
-              //   SDK 的 beta.messages.create() 在序列化时可能丢失我们添加的
-              //   cache_control 字段（TypeScript 类型约束导致未知字段被剥离）。
-              //   这里是最后一道防线：确保发送到 Anthropic 的 body 一定包含
-              //   官方 CC 格式的 cache_control。
-              let requestBody = init?.body;
-              if (requestBody) {
-                try {
-                  const bodyStr = typeof requestBody === 'string'
-                    ? requestBody
-                    : Buffer.from(requestBody).toString();
-                  const bodyObj = JSON.parse(bodyStr);
+              // 为什么不用 SDK 序列化的 body？
+              //   SDK 的 beta.messages.create() 可能剥离 CC 客户端发送的特殊字段
+              //   （如 billing header、output_config、context_management 等），
+              //   导致 Anthropic 无法识别这是 CC 请求。
+              //   用原始 body 确保所有 CC 客户端的字段都完整保留。
 
-                  // 1. 修补 stream
-                  if (isStreaming) {
-                    bodyObj.stream = true;
-                  }
+              // 从原始 parsedBody 构建 body（已包含代理的 identity/metadata 修改）
+              const bodyObj: any = { ...parsedBody };
+
+                // betas 放在 headers 里，不要在 body 中
+                delete bodyObj.betas;
+
+                // 修补 stream
+                if (isStreaming) {
+                  bodyObj.stream = true;
+                } else if (bodyObj.stream === undefined) {
+                  bodyObj.stream = false;
+                }
 
                   // 2. 注入 cache_control — 对齐 src/core/client.ts
                   //    全部使用 {type:"ephemeral"}，不用 ttl/scope
@@ -993,11 +994,7 @@ export async function createProxyServer(config: ProxyConfig) {
                     }
                   }
 
-                  requestBody = JSON.stringify(bodyObj);
-                } catch {
-                  // 解析失败，保持原样
-                }
-              }
+              const requestBody = JSON.stringify(bodyObj);
 
               // 日志
               console.log(`[SDK-FETCH] URL: ${url}`);
@@ -1010,49 +1007,46 @@ export async function createProxyServer(config: ProxyConfig) {
                   console.log(`  ${k}: ${v.slice(0, 200)}`);
                 }
               }
-              // 打印 SDK body 的关键字段（调试用）
+              // 打印 body 的关键字段（调试用）
               try {
-                const bodyPeek = JSON.parse(typeof requestBody === 'string' ? requestBody : Buffer.from(requestBody).toString());
-                console.log(`[SDK-FETCH] Body keys: ${Object.keys(bodyPeek).join(', ')}`);
-                console.log(`[SDK-FETCH] Body model: ${bodyPeek.model}`);
-                console.log(`[SDK-FETCH] Body stream: ${bodyPeek.stream}`);
-                console.log(`[SDK-FETCH] Body metadata: ${JSON.stringify(bodyPeek.metadata)}`);
-                if (Array.isArray(bodyPeek.system)) {
-                  const sysLen = bodyPeek.system.length;
-                  const lastSys = bodyPeek.system[sysLen - 1];
-                  console.log(`[SDK-FETCH] Body system: array[${sysLen}], first_text_len=${bodyPeek.system[0]?.text?.length || 0}`);
-                  console.log(`[SDK-FETCH] Body system[0] starts: ${(bodyPeek.system[0]?.text || '').slice(0, 120)}`);
-                  console.log(`[SDK-FETCH] Body system[0] cache: ${JSON.stringify(bodyPeek.system[0]?.cache_control)}`);
+                console.log(`[SDK-FETCH] Body keys: ${Object.keys(bodyObj).join(', ')}`);
+                console.log(`[SDK-FETCH] Body model: ${bodyObj.model}`);
+                console.log(`[SDK-FETCH] Body stream: ${bodyObj.stream}`);
+                console.log(`[SDK-FETCH] Body metadata: ${JSON.stringify(bodyObj.metadata)}`);
+                if (Array.isArray(bodyObj.system)) {
+                  const sysLen = bodyObj.system.length;
+                  const lastSys = bodyObj.system[sysLen - 1];
+                  console.log(`[SDK-FETCH] Body system: array[${sysLen}], first_text_len=${bodyObj.system[0]?.text?.length || 0}`);
+                  console.log(`[SDK-FETCH] Body system[0] starts: ${(bodyObj.system[0]?.text || '').slice(0, 120)}`);
+                  console.log(`[SDK-FETCH] Body system[0] cache: ${JSON.stringify(bodyObj.system[0]?.cache_control)}`);
                   console.log(`[SDK-FETCH] Body system[${sysLen - 1}] cache: ${JSON.stringify(lastSys?.cache_control)}`);
-                  // 统计有 cache_control 的 system block 数量
-                  const sysCacheCount = bodyPeek.system.filter((b: any) => b?.cache_control).length;
+                  const sysCacheCount = bodyObj.system.filter((b: any) => b?.cache_control).length;
                   console.log(`[SDK-FETCH] Body system cache_control count: ${sysCacheCount}/${sysLen}`);
-                } else if (typeof bodyPeek.system === 'string') {
-                  console.log(`[SDK-FETCH] Body system: string(${bodyPeek.system.length}), starts: ${bodyPeek.system.slice(0, 120)}`);
+                } else if (typeof bodyObj.system === 'string') {
+                  console.log(`[SDK-FETCH] Body system: string(${bodyObj.system.length}), starts: ${bodyObj.system.slice(0, 120)}`);
                 }
-                if (Array.isArray(bodyPeek.tools) && bodyPeek.tools.length > 0) {
-                  const toolsLen = bodyPeek.tools.length;
-                  const lastToolCache = bodyPeek.tools[toolsLen - 1]?.cache_control;
-                  console.log(`[SDK-FETCH] Body tools: ${toolsLen} tools, first cache: ${JSON.stringify(bodyPeek.tools[0]?.cache_control)}, last cache: ${JSON.stringify(lastToolCache)}`);
+                if (Array.isArray(bodyObj.tools) && bodyObj.tools.length > 0) {
+                  const toolsLen = bodyObj.tools.length;
+                  const lastToolCache = bodyObj.tools[toolsLen - 1]?.cache_control;
+                  console.log(`[SDK-FETCH] Body tools: ${toolsLen} tools, first cache: ${JSON.stringify(bodyObj.tools[0]?.cache_control)}, last cache: ${JSON.stringify(lastToolCache)}`);
                 }
-                // messages cache_control 统计
-                if (Array.isArray(bodyPeek.messages)) {
+                if (Array.isArray(bodyObj.messages)) {
                   let msgCacheCount = 0;
-                  for (const msg of bodyPeek.messages) {
+                  for (const msg of bodyObj.messages) {
                     if (Array.isArray(msg.content)) {
                       for (const b of msg.content) { if (b?.cache_control) msgCacheCount++; }
                     }
                   }
-                  console.log(`[SDK-FETCH] Body messages cache_control count: ${msgCacheCount}/${bodyPeek.messages.length} msgs`);
+                  console.log(`[SDK-FETCH] Body messages cache_control count: ${msgCacheCount}/${bodyObj.messages.length} msgs`);
                 }
-                console.log(`[SDK-FETCH] Body size: ${typeof requestBody === 'string' ? requestBody.length : requestBody?.length || 0} bytes`);
+                console.log(`[SDK-FETCH] Body size: ${requestBody.length} bytes`);
               } catch {}
 
-              // 发送 SDK 构建的完美请求
+              // 发送请求：SDK headers + 原始 CC 客户端 body
               const realResponse = await globalThis.fetch(url, {
                 method: init?.method || 'POST',
                 headers: sdkHeaders,
-                body: requestBody, // SDK 生成的 body（仅修补了 stream 字段）
+                body: requestBody,
                 signal: init?.signal,
                 // @ts-ignore - duplex needed for streaming request body
                 duplex: 'half',
