@@ -24,6 +24,7 @@ import { extractExplicitMemories, mergeExtractedMemories } from '../../memory/in
 import { oauthManager } from './oauth-manager.js';
 import { blueprintStore, executionManager } from './routes/blueprint-api.js';
 import type { Blueprint } from '../../blueprint/types.js';
+import { geminiImageService } from './services/gemini-image-service.js';
 import {
   initSessionMemory,
   readSessionMemory,
@@ -1353,6 +1354,52 @@ export class ConversationManager {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`[Tool] StartLeadAgent 执行失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 GenerateDesign 工具 - 使用 Gemini 生成 UI 设计图
+      if (toolUse.name === 'GenerateDesign') {
+        const input = toolUse.input as any;
+
+        try {
+          console.log(`[Tool] GenerateDesign: 开始生成设计图 - ${input.projectName}`);
+
+          const result = await geminiImageService.generateDesign({
+            projectName: input.projectName,
+            projectDescription: input.projectDescription,
+            requirements: input.requirements || [],
+            constraints: input.constraints,
+            techStack: input.techStack,
+            style: input.style,
+          });
+
+          if (!result.success) {
+            const error = result.error || '设计图生成失败';
+            callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+            return { success: false, error };
+          }
+
+          // 通过 WebSocket 发送设计图给前端显示
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'design_image_generated',
+              payload: {
+                imageUrl: result.imageUrl,
+                projectName: input.projectName,
+                style: input.style || 'modern',
+                generatedText: result.generatedText,
+              },
+            }));
+          }
+
+          const output = `UI 设计图已生成并发送给用户预览。${result.generatedText ? `\n\n设计说明: ${result.generatedText}` : ''}\n\n用户可以在聊天界面中查看设计预览图。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] GenerateDesign 执行失败:`, errorMessage);
           callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
           return { success: false, error: errorMessage };
         }

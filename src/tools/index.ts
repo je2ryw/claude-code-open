@@ -27,6 +27,7 @@ export * from './submit-e2e-result.js';
 export * from './dispatch-worker.js';
 export * from './generate-blueprint.js';
 export * from './start-lead-agent.js';
+export * from './generate-design.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -53,6 +54,7 @@ import { DispatchWorkerTool } from './dispatch-worker.js';
 import { UpdateTaskPlanTool } from './update-task-plan.js';
 import { GenerateBlueprintTool } from './generate-blueprint.js';
 import { StartLeadAgentTool } from './start-lead-agent.js';
+import { GenerateDesignTool } from './generate-design.js';
 import { registerBlueprintHooks } from '../hooks/blueprint-hooks.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
@@ -126,9 +128,10 @@ export function registerAllTools(): void {
   toolRegistry.register(new DispatchWorkerTool());
   toolRegistry.register(new UpdateTaskPlanTool());
 
-  // 17. Chat Tab 主 Agent 专用工具 (2个) - 生成蓝图 + 启动 LeadAgent
+  // 17. Chat Tab 主 Agent 专用工具 (3个) - 生成蓝图 + 启动 LeadAgent + 生成设计图
   toolRegistry.register(new GenerateBlueprintTool());
   toolRegistry.register(new StartLeadAgentTool());
+  toolRegistry.register(new GenerateDesignTool());
 
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留

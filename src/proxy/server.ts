@@ -623,9 +623,11 @@ export async function createProxyServer(config: ProxyConfig) {
               const OAUTH_CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
 
               // 1. tools → scope:"global"（官方: gW1("global")）
+              //    OAuth 模式：无论客户端是否发送 cache_control，都强制添加
+              //    API Key 模式：只转换已有的
               if (Array.isArray(parsed.tools)) {
                 for (const tool of parsed.tools) {
-                  if (tool && typeof tool === 'object' && tool.cache_control) {
+                  if (tool && typeof tool === 'object' && (authMode === 'oauth' || tool.cache_control)) {
                     tool.cache_control = { ...OAUTH_CC_GLOBAL };
                     needsRewrite = true;
                   }
@@ -635,7 +637,7 @@ export async function createProxyServer(config: ProxyConfig) {
               // 2. system prompt blocks → 无 scope（官方: gW1()）
               if (Array.isArray(parsed.system)) {
                 for (const block of parsed.system) {
-                  if (block && typeof block === 'object' && block.cache_control) {
+                  if (block && typeof block === 'object' && (authMode === 'oauth' || block.cache_control)) {
                     block.cache_control = { ...OAUTH_CC_DEFAULT };
                     needsRewrite = true;
                   }
@@ -643,6 +645,7 @@ export async function createProxyServer(config: ProxyConfig) {
               }
 
               // 3. messages content blocks → 无 scope（官方: gW1()）
+              //    messages 只转换已有的（不强制添加，避免过多 cache breakpoints）
               if (Array.isArray(parsed.messages)) {
                 for (const msg of parsed.messages) {
                   if (Array.isArray(msg.content)) {
@@ -876,17 +879,65 @@ export async function createProxyServer(config: ProxyConfig) {
                 }
               }
 
-              // SDK 生成的 body（可能需要修补 stream 字段）
+              // SDK 生成的 body — 修补 stream + 强制注入 cache_control
+              //
+              // 为什么在 custom fetch 里再次注入 cache_control？
+              //   SDK 的 beta.messages.create() 在序列化时可能丢失我们添加的
+              //   cache_control 字段（TypeScript 类型约束导致未知字段被剥离）。
+              //   这里是最后一道防线：确保发送到 Anthropic 的 body 一定包含
+              //   官方 CC 格式的 cache_control。
               let requestBody = init?.body;
-              if (isStreaming && requestBody) {
-                // SDK 收到 stream:false，但客户端需要流式
-                // 修补 body 中的 stream 字段
+              if (requestBody) {
                 try {
                   const bodyStr = typeof requestBody === 'string'
                     ? requestBody
                     : Buffer.from(requestBody).toString();
                   const bodyObj = JSON.parse(bodyStr);
-                  bodyObj.stream = true;
+
+                  // 1. 修补 stream
+                  if (isStreaming) {
+                    bodyObj.stream = true;
+                  }
+
+                  // 2. 强制注入 OAuth CC cache_control
+                  //    官方 CC: system/messages → gW1() = {type:"ephemeral", ttl:"1h"}
+                  //           tools → gW1("global") = {type:"ephemeral", ttl:"1h", scope:"global"}
+                  {
+                    const CC_DEFAULT = { type: 'ephemeral', ttl: '1h' };
+                    const CC_GLOBAL = { type: 'ephemeral', ttl: '1h', scope: 'global' };
+
+                    // system text blocks
+                    if (Array.isArray(bodyObj.system)) {
+                      for (const block of bodyObj.system) {
+                        if (block && typeof block === 'object' && block.type === 'text') {
+                          block.cache_control = { ...CC_DEFAULT };
+                        }
+                      }
+                    }
+
+                    // tools（全部添加 scope:"global"）
+                    if (Array.isArray(bodyObj.tools)) {
+                      for (const tool of bodyObj.tools) {
+                        if (tool && typeof tool === 'object') {
+                          tool.cache_control = { ...CC_GLOBAL };
+                        }
+                      }
+                    }
+
+                    // messages: 只转换已有的（不强制添加）
+                    if (Array.isArray(bodyObj.messages)) {
+                      for (const msg of bodyObj.messages) {
+                        if (Array.isArray(msg.content)) {
+                          for (const block of msg.content) {
+                            if (block && typeof block === 'object' && block.cache_control) {
+                              block.cache_control = { ...CC_DEFAULT };
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
                   requestBody = JSON.stringify(bodyObj);
                 } catch {
                   // 解析失败，保持原样
