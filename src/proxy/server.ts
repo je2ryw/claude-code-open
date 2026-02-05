@@ -283,7 +283,13 @@ export function createProxyServer(config: ProxyConfig) {
           message: 'Invalid API key provided to proxy.',
         },
       }));
+      // 调试日志：显示客户端实际发送的 key（脱敏）
+      const mask = (s?: string) => s ? `${s.slice(0, 6)}...${s.slice(-4)} (len=${s.length})` : '<empty>';
       console.log(`[DENIED] ${method} ${path} from ${clientIp} - Invalid proxy key`);
+      console.log(`  ├─ x-api-key header:     ${mask(req.headers['x-api-key'] as string)}`);
+      console.log(`  ├─ authorization header:  ${mask(req.headers['authorization'] as string)}`);
+      console.log(`  ├─ extracted clientKey:   ${mask(clientKey)}`);
+      console.log(`  └─ expected proxyApiKey:  ${mask(proxyApiKey)}`);
       return;
     }
 
