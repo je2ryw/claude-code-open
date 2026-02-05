@@ -102,6 +102,41 @@ function extractAccountUUID(accessToken: string): string | null {
   }
 }
 
+/**
+ * 调用 Anthropic OAuth profile API 获取 accountUuid
+ * 这是官方 CC 的 C21() 函数实现
+ * 端点: GET https://api.anthropic.com/api/oauth/profile
+ */
+async function fetchAccountUUID(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.anthropic.com/api/oauth/profile', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.log(`[AUTH] Profile API 失败: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json() as any;
+    const uuid = data?.account?.uuid;
+    if (uuid && typeof uuid === 'string') {
+      console.log(`[AUTH] Profile API 成功: accountUuid=${uuid.slice(0, 12)}... email=${data?.account?.email || 'N/A'}`);
+      return uuid;
+    }
+
+    console.log(`[AUTH] Profile API 返回但无 account.uuid: ${JSON.stringify(data).slice(0, 200)}`);
+    return null;
+  } catch (err: any) {
+    console.log(`[AUTH] Profile API 异常: ${err.message}`);
+    return null;
+  }
+}
+
 interface RequestLog {
   time: string;
   method: string;
@@ -252,7 +287,7 @@ function buildForwardHeaders(
 /**
  * 创建并启动代理服务器
  */
-export function createProxyServer(config: ProxyConfig) {
+export async function createProxyServer(config: ProxyConfig) {
   const { port, host, proxyApiKey, authMode, targetBaseUrl } = config;
   const targetUrl = new URL(targetBaseUrl);
   const isTargetHttps = targetUrl.protocol === 'https:';
@@ -261,9 +296,11 @@ export function createProxyServer(config: ProxyConfig) {
   // OAuth 状态管理
   let oauthState: OAuthState | null = null;
   if (authMode === 'oauth') {
-    // 优先 JWT 解码，回退到 credentials 文件中的 oauthAccount.accountUuid
+    // 第一步：尝试 JWT 解码 和 credentials 文件
     const jwtUUID = extractAccountUUID(config.oauthAccessToken || '');
-    const accountUUID = jwtUUID || config.oauthAccountUuid || null;
+    let accountUUID = jwtUUID || config.oauthAccountUuid || null;
+    let uuidSource = jwtUUID ? 'JWT sub' : config.oauthAccountUuid ? 'credentials oauthAccount' : '';
+
     oauthState = {
       accessToken: config.oauthAccessToken!,
       refreshToken: config.oauthRefreshToken!,
@@ -271,11 +308,22 @@ export function createProxyServer(config: ProxyConfig) {
       refreshing: null,
       accountUUID,
     };
+
+    // 第二步：如果前两种都失败，调用 Profile API（官方 CC 的 C21() 函数）
+    if (!accountUUID) {
+      console.log('[AUTH] JWT 和 credentials 都未找到 accountUuid，尝试调用 Profile API...');
+      const profileUUID = await fetchAccountUUID(config.oauthAccessToken || '');
+      if (profileUUID) {
+        accountUUID = profileUUID;
+        uuidSource = 'Profile API';
+        oauthState.accountUUID = profileUUID;
+      }
+    }
+
     if (accountUUID) {
-      const source = jwtUUID ? 'JWT sub' : 'credentials oauthAccount';
-      console.log(`[AUTH] Account UUID: ${accountUUID} (来源: ${source})`);
+      console.log(`[AUTH] Account UUID: ${accountUUID} (来源: ${uuidSource})`);
     } else {
-      console.log('[AUTH] 警告: 无法获取 account UUID（JWT 解码失败且 credentials 无 oauthAccount），metadata 将使用空 account');
+      console.log('[AUTH] ⚠ 无法获取 account UUID（JWT/credentials/Profile API 全部失败），metadata 将使用空 account');
     }
     console.log(`[AUTH] Proxy Device ID: ${PROXY_DEVICE_ID.slice(0, 16)}...`);
     console.log(`[AUTH] Proxy Session ID: ${PROXY_SESSION_ID}`);
@@ -395,6 +443,15 @@ export function createProxyServer(config: ProxyConfig) {
           // OAuth 模式：确保 system prompt 以 Claude Code 身份开头
           // 这是 Anthropic 订阅 token 的硬性要求，否则返回 invalid_request_error
           if (authMode === 'oauth' && parsed.messages) {
+            // 保存原始 body 快照（修改前），用于 dump 对比
+            const originalBodySnapshot: Record<string, string> = {};
+            for (const [k, v] of Object.entries(parsed)) {
+              if (k === 'messages') originalBodySnapshot[k] = `[${(v as any[])?.length || 0} msgs]`;
+              else if (k === 'system') originalBodySnapshot[k] = typeof v === 'string' ? `string(${(v as string).length})` : Array.isArray(v) ? `array[${(v as any[]).length}]` : typeof v;
+              else if (k === 'tools') originalBodySnapshot[k] = `[${(v as any[])?.length || 0} tools]`;
+              else originalBodySnapshot[k] = JSON.stringify(v)?.slice(0, 300) || 'undefined';
+            }
+
             let needsRewrite = false;
             const systemType = parsed.system == null ? 'none'
               : typeof parsed.system === 'string' ? 'string'
@@ -454,32 +511,43 @@ export function createProxyServer(config: ProxyConfig) {
               console.log('[INJECT] 请求已重写');
             }
 
-            // 详细调试日志：转发到 Anthropic 的完整信息
-            const sysPreview = typeof parsed.system === 'string'
-              ? parsed.system.slice(0, 120)
-              : Array.isArray(parsed.system) && parsed.system[0]?.text
-                ? parsed.system[0].text.slice(0, 120)
-                : JSON.stringify(parsed.system).slice(0, 120);
-            console.log(`[FORWARD] ─── OAuth 请求详情 ───`);
+            // ===== 完整请求 DUMP：客户端原始 vs 代理转发 =====
+            console.log(`[DUMP] ═══ 客户端原始请求 ═══`);
+            // 客户端发来的所有 header（原始，未经代理修改）
+            console.log(`  [原始 headers - 全部]`);
+            for (const [hk, hv] of Object.entries(req.headers)) {
+              const val = typeof hv === 'string' ? hv : Array.isArray(hv) ? hv.join(', ') : String(hv);
+              if (hk === 'x-api-key' || hk === 'authorization') {
+                console.log(`    ${hk}: ${val.slice(0, 12)}...(len=${val.length})`);
+              } else {
+                console.log(`    ${hk}: ${val.slice(0, 200)}`);
+              }
+            }
+            // 客户端发来的所有 body 字段（修改前快照）
+            console.log(`  [原始 body 字段 - 全部]`);
+            for (const [bk, bv] of Object.entries(originalBodySnapshot)) {
+              console.log(`    ${bk}: ${bv}`);
+            }
+
+            console.log(`[DUMP] ═══ 代理转发请求 ═══`);
+            // 代理修改后的 body 关键字段
             console.log(`  model:          ${parsed.model}`);
-            console.log(`  stream:         ${parsed.stream}`);
-            console.log(`  max_tokens:     ${parsed.max_tokens}`);
-            console.log(`  msgs:           ${parsed.messages?.length}`);
-            console.log(`  sys_type:       ${systemType} → injected=${needsRewrite}`);
-            console.log(`  sys_preview:    ${sysPreview}...`);
             console.log(`  metadata:       ${JSON.stringify(parsed.metadata || null)}`);
             if (parsed.thinking) {
               console.log(`  thinking:       ${JSON.stringify(parsed.thinking)}`);
             }
-            // 关键头部
-            console.log(`  [headers]`);
-            console.log(`    anthropic-beta:    ${forwardHeaders['anthropic-beta'] || '<none>'}`);
-            console.log(`    x-app:             ${forwardHeaders['x-app'] || '<none>'}`);
-            console.log(`    user-agent:        ${(forwardHeaders['user-agent'] as string || '<none>').slice(0, 80)}`);
-            console.log(`    anthropic-version: ${forwardHeaders['anthropic-version'] || '<none>'}`);
-            console.log(`    content-type:      ${forwardHeaders['content-type'] || '<none>'}`);
-            console.log(`  [body keys]: ${Object.keys(parsed).join(', ')}`);
-            console.log(`[FORWARD] ─── end ───`);
+            // 转发的所有 header
+            console.log(`  [转发 headers - 全部]`);
+            for (const [hk, hv] of Object.entries(forwardHeaders)) {
+              const val = typeof hv === 'string' ? hv : String(hv);
+              if (hk === 'authorization') {
+                console.log(`    ${hk}: ${val.slice(0, 20)}...(len=${val.length})`);
+              } else {
+                console.log(`    ${hk}: ${val.slice(0, 200)}`);
+              }
+            }
+            console.log(`  [转发 body keys]: ${Object.keys(parsed).join(', ')}`);
+            console.log(`[DUMP] ═══ end ═══`);
           }
         } catch {
           // 非 JSON body，跳过

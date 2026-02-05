@@ -257,7 +257,7 @@ program
 `);
 
     try {
-      const proxy = createProxyServer({
+      const proxy = await createProxyServer({
         port,
         host,
         proxyApiKey,
