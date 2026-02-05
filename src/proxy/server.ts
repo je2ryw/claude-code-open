@@ -419,21 +419,23 @@ export function createProxyServer(config: ProxyConfig) {
               }
             }
 
-            // OAuth 模式：修正 metadata.user_id 中的 accountUUID
-            // Anthropic 对 OAuth token 会验证 metadata.user_id 格式
-            // 格式: user_{hex}_account_{uuid}_session_{uuid}
-            if (oauthState?.accountUUID && parsed.metadata?.user_id) {
-              const uid = parsed.metadata.user_id as string;
-              // 检测空的 accountUUID: _account__session_ 或 _account_null_ 等
-              const accountMatch = uid.match(/_account_([^_]*)_session_/);
-              if (accountMatch && (!accountMatch[1] || accountMatch[1] === 'null' || accountMatch[1] === 'undefined')) {
-                parsed.metadata.user_id = uid.replace(
-                  /_account_[^_]*_session_/,
-                  `_account_${oauthState.accountUUID}_session_`
-                );
-                needsRewrite = true;
-                console.log(`[INJECT] 修正 metadata.user_id: 注入 accountUUID=${oauthState.accountUUID.slice(0, 8)}...`);
-              }
+            // OAuth 模式：移除客户端的 metadata
+            //
+            // 关键证据：
+            //   - count_tokens 请求（无 metadata）→ 200 ✓
+            //   - Postman 请求（无 metadata）→ 200 ✓
+            //   - messages 请求（有 metadata）→ 400 ✗
+            //
+            // 根因：客户端以 API Key 模式连接代理，buildMetadata() 生成的
+            // user_id 格式为 user_{randomHex}_account_{empty}_session_{uuid}，
+            // 代理虽然修正了 accountUUID，但 user_{randomHex} 部分与 OAuth
+            // token 的账户信息不匹配，Anthropic 服务器验证失败。
+            //
+            // 安全修复：移除 metadata（Anthropic API 不要求此字段）
+            if (parsed.metadata) {
+              delete parsed.metadata;
+              needsRewrite = true;
+              console.log('[INJECT] 移除客户端 metadata（避免 user_id 格式不匹配导致 OAuth 验证失败）');
             }
 
             if (needsRewrite) {
