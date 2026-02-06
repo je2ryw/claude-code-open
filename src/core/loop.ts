@@ -1528,6 +1528,12 @@ export interface LoopOptions {
   /** v2.1.30: SDK 提供的 MCP 工具（传递给子代理） */
   mcpTools?: ToolDefinition[];
   /**
+   * v2.1.33: 限制可生成的子 agent 类型
+   * 当通过 Task(agent_type) 语法在 frontmatter 中指定时，
+   * 子 loop 中的 Task 工具只能生成这些类型的 agent
+   */
+  allowedSubagentTypes?: string[];
+  /**
    * 官方 v2.1.2 响应式状态获取回调
    * 用于实时获取应用状态（包括权限模式）
    * 如果提供此回调，权限模式将从 AppState.toolPermissionContext.mode 获取
@@ -1848,6 +1854,18 @@ export class ConversationLoop {
       tools = tools.filter(t => !disallowed.has(t.name));
     }
 
+    // v2.1.33: delegate_mode 工具限制
+    // 在 delegate_mode 下，agent 只能使用团队协作相关的工具
+    if (options.delegateMode) {
+      const DELEGATE_MODE_TOOLS = new Set([
+        'Task', 'TaskOutput',
+        'TeamCreate', 'TeamDelete', 'SendMessage',
+        'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList',
+        'Read', 'Glob', 'Grep',  // 基础读取工具仍然可用
+      ]);
+      tools = tools.filter(t => DELEGATE_MODE_TOOLS.has(t.name));
+    }
+
     // v2.1.7: MCP 工具搜索自动模式
     // 当 MCP 工具描述超过上下文窗口的 10% * 2.5 = 25% 时，自动启用延迟加载模式
     // 延迟加载模式下，MCP 工具不会直接暴露给模型，而是通过 MCPSearch 工具按需发现
@@ -1872,6 +1890,16 @@ export class ConversationLoop {
     }
 
     this.tools = tools;
+
+    // v2.1.33: 将 allowedSubagentTypes 传递给 TaskTool 实例
+    // 当子 loop 通过 Task(agent_type) 语法限制了允许的子 agent 类型时
+    // 在 TaskTool.execute() 中进行验证
+    if (options.allowedSubagentTypes) {
+      const taskTool = toolRegistry.get('Task');
+      if (taskTool && 'setAllowedSubagentTypes' in taskTool) {
+        (taskTool as any).setAllowedSubagentTypes(options.allowedSubagentTypes);
+      }
+    }
   }
 
   /**
@@ -2588,24 +2616,17 @@ Guidelines:
         }
       }
 
-      // v2.1.30: 修复空 assistant content 问题（streaming 路径）
-      let fixedStreamContent = assistantContent;
-      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
-        fixedStreamContent = [{ type: 'text' as const, text: '(no content)' }];
-      }
+      // v2.1.33: 规范化 assistant 内容，修复 abort 时 whitespace+thinking block 导致的 API 错误
+      // 对应官方 kQ1/rC4/_5z 函数：
+      // 1. 过滤仅包含 whitespace 的 text block
+      // 2. 移除尾部孤立的 thinking block
+      // 3. 如果过滤后内容为空，添加一个空文本块避免 API 错误
+      const normalizedContent = this.normalizeAssistantContent(assistantContent);
 
       this.session.addMessage({
         role: 'assistant',
-        content: fixedStreamContent,
+        content: normalizedContent,
       });
-      // 🔧 修复：只有当 assistantContent 不为空时才添加 assistant 消息
-      // 避免在网络错误等情况下添加空 content 导致后续 API 调用失败
-      if (assistantContent.length > 0) {
-        this.session.addMessage({
-          role: 'assistant',
-          content: assistantContent,
-        });
-      }
 
       if (toolResults.length > 0) {
         this.session.addMessage({
@@ -2687,5 +2708,49 @@ Guidelines:
    */
   isAborted(): boolean {
     return this.abortController?.signal.aborted ?? false;
+  }
+
+  /**
+   * v2.1.33: 规范化 assistant 消息内容
+   *
+   * 修复当 abort 中断流式响应时，whitespace 文本和 thinking block 组合
+   * 绕过规范化导致无效 API 请求的问题。
+   *
+   * 对应官方 kQ1 函数逻辑：
+   * 1. 过滤仅包含 whitespace 的 text block
+   * 2. 移除尾部孤立的 thinking block（没有对应的 text/tool_use 跟随）
+   * 3. 确保内容非空（至少有一个有效的 content block）
+   */
+  private normalizeAssistantContent(content: any[]): any[] {
+    if (!content || content.length === 0) {
+      return [{ type: 'text', text: '' }];
+    }
+
+    // Step 1: 过滤仅包含 whitespace 的 text block
+    let filtered = content.filter((block: any) => {
+      if (block.type === 'text') {
+        // 保留非空 text block
+        return block.text && block.text.trim().length > 0;
+      }
+      // 保留所有非 text block（tool_use, thinking 等）
+      return true;
+    });
+
+    // Step 2: 移除尾部孤立的 thinking/redacted_thinking block
+    while (filtered.length > 0) {
+      const lastBlock = filtered[filtered.length - 1];
+      if (lastBlock.type === 'thinking' || lastBlock.type === 'redacted_thinking') {
+        filtered.pop();
+      } else {
+        break;
+      }
+    }
+
+    // Step 3: 确保内容非空
+    if (filtered.length === 0) {
+      return [{ type: 'text', text: '' }];
+    }
+
+    return filtered;
   }
 }

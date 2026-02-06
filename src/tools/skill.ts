@@ -239,6 +239,11 @@ interface SkillFrontmatter {
   when_to_use?: string;
   version?: string;
   model?: string;
+  color?: string;
+  /** v2.1.33: agent memory scope (user, project, or local) */
+  memory?: string;
+  /** v2.1.33: restrict which sub-agents can be spawned via Task(agent_type) syntax */
+  tools?: string;
   'user-invocable'?: string;
   'disable-model-invocation'?: string;
   [key: string]: any;
@@ -268,9 +273,12 @@ interface SkillDefinition {
   whenToUse?: string;
   version?: string;
   model?: string;
+  color?: string;  // v2.1.33: agent color
+  memory?: string;  // v2.1.33: agent memory scope (user, project, local)
   disableModelInvocation: boolean;
   userInvocable: boolean;
   source: SkillSource;
+  pluginName?: string;  // v2.1.33: plugin name for better discoverability
   baseDir: string;
   filePath: string;
   loadedFrom: 'skills' | 'commands_DEPRECATED';
@@ -408,9 +416,12 @@ function buildSkillDefinition(params: {
   whenToUse?: string;
   version?: string;
   model?: string;
+  color?: string;
+  memory?: string;
   disableModelInvocation: boolean;
   userInvocable: boolean;
   source: SkillSource;
+  pluginName?: string;
   baseDir: string;
   filePath: string;
   loadedFrom: 'skills' | 'commands_DEPRECATED';
@@ -430,9 +441,12 @@ function buildSkillDefinition(params: {
     whenToUse: params.whenToUse,
     version: params.version,
     model: params.model,
+    color: params.color,
+    memory: params.memory,
     disableModelInvocation: params.disableModelInvocation,
     userInvocable: params.userInvocable,
     source: params.source,
+    pluginName: params.pluginName,
     baseDir: params.baseDir,
     filePath: params.filePath,
     loadedFrom: params.loadedFrom,
@@ -487,6 +501,9 @@ function createSkillFromFile(
   const whenToUse = frontmatter['when-to-use'] || frontmatter.when_to_use;
   const version = frontmatter.version;
   const model = frontmatter.model === 'inherit' ? undefined : frontmatter.model;
+  const color = frontmatter.color;
+  // v2.1.33: memory frontmatter field for persistent memory with user, project, or local scope
+  const memory = frontmatter.memory;
   const disableModelInvocation = parseBoolean(frontmatter['disable-model-invocation']);
   const userInvocable = parseBoolean(frontmatter['user-invocable'], true);
   const executionContext = frontmatter.context === 'fork' ? 'fork' as const : undefined;
@@ -504,6 +521,8 @@ function createSkillFromFile(
     whenToUse,
     version,
     model,
+    color,
+    memory,
     disableModelInvocation,
     userInvocable,
     source,
@@ -804,6 +823,8 @@ async function loadSkillsFromPluginCache(): Promise<SkillDefinition[]> {
               );
 
               if (skill) {
+                // v2.1.33: set plugin name for better discoverability
+                skill.pluginName = plugin.name;
                 results.push(skill);
               }
             } catch (error) {
@@ -1000,10 +1021,15 @@ export function findSkill(skillInput: string): SkillDefinition | undefined {
  * 格式化 skill 描述（对齐官网 WKK 函数）
  */
 function formatSkillDescription(skill: SkillDefinition): string {
+  let desc = skill.description;
   if (skill.whenToUse) {
-    return `${skill.description} - ${skill.whenToUse}`;
+    desc = `${desc} - ${skill.whenToUse}`;
   }
-  return skill.description;
+  // v2.1.33: add plugin name for better discoverability
+  if (skill.pluginName) {
+    desc = `${desc} (from ${skill.pluginName})`;
+  }
+  return desc;
 }
 
 /**

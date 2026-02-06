@@ -29,11 +29,56 @@ export interface AgentTypeDefinition {
   agentType: string;
   whenToUse: string;
   tools?: string[];
+  /** v2.1.33: 限制可以生成的子 agent 类型 (Task(agent_type) 语法) */
+  allowedSubagentTypes?: string[];
   forkContext?: boolean;  // 是否访问父对话上下文
   permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions';
   model?: string;         // 代理类型的默认模型
+  color?: string;         // v2.1.33: agent color
+  memory?: string;        // v2.1.33: agent memory scope
   description?: string;
   getSystemPrompt?: () => string;  // 系统提示词生成函数
+}
+
+/**
+ * v2.1.33: 解析 tools 字段中的 Task(agent_type) 语法
+ *
+ * 对应官方 qzq 函数中的 tools 格式解析
+ * 例如: "Task(Explore), Task(Plan), Read, Grep" 表示
+ * - 可以使用 Task 工具，但只能生成 Explore 和 Plan 类型的子 agent
+ * - 可以使用 Read 和 Grep 工具
+ *
+ * @param tools 原始 tools 数组
+ * @returns { tools: 过滤后的工具列表, allowedSubagentTypes: 允许的子 agent 类型 }
+ */
+export function parseToolsWithAgentTypeRestriction(tools: string[]): {
+  tools: string[];
+  allowedSubagentTypes?: string[];
+} {
+  const normalTools: string[] = [];
+  const subagentTypes: string[] = [];
+  let hasTaskRestriction = false;
+
+  for (const tool of tools) {
+    const trimmed = tool.trim();
+    // 匹配 Task(agent_type) 语法
+    const match = trimmed.match(/^Task\((\w+)\)$/);
+    if (match) {
+      hasTaskRestriction = true;
+      subagentTypes.push(match[1]);
+      // 确保 Task 工具在允许列表中
+      if (!normalTools.includes('Task')) {
+        normalTools.push('Task');
+      }
+    } else {
+      normalTools.push(trimmed);
+    }
+  }
+
+  return {
+    tools: normalTools,
+    allowedSubagentTypes: hasTaskRestriction ? subagentTypes : undefined,
+  };
 }
 
 // 模型别名类型（与官方 SDK 一致）
@@ -462,10 +507,33 @@ user: "Hello"
 Since the user is greeting, use the greeting-responder agent to respond with a friendly joke
 </commentary>
 assistant: "I'm going to use the Task tool to launch the greeting-responder agent"
-</example>`;
+</example>
+
+Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not available on this plan. Only mention this if the user explicitly asks for "agent teams" by name, or asks for agents to send messages to each other (peer-to-peer messaging). Do NOT mention this limitation when users ask for parallel subagents, coordinating agents, launching a "team" of agents, or having agents work together — those are all normal Task tool usage and you should proceed normally.`;
 
   // 父对话上下文（用于 forkContext）
   private parentMessages: Message[] = [];
+
+  /**
+   * v2.1.33: 限制可生成的子 agent 类型
+   * 当从 frontmatter 的 tools 字段中解析出 Task(agent_type) 语法时设置
+   * null 表示无限制
+   */
+  private _allowedSubagentTypes: string[] | undefined = undefined;
+
+  /**
+   * 设置允许的子 agent 类型
+   */
+  setAllowedSubagentTypes(types: string[] | undefined): void {
+    this._allowedSubagentTypes = types;
+  }
+
+  /**
+   * 获取当前的子 agent 类型限制
+   */
+  getAllowedSubagentTypes(): string[] | undefined {
+    return this._allowedSubagentTypes;
+  }
 
   /**
    * 设置父对话上下文（在 Loop 中调用）
@@ -536,6 +604,18 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         success: false,
         error: `Unknown agent type: ${subagent_type}. Available types: ${BUILT_IN_AGENT_TYPES.map(d => d.agentType).join(', ')}`,
       };
+    }
+
+    // v2.1.33: 检查子 agent 类型限制
+    // 当父 agent 通过 Task(agent_type) 语法限制了允许的子 agent 类型时
+    // 在这里进行验证，不允许生成未授权的 agent 类型
+    if (this._allowedSubagentTypes && this._allowedSubagentTypes.length > 0) {
+      if (!this._allowedSubagentTypes.includes(subagent_type)) {
+        return {
+          success: false,
+          error: `Agent type "${subagent_type}" is not allowed. This agent can only spawn: ${this._allowedSubagentTypes.join(', ')}`,
+        };
+      }
     }
 
     // Resume 模式
@@ -780,6 +860,17 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       const fallbackModel = config.fallbackModel as string | undefined;
       const debug = config.debug as boolean | undefined;
 
+      // v2.1.33: 解析 tools 字段中的 Task(agent_type) 语法
+      let effectiveTools = agentDef.tools;
+      let childAllowedSubagentTypes = agentDef.allowedSubagentTypes;
+
+      if (effectiveTools && !childAllowedSubagentTypes) {
+        // 如果 tools 中包含 Task(xxx) 语法但还没被解析
+        const parsed = parseToolsWithAgentTypeRestriction(effectiveTools);
+        effectiveTools = parsed.tools;
+        childAllowedSubagentTypes = parsed.allowedSubagentTypes;
+      }
+
       // 构建 LoopOptions
       const loopOptions: LoopOptions = {
         model: resolvedModel,
@@ -787,7 +878,7 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         verbose: process.env.CLAUDE_VERBOSE === 'true',
         permissionMode: agentDef.permissionMode || 'default',
         // 根据代理定义限制工具访问
-        allowedTools: agentDef.tools,
+        allowedTools: effectiveTools,
         workingDir: agent.workingDirectory,
         // 使用代理定义的系统提示词
         systemPrompt: agentDef.getSystemPrompt?.(),
@@ -801,6 +892,8 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         isSubAgent: true,
         // v2.1.30: 传递 MCP 工具（空数组，子代理通过 ToolRegistry 单例访问 MCP 工具）
         mcpTools: [],
+        // v2.1.33: 传递子 agent 类型限制
+        allowedSubagentTypes: childAllowedSubagentTypes,
       };
 
       // 创建子对话循环（动态导入避免循环依赖）
