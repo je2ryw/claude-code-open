@@ -34,6 +34,13 @@ const additionalDirectories: string[] = [];
 // 全局 MCP 进程清理标志，防止重复清理
 let mcpCleanupScheduled = false;
 
+// v2.1.31: 追踪当前活跃的 session ID，用于退出时显示 resume 提示
+let activeSessionId: string | null = null;
+// v2.1.31: 追踪是否为交互模式
+let isInteractiveMode = false;
+// v2.1.31: 追踪是否禁用了 session 持久化
+let sessionPersistenceDisabled = false;
+
 /**
  * 安全退出函数
  * 官方 Ch6() 函数 - v2.1.19 新增
@@ -52,6 +59,33 @@ function safeExit(exitCode: number = 0): never {
   }
   // 理论上不应该到达这里
   throw new Error('unreachable');
+}
+
+/**
+ * v2.1.31: 退出时显示 session resume 提示
+ * 官方 kMA() 函数 - 仅在交互模式 TTY 环境下显示
+ *
+ * 条件：
+ * 1. stdout 是 TTY（交互终端）
+ * 2. 处于交互模式
+ * 3. session 持久化未被禁用
+ * 4. 有有效的 session ID
+ */
+function showSessionResumeHint(): void {
+  if (!process.stdout.isTTY || !isInteractiveMode || sessionPersistenceDisabled) {
+    return;
+  }
+  try {
+    const sessionId = activeSessionId;
+    if (!sessionId) return;
+
+    // 对包含特殊字符的 session ID 进行转义
+    const escapedId = sessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+    process.stderr.write(chalk.dim(`\nResume this session with:\nclaude --resume "${escapedId}"\n`));
+  } catch {
+    // 忽略任何错误，不影响退出流程
+  }
 }
 
 /**
@@ -94,12 +128,14 @@ process.on('beforeExit', async () => {
 // 注册 SIGINT 信号处理（Ctrl+C）
 process.on('SIGINT', async () => {
   await cleanupMcpServers();
+  showSessionResumeHint();
   safeExit(0);
 });
 
 // 注册 SIGTERM 信号处理
 process.on('SIGTERM', async () => {
   await cleanupMcpServers();
+  showSessionResumeHint();
   safeExit(0);
 });
 
@@ -807,6 +843,11 @@ async function runTextInterface(
     }
   }
 
+  // v2.1.31: 设置全局追踪变量，用于退出时显示 resume 提示
+  activeSessionId = loop.getSession().sessionId;
+  isInteractiveMode = !options.print;
+  sessionPersistenceDisabled = options.sessionPersistence === false;
+
   // 如果有初始 prompt
   if (prompt) {
     console.log(chalk.blue('> ') + prompt);
@@ -910,6 +951,7 @@ async function runTextInterface(
         console.log(chalk.yellow('\nGoodbye!'));
         const stats = loop.getSession().getStats();
         console.log(chalk.gray(`Session stats: ${stats.messageCount} messages, ${stats.totalCost}`));
+        showSessionResumeHint();
         rl.close();
         process.exit(0);
       }
@@ -2622,6 +2664,7 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
       console.log(chalk.yellow('\nGoodbye!'));
       const exitStats = loop.getSession().getStats();
       console.log(chalk.gray(`Session: ${exitStats.messageCount} messages, ${exitStats.totalCost}`));
+      showSessionResumeHint();
       safeExit(0);
 
     default:
