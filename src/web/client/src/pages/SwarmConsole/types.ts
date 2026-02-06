@@ -12,6 +12,25 @@
 // ============= 基础类型 =============
 
 /**
+ * v5.0: 蜂群共享记忆（SwarmMemory）
+ * 用于 Worker 之间共享上下文信息
+ */
+export interface SwarmMemory {
+  /** 任务进度概览（一行文本） */
+  overview: string;
+  /** 已注册的 API 列表（从后端任务 summary 中自动提取） */
+  apis: string[];
+  /** 已完成任务的摘要 */
+  completedTasks: Array<{
+    taskId: string;
+    taskName: string;
+    summary: string;
+  }>;
+  /** 最后更新时间 */
+  updatedAt: string;
+}
+
+/**
  * 蓝图（v2.0 完整版）
  */
 export interface Blueprint {
@@ -37,6 +56,9 @@ export interface Blueprint {
 
   // v2.0: 约束
   constraints?: string[];
+
+  // v5.0: 蜂群共享记忆
+  swarmMemory?: SwarmMemory | null;
 
   createdAt: string;
   updatedAt: string;
@@ -101,7 +123,7 @@ export interface PlanTask {
   estimatedMinutes: number;
 
   // 运行时状态（执行时更新）
-  status?: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  status?: 'pending' | 'running' | 'reviewing' | 'completed' | 'failed' | 'skipped';
   workerId?: string;           // 执行该任务的 Worker ID
   startedAt?: string;          // 开始时间
   completedAt?: string;        // 完成时间
@@ -176,7 +198,7 @@ export interface TaskNode {
   description: string;
   type: 'code' | 'config' | 'test' | 'refactor' | 'docs' | 'integrate';
   // v2.0: 状态与后端一致
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'running' | 'reviewing' | 'completed' | 'failed' | 'skipped';
   complexity: 'trivial' | 'simple' | 'moderate' | 'complex';
   workerId?: string;
   children: TaskNode[];
@@ -303,21 +325,44 @@ export type SwarmServerMessage =
   | { type: 'swarm:paused'; payload: SwarmControlPayload }
   | { type: 'swarm:resumed'; payload: SwarmControlPayload }
   | { type: 'swarm:stats_update'; payload: StatsUpdatePayload }
-  // v2.0 新增：Planner 探索/分解状态
+  | { type: 'swarm:memory_update'; payload: SwarmMemoryUpdatePayload }
   | { type: 'swarm:planner_update'; payload: PlannerUpdatePayload }
-  // v2.1 新增：Worker 日志消息
   | { type: 'swarm:worker_log'; payload: WorkerLogPayload }
-  // v2.1 新增：Worker 流式输出（思考、文本、工具调用）
   | { type: 'swarm:worker_stream'; payload: WorkerStreamPayload }
-  // v3.4 新增：验收测试状态更新
   | { type: 'swarm:verification_update'; payload: VerificationUpdatePayload }
-  // v3.5 新增：冲突需要人工处理
   | { type: 'conflict:needs_human'; payload: ConflictNeedsHumanPayload }
-  // v3.5 新增：冲突已解决
   | { type: 'conflict:resolved'; payload: ConflictResolvedPayload }
-  // v4.2 新增：E2E Agent 请求用户输入
   | { type: 'swarm:ask_user'; payload: AskUserPayload }
+  | { type: 'task:interject_success'; payload: InterjectSuccessPayload }
+  | { type: 'task:interject_failed'; payload: InterjectFailedPayload }
+  // v9.0: LeadAgent 事件
+  | { type: 'swarm:lead_stream'; payload: LeadStreamPayload }
+  | { type: 'swarm:lead_event'; payload: LeadEventPayload }
   | { type: 'pong' };
+
+// ============= v4.5 新增：用户插嘴响应类型 =============
+
+/**
+ * 插嘴成功 Payload
+ */
+export interface InterjectSuccessPayload {
+  blueprintId: string;
+  taskId: string;
+  success: true;
+  message: string;
+  timestamp: string;
+}
+
+/**
+ * 插嘴失败 Payload
+ */
+export interface InterjectFailedPayload {
+  blueprintId: string;
+  taskId: string;
+  success: false;
+  error: string;
+  timestamp: string;
+}
 
 // ============= v2.1 新增：Worker 日志类型 =============
 
@@ -349,13 +394,17 @@ export interface WorkerLogPayload {
 export interface WorkerStreamPayload {
   workerId: string;
   taskId?: string;
-  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end' | 'system_prompt';
   content?: string;
   toolName?: string;
   toolInput?: any;
   toolResult?: string;
   toolError?: string;
   timestamp: string;
+  /** v4.6 新增：Agent 的 System Prompt */
+  systemPrompt?: string;
+  /** v4.6 新增：Agent 类型 */
+  agentType?: 'worker' | 'e2e' | 'reviewer';
 }
 
 // ============= WebSocket Payload 类型 =============
@@ -408,6 +457,14 @@ export interface SwarmControlPayload {
 export interface StatsUpdatePayload {
   blueprintId: string;
   stats: Stats;
+}
+
+/**
+ * v5.0 新增：蜂群共享记忆更新 Payload
+ */
+export interface SwarmMemoryUpdatePayload {
+  blueprintId: string;
+  swarmMemory: SwarmMemory;
 }
 
 /**
@@ -467,6 +524,22 @@ export interface SwarmState {
 
   // v4.2: AskUserQuestion 对话框状态
   askUserDialog: AskUserDialogState;
+
+  // v4.5: 用户插嘴状态（反馈消息）
+  interjectStatus: InterjectStatus | null;
+
+  // v9.0: LeadAgent 持久大脑状态
+  leadAgent: LeadAgentState;
+}
+
+/**
+ * v4.5: 用户插嘴状态
+ */
+export interface InterjectStatus {
+  taskId: string;
+  success: boolean;
+  message: string;
+  timestamp: string;
 }
 
 /**
@@ -486,6 +559,10 @@ export interface TaskStreamContent {
   content: StreamContentBlock[];
   /** 最后更新时间 */
   lastUpdated: string;
+  /** v4.6 新增：Agent 的 System Prompt（用于透明展示 Agent 指令） */
+  systemPrompt?: string;
+  /** v4.6 新增：Agent 类型（worker / e2e / reviewer） */
+  agentType?: 'worker' | 'e2e' | 'reviewer';
 }
 
 // ============= Hook 返回类型 =============
@@ -697,4 +774,65 @@ export interface ConflictResolvedPayload {
   conflictId: string;
   success: boolean;
   message?: string;
+}
+
+// ============= v9.0: LeadAgent 持久大脑类型 =============
+
+/**
+ * LeadAgent 阶段
+ */
+export type LeadAgentPhase =
+  | 'idle'          // 未启动
+  | 'started'       // 刚启动
+  | 'exploring'     // 探索代码库
+  | 'planning'      // 制定计划
+  | 'executing'     // 执行中（自己做或派发Worker）
+  | 'reviewing'     // 审查Worker结果
+  | 'completed'     // 全部完成
+  | 'failed';       // 执行失败
+
+/**
+ * LeadAgent 流式内容块
+ */
+export type LeadStreamBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; input?: any; result?: string; error?: string; status: 'running' | 'completed' | 'error' };
+
+/**
+ * LeadAgent 状态
+ */
+export interface LeadAgentState {
+  /** 当前阶段 */
+  phase: LeadAgentPhase;
+  /** 流式内容（LeadAgent 的实时输出） */
+  stream: LeadStreamBlock[];
+  /** 阶段事件历史 */
+  events: Array<{
+    type: string;
+    data: Record<string, unknown>;
+    timestamp: string;
+  }>;
+  /** 最后更新时间 */
+  lastUpdated: string;
+}
+
+/**
+ * LeadAgent 流式输出 Payload
+ */
+export interface LeadStreamPayload {
+  streamType: 'text' | 'tool_start' | 'tool_end';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolResult?: string;
+  toolError?: string;
+}
+
+/**
+ * LeadAgent 阶段事件 Payload
+ */
+export interface LeadEventPayload {
+  eventType: string;
+  data: Record<string, unknown>;
+  timestamp: string;
 }

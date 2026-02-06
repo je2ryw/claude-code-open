@@ -300,8 +300,8 @@ export const ClaudeMdImportDialog: React.FC<ClaudeMdImportDialogProps> = ({
       setSelectedIndex(prev => Math.max(0, prev - 1));
     } else if (key.downArrow || input === 'j') {
       setSelectedIndex(prev => Math.min(processedFiles.length - 1, prev + 1));
-    } else if (key.return || input === ' ') {
-      // 切换当前文件的审批状态
+    } else if (key.return || input === ' ' || input === '\u3000') {
+      // 切换当前文件的审批状态（v2.1.31: 支持全角空格，兼容日语 IME）
       const file = processedFiles[selectedIndex];
       if (file && file.exists && !file.validationError) {
         setFileApprovals(prev => {

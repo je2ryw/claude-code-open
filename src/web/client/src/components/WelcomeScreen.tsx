@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { BlueprintRequirementDialog } from './BlueprintRequirementDialog';
 import { CodebaseAnalysisDialog } from './CodebaseAnalysisDialog';
 import { useProject } from '../contexts/ProjectContext';
 
@@ -8,7 +7,6 @@ interface WelcomeScreenProps {
 }
 
 export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
-  const [showRequirementDialog, setShowRequirementDialog] = useState(false);
   const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
   const [analysisTriggered, setAnalysisTriggered] = useState(false);
   const { state: projectState } = useProject();
@@ -39,11 +37,6 @@ export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
     setAnalysisTriggered(false);
   }, [projectState.currentProject?.id]);
 
-  const handleBlueprintComplete = (blueprintId: string) => {
-    setShowRequirementDialog(false);
-    onBlueprintCreated?.(blueprintId);
-  };
-
   const handleAnalysisComplete = (blueprintId: string) => {
     setShowAnalysisDialog(false);
     onBlueprintCreated?.(blueprintId);
@@ -68,33 +61,27 @@ export function WelcomeScreen({ onBlueprintCreated }: WelcomeScreenProps) {
       )}
 
       {isEmptyProject && !hasBlueprint ? (
-        // 空项目且无蓝图：显示创建蓝图流程
+        // 空项目且无蓝图：引导用户在聊天框输入需求
         <>
           <p className="welcome-subtitle">
-            欢迎使用 Claude Code！这是一个新项目，让我们从创建项目蓝图开始。
+            欢迎使用 Claude Code！描述你想要的项目，我帮你规划和实现。
           </p>
 
-          {/* 创建蓝图按钮 */}
-          <div className="welcome-actions">
-            <button
-              className="welcome-action-btn welcome-action-blueprint"
-              onClick={() => setShowRequirementDialog(true)}
-              title="通过对话收集需求，生成项目蓝图"
-            >
-              <span className="welcome-action-icon">📋</span>
-              <span className="welcome-action-text">创建项目蓝图</span>
-              <span className="welcome-action-desc">通过对话收集需求</span>
-            </button>
+          {/* 快捷提示 */}
+          <div className="welcome-hints">
+            <div className="welcome-hint-item">
+              <span className="hint-icon">💡</span>
+              <span className="hint-text">在下方输入框描述你的项目需求，我会通过对话帮你梳理并生成项目蓝图</span>
+            </div>
+            <div className="welcome-hint-item">
+              <span className="hint-icon">📋</span>
+              <span className="hint-text">例如：「帮我做一个 Todo App，用 React + Express + SQLite」</span>
+            </div>
+            <div className="welcome-hint-item">
+              <span className="hint-icon">🚀</span>
+              <span className="hint-text">蓝图确认后，LeadAgent 会自动探索代码、规划任务、执行开发</span>
+            </div>
           </div>
-
-          {/* 蓝图需求收集对话框 */}
-          {showRequirementDialog && (
-            <BlueprintRequirementDialog
-              visible={showRequirementDialog}
-              onClose={() => setShowRequirementDialog(false)}
-              onComplete={handleBlueprintComplete}
-            />
-          )}
         </>
       ) : (
         // 非空项目或已有蓝图：显示 AI 对话提示

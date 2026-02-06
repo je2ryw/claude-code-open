@@ -8,6 +8,7 @@ import { Box, Text, useInput } from 'ink';
 import { modelConfig } from '../../models/config.js';
 import type { ModelInfo } from '../../models/types.js';
 import { convertFullwidthToHalfwidth, charToDigit } from '../../utils/index.js';
+import { isThirdPartyProvider } from '../../core/client.js';
 
 export interface ModelSelectorProps {
   /** 当前选中的模型 ID */
@@ -75,7 +76,8 @@ export function ModelSelector({
   currentModel,
   onSelect,
   onCancel,
-  showPricing = true,
+  // v2.1.31: 第三方 provider（Bedrock、Vertex、Foundry）不显示 Anthropic API 定价
+  showPricing = !isThirdPartyProvider(),
   showCapabilities = true,
   title = 'Select a model:',
   hint = '↑/↓ to navigate · enter to select · esc to cancel',

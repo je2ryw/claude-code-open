@@ -52,6 +52,29 @@ export interface AgentInput {
    * the output later.
    */
   run_in_background?: boolean;
+
+  /**
+   * Maximum number of agentic turns (API round-trips) before stopping.
+   */
+  max_turns?: number;
+
+  /**
+   * v2.1.32: Agent name (for Agent Teams)
+   * Names the spawned agent for identification within a team.
+   */
+  name?: string;
+
+  /**
+   * v2.1.32: Team name (for Agent Teams)
+   * Uses current team context if omitted.
+   * Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+   */
+  team_name?: string;
+
+  /**
+   * v2.1.32: Permission mode for the agent (for Agent Teams)
+   */
+  mode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'delegate' | 'dontAsk' | 'plan';
 }
 
 // ============================================================================

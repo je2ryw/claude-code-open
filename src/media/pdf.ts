@@ -13,9 +13,10 @@ const execFileAsync = promisify(execFile);
 
 /**
  * PDF 配置常量
- * 对应官方的 JzB 和 m43
+ * v2.1.31: 更新限制为 20MB，并添加 100 页限制（与官方对齐）
  */
-export const PDF_MAX_SIZE = 33554432; // 32MB = 33554432 bytes
+export const PDF_MAX_SIZE = 20 * 1024 * 1024; // 20MB
+export const PDF_MAX_PAGES = 100; // 最大 100 页
 export const PDF_EXTENSIONS = new Set(['pdf']);
 
 /**
@@ -58,6 +59,14 @@ export interface PdfPartsResult {
 export interface PageRange {
   firstPage: number;
   lastPage: number; // Infinity 表示到最后一页
+ * v2.1.31: PDF 错误类
+ * 用于区分 PDF 特有的错误（如大小超限），避免这些错误锁死 session
+ */
+export class PdfTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PdfTooLargeError';
+  }
 }
 
 /**
@@ -226,10 +235,12 @@ export async function extractPdfPages(
  * 读取 PDF 文件并返回 base64（对应官方的 Zo4 函数）
  *
  * 官方实现流程：
- * 1. 检查文件大小（不能为0，不能超过32MB）
+ * 1. 检查文件大小（不能为0，不能超过20MB）
  * 2. 读取文件内容
  * 3. 转换为 base64
  * 4. 返回结构化结果
+ *
+ * v2.1.31: 更新限制为 20MB，使用 PdfTooLargeError 避免锁死 session
  */
 export async function readPdfFile(filePath: string): Promise<PdfReadResult> {
   // 获取文件信息
@@ -242,10 +253,11 @@ export async function readPdfFile(filePath: string): Promise<PdfReadResult> {
   }
 
   if (size > PDF_MAX_SIZE) {
-    throw new Error(
-      `PDF file size (${formatBytes(size)}) exceeds maximum ` +
-      `allowed size (${formatBytes(PDF_MAX_SIZE)}). ` +
-      `PDF files must be less than 32MB.`
+    throw new PdfTooLargeError(
+      `PDF file too large: ${formatBytes(size)}. ` +
+      `Maximum allowed size is ${formatBytes(PDF_MAX_SIZE)} (20MB). ` +
+      `Maximum allowed pages is ${PDF_MAX_PAGES}. ` +
+      `Try using the \`pages\` parameter to read specific page ranges (e.g., pages: "1-5").`
     );
   }
 
@@ -278,10 +290,11 @@ export function readPdfFileSync(filePath: string): PdfReadResult {
   }
 
   if (size > PDF_MAX_SIZE) {
-    throw new Error(
-      `PDF file size (${formatBytes(size)}) exceeds maximum ` +
-      `allowed size (${formatBytes(PDF_MAX_SIZE)}). ` +
-      `PDF files must be less than 32MB.`
+    throw new PdfTooLargeError(
+      `PDF file too large: ${formatBytes(size)}. ` +
+      `Maximum allowed size is ${formatBytes(PDF_MAX_SIZE)} (20MB). ` +
+      `Maximum allowed pages is ${PDF_MAX_PAGES}. ` +
+      `Try using the \`pages\` parameter to read specific page ranges (e.g., pages: "1-5").`
     );
   }
 
@@ -318,7 +331,7 @@ export function validatePdfFile(filePath: string): { valid: boolean; error?: str
     if (size > PDF_MAX_SIZE) {
       return {
         valid: false,
-        error: `PDF file size (${formatBytes(size)}) exceeds maximum allowed size (${formatBytes(PDF_MAX_SIZE)})`
+        error: `PDF file too large (${formatBytes(size)}). Maximum allowed: ${formatBytes(PDF_MAX_SIZE)} (20MB), ${PDF_MAX_PAGES} pages`
       };
     }
 

@@ -357,11 +357,15 @@ Usage:
         },
         offset: {
           type: 'number',
-          description: 'The line number to start reading from',
+          description: 'The line number to start reading from. Only provide if the file is too large to read at once',
         },
         limit: {
           type: 'number',
-          description: 'The number of lines to read',
+          description: 'The number of lines to read. Only provide if the file is too large to read at once.',
+        },
+        pages: {
+          type: 'string',
+          description: 'Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum 20 pages per request.',
         },
         pages: {
           type: 'string',
@@ -629,10 +633,13 @@ Usage:
           },
         ],
       };
-    } catch (error) {
+    } catch (error: any) {
+      // v2.1.31: PDF 过大错误不应锁死 session
+      // 返回友好的错误信息，包含实际限制
+      const errorMessage = error?.message || String(error);
       return {
         success: false,
-        error: `Error reading PDF: ${error}`,
+        error: `Error reading PDF: ${errorMessage}`,
       };
     }
   }

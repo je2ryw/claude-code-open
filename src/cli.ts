@@ -34,6 +34,13 @@ const additionalDirectories: string[] = [];
 // 全局 MCP 进程清理标志，防止重复清理
 let mcpCleanupScheduled = false;
 
+// v2.1.31: 追踪当前活跃的 session ID，用于退出时显示 resume 提示
+let activeSessionId: string | null = null;
+// v2.1.31: 追踪是否为交互模式
+let isInteractiveMode = false;
+// v2.1.31: 追踪是否禁用了 session 持久化
+let sessionPersistenceDisabled = false;
+
 /**
  * 安全退出函数
  * 官方 Ch6() 函数 - v2.1.19 新增
@@ -52,6 +59,33 @@ function safeExit(exitCode: number = 0): never {
   }
   // 理论上不应该到达这里
   throw new Error('unreachable');
+}
+
+/**
+ * v2.1.31: 退出时显示 session resume 提示
+ * 官方 kMA() 函数 - 仅在交互模式 TTY 环境下显示
+ *
+ * 条件：
+ * 1. stdout 是 TTY（交互终端）
+ * 2. 处于交互模式
+ * 3. session 持久化未被禁用
+ * 4. 有有效的 session ID
+ */
+function showSessionResumeHint(): void {
+  if (!process.stdout.isTTY || !isInteractiveMode || sessionPersistenceDisabled) {
+    return;
+  }
+  try {
+    const sessionId = activeSessionId;
+    if (!sessionId) return;
+
+    // 对包含特殊字符的 session ID 进行转义
+    const escapedId = sessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+    process.stderr.write(chalk.dim(`\nResume this session with:\nclaude --resume "${escapedId}"\n`));
+  } catch {
+    // 忽略任何错误，不影响退出流程
+  }
 }
 
 /**
@@ -94,12 +128,14 @@ process.on('beforeExit', async () => {
 // 注册 SIGINT 信号处理（Ctrl+C）
 process.on('SIGINT', async () => {
   await cleanupMcpServers();
+  showSessionResumeHint();
   safeExit(0);
 });
 
 // 注册 SIGTERM 信号处理
 process.on('SIGTERM', async () => {
   await cleanupMcpServers();
+  showSessionResumeHint();
   safeExit(0);
 });
 
@@ -242,10 +278,18 @@ program
       process.env.CLAUDE_SOLO_MODE = 'true';
     }
 
+    // v2.1.32: 将 --add-dir 传递给 Skill 模块以自动加载额外目录的 skills
+    if (options.addDir && Array.isArray(options.addDir)) {
+      const { setAdditionalDirectories } = await import('./tools/skill.js');
+      const resolvedDirs = options.addDir.map((d: string) => path.resolve(d));
+      setAdditionalDirectories(resolvedDirs);
+    }
+
     // 模型映射（官方 Claude Code 使用的模型版本）
+    // v2.1.32: Claude Opus 4.6 is now available
     const modelMap: Record<string, string> = {
       'sonnet': 'claude-sonnet-4-5-20250929',
-      'opus': 'claude-opus-4-5-20251101',
+      'opus': 'claude-opus-4-6-20260130',
       'haiku': 'claude-haiku-4-5-20251001',
     };
 
@@ -776,6 +820,11 @@ async function runTextInterface(
         const session = Session.load(options.resume);
         if (session) {
           loop.setSession(session);
+          // v2.1.32: 如果用户没有指定 --agent，但会话保存了 agent 值，则复用
+          if (!options.agent && session.getAgent()) {
+            options.agent = session.getAgent();
+            console.log(chalk.gray(`  Re-using agent from previous session: ${options.agent}`));
+          }
           console.log(chalk.green(`Resumed session: ${options.resume}`));
         } else {
           console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
@@ -806,6 +855,15 @@ async function runTextInterface(
       }
     }
   }
+
+  // v2.1.32: 保存 --agent 值到会话（供 resume 复用）
+  if (options.agent && loop.getSession()) {
+    loop.getSession().setAgent(options.agent);
+  }
+  // v2.1.31: 设置全局追踪变量，用于退出时显示 resume 提示
+  activeSessionId = loop.getSession().sessionId;
+  isInteractiveMode = !options.print;
+  sessionPersistenceDisabled = options.sessionPersistence === false;
 
   // 如果有初始 prompt
   if (prompt) {
@@ -910,6 +968,7 @@ async function runTextInterface(
         console.log(chalk.yellow('\nGoodbye!'));
         const stats = loop.getSession().getStats();
         console.log(chalk.gray(`Session stats: ${stats.messageCount} messages, ${stats.totalCost}`));
+        showSessionResumeHint();
         rl.close();
         process.exit(0);
       }
@@ -2652,6 +2711,7 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
       console.log(chalk.yellow('\nGoodbye!'));
       const exitStats = loop.getSession().getStats();
       console.log(chalk.gray(`Session: ${exitStats.messageCount} messages, ${exitStats.totalCost}`));
+      showSessionResumeHint();
       safeExit(0);
 
     default:

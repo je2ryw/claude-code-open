@@ -72,10 +72,12 @@ export class WebSessionManager {
     /** 项目路径，用于按项目过滤会话，null 表示全局会话 */
     projectPath?: string | null;
   }): WebSessionData {
+    // 使用项目路径作为工作目录，如果没有则使用默认 cwd
+    const workingDir = options.projectPath || this.cwd;
     const session = createSession({
       name: options.name,
       model: options.model,
-      workingDirectory: this.cwd,
+      workingDirectory: workingDir,
       systemPrompt: options.systemPrompt,
       tags: options.tags,
       projectPath: options.projectPath,

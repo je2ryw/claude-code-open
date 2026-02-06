@@ -113,6 +113,7 @@ async function findMatchingFiles(
     });
 
     // 转换为补全项
+    // v2.1.32: 使用 path.relative 确保从子目录运行时路径正确
     const completions: CompletionItem[] = await Promise.all(
       files.slice(0, maxResults * 2).map(async (file) => {
         const fullPath = path.join(cwd, file);
@@ -124,10 +125,13 @@ async function findMatchingFiles(
           // 忽略错误
         }
 
+        // v2.1.32: 确保相对路径正确（从子目录运行时）
+        const relativePath = path.relative(cwd, fullPath);
+
         return {
-          value: `@${file} `,
+          value: `@${relativePath} `,
           label: `@${path.basename(file)}`,
-          description: isDir ? `Folder: ${file}` : `File: ${file}`,
+          description: isDir ? `Folder: ${relativePath}` : `File: ${relativePath}`,
           type: 'mention' as const,
           priority: isDir ? 1 : 2,
         };

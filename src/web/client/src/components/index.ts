@@ -10,6 +10,5 @@ export { SettingsPanel } from './SettingsPanel';
 export { McpPanel } from './McpPanel';
 export { PluginsPanel } from './PluginsPanel';
 export { BlueprintSummaryCard } from './BlueprintSummaryCard';
-export { BlueprintRequirementDialog } from './BlueprintRequirementDialog';
 export { CodebaseAnalysisDialog } from './CodebaseAnalysisDialog';
 export { NotebookOutputRenderer } from './NotebookOutputRenderer';

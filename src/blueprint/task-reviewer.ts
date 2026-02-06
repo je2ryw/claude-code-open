@@ -13,6 +13,7 @@
 import { SmartTask, ModelType, Blueprint, TechStack } from './types.js';
 import { ConversationLoop } from '../core/loop.js';
 import { getAgentDecisionMaker } from './agent-decision-maker.js';
+import { SubmitReviewTool } from '../tools/submit-review.js';
 
 // ============== 审查上下文 ==============
 
@@ -23,16 +24,17 @@ export interface ReviewContext {
   projectPath?: string;
   isRetry?: boolean;
   previousAttempts?: number;
+  /** v6.1: 上次失败的审查反馈（让 Reviewer 知道之前失败的原因） */
+  lastReviewFeedback?: {
+    verdict: 'failed' | 'needs_revision';
+    reasoning: string;
+    issues?: string[];
+    suggestions?: string[];
+  };
 
   // v4.0: 全局上下文（类似 Queen 的视角）
-  blueprint?: {
-    id: string;
-    name: string;
-    description: string;
-    requirements?: string[];
-    techStack?: TechStack;
-    constraints?: string[];
-  };
+  /** v6.1: 使用 Pick 引用 Blueprint 类型，避免内联重复定义 */
+  blueprint?: Pick<Blueprint, 'id' | 'name' | 'description' | 'requirements' | 'techStack' | 'constraints'>;
 
   // 相关任务（上下文）
   relatedTasks?: Array<{
@@ -127,6 +129,16 @@ export interface ReviewResult {
 }
 
 /**
+ * Reviewer 进度回调
+ * v5.0: 新增进度反馈，让用户知道 Reviewer 在做什么
+ */
+export type ReviewProgressCallback = (step: {
+  stage: 'checking_git' | 'verifying_files' | 'analyzing_quality' | 'completing';
+  message: string;
+  details?: any;
+}) => void;
+
+/**
  * Reviewer 配置
  */
 export interface ReviewerConfig {
@@ -166,11 +178,13 @@ export class TaskReviewer {
   /**
    * 审查 Worker 的工作成果
    * v4.0: 支持全局上下文（Blueprint 信息）
+   * v5.0: 新增进度回调参数
    */
   async review(
     task: SmartTask,
     workerSummary: WorkerExecutionSummary,
-    context?: ReviewContext
+    context?: ReviewContext,
+    onProgress?: ReviewProgressCallback
   ): Promise<ReviewResult> {
     if (!this.config.enabled) {
       // 审查被禁用，直接通过
@@ -185,58 +199,75 @@ export class TaskReviewer {
     const startTime = Date.now();
 
     try {
+      // v5.0: 发送进度 - 开始审查
+      onProgress?.({
+        stage: 'checking_git',
+        message: '正在验证 Git 提交状态...',
+        details: { taskId: task.id },
+      });
+
       const prompt = this.buildReviewPrompt(task, workerSummary, context);
-      const result = await this.callReviewer(prompt, context?.projectPath);
+      const result = await this.callReviewer(prompt, context?.projectPath, onProgress);
+
+      // v5.0: 发送进度 - 完成审查
+      onProgress?.({
+        stage: 'completing',
+        message: `审查完成: ${result.verdict}`,
+        details: { verdict: result.verdict, confidence: result.confidence },
+      });
 
       return {
         ...result,
         durationMs: Date.now() - startTime,
       };
     } catch (error) {
-      // 审查失败时，降级为信任 Worker
-      console.error('[TaskReviewer] 审查失败，降级为信任 Worker:', error);
-      return {
-        verdict: workerSummary.selfReported.completed ? 'passed' : 'failed',
-        confidence: 'low',
-        reasoning: `审查过程出错，降级为信任 Worker 的自我汇报: ${error}`,
-        durationMs: Date.now() - startTime,
-      };
+      // 根据项目规则：禁止降级方案，直接抛出错误
+      console.error('[TaskReviewer] 审查失败:', error);
+      throw new Error(`Reviewer 审查过程出错: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * v4.0: 构建 Reviewer 的 System Prompt
-   * Reviewer 现在拥有全局视角和只读工具能力
+   * v5.0: 优化 - 减少不必要的工具调用，聚焦改动验证
+   * v6.0: 强制只返回 JSON，不要任何中间输出
    */
   private buildReviewerSystemPrompt(projectPath?: string): string {
     return `你是一个高级任务审查员（Reviewer），负责审查 Worker 的工作成果。
 
 ## 你的能力
-- 你可以使用 Read、Glob、Grep 工具来**主动验证** Worker 的工作
+- 你可以使用 Read、Glob、Grep、Bash 工具来**主动验证** Worker 的工作
 - 你能看到整个项目，可以检查代码是否真的被修改
 - 你是独立的第三方，不受 Worker 报告的影响
 
 ## 工作目录
 ${projectPath || '未指定'}
 
-## 审查原则
-1. **眼见为实**：不要只看 Worker 的报告，主动读取文件验证
-2. **理解意图**：理解任务的真正目标，而不是死板检查步骤
-3. **客观公正**：基于事实判断，不偏袒任何一方
+## 审查原则（v5.0 优化）
+1. **优先验证 Git 提交**：最快最准确的方式是检查 git log 和 git status
+2. **聚焦文件改动**：只验证 Worker 报告的改动文件，不要全量扫描
+3. **按需深入**：只在发现问题时才深入检查文件内容
+4. **理解意图**：理解任务的真正目标，而不是死板检查步骤
 
-## 审查流程
-1. 阅读 Worker 的执行报告
-2. **主动使用工具验证**：
-   - 用 Glob 检查是否有新文件被创建
-   - 用 Read 查看关键文件内容
-   - 用 Grep 搜索特定代码模式
-3. 综合判断任务是否完成
-4. **必须在最后返回 JSON 格式的审查结果**（这是硬性要求！）
+## 审查流程（精简版）
+1. **第一步（必须）**：用 Bash 运行 \`git log -1 --oneline\` 验证最新提交
+   - 如果有包含 "[Task]" 的新提交 → 继续第 2 步
+   - 如果没有新提交 → 用 \`git status\` 检查是否有未提交改动
+2. **第二步（按需）**：如果报告了文件改动，抽查 1-2 个关键文件验证代码质量
+   - 优先验证核心业务逻辑文件
+   - 不需要验证所有文件
+3. **第三步（必须）**：返回 JSON 格式的审查结果
 
 ## 特殊情况
-- 如果 Worker 说"文件已存在，无需修改"，你应该**验证**文件是否确实存在且满足要求
-- 如果 Worker 没有修改文件但任务需要创建文件，这可能是问题
-- 如果现有代码已经满足任务要求，"不修改"是正确的结论`;
+- "无文件变更"不等于"任务失败"，可能现有代码已满足要求
+- 如果 Worker 说"已存在，无需修改"，验证文件是否确实满足要求
+- 重新执行的任务，检查之前的问题是否已解决
+
+## ⚠️ 关键输出要求（v6.0 - 工具调用）
+**完成验证后，必须调用 SubmitReview 工具提交审查结果！**
+- ✅ 使用 SubmitReview 工具提交结论（100% 可靠的结构化输出）
+- ❌ 不要返回 JSON 文本（已废弃，容易解析出错）
+- 📝 你可以在调用工具前输出验证过程的文字说明（方便调试）`;
   }
 
   /**
@@ -355,15 +386,20 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
 
 ## 你的任务
 
-**重要：在做出判断之前，你必须使用工具主动验证！**
+**v5.0 优化：聚焦改动验证，减少不必要的工具调用**
 
-### 验证步骤（必须执行）
-1. **检查 Git 提交**：用 Bash 运行 \`git log -1 --oneline\` 查看最新提交
-   - 如果提交消息包含 "[Task]" 前缀，说明 Worker 已成功提交代码
-   - 如果没有新提交，检查 \`git status\` 是否有未提交的改动
-2. **检查文件是否存在**：用 Glob 搜索任务相关的文件
-3. **查看文件内容**：用 Read 查看关键文件，确认代码质量
-4. **搜索关键代码**：用 Grep 搜索任务要求的功能点是否实现
+### 验证步骤（精简版）
+1. **【最优先】检查 Git 提交**：用 Bash 运行 \`git log -1 --oneline\` 和 \`git status\`
+   - 有 "[Task]" 提交 → Worker 已完成并提交，继续验证质量
+   - 无新提交但有改动 → **needs_revision**（Worker 写了代码但没提交）
+   - 无提交也无改动 → 检查现有代码是否已满足要求
+2. **【按需执行】验证改动文件**（仅当报告了文件改动时）：
+   - **重点**：只验证上面"文件变更"列表中的文件
+   - 抽查 1-2 个核心文件，用 Read 查看代码质量
+   - 不需要验证所有文件，信任 Worker 的基本能力
+3. **【可选】深入检查**（仅当发现明显问题时）：
+   - 用 Grep 搜索特定代码模式
+   - 用 Glob 检查是否有遗漏的文件
 
 ### 判断标准
 - **【最重要】验证 Git 提交**：
@@ -378,23 +414,42 @@ ${summary.error ? `### 错误信息\n${summary.error}` : ''}
 Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己诊断并修复问题（如配置 user.email）。
 如果 Reviewer 发现有未提交的改动，判定 **needs_revision** 并建议 Worker 完成 Git 提交。
 
-### 完成验证后，返回 JSON 格式的审查结果：
+## ⚠️ 最终输出要求（v6.0 - 工具调用）
 
-\`\`\`json
-{
-  "verdict": "passed" | "failed" | "needs_revision",
-  "confidence": "high" | "medium" | "low",
-  "reasoning": "你的判断理由（简洁明了）",
-  "verified": ["验证项1", "验证项2"],  // 你实际验证过的内容
-  "issues": ["问题1", "问题2"],  // 如果失败，列出问题
-  "suggestions": ["建议1", "建议2"]  // 如果需要修改，给出建议
-}
+**完成验证后，必须调用 SubmitReview 工具提交审查结果！**
+
+### 工具调用示例（passed）
+
+\`\`\`
+SubmitReview({
+  "verdict": "passed",
+  "confidence": "high",
+  "reasoning": "Git 提交已验证，健康检查服务实现正确",
+  "verified": ["Git 提交状态", "src/services/health.ts 代码质量"],
+  "issues": [],
+  "suggestions": []
+})
 \`\`\`
 
-**注意**：
-- 不要只看 Worker 的报告就做判断，必须自己验证
-- 如果是重新执行的任务，检查之前的问题是否已解决
-- "无文件变更"不等于"任务失败"，可能现有代码已经满足要求`;
+### 工具调用示例（needs_revision）
+
+\`\`\`
+SubmitReview({
+  "verdict": "needs_revision",
+  "confidence": "high",
+  "reasoning": "代码已修改但未提交到 Git",
+  "verified": ["Git 提交状态", "文件改动检查"],
+  "issues": ["未提交 Git 改动"],
+  "suggestions": ["运行 git add . && git commit -m '[Task] 完成任务'"]
+})
+\`\`\`
+
+**关键提醒**：
+- ✅ 必须调用 SubmitReview 工具提交结论
+- 📝 你可以在调用工具前输出验证过程（如"正在检查 Git 提交..."）
+- ❌ 不要返回 JSON 文本（已废弃）
+- 不要只看 Worker 的报告，必须自己验证
+- "无文件变更"不等于"任务失败"，可能现有代码已满足要求`;
   }
 
   /**
@@ -431,16 +486,26 @@ Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己�
   /**
    * 调用 Reviewer 模型（使用 ConversationLoop，与 Worker 相同的认证方式）
    * v4.0: 支持只读工具，让 Reviewer 能主动验证代码
+   * v5.0: 优化 - 降低 maxTurns，添加进度回调
+   * v6.0: 添加 SubmitReview 工具，使用工具调用而非文本解析
    */
-  private async callReviewer(prompt: string, projectPath?: string): Promise<Omit<ReviewResult, 'durationMs'>> {
+  private async callReviewer(
+    prompt: string,
+    projectPath?: string,
+    onProgress?: ReviewProgressCallback
+  ): Promise<Omit<ReviewResult, 'durationMs'>> {
     // v4.0: Reviewer 现在拥有只读工具，可以主动验证 Worker 的工作
     // v5.5: 增加 Bash 工具，用于验证 Git 提交状态（git log, git status）
-    const REVIEWER_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'Bash'];
+    // v6.0: 添加 SubmitReview 工具，用于提交审查结果
+    const REVIEWER_READ_ONLY_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'Bash', 'SubmitReview'];
+
+    // v6.0: 清除之前的审查结果
+    SubmitReviewTool.clearReviewResult();
 
     // 使用 ConversationLoop，自动处理认证（支持 OAuth 和 API Key）
     const loop = new ConversationLoop({
       model: this.config.model as ModelType,
-      maxTurns: 20,  // v4.1: 增加轮数到 20，因为验证过程可能需要多次读取文件
+      maxTurns: 12,  // v5.0: 优化 - 从 20 降低到 12（精简验证步骤后不需要这么多轮次）
       verbose: false,
       permissionMode: 'bypassPermissions',
       workingDir: projectPath,  // v4.0: 传递项目路径，让工具知道在哪里读文件
@@ -452,33 +517,43 @@ Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己�
       allowedTools: REVIEWER_READ_ONLY_TOOLS,
     });
 
-    let responseText = '';
-    let thinkingText = '';  // 后备：收集 thinking 内容
-    const eventTypes: string[] = [];  // 调试：记录所有事件类型
-    let errorEvent: string | undefined;  // 记录错误事件
+    let hasSeenBashTool = false;  // v5.0: 追踪是否已执行 Git 验证
+    let hasSeenReadTool = false;  // v5.0: 追踪是否已开始读取文件
+    let hasCalledSubmitReview = false;  // v6.0: 追踪是否已调用 SubmitReview
 
     console.log(`[TaskReviewer] 开始调用模型: ${this.config.model}`);
 
     // 收集响应
     try {
       for await (const event of loop.processMessageStream(prompt)) {
-        eventTypes.push(event.type);
-
-        if (event.type === 'text' && event.content) {
-          responseText += event.content;
-        }
-        // 后备：如果模型返回的是 thinking 格式（带 [Thinking: ...] 前缀）
-        if (event.type === 'text' && event.content?.startsWith('[Thinking:')) {
-          thinkingText += event.content;
-        }
-        // 记录错误事件（使用字符串比较绕过类型检查，因为实际运行时可能有 error 类型）
-        if ((event.type as string) === 'error') {
-          errorEvent = (event as any).error || (event as any).message || JSON.stringify(event);
-          console.error(`[TaskReviewer] 收到错误事件:`, errorEvent);
-        }
-        // v4.0: 记录工具调用（现在 Reviewer 可以使用只读工具验证）
+        // v5.0: 根据工具调用发送进度反馈
         if (event.type === 'tool_start') {
-          console.log(`[TaskReviewer] 使用工具验证: ${(event as any).toolName}`);
+          const toolName = (event as any).toolName;
+          console.log(`[TaskReviewer] 使用工具: ${toolName}`);
+
+          // 发送不同的进度
+          if (toolName === 'Bash' && !hasSeenBashTool) {
+            hasSeenBashTool = true;
+            onProgress?.({
+              stage: 'checking_git',
+              message: '正在验证 Git 提交和文件状态...',
+              details: { tool: 'Bash' },
+            });
+          } else if ((toolName === 'Read' || toolName === 'Glob' || toolName === 'Grep') && !hasSeenReadTool) {
+            hasSeenReadTool = true;
+            onProgress?.({
+              stage: 'verifying_files',
+              message: '正在验证文件内容和代码质量...',
+              details: { tool: toolName },
+            });
+          } else if (toolName === 'SubmitReview') {
+            hasCalledSubmitReview = true;
+            onProgress?.({
+              stage: 'analyzing_quality',
+              message: '正在提交审查结果...',
+              details: { tool: 'SubmitReview' },
+            });
+          }
         }
       }
     } catch (streamError) {
@@ -486,37 +561,32 @@ Worker 会自己用 Bash 提交 Git。如果提交失败，Worker 应该自己�
       throw streamError;  // 重新抛出，让上层处理
     }
 
-    // 调试：打印收到的事件类型
-    console.log(`[TaskReviewer] 收到事件: [${eventTypes.join(', ')}], 文本长度: ${responseText.length}`);
-    if (responseText.length > 0) {
-      console.log(`[TaskReviewer] 响应预览: ${responseText.substring(0, 200)}...`);
+    // v6.0: 从工具调用中读取审查结果
+    const toolResult = SubmitReviewTool.getLastReviewResult();
+
+    if (toolResult) {
+      console.log(`[TaskReviewer] 从 SubmitReview 工具获取结果: ${toolResult.verdict}`);
+      return {
+        verdict: toolResult.verdict,
+        confidence: toolResult.confidence,
+        reasoning: toolResult.reasoning,
+        verified: toolResult.verified,
+        issues: toolResult.issues,
+        suggestions: toolResult.suggestions,
+      };
     }
 
-    // 如果没有收到文本响应，尝试使用 thinking 内容
-    if (!responseText.trim() && thinkingText) {
-      console.warn('[TaskReviewer] 未收到文本响应，尝试使用 thinking 内容');
-      responseText = thinkingText;
-    }
-
-    // 如果响应为空，抛出异常让上层降级处理（信任 Worker）
-    if (!responseText.trim()) {
-      console.warn('[TaskReviewer] 响应为空，触发降级逻辑（信任 Worker）');
-      throw new Error('Reviewer 响应为空，无法完成审查');
-    }
-
-    // 解析响应（现在是异步的，因为可能需要 AI 重新解析）
-    const result = await this.parseReviewResponse(responseText);
-
-    return {
-      ...result,
-      // ConversationLoop 不直接暴露 token 使用量，暂时不记录
-    };
+    // 如果没有调用 SubmitReview 工具，直接抛出异常（禁止降级）
+    console.error('[TaskReviewer] Reviewer 未调用 SubmitReview 工具');
+    throw new Error('Reviewer 未调用 SubmitReview 工具，无法完成审查');
   }
 
   /**
    * 解析 Reviewer 的响应
    * v4.1: 查找最后一个 JSON 块（因为 Reviewer 可能在验证过程中输出多段文本）
    * v5.0: 当 JSON 解析失败时，使用 AI 重新解析，而不是脆弱的关键词匹配
+   *
+   * @deprecated v6.0: 已废弃，现在使用 SubmitReview 工具调用，不再需要解析文本
    */
   private async parseReviewResponse(text: string): Promise<Omit<ReviewResult, 'durationMs' | 'tokensUsed'>> {
     // v4.1: 查找所有 JSON 块，使用最后一个（Reviewer 验证过程中可能输出多段文本）
