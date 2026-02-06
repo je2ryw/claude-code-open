@@ -353,6 +353,26 @@ function cleanupTimedOutTasks(): number {
 // 向后兼容
 const cleanupTimedOutShells = cleanupTimedOutTasks;
 
+// 不支持自动超时转后台的命令列表（与官方对齐：IgY=["sleep"]）
+const NON_BACKGROUNDABLE_COMMANDS = ['sleep'];
+
+/**
+ * 判断命令是否支持自动超时转后台执行
+ * 与官方 mgY() 函数对齐：
+ *   function mgY(A) { let q=vX(A); if(q.length===0) return true;
+ *     let K=q[0]?.trim(); if(!K) return true; return !IgY.includes(K); }
+ *   IgY=["sleep"]
+ */
+function isBackgroundable(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) return true;
+  // 提取第一个命令词（处理路径前缀如 /usr/bin/sleep）
+  const firstWord = trimmed.split(/\s+/)[0];
+  if (!firstWord) return true;
+  const baseName = firstWord.split('/').pop() || firstWord;
+  return !NON_BACKGROUNDABLE_COMMANDS.includes(baseName);
+}
+
 /**
  * 生成后台任务相关提示文本（条件性）
  * 根据 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS 环境变量决定是否显示
@@ -677,14 +697,21 @@ Important:
       };
     }
 
-    // 后台执行
+    // 后台执行（用户显式指定 run_in_background=true）
     if (run_in_background) {
       return this.executeBackground(command, maxTimeout, echoOutput);
     }
 
-    // 使用沙箱执行（与官方实现对齐）
-    // 注意：这里通过 executeInSandbox 来决定是否使用沙箱，而不是在这里判断
-    // executeInSandbox 内部会调用 shouldUseSandbox 来判断
+    // 自动超时转后台执行（与官方 djA 类对齐）
+    // 条件：后台任务未禁用 且 命令可后台化（排除 sleep 等）
+    // 官方逻辑：W = !oP6 && mgY(w) → pP6(w, signal, timeout, cb, preventCwd, sandbox, backgroundable)
+    //   onTimeout 回调将前台命令自动转为后台任务，进程不被杀死
+    if (!isBackgroundTasksDisabled() && isBackgroundable(command)) {
+      return this.executeWithTimeoutToBackground(command, maxTimeout, input);
+    }
+
+    // 不可后台化的命令（如 sleep）或后台任务被禁用时，使用沙箱执行
+    // 超时将直接杀死进程
 
     // 如果禁用沙箱，记录警告
     if (dangerouslyDisableSandbox) {
@@ -981,6 +1008,272 @@ Use TaskOutput tool with task_id="${taskId}" to retrieve the output.`;
       task_id: taskId, // 官方字段名
       shell_id: taskId, // 向后兼容
       bash_id: taskId, // 向后兼容
+    };
+  }
+
+  /**
+   * 带超时自动转后台的执行方法
+   *
+   * 与官方实现对齐（cli.js djA 类）：
+   * 1. 前台执行命令，设置超时
+   * 2. 如果命令在超时前完成 → 正常返回结果
+   * 3. 如果超时触发 → 进程不被杀死，自动转为后台任务继续运行
+   * 4. 返回 backgroundTaskId，用户可通过 TaskOutput 工具查询进度
+   *
+   * 官方关键代码：
+   *   static #G(A) { if(A.#$ && A.#_) A.#_(A.background.bind(A)); else A.#P(Q94); }
+   *   background(A) { this.#q=A; this.#A="backgrounded"; this.#Z(); return {stdoutStream, stderrStream}; }
+   */
+  private async executeWithTimeoutToBackground(
+    command: string,
+    timeout: number,
+    input: BashInput
+  ): Promise<BashResult> {
+    const startTime = Date.now();
+    const cwd = getCurrentCwd();
+
+    // 获取 shell 配置并 spawn 进程（与 executeBackground 保持一致）
+    const shellConfig = getShellConfig();
+    const proc = spawn(shellConfig.shell, [...shellConfig.args, command], {
+      cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: !IS_WINDOWS,
+      windowsHide: IS_WINDOWS,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let processExited = false;
+
+    const stdoutHandler = (data: Buffer) => { stdout += data.toString(); };
+    const stderrHandler = (data: Buffer) => { stderr += data.toString(); };
+
+    proc.stdout?.on('data', stdoutHandler);
+    proc.stderr?.on('data', stderrHandler);
+
+    // 进程完成的 Promise
+    const processComplete = new Promise<{ code: number | null; error?: string }>((resolve) => {
+      proc.on('close', (code) => {
+        processExited = true;
+        resolve({ code });
+      });
+      proc.on('error', (err) => {
+        processExited = true;
+        resolve({ code: null, error: err.message });
+      });
+    });
+
+    // 超时 Promise
+    const timeoutPromise = new Promise<'timeout'>((resolve) => {
+      setTimeout(() => resolve('timeout'), timeout);
+    });
+
+    // 竞争：进程完成 vs 超时
+    const raceResult = await Promise.race([processComplete, timeoutPromise]);
+
+    if (raceResult !== 'timeout') {
+      // 进程在超时前完成 → 正常返回结果
+      const duration = Date.now() - startTime;
+      let output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+      output = truncateString(output, MAX_OUTPUT_LENGTH);
+
+      const elapsedTimeSeconds = Math.round(duration / 1000 * 10) / 10;
+      const result: BashResult = {
+        success: raceResult.code === 0,
+        output,
+        stdout,
+        stderr,
+        exitCode: raceResult.code ?? 1,
+        error: raceResult.error,
+        elapsedTimeSeconds,
+        timeoutMs: timeout,
+      };
+
+      await runPostToolUseHooks('Bash', input, result.output || '');
+      recordAudit({
+        timestamp: Date.now(),
+        command,
+        cwd,
+        sandboxed: false,
+        success: result.success,
+        exitCode: result.exitCode,
+        duration,
+        outputSize: (result.output || '').length,
+        background: false,
+      });
+
+      return result;
+    }
+
+    // === 超时触发：自动转后台 ===
+    // 进程有可能在超时竞争中刚好退出（边界情况）
+    if (processExited) {
+      const exitResult = await processComplete;
+      const duration = Date.now() - startTime;
+      let output = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+      output = truncateString(output, MAX_OUTPUT_LENGTH);
+
+      const result: BashResult = {
+        success: exitResult.code === 0,
+        output,
+        stdout,
+        stderr,
+        exitCode: exitResult.code ?? 1,
+        error: exitResult.error,
+        elapsedTimeSeconds: Math.round(duration / 1000 * 10) / 10,
+        timeoutMs: timeout,
+      };
+
+      await runPostToolUseHooks('Bash', input, result.output || '');
+      recordAudit({
+        timestamp: Date.now(),
+        command,
+        cwd,
+        sandboxed: false,
+        success: result.success,
+        exitCode: result.exitCode,
+        duration,
+        outputSize: (result.output || '').length,
+        background: false,
+      });
+
+      return result;
+    }
+
+    // 进程仍在运行 → 转为后台任务（不杀死进程）
+    const taskId = uuidv4();
+    const outputFile = getTaskOutputPath(taskId);
+    const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });
+
+    // 写入已捕获的输出到文件
+    const existingOutput = stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
+    if (existingOutput) {
+      outputStream.write(existingOutput);
+    }
+
+    // 创建后台任务状态
+    const taskState: TaskState = {
+      taskId,
+      process: proc,
+      output: existingOutput ? [existingOutput] : [],
+      outputFile,
+      outputStream,
+      status: 'running',
+      startTime,
+      maxRuntime: BACKGROUND_SHELL_MAX_RUNTIME,
+      outputSize: existingOutput.length,
+      command,
+      lastReadPosition: 0,
+    };
+
+    // 替换 stdout/stderr 监听器：将后续输出重定向到文件
+    proc.stdout?.removeListener('data', stdoutHandler);
+    proc.stderr?.removeListener('data', stderrHandler);
+
+    proc.stdout?.on('data', (data: Buffer) => {
+      const text = data.toString();
+      taskState.output.push(text);
+      taskState.outputSize += text.length;
+      if (taskState.outputSize <= MAX_BACKGROUND_OUTPUT) {
+        outputStream.write(text);
+      } else if (taskState.output[taskState.output.length - 1] !== '[Output limit reached]') {
+        outputStream.write('\n[Output limit reached]\n');
+        taskState.output.push('[Output limit reached]');
+      }
+    });
+
+    proc.stderr?.on('data', (data: Buffer) => {
+      const text = `STDERR: ${data.toString()}`;
+      taskState.output.push(text);
+      taskState.outputSize += text.length;
+      if (taskState.outputSize <= MAX_BACKGROUND_OUTPUT) {
+        outputStream.write(text);
+      }
+    });
+
+    // 后台任务的进程生命周期管理
+    proc.on('close', (code) => {
+      if (taskState.timeout) clearTimeout(taskState.timeout);
+      taskState.status = code === 0 ? 'completed' : 'failed';
+      taskState.exitCode = code ?? undefined;
+      taskState.endTime = Date.now();
+      outputStream.end();
+
+      const duration = Date.now() - startTime;
+      recordAudit({
+        timestamp: Date.now(),
+        command,
+        cwd,
+        sandboxed: false,
+        success: code === 0,
+        exitCode: code ?? undefined,
+        duration,
+        outputSize: taskState.outputSize,
+        background: true,
+      });
+    });
+
+    proc.on('error', (err) => {
+      taskState.status = 'failed';
+      taskState.endTime = Date.now();
+      outputStream.write(`\nERROR: ${err.message}\n`);
+      outputStream.end();
+    });
+
+    // 设置后台最大运行时间超时
+    taskState.timeout = setTimeout(() => {
+      if (taskState.status === 'running') {
+        console.warn(`[Bash] Background task ${taskId} exceeded max runtime, terminating...`);
+        try {
+          proc.kill('SIGTERM');
+          setTimeout(() => {
+            if (taskState.status === 'running') {
+              proc.kill('SIGKILL');
+            }
+          }, 1000);
+        } catch (err) {
+          console.error(`Failed to kill task ${taskId}:`, err);
+        }
+      }
+    }, BACKGROUND_SHELL_MAX_RUNTIME);
+
+    backgroundTasks.set(taskId, taskState);
+
+    // 记录审计日志
+    const duration = Date.now() - startTime;
+    const elapsedSeconds = Math.round(duration / 1000 * 10) / 10;
+
+    recordAudit({
+      timestamp: Date.now(),
+      command,
+      cwd,
+      sandboxed: false,
+      success: true,
+      duration,
+      outputSize: existingOutput.length,
+      background: true,
+    });
+
+    // 返回结果（与官方格式对齐）
+    // 官方: { stdout: "", stderr: "", code: 0, interrupted: false, backgroundTaskId: M }
+    const statusMsg = `Command timed out after ${elapsedSeconds}s and was automatically moved to background execution.
+<task-id>${taskId}</task-id>
+<task-type>bash</task-type>
+<output-file>${outputFile}</output-file>
+<status>running</status>
+<summary>Command "${command.substring(0, 50)}${command.length > 50 ? '...' : ''}" moved to background after timeout.</summary>
+Use TaskOutput tool with task_id="${taskId}" to retrieve the output.`;
+
+    return {
+      success: true,
+      output: statusMsg,
+      task_id: taskId,
+      shell_id: taskId,
+      bash_id: taskId,
+      backgroundTaskId: taskId,
+      elapsedTimeSeconds: elapsedSeconds,
+      timeoutMs: timeout,
     };
   }
 }
