@@ -333,6 +333,8 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 临时会话已就绪（官方规范：会话尚未持久化，不刷新列表）
           // 等待用户发送第一条消息后才会创建持久化会话
           console.log('[App] 临时会话已就绪:', payload.sessionId);
+          // 重置状态为 idle，确保输入框可用
+          setStatus('idle');
           break;
 
         // 子 agent 相关消息处理

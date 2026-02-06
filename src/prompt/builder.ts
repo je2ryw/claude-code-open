@@ -23,6 +23,7 @@ import {
 } from './templates.js';
 import { AttachmentManager, attachmentManager as defaultAttachmentManager } from './attachments.js';
 import { PromptCache, promptCache, generateCacheKey } from './cache.js';
+import * as os from 'os';
 // 注意：旧的 blueprintManager 已被移除，新架构使用 SmartPlanner
 // import { blueprintManager } from '../blueprint/blueprint-manager.js';
 
@@ -155,13 +156,14 @@ export class SystemPromptBuilder {
       parts.push(modeDescription);
     }
 
-    // 11. 环境信息
+    // 11. 环境信息（与官方 CLI 保持一致）
     parts.push(
       getEnvironmentInfo({
         workingDir: context.workingDir,
         isGitRepo: context.isGitRepo ?? false,
         platform: context.platform ?? process.platform,
         todayDate: context.todayDate ?? new Date().toISOString().split('T')[0],
+        osVersion: os.release(), // 添加 OS 版本信息
         model: context.model,
       })
     );

@@ -9,6 +9,7 @@ import { runWithCwd } from '../../core/cwd-context.js';
 import { toolRegistry } from '../../tools/index.js';
 import { systemPromptBuilder, type PromptContext } from '../../prompt/index.js';
 import { modelConfig } from '../../models/index.js';
+import { configManager } from '../../config/index.js';
 import { initAuth, getAuth } from '../../auth/index.js';
 import type { Message, ContentBlock, ToolUseBlock, TextBlock } from '../../types/index.js';
 import type { ChatMessage, ChatContent, ToolResultData, PermissionConfigPayload, PermissionRequestPayload, SystemPromptConfig, SystemPromptGetPayload } from '../shared/types.js';
@@ -516,10 +517,19 @@ export class ConversationManager {
     mediaAttachments: Array<{ data: string; mimeType: string; type: 'image' | 'pdf' }> | undefined,
     model: string,
     callbacks: StreamCallbacks,
-    projectPath?: string
+    projectPath?: string,
+    ws?: WebSocket
   ): Promise<void> {
     const state = await this.getOrCreateSession(sessionId, model, projectPath);
     state.cancelled = false;
+
+    // 关键修复：确保会话的 WebSocket 已设置
+    // 在 getOrCreateSession 后设置 WebSocket，保证 UserInteractionHandler 可用
+    if (ws && ws.readyState === 1 /* WebSocket.OPEN */) {
+      state.ws = ws;
+      state.userInteractionHandler.setWebSocket(ws);
+      state.taskManager.setWebSocket(ws);
+    }
 
     try {
       // 构建用户消息
@@ -1640,6 +1650,8 @@ export class ConversationManager {
         todayDate: new Date().toISOString().split('T')[0],
         isGitRepo,
         debug: false,
+        // v2.1.0+: 语言配置 - 与 CLI 保持一致
+        language: configManager.get('language'),
       };
 
       // 使用官方的 SystemPromptBuilder

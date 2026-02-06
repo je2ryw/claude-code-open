@@ -1867,6 +1867,10 @@ async function handleChatMessage(
         createdAt: newSession.metadata.createdAt,
       },
     });
+
+    // 关键修复：新会话创建后需要设置 WebSocket
+    // 之前 setWebSocket 调用时会话还不存在，所以这里需要再次设置
+    conversationManager.setWebSocket(sessionId, ws);
   } else {
     // 检查是否是第一条消息（会话存在但没有消息）
     isFirstMessage = (existingSession.metadata.messageCount === 0);
@@ -2058,7 +2062,7 @@ async function handleChatMessage(
           payload: { status: 'idle' },
         });
       },
-    }, client.projectPath);
+    }, client.projectPath, ws);  // 传入 ws 参数，确保 UserInteractionHandler 可用
   } catch (error) {
     console.error('[WebSocket] 聊天处理错误:', error);
     sendMessage(ws, {
@@ -2307,6 +2311,9 @@ async function handleSessionSwitch(
       // 更新客户端会话ID
       client.sessionId = sessionId;
 
+      // 重要：更新会话的 WebSocket 连接，确保 UserInteractionHandler 和 TaskManager 使用新连接
+      conversationManager.setWebSocket(sessionId, ws);
+
       // 更新客户端项目路径（从会话元数据中获取）
       const sessionManager = conversationManager.getSessionManager();
       const sessionData = sessionManager.loadSessionById(sessionId);
@@ -2467,6 +2474,10 @@ async function handleSessionResume(
 
     if (success) {
       client.sessionId = sessionId;
+
+      // 重要：更新会话的 WebSocket 连接，确保 UserInteractionHandler 和 TaskManager 使用新连接
+      conversationManager.setWebSocket(sessionId, ws);
+
       const history = conversationManager.getHistory(sessionId);
 
       sendMessage(ws, {

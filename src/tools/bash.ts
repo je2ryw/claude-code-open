@@ -1,7 +1,8 @@
 /**
  * Bash 工具
  * 执行 shell 命令，支持沙箱隔离
- * 跨平台支持: Windows (PowerShell/CMD), macOS, Linux
+ * 跨平台支持: Windows (git-bash), macOS, Linux
+ * 注意: Windows 上需要安装 Git for Windows，使用 git-bash 执行命令
  */
 
 import { spawn, exec, ChildProcess, spawnSync } from 'child_process';
@@ -42,12 +43,112 @@ interface ShellConfig {
   args: string[];
   isCmd: boolean;
   isPowerShell: boolean;
+  isGitBash: boolean;
+}
+
+/**
+ * 查找命令的路径 (类似 which/where)
+ * 官方实现: g1K 函数
+ */
+function which(command: string): string | null {
+  try {
+    const result = spawnSync(IS_WINDOWS ? 'where' : 'which', [command], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      windowsHide: true,
+    });
+    if (result.status === 0 && result.stdout) {
+      // where 在 Windows 上可能返回多行，取第一行
+      const firstLine = result.stdout.trim().split(/\r?\n/)[0];
+      return firstLine || null;
+    }
+  } catch {
+    // 命令不可用
+  }
+  return null;
+}
+
+/**
+ * 查找 Windows 上的 git-bash 路径
+ * 官方逻辑：
+ * 1. 检查 CLAUDE_CODE_GIT_BASH_PATH 环境变量
+ * 2. 通过 git 命令路径推断 bash.exe 位置
+ */
+function findGitBash(): string | null {
+  // 1. 检查环境变量
+  const envPath = process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  if (envPath) {
+    if (fs.existsSync(envPath)) {
+      return envPath;
+    }
+    console.error(`Claude Code was unable to find CLAUDE_CODE_GIT_BASH_PATH path "${envPath}"`);
+    return null;
+  }
+
+  // 2. 通过 git 命令查找
+  const gitPath = which('git');
+  if (gitPath) {
+    // git.exe 通常在 Git/cmd/git.exe 或 Git/bin/git.exe
+    // bash.exe 在 Git/bin/bash.exe
+    const bashPath = path.join(gitPath, '..', '..', 'bin', 'bash.exe');
+    if (fs.existsSync(bashPath)) {
+      return bashPath;
+    }
+    // 有时 git 在 Git/cmd 目录
+    const bashPath2 = path.join(gitPath, '..', '..', 'usr', 'bin', 'bash.exe');
+    if (fs.existsSync(bashPath2)) {
+      return bashPath2;
+    }
+  }
+
+  // 3. 常见安装路径
+  const commonPaths = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+    path.join(os.homedir(), 'scoop', 'apps', 'git', 'current', 'bin', 'bash.exe'),
+  ];
+  for (const p of commonPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  return null;
+}
+
+/** 缓存的 git-bash 路径 */
+let cachedGitBashPath: string | null | undefined = undefined;
+
+function getGitBashPath(): string | null {
+  if (cachedGitBashPath === undefined) {
+    cachedGitBashPath = findGitBash();
+  }
+  return cachedGitBashPath;
 }
 
 /** 获取平台适配的 Shell 配置 */
 function getPlatformShell(): ShellConfig {
   if (IS_WINDOWS) {
-    // Windows: 优先使用 PowerShell，回退到 cmd
+    // Windows: 使用 git-bash (官方要求)
+    const gitBashPath = getGitBashPath();
+    if (gitBashPath) {
+      return {
+        shell: gitBashPath,
+        args: ['-c'],
+        isCmd: false,
+        isPowerShell: false,
+        isGitBash: true,
+      };
+    }
+
+    // git-bash 未找到，打印错误并使用 PowerShell 作为降级
+    console.error(
+      'Claude Code on Windows requires git-bash (https://git-scm.com/downloads/win). ' +
+      'If installed but not in PATH, set environment variable pointing to your bash.exe, similar to: ' +
+      'CLAUDE_CODE_GIT_BASH_PATH=C:\\Program Files\\Git\\bin\\bash.exe'
+    );
+
+    // 降级到 PowerShell（但这会导致 Unix 命令无法执行）
     try {
       const result = spawnSync('powershell.exe', ['-Command', 'echo test'], {
         encoding: 'utf-8',
@@ -60,19 +161,21 @@ function getPlatformShell(): ShellConfig {
           args: ['-NoProfile', '-NonInteractive', '-Command'],
           isCmd: false,
           isPowerShell: true,
+          isGitBash: false,
         };
       }
     } catch {
       // PowerShell 不可用
     }
 
-    // 回退到 cmd
+    // 最后降级到 cmd
     const cmdPath = process.env.COMSPEC || 'cmd.exe';
     return {
       shell: cmdPath,
       args: ['/c'],
       isCmd: true,
       isPowerShell: false,
+      isGitBash: false,
     };
   }
 
@@ -83,6 +186,7 @@ function getPlatformShell(): ShellConfig {
     args: ['-c'],
     isCmd: false,
     isPowerShell: false,
+    isGitBash: false,
   };
 }
 
