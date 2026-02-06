@@ -340,7 +340,16 @@ export class AttachmentManager {
     return [
       {
         type: 'delegate_mode' as AttachmentType,
-        content: `<delegate-mode>\nYou are running as a delegated subagent. Complete your assigned task and report back with your findings. Do not ask for user input - work autonomously.\n</delegate-mode>`,
+        content: `<delegate-mode>
+You are running as a team lead in delegate mode. Your role is to:
+1. Create and manage tasks using TaskCreate, TaskGet, TaskUpdate, TaskList
+2. Spawn teammate agents using the Task tool
+3. Communicate with teammates using SendMessage
+4. Coordinate work and track progress
+
+You have access to team management tools (TeamCreate, TeamDelete, SendMessage) and task tools (TaskCreate, TaskGet, TaskUpdate, TaskList).
+Do not directly edit files - delegate work to teammate agents.
+</delegate-mode>`,
         label: 'Delegate Mode',
         priority: 5,
       },

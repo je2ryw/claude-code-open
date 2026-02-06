@@ -397,13 +397,16 @@ export function getSessionDetails(id: string): SessionDetails | null {
   const lastMessage = session.messages[session.messages.length - 1];
 
   const getMessagePreview = (message: typeof firstMessage): string => {
+    let text = '';
     if (typeof message?.content === 'string') {
-      return message.content.slice(0, 100);
+      text = message.content;
     } else if (Array.isArray(message?.content)) {
       const textBlock = message.content.find(b => b.type === 'text');
-      return textBlock && 'text' in textBlock ? (textBlock.text?.slice(0, 100) || '') : '';
+      text = textBlock && 'text' in textBlock ? ((textBlock as any).text || '') : '';
     }
-    return '';
+    // v2.1.33: 剥离 XML 标记以显示干净的预览
+    text = text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return text.slice(0, 100);
   };
 
   const details: SessionDetails = {

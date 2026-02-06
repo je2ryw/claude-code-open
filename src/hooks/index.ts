@@ -25,6 +25,9 @@ export type HookEvent =
   | 'SubagentStop'         // 子代理停止
   | 'PreCompact'           // 压缩前
   | 'PermissionRequest'    // 权限请求
+  // v2.1.33: 多代理工作流事件
+  | 'TeammateIdle'         // 当 teammate 即将进入空闲状态
+  | 'TaskCompleted'        // 当任务被标记为已完成
   // CLI 级别事件（新增）
   | 'Setup'                // v2.1.10: 仓库设置/维护（通过 --init/--init-only/--maintenance 触发）
   | 'BeforeSetup'          // 设置前（对应 action_before_setup）
@@ -171,6 +174,7 @@ export interface LegacyHookConfig {
 export interface HookInput {
   event: HookEvent;
   // 通用字段
+  hook_event_name?: string;
   toolName?: string;
   toolInput?: unknown;
   toolOutput?: string;
@@ -196,6 +200,7 @@ export interface HookInput {
 
   // SessionStart 专用字段
   source?: 'startup' | 'resume' | 'clear' | 'compact';
+  model?: string;
 
   // SessionEnd 专用字段
   reason?: 'clear' | 'logout' | 'prompt_input_exit' | 'other';
@@ -203,6 +208,15 @@ export interface HookInput {
   // PreCompact 专用字段
   trigger?: 'manual' | 'auto';
   currentTokens?: number;
+
+  // v2.1.33: TeammateIdle 专用字段
+  teammate_name?: string;
+  team_name?: string;
+
+  // v2.1.33: TaskCompleted 专用字段
+  task_id?: string;
+  task_subject?: string;
+  task_description?: string;
 }
 
 export interface HookResult {
@@ -318,6 +332,9 @@ function isValidHookEvent(event: string): boolean {
     'SubagentStop',
     'PreCompact',
     'PermissionRequest',
+    // v2.1.33: 多代理工作流事件
+    'TeammateIdle',
+    'TaskCompleted',
     // CLI 级别事件
     'Setup',             // v2.1.10
     'BeforeSetup',
@@ -500,6 +517,15 @@ async function executeCommandHook(
       // PreCompact 专用字段
       trigger: input.trigger,
       currentTokens: input.currentTokens,
+      // v2.1.33: TeammateIdle 专用字段
+      teammate_name: input.teammate_name,
+      team_name: input.team_name,
+      // v2.1.33: TaskCompleted 专用字段
+      task_id: input.task_id,
+      task_subject: input.task_subject,
+      task_description: input.task_description,
+      // SessionStart 专用字段
+      model: input.model,
     });
 
     const proc = spawn(command, hook.args || [], {
@@ -1456,6 +1482,95 @@ export async function runNotificationHooks(
     notification_type: notificationType,
     sessionId,
   });
+}
+
+/**
+ * v2.1.33: TeammateIdle hook - 当 teammate 即将进入空闲状态时触发
+ *
+ * 对应官方 NyA 函数:
+ * Exit code 0 - stdout/stderr not shown
+ * Exit code 2 - show stderr to teammate and prevent idle (teammate continues working)
+ * Other exit codes - show stderr to user only
+ *
+ * @param teammateName teammate 名称
+ * @param teamName team 名称
+ * @param sessionId 会话ID
+ */
+export async function runTeammateIdleHooks(
+  teammateName: string,
+  teamName: string,
+  sessionId?: string
+): Promise<{ blocked: boolean; blockingError?: string }> {
+  const results = await runHooks({
+    event: 'TeammateIdle',
+    hook_event_name: 'TeammateIdle',
+    teammate_name: teammateName,
+    team_name: teamName,
+    sessionId,
+  });
+
+  const blockCheck = isBlocked(results);
+  return {
+    blocked: blockCheck.blocked,
+    blockingError: blockCheck.message,
+  };
+}
+
+/**
+ * v2.1.33: TeammateIdle hook 反馈消息格式化
+ * 对应官方 fyA 函数
+ */
+export function formatTeammateIdleHookFeedback(result: { blockingError: string }): string {
+  return `TeammateIdle hook feedback:\n${result.blockingError}`;
+}
+
+/**
+ * v2.1.33: TaskCompleted hook - 当任务被标记为已完成时触发
+ *
+ * 对应官方 NQ1 函数:
+ * Exit code 0 - stdout/stderr not shown
+ * Exit code 2 - show stderr to model and prevent task completion
+ * Other exit codes - show stderr to user only
+ *
+ * @param taskId 任务ID
+ * @param taskSubject 任务标题
+ * @param taskDescription 任务描述
+ * @param teammateName teammate 名称
+ * @param teamName team 名称
+ * @param sessionId 会话ID
+ */
+export async function runTaskCompletedHooks(
+  taskId: string,
+  taskSubject: string,
+  taskDescription: string,
+  teammateName: string,
+  teamName: string,
+  sessionId?: string
+): Promise<{ blocked: boolean; blockingError?: string }> {
+  const results = await runHooks({
+    event: 'TaskCompleted',
+    hook_event_name: 'TaskCompleted',
+    task_id: taskId,
+    task_subject: taskSubject,
+    task_description: taskDescription,
+    teammate_name: teammateName,
+    team_name: teamName,
+    sessionId,
+  });
+
+  const blockCheck = isBlocked(results);
+  return {
+    blocked: blockCheck.blocked,
+    blockingError: blockCheck.message,
+  };
+}
+
+/**
+ * v2.1.33: TaskCompleted hook 反馈消息格式化
+ * 对应官方 VQ1 函数
+ */
+export function formatTaskCompletedHookFeedback(result: { blockingError: string }): string {
+  return `TaskCompleted hook feedback:\n${result.blockingError}`;
 }
 
 /**
