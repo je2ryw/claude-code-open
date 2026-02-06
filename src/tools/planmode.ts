@@ -61,13 +61,29 @@ export function getCurrentPlanId(): string | null {
 
 export function setPlanMode(active: boolean, planFile?: string, planId?: string): void {
   if (active) {
+    // v2.1.31: 防御性检查 - 确保 getCurrentCwd() 返回有效值
+    // 修复当 ~/.claude.json 缺少默认字段时进入 plan mode 的崩溃
+    let safeCwd: string;
+    try {
+      safeCwd = getCurrentCwd() || process.cwd();
+    } catch {
+      safeCwd = process.cwd();
+    }
+
+    let safePlanId: string;
+    try {
+      safePlanId = planId || PlanPersistenceManager.generatePlanId();
+    } catch {
+      safePlanId = planId || `plan-${Date.now()}`;
+    }
+
     setGlobalAppState((state) => ({
       ...state,
       toolPermissionContext: { mode: 'plan' },
       planMode: {
         active: true,
-        planFile: planFile || getCurrentCwd() + '/PLAN.md',
-        planId: planId || PlanPersistenceManager.generatePlanId(),
+        planFile: planFile || safeCwd + '/PLAN.md',
+        planId: safePlanId,
       },
     }));
   } else {

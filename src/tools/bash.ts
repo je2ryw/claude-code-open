@@ -732,18 +732,40 @@ Important:
         // permissionContext: getGlobalAppState()?.toolPermissionContext,
       });
 
-      let output = sandboxResult.stdout + (sandboxResult.stderr ? `\nSTDERR:\n${sandboxResult.stderr}` : '');
+      // v2.1.31: 过滤 sandbox 产生的 "Read-only file system" 伪错误
+      // 当 sandbox 模式启用时，某些命令的 stderr 会包含 "Read-only file system" 错误
+      // 但实际上命令可能已成功执行（exitCode === 0）。这些错误不应影响命令的成功判定。
+      let filteredStderr = sandboxResult.stderr;
+      if (sandboxResult.sandboxed && filteredStderr) {
+        const lines = filteredStderr.split('\n');
+        const filtered = lines.filter(line => !(/read-only file system/i.test(line)));
+        filteredStderr = filtered.join('\n').trim();
+      }
+
+      let output = sandboxResult.stdout + (filteredStderr ? `\nSTDERR:\n${filteredStderr}` : '');
       output = truncateString(output, MAX_OUTPUT_LENGTH);
 
       // v2.1.23: 计算执行时间
       const duration = Date.now() - startTime;
       const elapsedTimeSeconds = Math.round(duration / 1000 * 10) / 10; // 保留一位小数
 
+      // v2.1.31: 如果在 sandbox 中执行且失败原因仅是 "Read-only file system"
+      // 则将命令视为成功
+      let isSuccess = sandboxResult.exitCode === 0;
+      if (!isSuccess && sandboxResult.sandboxed && sandboxResult.stderr) {
+        const isOnlyErofsError = sandboxResult.stderr.split('\n')
+          .filter(l => l.trim().length > 0)
+          .every(l => /read-only file system/i.test(l));
+        if (isOnlyErofsError && sandboxResult.stdout.trim().length > 0) {
+          isSuccess = true;
+        }
+      }
+
       result = {
-        success: sandboxResult.exitCode === 0,
+        success: isSuccess,
         output,
         stdout: sandboxResult.stdout,
-        stderr: sandboxResult.stderr,
+        stderr: filteredStderr,
         exitCode: sandboxResult.exitCode ?? 1,
         error: sandboxResult.error,
         // v2.1.23: 添加超时时长显示
