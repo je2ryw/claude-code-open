@@ -2182,10 +2182,18 @@ export class ConversationLoop {
         }
       }
 
+      // v2.1.30: 修复 phantom "(no content)" 文本块
+      // 当 assistant content 为空数组时，API 会返回 400 错误
+      // 对应官方实现：空 content 时插入 {type:"text", text:"(no content)"} 占位
+      let fixedAssistantContent = assistantContent;
+      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
+        fixedAssistantContent = [{ type: 'text' as const, text: '(no content)' }];
+      }
+
       // 添加助手消息
       this.session.addMessage({
         role: 'assistant',
-        content: assistantContent,
+        content: fixedAssistantContent,
       });
 
       // 如果有工具调用，添加结果并继续
@@ -2554,9 +2562,15 @@ Guidelines:
         }
       }
 
+      // v2.1.30: 修复空 assistant content 问题（streaming 路径）
+      let fixedStreamContent = assistantContent;
+      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
+        fixedStreamContent = [{ type: 'text' as const, text: '(no content)' }];
+      }
+
       this.session.addMessage({
         role: 'assistant',
-        content: assistantContent,
+        content: fixedStreamContent,
       });
 
       if (toolResults.length > 0) {

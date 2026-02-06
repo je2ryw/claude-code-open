@@ -678,13 +678,16 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       agent.status = 'completed';
       agent.endTime = new Date();
 
-      // 构建结果输出
-      const duration = (agent.endTime.getTime() - agent.startTime.getTime()) / 1000;
+      // v2.1.30: 构建结果输出，包含 token/工具使用/时长指标
+      // 对应官方实现 (cli.js 行2941-2944)
+      const durationMs = agent.endTime.getTime() - agent.startTime.getTime();
       const output = agent.result?.output || `Agent ${agent.agentType} completed: ${agent.description}`;
+      const totalTokens = agent.progress?.tokenCount || 0;
+      const toolUses = agent.progress?.toolUseCount || 0;
 
       agent.result = {
         success: true,
-        output: `${output}\n\n[Agent completed in ${duration.toFixed(1)}s]`,
+        output: `${output}\n\nagentId: ${agent.id} (for resuming to continue this agent's work if needed)\n<usage>total_tokens: ${totalTokens}\ntool_uses: ${toolUses}\nduration_ms: ${durationMs}</usage>`,
       };
 
       addAgentHistory(agent, 'completed', 'Agent execution completed');

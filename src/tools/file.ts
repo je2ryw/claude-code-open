@@ -23,6 +23,12 @@ import {
   isPdfExtension,
   isPdfSupported,
   isSvgRenderEnabled,
+  parsePageRange,
+  getPdfPageCount,
+  extractPdfPages,
+  formatBytes,
+  PDF_MAX_PAGES_PER_REQUEST,
+  PDF_LARGE_THRESHOLD,
 } from '../media/index.js';
 // 注意：旧的 blueprintContext 已被移除，新架构使用 SmartPlanner
 // 边界检查由 SmartPlanner 在任务规划阶段处理，工具层不再需要
@@ -334,7 +340,7 @@ Usage:
 - Any lines longer than 2000 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.
-- This tool can read PDF files (.pdf). PDFs are processed page by page, extracting both text and visual content for analysis.
+- This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
 - This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
 - You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
@@ -357,16 +363,40 @@ Usage:
           type: 'number',
           description: 'The number of lines to read',
         },
+        pages: {
+          type: 'string',
+          description: `Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum ${PDF_MAX_PAGES_PER_REQUEST} pages per request.`,
+        },
       },
       required: ['file_path'],
     };
   }
 
   async execute(input: FileReadInput): Promise<FileResult> {
-    const { file_path: inputPath, offset = 0, limit = 2000 } = input;
+    const { file_path: inputPath, offset = 0, limit = 2000, pages } = input;
 
     // 解析文件路径（支持相对路径，基于当前工作目录上下文）
     const file_path = resolveFilePath(inputPath);
+
+    // v2.1.30: 验证 pages 参数
+    if (pages !== undefined) {
+      const parsedRange = parsePageRange(pages);
+      if (!parsedRange) {
+        return {
+          success: false,
+          error: `Invalid pages parameter: "${pages}". Use formats like "1-5", "3", or "10-20". Pages are 1-indexed.`,
+        };
+      }
+      const pageCount = parsedRange.lastPage === Infinity
+        ? PDF_MAX_PAGES_PER_REQUEST + 1
+        : parsedRange.lastPage - parsedRange.firstPage + 1;
+      if (pageCount > PDF_MAX_PAGES_PER_REQUEST) {
+        return {
+          success: false,
+          error: `Page range "${pages}" exceeds maximum of ${PDF_MAX_PAGES_PER_REQUEST} pages per request. Please use a smaller range.`,
+        };
+      }
+    }
 
     try {
       if (!fs.existsSync(file_path)) {
@@ -398,7 +428,7 @@ Usage:
 
       // 处理 PDF
       if (mediaType === 'pdf') {
-        return await this.readPdfEnhanced(file_path);
+        return await this.readPdfEnhanced(file_path, pages);
       }
 
       // 处理 SVG（可选渲染）
@@ -496,12 +526,14 @@ Usage:
 
   /**
    * 增强的 PDF 读取（使用媒体处理模块）
+   * v2.1.30: 支持 pages 参数，大 PDF 强制使用页面范围
    *
-   * 对应官方实现 (cli.js 第1027行附近):
-   * - 返回 PDF 数据结构
-   * - 添加 newMessages，将 PDF 作为 document 块发送给 Claude
+   * 对应官方实现 (cli.js 第3626行附近):
+   * - 如果有 pages 参数，使用 pdftoppm 提取指定页面为 JPEG
+   * - 如果没有 pages 参数且 PDF > 10 页，报错要求提供 pages
+   * - 如果没有 pages 参数且 PDF <= 10 页，作为 document 发送
    */
-  private async readPdfEnhanced(filePath: string): Promise<FileResult> {
+  private async readPdfEnhanced(filePath: string, pages?: string): Promise<FileResult> {
     try {
       // 检查 PDF 支持
       if (!isPdfSupported()) {
@@ -511,15 +543,72 @@ Usage:
         };
       }
 
+      // v2.1.30: 如果提供了 pages 参数，使用 pdftoppm 提取指定页面
+      if (pages) {
+        const parsedRange = parsePageRange(pages);
+        const extractResult = await extractPdfPages(filePath, parsedRange ?? undefined);
+
+        if (extractResult.success === false) {
+          return {
+            success: false,
+            error: extractResult.error.message,
+          };
+        }
+
+        const { data } = extractResult;
+        const output = `PDF pages extracted: ${data.file.count} page(s) from ${filePath} (${formatBytes(data.file.originalSize)})`;
+
+        // 读取提取的 JPEG 图片并构建 newMessages
+        const outputDir = data.file.outputDir;
+        const jpgFiles = fs.readdirSync(outputDir).filter(f => f.endsWith('.jpg')).sort();
+
+        const imageBlocks: Array<{
+          type: 'image';
+          source: {
+            type: 'base64';
+            media_type: 'image/jpeg';
+            data: string;
+          };
+        }> = [];
+
+        for (const jpgFile of jpgFiles) {
+          const jpgPath = path.join(outputDir, jpgFile);
+          const jpgData = fs.readFileSync(jpgPath).toString('base64');
+          imageBlocks.push({
+            type: 'image' as const,
+            source: {
+              type: 'base64' as const,
+              media_type: 'image/jpeg' as const,
+              data: jpgData,
+            },
+          });
+        }
+
+        return {
+          success: true,
+          output,
+          newMessages: imageBlocks.length > 0 ? [
+            {
+              role: 'user' as const,
+              content: imageBlocks as any,
+            },
+          ] : undefined,
+        };
+      }
+
+      // v2.1.30: 检查 PDF 页数，超过阈值必须使用 pages 参数
+      const pageCount = await getPdfPageCount(filePath);
+      if (pageCount !== null && pageCount > PDF_LARGE_THRESHOLD) {
+        return {
+          success: false,
+          error: `This PDF has ${pageCount} pages, which is too many to read at once. Use the pages parameter to read specific page ranges (e.g., pages: "1-5"). Maximum ${PDF_MAX_PAGES_PER_REQUEST} pages per request.`,
+        };
+      }
+
+      // PDF <= 10 页或无法检测页数：直接作为 document 发送
       const result = await readPdfFile(filePath);
-      const sizeMB = (result.file.originalSize / 1048576).toFixed(2);
+      const output = `PDF file read: ${filePath} (${formatBytes(result.file.originalSize)})`;
 
-      let output = `[PDF Document: ${filePath}]\n`;
-      output += `Size: ${sizeMB} MB\n`;
-      output += `Base64 length: ${result.file.base64.length} chars\n`;
-
-      // 关键：添加 newMessages，将 PDF 作为 document 发送给 Claude
-      // 这对应官方实现中的 newMessages 数组
       return {
         success: true,
         output,

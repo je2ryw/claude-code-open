@@ -1026,9 +1026,10 @@ export class KillShellTool extends BaseTool<{ shell_id: string }, BashResult> {
 
       backgroundTasks.delete(input.shell_id);
 
+      // v2.1.30: 显示被停止任务的命令/描述，而不是通用消息
       return {
         success: true,
-        output: `Successfully killed shell: ${input.shell_id} (${task.command})`,
+        output: `Successfully stopped task: ${input.shell_id} (${task.command})`,
       };
     } catch (err) {
       return { success: false, error: `Failed to kill task: ${err}` };
