@@ -515,6 +515,27 @@ Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not av
   private parentMessages: Message[] = [];
 
   /**
+   * v2.1.33: 限制可生成的子 agent 类型
+   * 当从 frontmatter 的 tools 字段中解析出 Task(agent_type) 语法时设置
+   * null 表示无限制
+   */
+  private _allowedSubagentTypes: string[] | undefined = undefined;
+
+  /**
+   * 设置允许的子 agent 类型
+   */
+  setAllowedSubagentTypes(types: string[] | undefined): void {
+    this._allowedSubagentTypes = types;
+  }
+
+  /**
+   * 获取当前的子 agent 类型限制
+   */
+  getAllowedSubagentTypes(): string[] | undefined {
+    return this._allowedSubagentTypes;
+  }
+
+  /**
    * 设置父对话上下文（在 Loop 中调用）
    */
   setParentContext(messages: Message[]): void {
@@ -583,6 +604,18 @@ Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not av
         success: false,
         error: `Unknown agent type: ${subagent_type}. Available types: ${BUILT_IN_AGENT_TYPES.map(d => d.agentType).join(', ')}`,
       };
+    }
+
+    // v2.1.33: 检查子 agent 类型限制
+    // 当父 agent 通过 Task(agent_type) 语法限制了允许的子 agent 类型时
+    // 在这里进行验证，不允许生成未授权的 agent 类型
+    if (this._allowedSubagentTypes && this._allowedSubagentTypes.length > 0) {
+      if (!this._allowedSubagentTypes.includes(subagent_type)) {
+        return {
+          success: false,
+          error: `Agent type "${subagent_type}" is not allowed. This agent can only spawn: ${this._allowedSubagentTypes.join(', ')}`,
+        };
+      }
     }
 
     // Resume 模式
@@ -827,6 +860,17 @@ Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not av
       const fallbackModel = config.fallbackModel as string | undefined;
       const debug = config.debug as boolean | undefined;
 
+      // v2.1.33: 解析 tools 字段中的 Task(agent_type) 语法
+      let effectiveTools = agentDef.tools;
+      let childAllowedSubagentTypes = agentDef.allowedSubagentTypes;
+
+      if (effectiveTools && !childAllowedSubagentTypes) {
+        // 如果 tools 中包含 Task(xxx) 语法但还没被解析
+        const parsed = parseToolsWithAgentTypeRestriction(effectiveTools);
+        effectiveTools = parsed.tools;
+        childAllowedSubagentTypes = parsed.allowedSubagentTypes;
+      }
+
       // 构建 LoopOptions
       const loopOptions: LoopOptions = {
         model: resolvedModel,
@@ -834,7 +878,7 @@ Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not av
         verbose: process.env.CLAUDE_VERBOSE === 'true',
         permissionMode: agentDef.permissionMode || 'default',
         // 根据代理定义限制工具访问
-        allowedTools: agentDef.tools,
+        allowedTools: effectiveTools,
         workingDir: agent.workingDirectory,
         // 使用代理定义的系统提示词
         systemPrompt: agentDef.getSystemPrompt?.(),
@@ -848,6 +892,8 @@ Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not av
         isSubAgent: true,
         // v2.1.30: 传递 MCP 工具（空数组，子代理通过 ToolRegistry 单例访问 MCP 工具）
         mcpTools: [],
+        // v2.1.33: 传递子 agent 类型限制
+        allowedSubagentTypes: childAllowedSubagentTypes,
       };
 
       // 创建子对话循环（动态导入避免循环依赖）

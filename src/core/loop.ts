@@ -1528,6 +1528,12 @@ export interface LoopOptions {
   /** v2.1.30: SDK 提供的 MCP 工具（传递给子代理） */
   mcpTools?: ToolDefinition[];
   /**
+   * v2.1.33: 限制可生成的子 agent 类型
+   * 当通过 Task(agent_type) 语法在 frontmatter 中指定时，
+   * 子 loop 中的 Task 工具只能生成这些类型的 agent
+   */
+  allowedSubagentTypes?: string[];
+  /**
    * 官方 v2.1.2 响应式状态获取回调
    * 用于实时获取应用状态（包括权限模式）
    * 如果提供此回调，权限模式将从 AppState.toolPermissionContext.mode 获取
@@ -1846,6 +1852,18 @@ export class ConversationLoop {
       tools = tools.filter(t => !disallowed.has(t.name));
     }
 
+    // v2.1.33: delegate_mode 工具限制
+    // 在 delegate_mode 下，agent 只能使用团队协作相关的工具
+    if (options.delegateMode) {
+      const DELEGATE_MODE_TOOLS = new Set([
+        'Task', 'TaskOutput',
+        'TeamCreate', 'TeamDelete', 'SendMessage',
+        'TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList',
+        'Read', 'Glob', 'Grep',  // 基础读取工具仍然可用
+      ]);
+      tools = tools.filter(t => DELEGATE_MODE_TOOLS.has(t.name));
+    }
+
     // v2.1.7: MCP 工具搜索自动模式
     // 当 MCP 工具描述超过上下文窗口的 10% * 2.5 = 25% 时，自动启用延迟加载模式
     // 延迟加载模式下，MCP 工具不会直接暴露给模型，而是通过 MCPSearch 工具按需发现
@@ -1870,6 +1888,16 @@ export class ConversationLoop {
     }
 
     this.tools = tools;
+
+    // v2.1.33: 将 allowedSubagentTypes 传递给 TaskTool 实例
+    // 当子 loop 通过 Task(agent_type) 语法限制了允许的子 agent 类型时
+    // 在 TaskTool.execute() 中进行验证
+    if (options.allowedSubagentTypes) {
+      const taskTool = toolRegistry.get('Task');
+      if (taskTool && 'setAllowedSubagentTypes' in taskTool) {
+        (taskTool as any).setAllowedSubagentTypes(options.allowedSubagentTypes);
+      }
+    }
   }
 
   /**

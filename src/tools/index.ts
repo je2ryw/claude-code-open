@@ -29,6 +29,7 @@ export * from './dispatch-worker.js';
 export * from './generate-blueprint.js';
 export * from './start-lead-agent.js';
 export * from './generate-design.js';
+export * from './team.js';
 
 import { toolRegistry } from './base.js';
 import { BashTool, KillShellTool } from './bash.js';
@@ -49,7 +50,7 @@ import { LSPTool } from './lsp.js';
 import { BlueprintTool } from './blueprint.js';
 import { UpdateTaskStatusTool } from './task-status.js';
 import { CommitAndMergeTool } from './commit-and-merge.js';
-import { TeammateTool, SendMessageTool } from './agent-teams.js';
+import { TeammateTool, SendMessageTool as AgentTeamsSendMessageTool } from './agent-teams.js';
 import { isAgentTeamsEnabled } from '../agents/teammate-context.js';
 import { SubmitReviewTool } from './submit-review.js';
 import { SubmitE2EResultTool } from './submit-e2e-result.js';
@@ -58,6 +59,7 @@ import { UpdateTaskPlanTool } from './update-task-plan.js';
 import { GenerateBlueprintTool } from './generate-blueprint.js';
 import { StartLeadAgentTool } from './start-lead-agent.js';
 import { GenerateDesignTool } from './generate-design.js';
+import { TeamCreateTool, TeamDeleteTool, TeamSendMessageTool } from './team.js';
 import { registerBlueprintHooks } from '../hooks/blueprint-hooks.js';
 
 // 注册所有工具（与官方 Claude Code 保持一致：18个核心工具）
@@ -136,6 +138,13 @@ export function registerAllTools(): void {
   toolRegistry.register(new StartLeadAgentTool());
   toolRegistry.register(new GenerateDesignTool());
 
+  // 18. Agent Teams v2.1.33 工具 (3个) - TeamCreate/TeamDelete/TeamSendMessage
+  if (isAgentTeamsEnabled()) {
+    toolRegistry.register(new TeamCreateTool());
+    toolRegistry.register(new TeamDeleteTool());
+    toolRegistry.register(new TeamSendMessageTool());
+  }
+
   // MCP 工具通过动态注册机制添加
   // MCPSearchTool 作为 MCP 桥接工具保留
   toolRegistry.register(new MCPSearchTool());
@@ -144,11 +153,11 @@ export function registerAllTools(): void {
   toolRegistry.register(new ListMcpResourcesTool());
   toolRegistry.register(new ReadMcpResourceTool());
 
-  // 14. Agent Teams 工具 (2个) - v2.1.32 新增
-  // 需要 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 环境变量
+  // 19. Agent Teams 工具 (1个) - v2.1.32 TeammateTool
+  // 需要 CLAUDE_CODE_ENABLE_AGENT_TEAMS=true 环境变量
+  // 注意: SendMessage 已在上方 v2.1.33 工具中注册（TeamSendMessageTool），此处不重复注册
   if (isAgentTeamsEnabled()) {
     toolRegistry.register(new TeammateTool());
-    toolRegistry.register(new SendMessageTool());
   }
 }
 
