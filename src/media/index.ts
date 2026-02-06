@@ -20,12 +20,20 @@ export {
 export {
   PDF_MAX_SIZE,
   PDF_EXTENSIONS,
+  PDF_MAX_PAGES_PER_REQUEST,
+  PDF_LARGE_THRESHOLD,
   isPdfSupported,
   isPdfExtension,
   readPdfFile,
   readPdfFileSync,
   validatePdfFile,
+  parsePageRange,
+  getPdfPageCount,
+  extractPdfPages,
+  formatBytes,
   type PdfReadResult,
+  type PdfPartsResult,
+  type PageRange,
 } from './pdf.js';
 
 // 图片处理

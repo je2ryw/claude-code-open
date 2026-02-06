@@ -80,6 +80,13 @@ export const ALL_COMMANDS: CompletionItem[] = [
     priority: 43
   },
   {
+    value: '/debug',
+    label: '/debug',
+    description: 'Help troubleshoot the current session',
+    type: 'command',
+    priority: 24
+  },
+  {
     value: '/doctor ',
     label: '/doctor',
     description: 'Run diagnostics to check for issues',

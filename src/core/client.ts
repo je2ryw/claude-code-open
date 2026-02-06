@@ -42,6 +42,8 @@ export interface ClientConfig {
   fallbackModel?: string;
   /** Extended Thinking 配置 */
   thinking?: ThinkingConfig;
+  /** v2.1.31: Temperature 覆盖（0-1） */
+  temperature?: number;
 }
 
 export interface StreamCallbacks {
@@ -138,6 +140,15 @@ function getProviderType(): ProviderType {
   }
   // v2.1.29: 默认使用 'firstParty' 表示直接使用 Anthropic API
   return 'firstParty';
+}
+
+/**
+ * v2.1.31: 检查是否为第三方 provider（Bedrock、Vertex、Foundry）
+ * 用于在模型选择器中隐藏 Anthropic API 定价信息
+ */
+export function isThirdPartyProvider(): boolean {
+  const provider = getProviderType();
+  return provider !== 'firstParty';
 }
 
 /**
@@ -298,7 +309,7 @@ function formatSystemPrompt(
  *
  * 注意：thinking 和 redacted_thinking 类型的 block 不添加缓存控制
  */
-function formatMessages(messages: Array<{ role: string; content: any }>): Array<{ role: string; content: any }> {
+function formatMessages(messages: Array<{ role: string; content: any }>, enableThinking?: boolean): Array<{ role: string; content: any }> {
   return messages.map((m, msgIndex) => {
     const isLastMessage = msgIndex === messages.length - 1;
 
@@ -317,8 +328,21 @@ function formatMessages(messages: Array<{ role: string; content: any }>): Array<
 
     // 如果 content 是数组，为最后一个非 thinking block 添加缓存控制
     if (Array.isArray(m.content) && m.content.length > 0) {
-      const content = m.content.map((block: any, blockIndex: number) => {
-        const isLastBlock = blockIndex === m.content.length - 1;
+      // v2.1.30: 当 thinking 未启用时，从历史消息中移除 thinking blocks
+      // 防止 /login 切换 API key 后发送 thinking blocks 导致 400 错误
+      let filteredContent = m.content;
+      if (!enableThinking) {
+        filteredContent = m.content.filter((block: any) =>
+          block.type !== 'thinking' && block.type !== 'redacted_thinking'
+        );
+        // 如果过滤后为空，添加占位文本
+        if (filteredContent.length === 0) {
+          filteredContent = [{ type: 'text', text: '(no content)' }];
+        }
+      }
+
+      const content = filteredContent.map((block: any, blockIndex: number) => {
+        const isLastBlock = blockIndex === filteredContent.length - 1;
         // 跳过 thinking 类型的 block
         const isThinkingBlock = block.type === 'thinking' || block.type === 'redacted_thinking';
 
@@ -508,6 +532,8 @@ export class ClaudeClient {
   private retryDelay: number;
   private fallbackModel?: string;
   private debug: boolean;
+  /** v2.1.31: temperature 覆盖值 */
+  private temperature?: number;
   private isOAuth: boolean = false;  // 是否使用 OAuth 模式
   private totalUsage: UsageStats = {
     inputTokens: 0,
@@ -619,6 +645,11 @@ export class ClaudeClient {
     // 配置 Extended Thinking
     if (config.thinking) {
       thinkingManager.configure(config.thinking);
+    }
+
+    // v2.1.31: 存储 temperature 覆盖值
+    if (config.temperature !== undefined) {
+      this.temperature = config.temperature;
     }
 
     if (this.debug) {
@@ -825,7 +856,7 @@ export class ClaudeClient {
           max_tokens: this.maxTokens,
           system: formattedSystem,
           // v5.0: 使用 formatMessages 启用消息缓存
-          messages: formatMessages(messages),
+          messages: formatMessages(messages, options?.enableThinking),
           tools: apiTools,
           // 添加 tool_choice 参数（强制 AI 使用工具）
           ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),
@@ -833,6 +864,8 @@ export class ClaudeClient {
           ...(betas.length > 0 ? { betas } : {}),
           // 添加 metadata（官方 Claude Code 的 Ja 函数）
           metadata: buildMetadata(),
+          // v2.1.31: 传递 temperature（如果配置了覆盖值）
+          ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
           ...thinkingParams,
         };
 
@@ -998,6 +1031,9 @@ export class ClaudeClient {
         ...(betas.length > 0 ? { betas } : {}),
         // 添加 metadata（官方 Claude Code 的 Ja 函数）
         metadata: buildMetadata(),
+        // v2.1.31: 传递 temperature 到 streaming 路径
+        // 修复 temperatureOverride 在 streaming API 路径被静默忽略的问题
+        ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
         ...thinkingParams,
       });
       return stream;

@@ -22,6 +22,7 @@ import {
 import type { Message } from '../types/index.js';
 import { GENERAL_PURPOSE_AGENT_PROMPT, EXPLORE_AGENT_PROMPT, CODE_ANALYZER_PROMPT, BLUEPRINT_WORKER_PROMPT } from '../prompt/templates.js';
 import { notificationManager, type AgentCompletionResult } from '../notifications/index.js';
+import { isAgentTeamsEnabled } from '../agents/teammate-context.js';
 
 // 代理类型定义（参照官方）
 export interface AgentTypeDefinition {
@@ -502,13 +503,31 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
           type: 'boolean',
           description: 'Set to true to run this agent in the background. Use TaskOutput to read the output later.',
         },
+        max_turns: {
+          type: 'number',
+          description: 'Maximum number of agentic turns (API round-trips) before stopping.',
+        },
+        name: {
+          type: 'string',
+          description: 'Agent name for identification within a team (Agent Teams feature).',
+        },
+        team_name: {
+          type: 'string',
+          description: 'Team name for Agent Teams collaboration (requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1).',
+        },
+        mode: {
+          type: 'string',
+          enum: ['acceptEdits', 'bypassPermissions', 'default', 'delegate', 'dontAsk', 'plan'],
+          description: 'Permission mode for the agent.',
+        },
       },
       required: ['description', 'prompt', 'subagent_type'],
     };
   }
 
   async execute(input: AgentInput): Promise<ToolResult> {
-    const { description, prompt, subagent_type, model, resume, run_in_background } = input;
+    const { description, prompt, subagent_type, model, resume, run_in_background,
+            max_turns, name: agentName, team_name, mode } = input;
 
     // 验证代理类型
     const agentDef = getAgentTypeDefinition(subagent_type);
@@ -538,7 +557,13 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       intermediateResults: [],
       currentStep: 0,
       workingDirectory: getCurrentCwd(),
-      metadata: {},
+      metadata: {
+        // v2.1.32: Agent Teams 元数据
+        ...(agentName && { agentName }),
+        ...(team_name && { teamName: team_name }),
+        ...(mode && { permissionMode: mode }),
+        ...(max_turns && { maxTurns: max_turns }),
+      },
       messages: [],
     };
 
@@ -678,13 +703,16 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
       agent.status = 'completed';
       agent.endTime = new Date();
 
-      // 构建结果输出
-      const duration = (agent.endTime.getTime() - agent.startTime.getTime()) / 1000;
+      // v2.1.30: 构建结果输出，包含 token/工具使用/时长指标
+      // 对应官方实现 (cli.js 行2941-2944)
+      const durationMs = agent.endTime.getTime() - agent.startTime.getTime();
       const output = agent.result?.output || `Agent ${agent.agentType} completed: ${agent.description}`;
+      const totalTokens = agent.progress?.tokenCount || 0;
+      const toolUses = agent.progress?.toolUseCount || 0;
 
       agent.result = {
         success: true,
-        output: `${output}\n\n[Agent completed in ${duration.toFixed(1)}s]`,
+        output: `${output}\n\nagentId: ${agent.id} (for resuming to continue this agent's work if needed)\n<usage>total_tokens: ${totalTokens}\ntool_uses: ${toolUses}\nduration_ms: ${durationMs}</usage>`,
       };
 
       addAgentHistory(agent, 'completed', 'Agent execution completed');
@@ -771,6 +799,8 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         debug,
         // 标记为 sub-agent，防止覆盖全局父模型上下文
         isSubAgent: true,
+        // v2.1.30: 传递 MCP 工具（空数组，子代理通过 ToolRegistry 单例访问 MCP 工具）
+        mcpTools: [],
       };
 
       // 创建子对话循环（动态导入避免循环依赖）

@@ -133,6 +133,17 @@ export function convertFullwidthToHalfwidth(input: string): string {
 }
 
 /**
+ * v2.1.31: 检查字符是否为空格（包括全角空格）
+ * 支持半角空格 ' '(0x20) 和全角空格 '　'(0x3000，日语 IME)
+ *
+ * @param char - 单个字符
+ * @returns 是否为空格
+ */
+export function isSpace(char: string): boolean {
+  return char === ' ' || char === '\u3000';
+}
+
+/**
  * 检查字符是否是数字（包括全角数字）
  * @param char - 单个字符
  * @returns 是否为数字

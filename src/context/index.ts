@@ -687,6 +687,81 @@ export class ContextManager {
   }
 
   /**
+   * v2.1.32: Summarize from here - 从指定消息开始的部分对话摘要
+   * 对齐官方 "Summarize from here" 功能
+   *
+   * @param fromMessage 起始消息（之前的消息将被摘要）
+   * @param additionalContext 可选的额外上下文
+   */
+  async summarizeFromHere(fromMessage: Message, additionalContext?: string): Promise<{
+    preCompactTokenCount: number;
+    postCompactTokenCount: number;
+    messagesKept: number;
+    messagesSummarized: number;
+  }> {
+    // 找到消息在 turns 中的位置
+    let splitIndex = -1;
+    for (let i = 0; i < this.turns.length; i++) {
+      const turn = this.turns[i];
+      if (turn.user === fromMessage || turn.assistant === fromMessage) {
+        splitIndex = i;
+        break;
+      }
+    }
+
+    if (splitIndex <= 0) {
+      // 如果没找到或在开头，对所有历史进行摘要
+      splitIndex = Math.max(1, this.turns.length - (this.config.keepRecentMessages || 5));
+    }
+
+    const toSummarize = this.turns.slice(0, splitIndex);
+    const toKeep = this.turns.slice(splitIndex);
+
+    if (toSummarize.length === 0) {
+      return {
+        preCompactTokenCount: this.getUsedTokens(),
+        postCompactTokenCount: this.getUsedTokens(),
+        messagesKept: toKeep.length,
+        messagesSummarized: 0,
+      };
+    }
+
+    const preCompactTokenCount = this.getUsedTokens();
+
+    // 生成摘要
+    let summary: string;
+    const contextSuffix = additionalContext ? `\n\nAdditional context: ${additionalContext}` : '';
+
+    if (this.config.enableAISummary && this.apiClient) {
+      try {
+        summary = await createAISummary(toSummarize, this.apiClient) + contextSuffix;
+      } catch {
+        summary = createSummary(toSummarize) + contextSuffix;
+      }
+    } else {
+      summary = createSummary(toSummarize) + contextSuffix;
+    }
+
+    // 标记已摘要的 turns
+    for (const turn of toSummarize) {
+      turn.summarized = true;
+      turn.summary = summary;
+    }
+
+    const postCompactTokenCount = this.getUsedTokens();
+
+    this.savedTokens += preCompactTokenCount - postCompactTokenCount;
+    this.compressionCount++;
+
+    return {
+      preCompactTokenCount,
+      postCompactTokenCount,
+      messagesKept: toKeep.length,
+      messagesSummarized: toSummarize.length,
+    };
+  }
+
+  /**
    * 获取统计信息
    */
   getStats(): ContextStats {

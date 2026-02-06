@@ -531,10 +531,11 @@ export class LSPServer extends EventEmitter {
       return;
     }
 
-    // 发送 shutdown 请求
+    // v2.1.31: 使用 undefined 代替 null 作为参数
+    // 修复严格的 LSP 服务器拒绝 null params 的兼容性问题
     try {
-      await this.sendRequest('shutdown', null);
-      this.sendNotification('exit', null);
+      await this.sendRequest('shutdown', undefined);
+      this.sendNotification('exit', undefined);
     } catch (err) {
       // 忽略错误
     }

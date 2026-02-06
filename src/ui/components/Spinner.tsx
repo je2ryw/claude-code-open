@@ -198,8 +198,9 @@ export const Spinner: React.FC<SpinnerProps> = React.memo(({
     );
   };
 
+  // v2.1.31: 使用 minHeight 减少 spinner 出现和消失时的布局抖动
   return (
-    <Box>
+    <Box minHeight={1}>
       <Text color={shimmer ? getShimmerTextColor() : displayColor}>{icon}</Text>
       {renderShimmerLabel()}
       {progress !== undefined && (

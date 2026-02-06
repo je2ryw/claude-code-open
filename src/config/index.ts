@@ -117,6 +117,9 @@ const UserConfigSchema = z.object({
   /** 响应耗时显示 (v2.1.7+) */
   showTurnDuration: z.boolean().default(true).optional(),
 
+  /** v2.1.30: Reduced motion mode - 减少动画和视觉效果 */
+  reducedMotion: z.boolean().default(false).optional(),
+
   // Git 配置
   includeCoAuthoredBy: z.boolean().default(true), // 是否在 git commit 中添加 Claude 署名（已弃用，使用 attribution）
 

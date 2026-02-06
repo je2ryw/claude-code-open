@@ -470,6 +470,64 @@ export const doctorCommand: SlashCommand = {
   },
 };
 
+// /debug - v2.1.30: 帮助调试当前会话
+// 对应官方 changelog: "Added /debug for Claude to help troubleshoot the current session"
+export const debugCommand: SlashCommand = {
+  name: 'debug',
+  description: 'Help troubleshoot the current session',
+  category: 'general',
+  execute: async (ctx: CommandContext): Promise<CommandResult> => {
+    const { config, session } = ctx;
+    const stats = session.getStats();
+    const memUsage = process.memoryUsage();
+
+    let debugInfo = `Session Debug Information\n\n`;
+
+    // 会话基本信息
+    debugInfo += `Session\n`;
+    debugInfo += `  ID: ${session.id}\n`;
+    debugInfo += `  Messages: ${stats.messageCount || 0}\n`;
+    debugInfo += `  Duration: ${stats.duration ? Math.round(stats.duration / 1000) + 's' : 'N/A'}\n`;
+    debugInfo += `  Cost: ${stats.totalCost || '$0.00'}\n\n`;
+
+    // 模型信息
+    debugInfo += `Model\n`;
+    debugInfo += `  Name: ${config.modelDisplayName}\n`;
+    debugInfo += `  API Type: ${config.apiType}\n`;
+    debugInfo += `  API Key: ${process.env.ANTHROPIC_API_KEY ? 'set' : process.env.CLAUDE_API_KEY ? 'set (CLAUDE_API_KEY)' : 'not set'}\n\n`;
+
+    // 模型使用分布
+    if (stats.modelUsage && Object.keys(stats.modelUsage).length > 0) {
+      debugInfo += `Model Usage\n`;
+      for (const [model, count] of Object.entries(stats.modelUsage)) {
+        debugInfo += `  ${model}: ${count} calls\n`;
+      }
+      debugInfo += `\n`;
+    }
+
+    // 内存使用
+    debugInfo += `Memory\n`;
+    debugInfo += `  Heap used: ${(memUsage.heapUsed / 1024 / 1024).toFixed(1)} MB\n`;
+    debugInfo += `  Heap total: ${(memUsage.heapTotal / 1024 / 1024).toFixed(1)} MB\n`;
+    debugInfo += `  RSS: ${(memUsage.rss / 1024 / 1024).toFixed(1)} MB\n\n`;
+
+    // 环境
+    debugInfo += `Environment\n`;
+    debugInfo += `  Node.js: ${process.version}\n`;
+    debugInfo += `  Platform: ${process.platform} (${process.arch})\n`;
+    debugInfo += `  CWD: ${process.cwd()}\n`;
+    debugInfo += `  Claude Code: v${config.version}\n`;
+    debugInfo += `  Permission mode: ${config.permissionMode || 'default'}\n\n`;
+
+    // 提示 Claude 可以用这些信息帮助诊断
+    debugInfo += `Use this information to help identify any issues with the current session.\n`;
+    debugInfo += `If you're experiencing problems, describe them and Claude will help troubleshoot.`;
+
+    ctx.ui.addMessage('assistant', debugInfo);
+    return { success: true };
+  },
+};
+
 // /bug - 报告问题
 export const bugCommand: SlashCommand = {
   name: 'bug',
@@ -776,6 +834,7 @@ export function registerGeneralCommands(): void {
   commandRegistry.register(clearCommand);
   commandRegistry.register(exitCommand);
   commandRegistry.register(statusCommand);
+  commandRegistry.register(debugCommand);
   commandRegistry.register(doctorCommand);
   commandRegistry.register(bugCommand);
   commandRegistry.register(versionCommand);

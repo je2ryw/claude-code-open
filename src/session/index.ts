@@ -440,18 +440,17 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
     const filePath = path.join(sessionDir, file);
 
     try {
+      // v2.1.30: stat-based 轻量加载 - 先用 stat 检查缓存有效性
+      // 避免解析大型 JSON 文件（68% 内存减少优化）
+      const stat = fs.statSync(filePath);
+
       // 检查缓存
       const cached = sessionMetadataCache.get(sessionId);
-      let stat: fs.Stats | null = null;
 
-      // 只有当缓存存在时才检查文件修改时间
-      if (cached) {
-        stat = fs.statSync(filePath);
-        if (stat.mtimeMs === cached.mtime) {
-          // 缓存有效，直接使用
-          sessions.push(cached.metadata);
-          continue;
-        }
+      // 如果缓存有效（mtime 匹配），直接使用，不读取文件
+      if (cached && stat.mtimeMs === cached.mtime) {
+        sessions.push(cached.metadata);
+        continue;
       }
 
       // 缓存无效或不存在，需要读取文件
@@ -468,10 +467,7 @@ export function listSessions(options: SessionListOptions = {}): SessionMetadata[
       }
 
       if (metadata) {
-        // 更新缓存
-        if (!stat) {
-          stat = fs.statSync(filePath);
-        }
+        // 更新缓存（stat 已在前面获取）
         sessionMetadataCache.set(sessionId, {
           metadata,
           mtime: stat.mtimeMs,
@@ -1001,11 +997,22 @@ export function getSessionBranchTree(sessionId: string): {
     branches: [],
   };
 
-  // 加载父会话
+  // v2.1.30: 加载父会话（带 cycle 检测，防止 parentId 循环导致挂起）
   if (session.metadata.parentId) {
-    const parent = loadSession(session.metadata.parentId);
-    if (parent) {
-      result.parent = parent.metadata;
+    // 检查是否存在循环引用
+    if (session.metadata.parentId === sessionId) {
+      // 自引用循环，清除
+      console.error(`Cycle detected: session ${sessionId} references itself as parent. Clearing parentId.`);
+      session.metadata.parentId = undefined;
+    } else {
+      const parent = loadSession(session.metadata.parentId);
+      if (parent) {
+        // 进一步检查 parent 是否循环引用回当前 session
+        if (parent.metadata.parentId === sessionId) {
+          console.error(`Cycle detected in parentId chain between ${sessionId} and ${session.metadata.parentId}. Returning partial result.`);
+        }
+        result.parent = parent.metadata;
+      }
     }
   }
 

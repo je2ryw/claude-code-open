@@ -15,6 +15,26 @@ import type { ToolResult, ToolDefinition } from '../types/index.js';
 import { getCurrentCwd } from '../core/cwd-context.js';
 
 /**
+ * v2.1.32: 额外目录列表（由 --add-dir 设置）
+ * 用于从额外目录加载 skills
+ */
+let _additionalDirectories: string[] = [];
+
+/**
+ * 设置额外目录列表
+ */
+export function setAdditionalDirectories(dirs: string[]): void {
+  _additionalDirectories = [...dirs];
+}
+
+/**
+ * 获取额外目录列表
+ */
+export function getAdditionalDirectories(): string[] {
+  return [..._additionalDirectories];
+}
+
+/**
  * 获取文件的唯一标识符（基于 inode）- 对齐官网 fo5 函数
  *
  * 官网实现：
@@ -877,6 +897,19 @@ export async function initializeSkills(): Promise<void> {
     }
   }
 
+  // 5. v2.1.32: 加载 --add-dir 目录下的 .claude/skills/
+  // 官方更新：Skills defined in .claude/skills/ within additional directories (--add-dir) are now loaded automatically.
+  const addDirPaths = getAdditionalDirectories();
+  for (const addDir of addDirPaths) {
+    const addDirSkillsPath = path.join(addDir, '.claude', 'skills');
+    if (fs.existsSync(addDirSkillsPath)) {
+      const addDirSkills = await loadSkillsFromDirectory(addDirSkillsPath, 'projectSettings');
+      for (const skill of addDirSkills) {
+        allSkillsWithPath.push({ skill, filePath: skill.filePath });
+      }
+    }
+  }
+
   // 基于 inode 去重（对齐官网 JN0 函数）
   // 使用 Map<inode, source> 记录已加载的 inode
   const seenInodes = new Map<string, string>();
@@ -987,12 +1020,20 @@ function formatSkillListItem(skill: SkillDefinition): string {
  * - 截断格式：当描述太长时截断
  * - 超短格式：只显示名称
  */
-function formatSkillsList(skills: SkillDefinition[]): string {
+function formatSkillsList(skills: SkillDefinition[], contextWindowSize?: number): string {
   if (skills.length === 0) {
     return '';
   }
 
-  const CHAR_BUDGET = Number(process.env.SLASH_COMMAND_TOOL_CHAR_BUDGET) || 15000;
+  // v2.1.32: Skill 字符预算随上下文窗口缩放 (2% of context)
+  // 官方实现：预算 = 上下文窗口大小 * 2%（以字符为单位，约4字符/token）
+  // 默认上下文窗口: 200000 tokens -> 默认预算 200000 * 0.02 * 4 = 16000 字符
+  const DEFAULT_CONTEXT_WINDOW = 200000; // tokens
+  const CHARS_PER_TOKEN = 4;
+  const CONTEXT_BUDGET_RATIO = 0.02; // 2% of context window
+  const contextTokens = contextWindowSize || DEFAULT_CONTEXT_WINDOW;
+  const scaledBudget = Math.floor(contextTokens * CONTEXT_BUDGET_RATIO * CHARS_PER_TOKEN);
+  const CHAR_BUDGET = Number(process.env.SLASH_COMMAND_TOOL_CHAR_BUDGET) || scaledBudget;
   const MIN_DESC_LENGTH = 20;
 
   // 计算完整格式

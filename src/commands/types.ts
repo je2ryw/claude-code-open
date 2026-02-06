@@ -70,7 +70,7 @@ export interface CommandContext {
 export interface CommandResult {
   success: boolean;
   message?: string;
-  action?: 'exit' | 'clear' | 'reload' | 'login' | 'logout' | 'reinitClient' | 'showJsx' | 'none';
+  action?: 'exit' | 'clear' | 'reload' | 'login' | 'logout' | 'reinitClient' | 'showJsx' | 'switchModel' | 'none';
   data?: any;
   // 官方 local-jsx 类型支持：命令可以返回一个 JSX 组件在主 UI 中显示
   jsx?: React.ReactElement;
