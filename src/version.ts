@@ -11,17 +11,20 @@
  */
 export const VERSION = '2.1.32';
 
+
 /**
  * 完整版本标识（带 -restored 后缀）
  * @description 用于标识这是一个还原/复刻版本
  */
 export const VERSION_FULL = '2.1.32-restored';
 
+
 /**
  * 版本号（不带后缀）
  * @description 用于配置文件和 API 等场景
  */
 export const VERSION_BASE = '2.1.32';
+
 
 /**
  * 获取版本信息

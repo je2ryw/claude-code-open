@@ -103,6 +103,10 @@ export interface BashToolResult extends ToolResult {
   elapsedTimeSeconds?: number;
   /** v2.1.23: Timeout in milliseconds for display */
   timeoutMs?: number;
+  /** Background task ID when command was automatically moved to background after timeout */
+  backgroundTaskId?: string;
+  /** True if the user manually backgrounded the command (e.g. Ctrl+B) */
+  backgroundedByUser?: boolean;
 }
 
 /**

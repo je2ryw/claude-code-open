@@ -42,6 +42,8 @@ export interface ClientConfig {
   fallbackModel?: string;
   /** Extended Thinking 配置 */
   thinking?: ThinkingConfig;
+  /** v2.1.31: Temperature 覆盖（0-1） */
+  temperature?: number;
 }
 
 export interface StreamCallbacks {
@@ -138,6 +140,15 @@ function getProviderType(): ProviderType {
   }
   // v2.1.29: 默认使用 'firstParty' 表示直接使用 Anthropic API
   return 'firstParty';
+}
+
+/**
+ * v2.1.31: 检查是否为第三方 provider（Bedrock、Vertex、Foundry）
+ * 用于在模型选择器中隐藏 Anthropic API 定价信息
+ */
+export function isThirdPartyProvider(): boolean {
+  const provider = getProviderType();
+  return provider !== 'firstParty';
 }
 
 /**
@@ -508,6 +519,8 @@ export class ClaudeClient {
   private retryDelay: number;
   private fallbackModel?: string;
   private debug: boolean;
+  /** v2.1.31: temperature 覆盖值 */
+  private temperature?: number;
   private isOAuth: boolean = false;  // 是否使用 OAuth 模式
   private totalUsage: UsageStats = {
     inputTokens: 0,
@@ -619,6 +632,11 @@ export class ClaudeClient {
     // 配置 Extended Thinking
     if (config.thinking) {
       thinkingManager.configure(config.thinking);
+    }
+
+    // v2.1.31: 存储 temperature 覆盖值
+    if (config.temperature !== undefined) {
+      this.temperature = config.temperature;
     }
 
     if (this.debug) {
@@ -833,6 +851,8 @@ export class ClaudeClient {
           ...(betas.length > 0 ? { betas } : {}),
           // 添加 metadata（官方 Claude Code 的 Ja 函数）
           metadata: buildMetadata(),
+          // v2.1.31: 传递 temperature（如果配置了覆盖值）
+          ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
           ...thinkingParams,
         };
 
@@ -998,6 +1018,9 @@ export class ClaudeClient {
         ...(betas.length > 0 ? { betas } : {}),
         // 添加 metadata（官方 Claude Code 的 Ja 函数）
         metadata: buildMetadata(),
+        // v2.1.31: 传递 temperature 到 streaming 路径
+        // 修复 temperatureOverride 在 streaming API 路径被静默忽略的问题
+        ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
         ...thinkingParams,
       });
       return stream;
@@ -1147,9 +1170,19 @@ export class ClaudeClient {
         }
       }
     } catch (error: any) {
-      console.error('[ClaudeClient] Stream processing error:', error.message);
-      if (this.debug) {
-        console.error('[ClaudeClient] Full error:', error);
+      // 增强错误日志，追踪 Connection error 的真正来源
+      const errorCode = error.code || error.type || 'UNKNOWN';
+      const errorStatus = error.status || error.statusCode || '';
+      const errorCause = error.cause?.message || '';
+
+      console.error(`[ClaudeClient] Stream processing error: ${error.message}`);
+      console.error(`[ClaudeClient] Error details - code: ${errorCode}, status: ${errorStatus}, cause: ${errorCause}`);
+
+      if (this.debug || error.message?.includes('Connection error')) {
+        console.error('[ClaudeClient] Full error stack:', error.stack);
+        if (error.cause) {
+          console.error('[ClaudeClient] Error cause:', error.cause);
+        }
       }
       yield { type: 'error', error: error.message };
     }

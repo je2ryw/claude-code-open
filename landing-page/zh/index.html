@@ -84,6 +84,7 @@
             <div class="nav-links">
                 <a href="#features">功能特性</a>
                 <a href="#architecture">架构设计</a>
+                <a href="#blog">技术博客</a>
                 <a href="#quickstart">快速开始</a>
                 <a href="/" class="lang-switch">English</a>
                 <a href="https://github.com/kill136/claude-code" class="btn btn-outline" target="_blank" rel="noopener">
@@ -247,6 +248,81 @@
                         25+ 内置工具实现
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Blog Section -->
+    <section id="blog" class="blog">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">技术博客</h2>
+                <p class="section-subtitle">深入逆向工程 Claude Code 的技术探索</p>
+            </div>
+            <div class="blog-posts">
+                <article class="blog-post featured">
+                    <div class="blog-post-header">
+                        <span class="blog-tag">深度解析</span>
+                        <span class="blog-date">2026年2月</span>
+                    </div>
+                    <h3>攻克 Claude Code OAuth 代理之谜：如何修复「凭证仅限 Claude Code 使用」错误</h3>
+                    <div class="blog-content">
+                        <h4>问题背景</h4>
+                        <p>在构建透明代理以跨设备共享 Claude 订阅时，我们遇到了一个令人困惑的 400 错误：</p>
+                        <div class="code-block" style="margin: 1rem 0;">
+                            <code>"This credential is only authorized for use with Claude Code and cannot be used for other API requests."</code>
+                        </div>
+                        <p>通过 Postman 发送简单请求可以正常工作，但转发真实的 Claude Code CLI 请求却失败了。到底哪里不同？</p>
+
+                        <h4>问题根因</h4>
+                        <p>经过数小时的抓包分析和混淆代码逆向，我们发现了根本原因：<strong>代理破坏了 system prompt 的 block 结构</strong>。</p>
+
+                        <p>官方 Claude Code 发送的 system prompt 是一个包含特定结构的 text block 数组：</p>
+                        <div class="code-block" style="margin: 1rem 0;">
+                            <code>Block 0: "x-anthropic-billing-header: cc_version=2.1.31.593; cc_entrypoint=cli;"<br>
+Block 1: "You are Claude Code, Anthropic's official CLI for Claude..."<br>
+Block 2: "...其他系统提示词..."</code>
+                        </div>
+
+                        <p><code>x-anthropic-billing-header</code> 是 Anthropic 用于验证 Claude Code 客户端身份的特殊标记块。我们代理的身份注入逻辑找到第一个 text block（billing header），然后把 Claude Code 身份标识拼接到它前面：</p>
+                        <div class="code-block" style="margin: 1rem 0; background: #2d1b1b;">
+                            <code style="color: #ff6b6b;">// BUG: 这破坏了 billing header block！<br>
+block.text = CLAUDE_CODE_IDENTITY + '\n\n' + block.text;</code>
+                        </div>
+                        <p>结果：billing header 不再位于任何 block 的开头，API 找不到它就拒绝了请求。</p>
+
+                        <h4>解决方案</h4>
+                        <p>我们更新了身份注入逻辑：</p>
+                        <ol>
+                            <li><strong>跳过 billing header block</strong> - 永远不修改以 <code>x-anthropic-billing-header</code> 开头的 block</li>
+                            <li><strong>将身份标识作为独立 block 插入</strong> - 如果没有现有身份，在 billing header 之后插入新 block，保持官方结构</li>
+                            <li><strong>移除 prompt-caching-scope beta</strong> - v4 转发路径缺少这个关键的 beta header 过滤</li>
+                        </ol>
+
+                        <div class="code-block" style="margin: 1rem 0; background: #1b2d1b;">
+                            <code style="color: #6bff6b;">// FIX: 跳过 billing block，在其后插入身份标识<br>
+const isBillingBlock = (b) => b.text?.startsWith('x-anthropic-billing-header');<br>
+const insertIdx = system.findIndex(isBillingBlock) + 1;<br>
+system.splice(insertIdx, 0, { type: 'text', text: IDENTITY });</code>
+                        </div>
+
+                        <h4>核心收获</h4>
+                        <ul>
+                            <li><strong>Block 结构很重要</strong> - Claude Code 的 system prompt 不只是文本，而是每个 block 都有语义含义的结构化数组</li>
+                            <li><strong>Billing header 神圣不可侵犯</strong> - <code>x-anthropic-billing-header</code> block 用于客户端验证，必须保持原样</li>
+                            <li><strong>Beta header 需要谨慎处理</strong> - <code>prompt-caching-scope</code> 会改变缓存行为，在代理 OAuth 请求时必须移除</li>
+                        </ul>
+
+                        <p style="margin-top: 1.5rem; padding: 1rem; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1)); border-radius: 8px;">
+                            <strong>最终效果：</strong>代理现在可以正确转发 OAuth 订阅请求，让你能够在多台设备之间无缝共享 Claude 订阅。
+                        </p>
+                    </div>
+                    <div class="blog-footer">
+                        <a href="https://github.com/kill136/claude-code/blob/main/src/proxy/server.ts#L598-L632" target="_blank" class="btn btn-outline btn-small">
+                            查看源码改动 →
+                        </a>
+                    </div>
+                </article>
             </div>
         </div>
     </section>

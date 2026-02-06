@@ -334,7 +334,7 @@ Usage:
 - Any lines longer than 2000 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.
-- This tool can read PDF files (.pdf). PDFs are processed page by page, extracting both text and visual content for analysis.
+- This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
 - This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
 - You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
@@ -351,11 +351,15 @@ Usage:
         },
         offset: {
           type: 'number',
-          description: 'The line number to start reading from',
+          description: 'The line number to start reading from. Only provide if the file is too large to read at once',
         },
         limit: {
           type: 'number',
-          description: 'The number of lines to read',
+          description: 'The number of lines to read. Only provide if the file is too large to read at once.',
+        },
+        pages: {
+          type: 'string',
+          description: 'Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum 20 pages per request.',
         },
       },
       required: ['file_path'],
@@ -540,10 +544,13 @@ Usage:
           },
         ],
       };
-    } catch (error) {
+    } catch (error: any) {
+      // v2.1.31: PDF 过大错误不应锁死 session
+      // 返回友好的错误信息，包含实际限制
+      const errorMessage = error?.message || String(error);
       return {
         success: false,
-        error: `Error reading PDF: ${error}`,
+        error: `Error reading PDF: ${errorMessage}`,
       };
     }
   }

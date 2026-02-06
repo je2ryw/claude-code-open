@@ -16,8 +16,6 @@ import type {
   ExecutionPlan,
   GitBranchStatus,
   CostEstimate,
-  PlanDecision,
-  VerificationStatus,
   ConflictDecision,
 } from './types';
 
@@ -103,6 +101,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
   // v3.0: 移除 HTTP 轮询状态，改用 WebSocket 推送的数据
   const [showPlanDetails, setShowPlanDetails] = useState(false);
   const [showGitPanel, setShowGitPanel] = useState(false);
+  // v5.0: 蜂群共享记忆面板
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [isStartingExecution, setIsStartingExecution] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
 
@@ -384,10 +384,31 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
     setSelectedBlueprintId(blueprintId);
   };
 
+  // v4.5: 进度百分比直接从 executionPlan 计算，避免与 stats 不同步
   const currentBlueprintProgress = useMemo(() => {
-    if (!state.stats) return 0;
-    return state.stats.progressPercentage;
-  }, [state.stats]);
+    if (!executionPlan || executionPlan.tasks.length === 0) {
+      // 如果没有执行计划，回退到 stats
+      return state.stats?.progressPercentage || 0;
+    }
+    const completedCount = executionPlan.tasks.filter(t => t.status === 'completed' || t.status === 'skipped').length;
+    return Math.round((completedCount / executionPlan.tasks.length) * 100);
+  }, [executionPlan, state.stats]);
+
+  // v4.6: 判断所有任务是否都已完成（用于显示 E2E 按钮）
+  // 不依赖 executionPlan.status，而是基于实际任务状态判断
+  const allTasksFinished = useMemo(() => {
+    if (!executionPlan || executionPlan.tasks.length === 0) return false;
+    return executionPlan.tasks.every(t => t.status === 'completed' || t.status === 'skipped' || t.status === 'failed');
+  }, [executionPlan]);
+
+  // v4.6: 判断是否可以显示 E2E 按钮
+  // 条件：所有任务都完成了（无论成功还是失败）
+  const canShowE2EButton = useMemo(() => {
+    // 已经在运行验收测试时也显示
+    if (state.verification.status !== 'idle') return true;
+    // 所有任务都完成了（completed/skipped/failed）
+    return allTasksFinished;
+  }, [allTasksFinished, state.verification.status]);
 
   return (
     <div className={styles.swarmConsole}>
@@ -530,6 +551,11 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 title="Git分支状态"
                 onClick={() => setShowGitPanel(!showGitPanel)}
               >🌿</button>
+              <button
+                className={`${styles.iconButton} ${showMemoryPanel ? styles.active : ''}`}
+                title="蜂群共享记忆"
+                onClick={() => setShowMemoryPanel(!showMemoryPanel)}
+              >🧠</button>
               <button className={styles.iconButton} title="刷新" onClick={refresh}>🔄</button>
               <button
                 className={`${styles.iconButton} ${isStartingExecution ? styles.loading : ''}`}
@@ -540,6 +566,37 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                 {isStartingExecution ? '⏳' : '▶️'}
               </button>
               <button className={styles.iconButton} title="暂停执行" onClick={handlePauseExecution}>⏸️</button>
+              {/* v4.6: E2E 验收测试按钮移到顶部操作栏 */}
+              {canShowE2EButton && (
+                <button
+                  className={`${styles.iconButton} ${state.verification.status !== 'idle' ? styles.active : ''} ${styles.e2eHeaderButton}`}
+                  title={
+                    state.verification.status === 'idle' ? 'E2E 验收测试' :
+                    state.verification.status === 'passed' ? 'E2E 测试通过 ✓' :
+                    state.verification.status === 'failed' ? 'E2E 测试失败 ✗' :
+                    'E2E 测试进行中...'
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (state.verification.status === 'idle') {
+                      handleStartE2EVerification();
+                    } else {
+                      // 点击可以选中 E2E 任务查看详情
+                      setSelectedTaskId('e2e-test');
+                    }
+                  }}
+                  disabled={isStartingVerification || ['checking_env', 'running_tests', 'fixing'].includes(state.verification.status)}
+                  style={{
+                    background: state.verification.status === 'passed' ? '#4CAF50' :
+                               state.verification.status === 'failed' ? '#f44336' :
+                               state.verification.status !== 'idle' ? '#ff9800' : undefined,
+                  }}
+                >
+                  {state.verification.status === 'idle' ? '🧪' :
+                   state.verification.status === 'passed' ? '✅' :
+                   state.verification.status === 'failed' ? '❌' : '🔄'}
+                </button>
+              )}
               <button
                 className={styles.iconButton}
                 title="取消执行"
@@ -657,6 +714,78 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
               </div>
             </FadeIn>
           )}
+
+          {/* v5.0: 蜂群共享记忆面板 */}
+          {showMemoryPanel && (
+            <FadeIn>
+              <div className={styles.memoryPanel}>
+                <h3>🧠 蜂群共享记忆</h3>
+                {state.blueprint?.swarmMemory ? (
+                  <div className={styles.memoryContent}>
+                    {/* 进度概览 */}
+                    <div className={styles.memorySection}>
+                      <div className={styles.memorySectionTitle}>📊 进度概览</div>
+                      <div className={styles.memoryOverview}>
+                        {state.blueprint.swarmMemory.overview || '暂无进度信息'}
+                      </div>
+                    </div>
+
+                    {/* 已注册 API */}
+                    {state.blueprint.swarmMemory.apis && state.blueprint.swarmMemory.apis.length > 0 && (
+                      <div className={styles.memorySection}>
+                        <div className={styles.memorySectionTitle}>
+                          🔌 已注册 API ({state.blueprint.swarmMemory.apis.length})
+                        </div>
+                        <div className={styles.memoryApiList}>
+                          {state.blueprint.swarmMemory.apis.slice(0, 10).map((api, idx) => (
+                            <span key={idx} className={styles.memoryApiItem}>{api}</span>
+                          ))}
+                          {state.blueprint.swarmMemory.apis.length > 10 && (
+                            <span className={styles.memoryApiMore}>
+                              +{state.blueprint.swarmMemory.apis.length - 10} 更多
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 已完成任务 */}
+                    {state.blueprint.swarmMemory.completedTasks && state.blueprint.swarmMemory.completedTasks.length > 0 && (
+                      <div className={styles.memorySection}>
+                        <div className={styles.memorySectionTitle}>
+                          ✅ 已完成任务 ({state.blueprint.swarmMemory.completedTasks.length})
+                        </div>
+                        <div className={styles.memoryTaskList}>
+                          {state.blueprint.swarmMemory.completedTasks.slice(-5).map((task) => (
+                            <div key={task.taskId} className={styles.memoryTaskItem}>
+                              <div className={styles.memoryTaskName}>{task.taskName}</div>
+                              <div className={styles.memoryTaskSummary}>{task.summary}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 更新时间 */}
+                    <div className={styles.memoryUpdateTime}>
+                      最后更新: {new Date(state.blueprint.swarmMemory.updatedAt).toLocaleString()}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.emptyState}>
+                    <div className={styles.emptyStateIcon}>🧠</div>
+                    <div className={styles.emptyStateText}>
+                      暂无共享记忆数据
+                      <br />
+                      <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
+                        任务执行时，Worker 会自动共享上下文信息到这里
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </FadeIn>
+          )}
           <div className={styles.panelContent}>
             {isLoading ? (
               <div className={styles.loadingState}>
@@ -762,6 +891,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                                 {task.status === 'completed' && (task.error || task.result?.error) ? '⚠️' :
                                  task.status === 'completed' ? '✅' :
                                  task.status === 'running' ? '🔄' :
+                                 task.status === 'reviewing' ? '🔍' :
                                  task.status === 'failed' ? '❌' :
                                  task.status === 'skipped' ? '⏭️' : '⏳'}
                               </div>
@@ -789,8 +919,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                                   👷 {task.workerId.slice(0, 8)}
                                 </div>
                               )}
-                              {/* v2.1: 失败任务重试按钮 - 支持有错误的已完成任务 */}
-                              {(task.status === 'failed' || (task.error || task.result?.error)) && selectedBlueprintId && (
+                              {/* v2.1: 失败任务重试按钮 - 只在失败或已完成但有错误时显示 */}
+                              {(task.status === 'failed' || (task.status === 'completed' && (task.error || task.result?.error))) && selectedBlueprintId && (
                                 <button
                                   className={styles.retryTaskButton}
                                   onClick={(e) => {
@@ -827,7 +957,8 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
                   {/* v3.4: 验收测试面板 - 所有任务完成后显示 */}
                   {/* v4.4: 添加点击选中功能，点击后右侧显示 E2E 测试的聊天界面 */}
-                  {executionPlan.status === 'completed' && (
+                  {/* v4.6: 改用 allTasksFinished 判断，不依赖 executionPlan.status */}
+                  {allTasksFinished && (
                     <div
                       className={`${styles.verificationPanel} ${selectedTaskId === 'e2e-test' ? styles.selected : ''}`}
                       onClick={() => setSelectedTaskId('e2e-test')}
@@ -896,19 +1027,19 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                         <div className={styles.verificationResult}>
                           <div className={styles.verificationStats}>
                             <span className={styles.verificationStatItem} data-type="passed">
-                              ✅ {state.verification.result.passedTests} 通过
+                              ✅ {state.verification.result.passedTests ?? 0} 通过
                             </span>
                             <span className={styles.verificationStatItem} data-type="failed">
-                              ❌ {state.verification.result.failedTests} 失败
+                              ❌ {state.verification.result.failedTests ?? 0} 失败
                             </span>
                             <span className={styles.verificationStatItem} data-type="skipped">
-                              ⏭ {state.verification.result.skippedTests} 跳过
+                              ⏭ {state.verification.result.skippedTests ?? 0} 跳过
                             </span>
                           </div>
-                          {state.verification.result.failures.length > 0 && (
+                          {(state.verification.result.failures?.length ?? 0) > 0 && (
                             <div className={styles.verificationFailures}>
                               <div className={styles.verificationFailuresTitle}>失败详情：</div>
-                              {state.verification.result.failures.map((f, i) => (
+                              {state.verification.result.failures!.map((f, i) => (
                                 <div key={i} className={styles.verificationFailureItem}>
                                   <span className={styles.failureName}>{f.name}</span>
                                   <span className={styles.failureError}>{f.error}</span>
@@ -916,10 +1047,10 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                               ))}
                             </div>
                           )}
-                          {state.verification.result.fixAttempts.length > 0 && (
+                          {(state.verification.result.fixAttempts?.length ?? 0) > 0 && (
                             <div className={styles.verificationFixes}>
                               <div className={styles.verificationFixesTitle}>修复尝试：</div>
-                              {state.verification.result.fixAttempts.map((fix, i) => (
+                              {state.verification.result.fixAttempts!.map((fix, i) => (
                                 <div key={i} className={styles.verificationFixItem}>
                                   {fix.success ? '✅' : '❌'} {fix.description}
                                 </div>
@@ -949,19 +1080,85 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
 
         <PanelResizeHandle className={styles.resizeHandle} />
 
-        {/* 右侧：Worker 面板（简化版，移除 TDD 和时光倒流） */}
+        {/* 右侧：v9.0 LeadAgent + Worker 面板 */}
         <Panel defaultSize="33" minSize="20" collapsible={true} className={styles.rightPanel}>
           <div className={styles.panelHeader}>
-            <h2>👷 Workers</h2>
-            {/* v3.0: 从 WebSocket 推送的 workers 计算 */}
-            <span className={styles.workerCount}>
-              {`${workers.filter(w => w.status !== 'idle').length}/${workers.length}`}
-            </span>
+            <h2>🧠 LeadAgent</h2>
+            {/* v9.0: LeadAgent 阶段指示 */}
+            {state.leadAgent.phase !== 'idle' && (
+              <span className={`${styles.leadPhase} ${styles[`lead_${state.leadAgent.phase}`]}`}>
+                {state.leadAgent.phase === 'started' ? '启动中' :
+                 state.leadAgent.phase === 'exploring' ? '探索代码' :
+                 state.leadAgent.phase === 'planning' ? '制定计划' :
+                 state.leadAgent.phase === 'executing' ? '执行中' :
+                 state.leadAgent.phase === 'reviewing' ? '审查中' :
+                 state.leadAgent.phase === 'completed' ? '已完成' :
+                 state.leadAgent.phase === 'failed' ? '失败' : ''}
+              </span>
+            )}
+            {workers.length > 0 && (
+              <span className={styles.workerCount}>
+                👷 {workers.filter(w => w.status !== 'idle').length}/{workers.length}
+              </span>
+            )}
             {isLoading && <span className={styles.loadingIndicator}>...</span>}
           </div>
           <div className={styles.panelContent}>
-            {/* v4.4: 根据选中状态显示对应任务的聊天界面 */}
-            {/* 选中 E2E 测试时显示 E2E 任务，选中普通任务时显示普通任务 */}
+            {/* v9.0: LeadAgent 实时输出面板 */}
+            {state.leadAgent.phase !== 'idle' && !selectedTaskId && (
+              <FadeIn>
+                <div className={styles.leadAgentPanel}>
+                  <div className={styles.leadStreamContainer}>
+                    {state.leadAgent.stream.length === 0 ? (
+                      <div className={styles.leadStreamEmpty}>
+                        LeadAgent 正在启动...
+                      </div>
+                    ) : (
+                      state.leadAgent.stream.map((block, idx) => {
+                        if (block.type === 'text') {
+                          return (
+                            <div key={idx} className={styles.leadTextBlock}>
+                              {block.text}
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div key={block.id} className={`${styles.leadToolBlock} ${styles[block.status]}`}>
+                              <div className={styles.leadToolHeader}>
+                                <span className={styles.leadToolIcon}>
+                                  {block.status === 'running' ? '🔄' :
+                                   block.status === 'completed' ? '✅' : '❌'}
+                                </span>
+                                <span className={styles.leadToolName}>{block.name}</span>
+                              </div>
+                              {block.input && (
+                                <div className={styles.leadToolInput}>
+                                  {typeof block.input === 'string'
+                                    ? block.input.slice(0, 200)
+                                    : JSON.stringify(block.input, null, 0).slice(0, 200)}
+                                </div>
+                              )}
+                              {block.result && (
+                                <div className={styles.leadToolResult}>
+                                  {block.result.slice(0, 300)}
+                                </div>
+                              )}
+                              {block.error && (
+                                <div className={styles.leadToolError}>
+                                  {block.error}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                      })
+                    )}
+                  </div>
+                </div>
+              </FadeIn>
+            )}
+
+            {/* Worker 任务详情（选中任务时显示） */}
             {selectedTaskId === 'e2e-test' && e2eTask ? (
               <FadeIn>
                 <WorkerPanel
@@ -970,6 +1167,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   selectedTask={e2eTask}
                   taskStream={e2eTaskStream}
                   onInterject={interjectTask}
+                  interjectStatus={state.interjectStatus}
                 />
               </FadeIn>
             ) : selectedTask ? (
@@ -980,24 +1178,25 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   selectedTask={selectedTask}
                   taskStream={selectedTaskStream}
                   onInterject={interjectTask}
+                  interjectStatus={state.interjectStatus}
                 />
               </FadeIn>
-            ) : workers.length === 0 ? (
+            ) : state.leadAgent.phase === 'idle' && workers.length === 0 ? (
               <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}>👷</div>
+                <div className={styles.emptyStateIcon}>🧠</div>
                 <div className={styles.emptyStateText}>
-                  {!selectedBlueprintId ? '请选择一个蓝图' : '暂无 Worker 数据'}
+                  {!selectedBlueprintId ? '请选择一个蓝图' : 'LeadAgent 待命中'}
                   {selectedBlueprintId && (
                     <>
                       <br />
                       <span style={{ fontSize: '0.85em', opacity: 0.7 }}>
-                        点击左侧任务查看执行详情和聊天记录
+                        点击 ▶️ 启动执行，LeadAgent 将接管整个项目
                       </span>
                     </>
                   )}
                 </div>
               </div>
-            ) : (
+            ) : state.leadAgent.phase === 'idle' ? (
               <FadeIn>
                 <WorkerPanel
                   queen={null}
@@ -1006,7 +1205,7 @@ export default function SwarmConsole({ initialBlueprintId }: SwarmConsoleProps) 
                   taskStream={null}
                 />
               </FadeIn>
-            )}
+            ) : null}
           </div>
         </Panel>
       </PanelGroup>

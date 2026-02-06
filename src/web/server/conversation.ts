@@ -22,6 +22,9 @@ import { UnifiedMemory, getUnifiedMemory } from '../../memory/unified-memory.js'
 import { type MemoryEvent, MemoryEmotion } from '../../memory/types.js';
 import { extractExplicitMemories, mergeExtractedMemories } from '../../memory/intent-extractor.js';
 import { oauthManager } from './oauth-manager.js';
+import { blueprintStore, executionManager } from './routes/blueprint-api.js';
+import type { Blueprint } from '../../blueprint/types.js';
+import { geminiImageService } from './services/gemini-image-service.js';
 import {
   initSessionMemory,
   readSessionMemory,
@@ -358,11 +361,13 @@ export class ConversationManager {
   /**
    * 获取或创建会话
    */
-  private async getOrCreateSession(sessionId: string, model?: string): Promise<SessionState> {
+  private async getOrCreateSession(sessionId: string, model?: string, projectPath?: string): Promise<SessionState> {
     let state = this.sessions.get(sessionId);
 
     if (!state) {
-      const session = new Session(this.cwd);
+      // 使用传入的 projectPath 或默认的 cwd
+      const workingDir = projectPath || this.cwd;
+      const session = new Session(workingDir);
       await session.initializeGitInfo();
 
       // 使用与核心 loop.ts 一致的认证逻辑
@@ -397,8 +402,8 @@ export class ConversationManager {
       // 初始化 session memory（官方 session-memory 功能）
       if (isSessionMemoryEnabled()) {
         try {
-          initSessionMemory(this.cwd, sessionId);
-          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}`);
+          initSessionMemory(workingDir, sessionId);
+          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}, workingDir: ${workingDir}`);
         } catch (error) {
           console.warn('[ConversationManager] 初始化 session memory 失败:', error);
         }
@@ -499,9 +504,10 @@ export class ConversationManager {
     content: string,
     mediaAttachments: Array<{ data: string; mimeType: string; type: 'image' | 'pdf' }> | undefined,
     model: string,
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    projectPath?: string
   ): Promise<void> {
-    const state = await this.getOrCreateSession(sessionId, model);
+    const state = await this.getOrCreateSession(sessionId, model, projectPath);
     state.cancelled = false;
 
     try {
@@ -1275,6 +1281,128 @@ export class ConversationManager {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`[Tool] AskUserQuestion 失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 GenerateBlueprint 工具 - 将对话需求结构化为蓝图
+      if (toolUse.name === 'GenerateBlueprint') {
+        const input = toolUse.input as any;
+        try {
+          const blueprintId = `bp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const blueprint: Blueprint = {
+            id: blueprintId,
+            name: input.name,
+            description: input.description,
+            projectPath: state.session.cwd,
+            status: 'confirmed',
+            requirements: input.requirements || [],
+            techStack: input.techStack || {},
+            constraints: input.constraints || [],
+            brief: input.brief,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            confirmedAt: new Date(),
+          };
+
+          blueprintStore.save(blueprint);
+
+          // 通知前端蓝图已创建
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'blueprint_created',
+              payload: { blueprintId: blueprint.id, name: blueprint.name },
+            }));
+          }
+
+          const output = `蓝图已生成并保存。\n蓝图ID: ${blueprint.id}\n项目名: ${blueprint.name}\n需求数: ${blueprint.requirements?.length || 0}\n\n现在可以调用 StartLeadAgent 启动执行。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] GenerateBlueprint 执行失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 StartLeadAgent 工具 - 启动 LeadAgent 执行蓝图
+      if (toolUse.name === 'StartLeadAgent') {
+        const input = toolUse.input as any;
+        const { blueprintId } = input;
+
+        try {
+          const blueprint = blueprintStore.get(blueprintId);
+          if (!blueprint) {
+            const error = `蓝图 ${blueprintId} 不存在`;
+            callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+            return { success: false, error };
+          }
+
+          // 复用现有的 executionManager.startExecution()
+          const session = await executionManager.startExecution(blueprint);
+
+          // 通知前端导航到 SwarmConsole
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'navigate_to_swarm',
+              payload: { blueprintId, executionId: session.id },
+            }));
+          }
+
+          const output = `LeadAgent 已启动，正在执行蓝图「${blueprint.name}」。\n执行ID: ${session.id}\n用户可切换到 SwarmConsole（蜂群面板）查看实时进度。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] StartLeadAgent 执行失败:`, errorMessage);
+          callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
+          return { success: false, error: errorMessage };
+        }
+      }
+
+      // 拦截 GenerateDesign 工具 - 使用 Gemini 生成 UI 设计图
+      if (toolUse.name === 'GenerateDesign') {
+        const input = toolUse.input as any;
+
+        try {
+          console.log(`[Tool] GenerateDesign: 开始生成设计图 - ${input.projectName}`);
+
+          const result = await geminiImageService.generateDesign({
+            projectName: input.projectName,
+            projectDescription: input.projectDescription,
+            requirements: input.requirements || [],
+            constraints: input.constraints,
+            techStack: input.techStack,
+            style: input.style,
+          });
+
+          if (!result.success) {
+            const error = result.error || '设计图生成失败';
+            callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+            return { success: false, error };
+          }
+
+          // 通过 WebSocket 发送设计图给前端显示
+          if (state.ws && state.ws.readyState === 1) {
+            state.ws.send(JSON.stringify({
+              type: 'design_image_generated',
+              payload: {
+                imageUrl: result.imageUrl,
+                projectName: input.projectName,
+                style: input.style || 'modern',
+                generatedText: result.generatedText,
+              },
+            }));
+          }
+
+          const output = `UI 设计图已生成并发送给用户预览。${result.generatedText ? `\n\n设计说明: ${result.generatedText}` : ''}\n\n用户可以在聊天界面中查看设计预览图。`;
+          callbacks.onToolResult?.(toolUse.id, true, output);
+          return { success: true, output };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[Tool] GenerateDesign 执行失败:`, errorMessage);
           callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
           return { success: false, error: errorMessage };
         }

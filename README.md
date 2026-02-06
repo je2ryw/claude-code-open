@@ -468,6 +468,66 @@ Features:
 - Token usage statistics
 - Multi-model pricing support
 
+### Proxy Server (Share Your Subscription) 🔥
+
+Share your Claude subscription with other devices via a transparent proxy server.
+
+**Quick Start:**
+```bash
+# Build first
+npm run build
+
+# Start proxy server (auto-detect local credentials)
+node dist/proxy-cli.js --proxy-key my-secret
+
+# Or specify API key manually
+node dist/proxy-cli.js --proxy-key my-secret --anthropic-key sk-ant-xxx
+```
+
+**Client Usage (on other devices):**
+```bash
+# Linux/macOS
+export ANTHROPIC_API_KEY="my-secret"
+export ANTHROPIC_BASE_URL="http://your-server-ip:8082"
+claude
+
+# Windows PowerShell
+$env:ANTHROPIC_API_KEY="my-secret"
+$env:ANTHROPIC_BASE_URL="http://your-server-ip:8082"
+claude
+```
+
+**OAuth Credentials Configuration:**
+
+The proxy automatically reads OAuth credentials from `~/.claude/.credentials.json`:
+
+```json
+{
+  "claudeAiOauth": {
+    "accessToken": "your-access-token",
+    "refreshToken": "sk-ant-ort01-xxx",
+    "expiresAt": 1770324445878,
+    "scopes": ["user:inference", "user:profile", "user:sessions:claude_code"],
+    "subscriptionType": null,
+    "rateLimitTier": null
+  },
+  "oauthAccount": {
+    "accountUuid": "your-account-uuid"
+  }
+}
+```
+
+**Key Features:**
+- ✅ **Auto Token Refresh** - Automatically refreshes expired OAuth tokens
+- ✅ **Billing Header Preservation** - Maintains proper `x-anthropic-billing-header` block structure
+- ✅ **Beta Header Management** - Correctly handles `prompt-caching-scope` and `oauth` betas
+- ✅ **Identity Injection** - Ensures Claude Code identity is properly placed (after billing header)
+- ✅ **Transparent Forwarding** - Full SSE streaming support, no response modification
+
+**Endpoints:**
+- `/health` - Health check with token status
+- `/stats` - Request statistics
+
 ## Slash Commands
 
 - `/help` - Show help
@@ -511,7 +571,18 @@ npm run test:watch
 
 ## Recent Improvements
 
-### v2.1.14 Enhancements (Latest) 🎉
+### v2.1.27 Enhancements (Latest) 🔥
+
+**Proxy Server OAuth Fix - Critical Bug Resolution:**
+- ✅ **Billing Header Block Preservation** - Fixed proxy corrupting `x-anthropic-billing-header` block structure
+  - **Root Cause**: Proxy was prepending Claude Code identity to the billing header block, breaking API validation
+  - **Fix**: Identity injection now skips billing header blocks and inserts identity as a separate block after billing header
+  - API error "This credential is only authorized for use with Claude Code" is now resolved
+- ✅ **Beta Header Management** - v4 forward path now correctly removes `prompt-caching-scope` beta
+  - Aligned with `buildForwardHeaders()` logic to prevent cache_control format mismatch
+- 📁 Files modified: [server.ts](src/proxy/server.ts#L598-L632) (identity injection), [server.ts](src/proxy/server.ts#L919-L932) (beta filtering)
+
+### v2.1.14 Enhancements 🎉
 
 **Core Features:**
 - ✅ **Bash History Autocomplete** ⭐ - Type partial command + Tab to complete from bash/zsh history

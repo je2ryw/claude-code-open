@@ -223,8 +223,8 @@ function DiscoverTab({
       }
     } else if (key.downArrow) {
       setSelectedIndex((prev) => Math.min(filteredPlugins.length - 1, prev + 1));
-    } else if (input === ' ') {
-      // Space 切换选择
+    } else if (input === ' ' || input === '\u3000') {
+      // Space 切换选择（v2.1.31: 支持全角空格，兼容日语 IME）
       const plugin = filteredPlugins[selectedIndex];
       if (plugin) {
         if (selectedPlugins.has(plugin.pluginId)) {
