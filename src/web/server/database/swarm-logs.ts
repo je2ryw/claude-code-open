@@ -35,7 +35,8 @@ export interface WorkerStream {
   taskId: string;
   workerId: string;
   timestamp: string;
-  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+  // v4.6: 添加 system_prompt 类型
+  streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end' | 'system_prompt';
   content?: string;
   toolName?: string;
   toolInput?: any;

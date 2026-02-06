@@ -1170,9 +1170,19 @@ export class ClaudeClient {
         }
       }
     } catch (error: any) {
-      console.error('[ClaudeClient] Stream processing error:', error.message);
-      if (this.debug) {
-        console.error('[ClaudeClient] Full error:', error);
+      // 增强错误日志，追踪 Connection error 的真正来源
+      const errorCode = error.code || error.type || 'UNKNOWN';
+      const errorStatus = error.status || error.statusCode || '';
+      const errorCause = error.cause?.message || '';
+
+      console.error(`[ClaudeClient] Stream processing error: ${error.message}`);
+      console.error(`[ClaudeClient] Error details - code: ${errorCode}, status: ${errorStatus}, cause: ${errorCause}`);
+
+      if (this.debug || error.message?.includes('Connection error')) {
+        console.error('[ClaudeClient] Full error stack:', error.stack);
+        if (error.cause) {
+          console.error('[ClaudeClient] Error cause:', error.cause);
+        }
       }
       yield { type: 'error', error: error.message };
     }

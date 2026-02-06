@@ -88,6 +88,7 @@
             <div class="nav-links">
                 <a href="#features">Features</a>
                 <a href="#architecture">Architecture</a>
+                <a href="#blog">Blog</a>
                 <a href="#quickstart">Quick Start</a>
                 <a href="/zh" class="lang-switch">中文</a>
                 <a href="https://github.com/kill136/claude-code" class="btn btn-outline" target="_blank" rel="noopener">
@@ -254,6 +255,81 @@
                         25+ Built-in tool implementations
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Blog Section -->
+    <section id="blog" class="blog">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Technical Blog</h2>
+                <p class="section-subtitle">Deep dives into reverse engineering Claude Code</p>
+            </div>
+            <div class="blog-posts">
+                <article class="blog-post featured">
+                    <div class="blog-post-header">
+                        <span class="blog-tag">Deep Dive</span>
+                        <span class="blog-date">February 2026</span>
+                    </div>
+                    <h3>Cracking the Claude Code OAuth Proxy Mystery: How We Fixed the "Credential Only Authorized for Claude Code" Error</h3>
+                    <div class="blog-content">
+                        <h4>The Problem</h4>
+                        <p>When building a transparent proxy to share Claude subscriptions across devices, we encountered a frustrating 400 error:</p>
+                        <div class="code-block" style="margin: 1rem 0;">
+                            <code>"This credential is only authorized for use with Claude Code and cannot be used for other API requests."</code>
+                        </div>
+                        <p>The proxy worked perfectly for simple requests via Postman, but failed when forwarding actual Claude Code CLI requests. What was different?</p>
+
+                        <h4>The Investigation</h4>
+                        <p>After hours of packet analysis and code diving into the minified <code>cli.js</code>, we discovered the root cause: <strong>the proxy was corrupting the system prompt block structure</strong>.</p>
+
+                        <p>Official Claude Code sends system prompts as an array of text blocks with a specific structure:</p>
+                        <div class="code-block" style="margin: 1rem 0;">
+                            <code>Block 0: "x-anthropic-billing-header: cc_version=2.1.31.593; cc_entrypoint=cli;"<br>
+Block 1: "You are Claude Code, Anthropic's official CLI for Claude..."<br>
+Block 2: "...rest of system prompt..."</code>
+                        </div>
+
+                        <p>The <code>x-anthropic-billing-header</code> is a special marker block that Anthropic uses to validate Claude Code client identity. Our proxy's identity injection logic found the first text block (the billing header) and prepended the Claude Code identity to it:</p>
+                        <div class="code-block" style="margin: 1rem 0; background: #2d1b1b;">
+                            <code style="color: #ff6b6b;">// BUG: This corrupted the billing header block!<br>
+block.text = CLAUDE_CODE_IDENTITY + '\n\n' + block.text;</code>
+                        </div>
+                        <p>Result: The billing header was no longer at the start of any block, so the API couldn't find it and rejected the request.</p>
+
+                        <h4>The Fix</h4>
+                        <p>We updated the identity injection logic to:</p>
+                        <ol>
+                            <li><strong>Skip billing header blocks</strong> - Never modify blocks starting with <code>x-anthropic-billing-header</code></li>
+                            <li><strong>Insert identity as a separate block</strong> - If no identity exists, insert it AFTER the billing header, maintaining the official structure</li>
+                            <li><strong>Remove prompt-caching-scope beta</strong> - The v4 forward path was missing this critical beta header filtering</li>
+                        </ol>
+
+                        <div class="code-block" style="margin: 1rem 0; background: #1b2d1b;">
+                            <code style="color: #6bff6b;">// FIX: Skip billing blocks, insert identity after them<br>
+const isBillingBlock = (b) => b.text?.startsWith('x-anthropic-billing-header');<br>
+const insertIdx = system.findIndex(isBillingBlock) + 1;<br>
+system.splice(insertIdx, 0, { type: 'text', text: IDENTITY });</code>
+                        </div>
+
+                        <h4>Key Takeaways</h4>
+                        <ul>
+                            <li><strong>Block structure matters</strong> - Claude Code's system prompt isn't just text; it's a structured array where each block has semantic meaning</li>
+                            <li><strong>Billing headers are sacred</strong> - The <code>x-anthropic-billing-header</code> block is used for client validation and must remain untouched</li>
+                            <li><strong>Beta headers need careful handling</strong> - <code>prompt-caching-scope</code> changes caching behavior and must be removed when proxying OAuth requests</li>
+                        </ul>
+
+                        <p style="margin-top: 1.5rem; padding: 1rem; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1)); border-radius: 8px;">
+                            <strong>Result:</strong> The proxy now correctly forwards OAuth subscription requests, allowing you to share your Claude subscription across multiple devices seamlessly.
+                        </p>
+                    </div>
+                    <div class="blog-footer">
+                        <a href="https://github.com/kill136/claude-code/blob/main/src/proxy/server.ts#L598-L632" target="_blank" class="btn btn-outline btn-small">
+                            View Source Code Changes →
+                        </a>
+                    </div>
+                </article>
             </div>
         </div>
     </section>

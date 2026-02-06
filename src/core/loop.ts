@@ -2554,10 +2554,14 @@ Guidelines:
         }
       }
 
-      this.session.addMessage({
-        role: 'assistant',
-        content: assistantContent,
-      });
+      // 🔧 修复：只有当 assistantContent 不为空时才添加 assistant 消息
+      // 避免在网络错误等情况下添加空 content 导致后续 API 调用失败
+      if (assistantContent.length > 0) {
+        this.session.addMessage({
+          role: 'assistant',
+          content: assistantContent,
+        });
+      }
 
       if (toolResults.length > 0) {
         this.session.addMessage({

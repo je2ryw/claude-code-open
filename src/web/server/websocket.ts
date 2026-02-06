@@ -126,6 +126,16 @@ const orchestrators = new Map<string, ContinuousDevOrchestrator>();
 // 用于接收前端的 AskUserQuestion 响应
 const activeE2EAgents = new Map<string, any>();
 
+// v4.8: E2E 测试状态存储，用于刷新浏览器后恢复上下文
+// blueprintId -> { status, message, e2eTaskId, result? }
+interface E2ETestState {
+  status: string;
+  message?: string;
+  e2eTaskId: string;
+  result?: any;
+}
+const activeE2EState = new Map<string, E2ETestState>();
+
 interface ClientConnection {
   id: string;
   ws: WebSocket;
@@ -133,6 +143,7 @@ interface ClientConnection {
   model: string;
   isAlive: boolean;
   swarmSubscriptions: Set<string>; // 订阅的 blueprint IDs
+  projectPath?: string; // 当前选择的项目路径
 }
 
 // 全局检查点管理器实例
@@ -618,15 +629,30 @@ export function setupWebSocket(
     });
   });
 
-  // 任务状态更新
-  executionEventEmitter.on('task:update', (data: { blueprintId: string; taskId: string; updates: any }) => {
-    const errorInfo = data.updates.error ? ` error="${data.updates.error}"` : '';
-    console.log(`[Swarm v2.0] Task update: ${data.taskId} status=${data.updates.status}${errorInfo}`);
+  // 任务状态更新（含 v9.0 动态新增任务支持）
+  executionEventEmitter.on('task:update', (data: { blueprintId: string; taskId: string; updates: any; action?: string; task?: any }) => {
+    const errorInfo = data.updates?.error ? ` error="${data.updates.error}"` : '';
+    const actionInfo = data.action === 'add' ? ' [NEW]' : '';
+    console.log(`[Swarm v2.0] Task update${actionInfo}: ${data.taskId} status=${data.updates?.status}${errorInfo}`);
     broadcastToSubscribers(data.blueprintId, {
       type: 'swarm:task_update',
       payload: {
         taskId: data.taskId,
         updates: data.updates,
+        // v9.0: 动态新增任务时携带完整任务数据
+        ...(data.action === 'add' ? { action: 'add', task: data.task } : {}),
+      },
+    });
+  });
+
+  // 🔧 任务进入代码审查状态
+  executionEventEmitter.on('task:reviewing', (data: { blueprintId: string; taskId: string }) => {
+    console.log(`[Swarm v2.0] Task reviewing: ${data.taskId}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:task_update',
+      payload: {
+        taskId: data.taskId,
+        updates: { status: 'reviewing' },
       },
     });
   });
@@ -638,6 +664,18 @@ export function setupWebSocket(
       type: 'swarm:stats_update',
       payload: {
         stats: data.stats,
+      },
+    });
+  });
+
+  // v5.0: 蜂群共享记忆更新
+  executionEventEmitter.on('swarm:memory_update', (data: { blueprintId: string; swarmMemory: any }) => {
+    console.log(`[Swarm v5.0] Memory update: ${data.swarmMemory?.completedTasks?.length || 0} completed tasks, ${data.swarmMemory?.apis?.length || 0} APIs`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:memory_update',
+      payload: {
+        blueprintId: data.blueprintId,
+        swarmMemory: data.swarmMemory,
       },
     });
   });
@@ -705,6 +743,53 @@ export function setupWebSocket(
         },
       });
     }
+  });
+
+  // ============================================================================
+  // v9.0: LeadAgent 流式输出事件
+  // ============================================================================
+
+  executionEventEmitter.on('lead:stream', (data: {
+    blueprintId: string;
+    streamType: 'text' | 'tool_start' | 'tool_end';
+    content?: string;
+    toolName?: string;
+    toolInput?: any;
+    toolResult?: string;
+    toolError?: string;
+  }) => {
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:lead_stream',
+      payload: {
+        streamType: data.streamType,
+        content: data.content,
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+        toolResult: data.toolResult,
+        toolError: data.toolError,
+      },
+    });
+  });
+
+  // ============================================================================
+  // v9.0: LeadAgent 阶段事件
+  // ============================================================================
+
+  executionEventEmitter.on('lead:event', (data: {
+    blueprintId: string;
+    eventType: string;
+    data: Record<string, unknown>;
+    timestamp: string;
+  }) => {
+    console.log(`[Swarm v9.0] LeadAgent event: ${data.eventType}`);
+    broadcastToSubscribers(data.blueprintId, {
+      type: 'swarm:lead_event',
+      payload: {
+        eventType: data.eventType,
+        data: data.data,
+        timestamp: data.timestamp,
+      },
+    });
   });
 
   // ============================================================================
@@ -903,18 +988,22 @@ export function setupWebSocket(
     blueprintId: string;
     workerId: string;
     taskId?: string;
-    streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end';
+    streamType: 'thinking' | 'text' | 'tool_start' | 'tool_end' | 'system_prompt';
     content?: string;
     toolName?: string;
     toolInput?: any;
     toolResult?: string;
     toolError?: string;
+    // v4.6: System Prompt 透明展示
+    systemPrompt?: string;
+    agentType?: 'worker' | 'e2e' | 'reviewer';
   }) => {
     // console.log(`[Swarm v2.1] Worker stream: ${data.workerId} - ${data.streamType}`);
     const timestamp = new Date().toISOString();
 
     // v4.0: 只存储 tool_start 和 tool_end（thinking/text 太碎片化，不存储）
-    if (data.taskId && (data.streamType === 'tool_start' || data.streamType === 'tool_end')) {
+    // v4.6: 也存储 system_prompt（用于历史查看）
+    if (data.taskId && (data.streamType === 'tool_start' || data.streamType === 'tool_end' || data.streamType === 'system_prompt')) {
       try {
         const logDB = getSwarmLogDB();
         logDB.insertStream({
@@ -924,7 +1013,7 @@ export function setupWebSocket(
           workerId: data.workerId,
           timestamp,
           streamType: data.streamType,
-          content: data.content,
+          content: data.streamType === 'system_prompt' ? data.systemPrompt : data.content,
           toolName: data.toolName,
           toolInput: data.toolInput,
           toolResult: data.toolResult,
@@ -947,6 +1036,9 @@ export function setupWebSocket(
         toolResult: data.toolResult,
         toolError: data.toolError,
         timestamp,
+        // v4.6: System Prompt 透明展示
+        systemPrompt: data.systemPrompt,
+        agentType: data.agentType,
       },
     });
   });
@@ -1033,6 +1125,13 @@ export function setupWebSocket(
     const e2eTaskId = `e2e-test-${Date.now()}`;
     const e2eWorkerId = `e2e-worker`;
 
+    // v4.8: 保存 E2E 测试状态，用于刷新浏览器后恢复
+    activeE2EState.set(data.blueprintId, {
+      status: 'checking_env',
+      message: '正在检查测试环境...',
+      e2eTaskId,
+    });
+
     // 通知前端开始 E2E 测试，包含任务 ID
     broadcastToSubscribers(data.blueprintId, {
       type: 'swarm:verification_update',
@@ -1055,9 +1154,7 @@ export function setupWebSocket(
 
       const agent = createE2ETestAgent({
         model: 'sonnet',
-        maxFixAttempts: data.config.maxFixAttempts || 3,
         similarityThreshold: data.config.similarityThreshold || 80,
-        autoFix: data.config.autoFix ?? true,
       });
 
       // 监听 Agent 事件（仅服务端日志，不发送到前端）
@@ -1104,6 +1201,21 @@ export function setupWebSocket(
             toolName: streamData.toolName,
             toolResult: streamData.toolResult,
             toolError: streamData.toolError,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      });
+
+      // v4.6: 监听 E2E Agent System Prompt 事件（透明展示 Agent 指令）
+      agent.on('stream:system_prompt', (streamData: { agentType: string; systemPrompt: string; blueprintId: string; blueprintName: string }) => {
+        broadcastToSubscribers(data.blueprintId, {
+          type: 'swarm:worker_stream',
+          payload: {
+            workerId: e2eWorkerId,
+            taskId: e2eTaskId,
+            streamType: 'system_prompt',
+            systemPrompt: streamData.systemPrompt,
+            agentType: 'e2e',
             timestamp: new Date().toISOString(),
           },
         });
@@ -1159,6 +1271,12 @@ export function setupWebSocket(
       };
 
       // 通知前端开始运行测试
+      // v4.8: 更新 E2E 测试状态
+      activeE2EState.set(data.blueprintId, {
+        status: 'running_tests',
+        message: '正在执行 E2E 浏览器测试...',
+        e2eTaskId,
+      });
       broadcastToSubscribers(data.blueprintId, {
         type: 'swarm:verification_update',
         payload: {
@@ -1172,16 +1290,46 @@ export function setupWebSocket(
       const result = await agent.execute(context);
 
       // 通知前端测试完成
+      const finalStatus = result.success ? 'passed' : 'failed';
+      const finalMessage = result.success ? 'E2E 测试全部通过' : `E2E 测试失败: ${result.summary || '部分步骤未通过'}`;
+
+      // 修复：传递完整的测试统计数据（前端期望 passedTests/failedTests/skippedTests）
+      const finalResult = {
+        success: result.success,
+        steps: result.steps,
+        summary: result.summary,
+        // 添加测试统计数据（映射 Steps -> Tests 命名）
+        totalTests: result.steps?.length || 0,
+        passedTests: result.passedSteps || 0,
+        failedTests: result.failedSteps || 0,
+        skippedTests: result.skippedSteps || 0,
+        // 保留原始字段名（兼容）
+        passedSteps: result.passedSteps || 0,
+        failedSteps: result.failedSteps || 0,
+        skippedSteps: result.skippedSteps || 0,
+        // 失败详情
+        failures: result.steps?.filter((s: any) => s.status === 'failed').map((s: any) => ({
+          name: s.name,
+          error: s.error || '未知错误',
+        })) || [],
+        // 修复尝试
+        fixAttempts: result.fixAttempts || [],
+      };
+
+      // v4.8: 更新 E2E 测试状态（测试完成后保留结果，不立即删除）
+      activeE2EState.set(data.blueprintId, {
+        status: finalStatus,
+        message: finalMessage,
+        e2eTaskId,
+        result: finalResult,
+      });
+
       broadcastToSubscribers(data.blueprintId, {
         type: 'swarm:verification_update',
         payload: {
-          status: result.success ? 'passed' : 'failed',
-          message: result.success ? 'E2E 测试全部通过' : `E2E 测试失败: ${result.summary || '部分步骤未通过'}`,
-          result: {
-            success: result.success,
-            steps: result.steps,
-            summary: result.summary,
-          },
+          status: finalStatus,
+          message: finalMessage,
+          result: finalResult,
           e2eTaskId,
         },
       });
@@ -1192,6 +1340,14 @@ export function setupWebSocket(
       activeE2EAgents.delete(data.blueprintId);
     } catch (error: any) {
       console.error(`[Swarm E2E] E2E test error:`, error);
+
+      // v4.8: 更新 E2E 测试状态（失败）
+      activeE2EState.set(data.blueprintId, {
+        status: 'failed',
+        message: `E2E 测试执行失败: ${error.message}`,
+        e2eTaskId,
+      });
+
       broadcastToSubscribers(data.blueprintId, {
         type: 'swarm:verification_update',
         payload: {
@@ -1682,11 +1838,12 @@ async function handleChatMessage(
     // 当前 sessionId 是临时的（WebSocket 连接时生成的），需要创建持久化会话
     // 官方规范：使用第一条消息的前50个字符作为会话标题
     const firstPrompt = content.substring(0, 50);
-    console.log(`[WebSocket] 临时会话 ${sessionId}，创建持久化会话，标题: ${firstPrompt}`);
+    console.log(`[WebSocket] 临时会话 ${sessionId}，创建持久化会话，标题: ${firstPrompt}, projectPath: ${client.projectPath || 'global'}`);
     const newSession = sessionManager.createSession({
       name: firstPrompt,  // 使用 firstPrompt 作为会话标题
       model: model,
       tags: ['webui'],
+      projectPath: client.projectPath,  // 传递项目路径
     });
     // 更新 client 的 sessionId
     client.sessionId = newSession.metadata.id;
@@ -1895,7 +2052,7 @@ async function handleChatMessage(
           payload: { status: 'idle' },
         });
       },
-    });
+    }, client.projectPath);
   } catch (error) {
     console.error('[WebSocket] 聊天处理错误:', error);
     sendMessage(ws, {
@@ -1917,11 +2074,11 @@ async function handleSlashCommand(
   command: string,
   conversationManager: ConversationManager
 ): Promise<void> {
-  const { ws, sessionId, model } = client;
+  const { ws, sessionId, model, projectPath } = client;
 
   try {
-    // 获取当前工作目录
-    const cwd = process.cwd();
+    // 获取当前工作目录（优先使用项目路径）
+    const cwd = projectPath || process.cwd();
 
     // 执行斜杠命令
     const result = await executeSlashCommand(command, {
@@ -2046,6 +2203,11 @@ async function handleSessionCreate(
       projectPath,
     });
 
+    // 更新客户端会话状态
+    client.sessionId = newSession.metadata.id;
+    client.model = model || 'sonnet';
+    client.projectPath = projectPath;
+
     sendMessage(ws, {
       type: 'session_created',
       payload: {
@@ -2088,9 +2250,10 @@ async function handleSessionNew(
     const model = payload?.model || client.model || 'sonnet';
     const projectPath = payload?.projectPath;
 
-    // 更新 client 的 sessionId 和 model
+    // 更新 client 的 sessionId、model 和 projectPath
     client.sessionId = tempSessionId;
     client.model = model;
+    client.projectPath = projectPath;
 
     // 清空内存中的会话状态（如果存在）
     // 不创建持久化会话，等待用户发送第一条消息时再创建
@@ -2138,12 +2301,19 @@ async function handleSessionSwitch(
       // 更新客户端会话ID
       client.sessionId = sessionId;
 
+      // 更新客户端项目路径（从会话元数据中获取）
+      const sessionManager = conversationManager.getSessionManager();
+      const sessionData = sessionManager.loadSessionById(sessionId);
+      if (sessionData?.metadata?.projectPath) {
+        client.projectPath = sessionData.metadata.projectPath;
+      }
+
       // 获取会话历史
       const history = conversationManager.getHistory(sessionId);
 
       sendMessage(ws, {
         type: 'session_switched',
-        payload: { sessionId },
+        payload: { sessionId, projectPath: client.projectPath },
       });
 
       sendMessage(ws, {
@@ -4166,6 +4336,18 @@ async function handleSwarmSubscribe(
       }
     }
 
+    // v4.8: 获取当前 E2E 测试状态（用于刷新浏览器后恢复）
+    const e2eState = activeE2EState.get(blueprintId);
+    let verificationData = null;
+    if (e2eState) {
+      verificationData = {
+        status: e2eState.status,
+        e2eTaskId: e2eState.e2eTaskId,
+        result: e2eState.result,
+      };
+      console.log(`[Swarm] 恢复 E2E 测试状态: ${e2eState.status}, taskId=${e2eState.e2eTaskId}`);
+    }
+
     // v2.0: 构建完整的响应
     sendMessage(ws, {
       type: 'swarm:state',
@@ -4183,6 +4365,8 @@ async function handleSwarmSubscribe(
         executionPlan: executionPlanData,
         gitBranches: [],     // 串行执行模式，不使用独立分支
         costEstimate: costEstimateData,
+        // v4.8: E2E 验收测试状态（用于刷新浏览器后恢复上下文）
+        verification: verificationData,
       },
     });
   } catch (error) {
@@ -4251,6 +4435,8 @@ function serializeBlueprint(blueprint: any): any {
     createdAt: toISOString(blueprint.createdAt),
     updatedAt: toISOString(blueprint.updatedAt),
     status: mapBlueprintStatus(blueprint.status),
+    // v5.0: 蜂群共享记忆（用于前端可视化）
+    swarmMemory: blueprint.swarmMemory || null,
   };
 }
 
@@ -5045,6 +5231,53 @@ async function handleTaskInterject(
     }
 
     console.log(`[Interject] 用户插嘴: blueprintId=${blueprintId}, taskId=${taskId}, message=${message.substring(0, 50)}...`);
+
+    // v4.5: 首先检查是否是 E2E 测试任务
+    if (taskId.startsWith('e2e-test')) {
+      const e2eAgent = activeE2EAgents.get(blueprintId);
+      if (e2eAgent && typeof e2eAgent.interject === 'function') {
+        const success = e2eAgent.interject(message);
+        if (success) {
+          console.log(`[Interject] 消息已发送到 E2E Agent`);
+          sendMessage(ws, {
+            type: 'task:interject_success',
+            payload: {
+              blueprintId,
+              taskId,
+              success: true,
+              message: '消息已发送，E2E Agent 将在下一轮对话中处理',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        } else {
+          console.warn(`[Interject] E2E Agent 插嘴失败`);
+          sendMessage(ws, {
+            type: 'task:interject_failed',
+            payload: {
+              blueprintId,
+              taskId,
+              success: false,
+              error: 'E2E Agent 插嘴失败，测试可能已完成或尚未开始',
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+        return;
+      } else {
+        console.warn(`[Interject] 找不到活跃的 E2E Agent`);
+        sendMessage(ws, {
+          type: 'task:interject_failed',
+          payload: {
+            blueprintId,
+            taskId,
+            success: false,
+            error: '找不到正在运行的 E2E 测试，测试可能已完成或尚未开始',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        return;
+      }
+    }
 
     // 查找正在执行该任务的 Worker
     let targetWorker: AutonomousWorkerExecutor | null = null;
