@@ -22,6 +22,7 @@ export * from './task-storage.js';
 export * from './task-v2.js';
 export * from './task-status.js';
 export * from './commit-and-merge.js';
+export * from './agent-teams.js';
 export * from './submit-review.js';
 export * from './submit-e2e-result.js';
 export * from './dispatch-worker.js';
@@ -48,6 +49,8 @@ import { LSPTool } from './lsp.js';
 import { BlueprintTool } from './blueprint.js';
 import { UpdateTaskStatusTool } from './task-status.js';
 import { CommitAndMergeTool } from './commit-and-merge.js';
+import { TeammateTool, SendMessageTool } from './agent-teams.js';
+import { isAgentTeamsEnabled } from '../agents/teammate-context.js';
 import { SubmitReviewTool } from './submit-review.js';
 import { SubmitE2EResultTool } from './submit-e2e-result.js';
 import { DispatchWorkerTool } from './dispatch-worker.js';
@@ -140,6 +143,13 @@ export function registerAllTools(): void {
   // 12. MCP 资源工具 (2个) - v2.1.6 新增
   toolRegistry.register(new ListMcpResourcesTool());
   toolRegistry.register(new ReadMcpResourceTool());
+
+  // 14. Agent Teams 工具 (2个) - v2.1.32 新增
+  // 需要 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 环境变量
+  if (isAgentTeamsEnabled()) {
+    toolRegistry.register(new TeammateTool());
+    toolRegistry.register(new SendMessageTool());
+  }
 }
 
 // 自动注册工具（不包括 skills 初始化）

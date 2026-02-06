@@ -17,6 +17,7 @@
  * Supported Claude model identifiers
  */
 export type ModelName =
+  | 'claude-opus-4-6-20260130'
   | 'claude-opus-4-5-20251101'
   | 'claude-sonnet-4-5-20250929'
   | 'claude-haiku-4-5-20251001'
@@ -28,6 +29,7 @@ export type ModelName =
  * Model display name mapping
  */
 export type ModelDisplayName =
+  | 'Claude Opus 4.6'
   | 'Claude Opus 4.5'
   | 'Claude Sonnet 4.5'
   | 'Claude Haiku 4.5';
@@ -1624,6 +1626,10 @@ export const ENV_VAR_NAMES = {
   EXTRA_BODY: 'CLAUDE_CODE_EXTRA_BODY',
   TAGS: 'CLAUDE_CODE_TAGS',
   TEAM_NAME: 'CLAUDE_CODE_TEAM_NAME',
+  /** v2.1.32: Agent Teams 实验性功能开关 */
+  EXPERIMENTAL_AGENT_TEAMS: 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
+  /** v2.1.32: Plan 模式要求 */
+  PLAN_MODE_REQUIRED: 'CLAUDE_CODE_PLAN_MODE_REQUIRED',
   TEST_FIXTURES_ROOT: 'CLAUDE_CODE_TEST_FIXTURES_ROOT',
   USE_NATIVE_FILE_SEARCH: 'CLAUDE_CODE_USE_NATIVE_FILE_SEARCH',
 

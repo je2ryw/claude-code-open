@@ -278,10 +278,18 @@ program
       process.env.CLAUDE_SOLO_MODE = 'true';
     }
 
+    // v2.1.32: 将 --add-dir 传递给 Skill 模块以自动加载额外目录的 skills
+    if (options.addDir && Array.isArray(options.addDir)) {
+      const { setAdditionalDirectories } = await import('./tools/skill.js');
+      const resolvedDirs = options.addDir.map((d: string) => path.resolve(d));
+      setAdditionalDirectories(resolvedDirs);
+    }
+
     // 模型映射（官方 Claude Code 使用的模型版本）
+    // v2.1.32: Claude Opus 4.6 is now available
     const modelMap: Record<string, string> = {
       'sonnet': 'claude-sonnet-4-5-20250929',
-      'opus': 'claude-opus-4-5-20251101',
+      'opus': 'claude-opus-4-6-20260130',
       'haiku': 'claude-haiku-4-5-20251001',
     };
 
@@ -812,6 +820,11 @@ async function runTextInterface(
         const session = Session.load(options.resume);
         if (session) {
           loop.setSession(session);
+          // v2.1.32: 如果用户没有指定 --agent，但会话保存了 agent 值，则复用
+          if (!options.agent && session.getAgent()) {
+            options.agent = session.getAgent();
+            console.log(chalk.gray(`  Re-using agent from previous session: ${options.agent}`));
+          }
           console.log(chalk.green(`Resumed session: ${options.resume}`));
         } else {
           console.log(chalk.yellow(`Session ${options.resume} not found, starting new session`));
@@ -843,6 +856,10 @@ async function runTextInterface(
     }
   }
 
+  // v2.1.32: 保存 --agent 值到会话（供 resume 复用）
+  if (options.agent && loop.getSession()) {
+    loop.getSession().setAgent(options.agent);
+  }
   // v2.1.31: 设置全局追踪变量，用于退出时显示 resume 提示
   activeSessionId = loop.getSession().sessionId;
   isInteractiveMode = !options.print;

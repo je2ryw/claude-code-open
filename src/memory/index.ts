@@ -214,3 +214,6 @@ export * from './vector-store.js';
 export * from './compressor.js';
 export * from './unified-memory.js';
 export * from './bm25-engine.js';
+
+// v2.1.32: Agent Memory (MEMORY.md 系统)
+export * from './agent-memory.js';

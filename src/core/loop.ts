@@ -2039,6 +2039,18 @@ export class ConversationLoop {
       }
     }
 
+    // v2.1.32: 注入 Auto Memory (MEMORY.md) 到系统提示词
+    // 对齐官方 pO() / IU() / CXA() 函数
+    try {
+      const { getAutoMemoryPrompt } = await import('../memory/agent-memory.js');
+      const autoMemorySection = getAutoMemoryPrompt();
+      if (autoMemorySection) {
+        systemPrompt += '\n' + autoMemorySection;
+      }
+    } catch {
+      // auto memory 加载失败不影响主流程
+    }
+
     while (turns < maxTurns) {
       turns++;
 
