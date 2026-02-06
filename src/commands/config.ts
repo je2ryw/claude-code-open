@@ -1455,12 +1455,12 @@ export const modelCommand: SlashCommand = {
 
       modelInfo += `│                                                    │\n`;
       modelInfo += `│  Usage:                                            │\n`;
-      modelInfo += `│    /model <name>     - View details for a model    │\n`;
+      modelInfo += `│    /model <name>     - Switch to a model           │\n`;
       modelInfo += `│    claude -m <name>  - Start with specific model   │\n`;
       modelInfo += `│                                                    │\n`;
       modelInfo += `│  Examples:                                         │\n`;
-      modelInfo += `│    /model opus       - View Opus details           │\n`;
-      modelInfo += `│    claude -m haiku   - Start with Haiku            │\n`;
+      modelInfo += `│    /model opus       - Switch to Opus              │\n`;
+      modelInfo += `│    /model haiku      - Switch to Haiku             │\n`;
       modelInfo += `│                                                    │\n`;
       modelInfo += `╰────────────────────────────────────────────────────╯`;
 
@@ -1492,19 +1492,10 @@ export const modelCommand: SlashCommand = {
       return { success: true };
     }
 
-    // 否则提供切换说明
-    let switchInfo = `${validModel.display}\n\n`;
-    switchInfo += `${validModel.desc}\n\n`;
-    switchInfo += `Pricing: ${validModel.cost}\n`;
-    switchInfo += `${validModel.details}\n\n`;
-    switchInfo += `To switch to ${validModel.display}, restart Claude Code with:\n\n`;
-    switchInfo += `  claude -m ${validModel.name}\n\n`;
-    switchInfo += `Or use the -m flag when starting:\n`;
-    switchInfo += `  node dist/cli.js -m ${validModel.name}`;
-
-    ctx.ui.addMessage('assistant', switchInfo);
-    ctx.ui.addActivity(`Showed ${validModel.name} model details`);
-    return { success: true };
+    // v2.1.30: 立即切换模型（不再需要重启）
+    ctx.ui.addMessage('assistant', `Switched to ${validModel.display}\n\nThe next message will use this model.`);
+    ctx.ui.addActivity(`Switched to ${validModel.display}`);
+    return { success: true, action: 'switchModel', data: { model: validModel.name } };
   },
 };
 

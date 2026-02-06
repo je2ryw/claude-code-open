@@ -1525,6 +1525,8 @@ export interface LoopOptions {
   debug?: boolean;
   /** 是否为 sub-agent（用于防止覆盖全局父模型上下文） */
   isSubAgent?: boolean;
+  /** v2.1.30: SDK 提供的 MCP 工具（传递给子代理） */
+  mcpTools?: ToolDefinition[];
   /**
    * 官方 v2.1.2 响应式状态获取回调
    * 用于实时获取应用状态（包括权限模式）
@@ -1854,6 +1856,16 @@ export class ConversationLoop {
 
       if (options.verbose || options.debug) {
         console.log(chalk.blue('[MCP] Tool search auto mode enabled: MCP tools will be loaded on-demand via MCPSearch'));
+      }
+    }
+
+    // v2.1.30: 合并 SDK 提供的 MCP 工具
+    if (options.mcpTools && options.mcpTools.length > 0) {
+      const existingNames = new Set(tools.map(t => t.name));
+      for (const mcpTool of options.mcpTools) {
+        if (!existingNames.has(mcpTool.name)) {
+          tools.push(mcpTool);
+        }
       }
     }
 
@@ -2194,10 +2206,18 @@ export class ConversationLoop {
         }
       }
 
+      // v2.1.30: 修复 phantom "(no content)" 文本块
+      // 当 assistant content 为空数组时，API 会返回 400 错误
+      // 对应官方实现：空 content 时插入 {type:"text", text:"(no content)"} 占位
+      let fixedAssistantContent = assistantContent;
+      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
+        fixedAssistantContent = [{ type: 'text' as const, text: '(no content)' }];
+      }
+
       // 添加助手消息
       this.session.addMessage({
         role: 'assistant',
-        content: assistantContent,
+        content: fixedAssistantContent,
       });
 
       // 如果有工具调用，添加结果并继续
@@ -2566,6 +2586,16 @@ Guidelines:
         }
       }
 
+      // v2.1.30: 修复空 assistant content 问题（streaming 路径）
+      let fixedStreamContent = assistantContent;
+      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
+        fixedStreamContent = [{ type: 'text' as const, text: '(no content)' }];
+      }
+
+      this.session.addMessage({
+        role: 'assistant',
+        content: fixedStreamContent,
+      });
       // 🔧 修复：只有当 assistantContent 不为空时才添加 assistant 消息
       // 避免在网络错误等情况下添加空 content 导致后续 API 调用失败
       if (assistantContent.length > 0) {

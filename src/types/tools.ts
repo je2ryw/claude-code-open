@@ -206,6 +206,12 @@ export interface FileReadInput {
    * read at once.
    */
   limit?: number;
+
+  /**
+   * Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files.
+   * Maximum 20 pages per request.
+   */
+  pages?: string;
 }
 
 /**

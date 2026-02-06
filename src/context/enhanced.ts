@@ -22,6 +22,7 @@ import type {
 } from '../types/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isPdfExtension, getPdfPageCount, formatBytes, PDF_LARGE_THRESHOLD, PDF_MAX_PAGES_PER_REQUEST } from '../media/index.js';
 
 // ============ T321: Token 计数增强 ============
 
@@ -602,6 +603,7 @@ export function parseAtMentions(text: string): string[] {
 
 /**
  * 解析 @ 提及并读取文件内容
+ * v2.1.30: 大 PDF（>10页）返回轻量引用（pdf_reference）而不是内联内容
  */
 export async function resolveAtMentions(
   text: string,
@@ -626,6 +628,28 @@ export async function resolveAtMentions(
     for (const filePath of possiblePaths) {
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         try {
+          const ext = path.extname(filePath).toLowerCase().slice(1);
+
+          // v2.1.30: PDF 文件特殊处理
+          if (isPdfExtension(ext)) {
+            const stat = fs.statSync(filePath);
+            const pageCount = await getPdfPageCount(filePath);
+
+            // 大 PDF (>10 页) 使用轻量引用 (pdf_reference)
+            if (pageCount !== null && pageCount > PDF_LARGE_THRESHOLD) {
+              const filename = path.relative(cwd, filePath);
+              const replacement = `\n\nPDF file: ${filename} (${pageCount} pages, ${formatBytes(stat.size)}). This PDF is too large to read all at once. You MUST use the Read tool with the pages parameter to read specific page ranges (e.g., pages: "1-5"). Do NOT call Read without the pages parameter or it will fail. Start by reading the first few pages to understand the structure, then read more as needed. Maximum ${PDF_MAX_PAGES_PER_REQUEST} pages per request.\n`;
+              processedText = processedText.replace(`@${mention}`, replacement);
+              files.push({
+                path: path.relative(cwd, filePath),
+                content: `[PDF Reference: ${pageCount} pages, ${formatBytes(stat.size)}]`,
+              });
+              break;
+            }
+            // 小 PDF 正常内联
+            // (falls through to regular file handling below)
+          }
+
           const content = fs.readFileSync(filePath, 'utf-8');
           files.push({
             path: path.relative(cwd, filePath),

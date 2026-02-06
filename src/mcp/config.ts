@@ -20,6 +20,12 @@ const baseMcpServerConfigSchema = z.object({
   env: z.record(z.string()).optional().describe('环境变量'),
   url: z.string().url().optional().describe('服务器 URL (sse/http)'),
   headers: z.record(z.string()).optional().describe('HTTP 请求头'),
+  // v2.1.30: OAuth client credentials for servers that don't support Dynamic Client Registration
+  oauth: z.object({
+    clientId: z.string().describe('OAuth client ID'),
+    callbackPort: z.number().optional().describe('Fixed port for OAuth callback redirect URI'),
+  }).optional().describe('OAuth 配置'),
+  clientSecret: z.string().optional().describe('OAuth client secret'),
 });
 
 /**

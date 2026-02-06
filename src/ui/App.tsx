@@ -711,6 +711,11 @@ export const App: React.FC<AppProps> = ({
           addMessage('assistant', '\n⚠️ Could not reinitialize client. Please restart the application.');
           addActivity('Client reinitialization failed');
         }
+      } else if (result.action === 'switchModel' && result.data?.model) {
+        // v2.1.30: /model 立即切换模型
+        const newModel = result.data.model;
+        loop.setModel(newModel);
+        setCurrentModel(newModel);
       } else if (result.action === 'showJsx' && result.jsx) {
         // 官方 local-jsx 类型支持：显示命令返回的 JSX 组件
         setCommandJsx(result.jsx);
