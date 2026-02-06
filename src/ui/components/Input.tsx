@@ -511,7 +511,9 @@ export const Input: React.FC<InputProps> = ({
             );
 
             // 如果是命令补全且按的是 Enter，应用后直接提交
-            if (key.return && completionType === 'command') {
+            // v2.1.32: 修复当有前置文本时按 Enter 不应触发命令补全
+            // 只有当文本以 / 开头（纯斜杠命令）时才自动提交
+            if (key.return && completionType === 'command' && value.trimStart().startsWith('/')) {
               // IME 组合期间：先结束组合，然后继续提交
               if (isComposing) {
                 endComposition();

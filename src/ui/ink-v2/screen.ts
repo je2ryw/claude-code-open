@@ -7,7 +7,7 @@
 
 import type { Cell, Region, ClipRegion, ScreenData, Position } from './types.js';
 import type { StylePool } from './style-pool.js';
-import stringWidth from 'string-width';
+import { getStringWidth as stringWidth } from '../utils/string-width.js';
 
 // 空单元格常量
 const EMPTY_CELL: Cell = {
