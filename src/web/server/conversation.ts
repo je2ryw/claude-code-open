@@ -361,11 +361,13 @@ export class ConversationManager {
   /**
    * 获取或创建会话
    */
-  private async getOrCreateSession(sessionId: string, model?: string): Promise<SessionState> {
+  private async getOrCreateSession(sessionId: string, model?: string, projectPath?: string): Promise<SessionState> {
     let state = this.sessions.get(sessionId);
 
     if (!state) {
-      const session = new Session(this.cwd);
+      // 使用传入的 projectPath 或默认的 cwd
+      const workingDir = projectPath || this.cwd;
+      const session = new Session(workingDir);
       await session.initializeGitInfo();
 
       // 使用与核心 loop.ts 一致的认证逻辑
@@ -400,8 +402,8 @@ export class ConversationManager {
       // 初始化 session memory（官方 session-memory 功能）
       if (isSessionMemoryEnabled()) {
         try {
-          initSessionMemory(this.cwd, sessionId);
-          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}`);
+          initSessionMemory(workingDir, sessionId);
+          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}, workingDir: ${workingDir}`);
         } catch (error) {
           console.warn('[ConversationManager] 初始化 session memory 失败:', error);
         }
@@ -502,9 +504,10 @@ export class ConversationManager {
     content: string,
     mediaAttachments: Array<{ data: string; mimeType: string; type: 'image' | 'pdf' }> | undefined,
     model: string,
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    projectPath?: string
   ): Promise<void> {
-    const state = await this.getOrCreateSession(sessionId, model);
+    const state = await this.getOrCreateSession(sessionId, model, projectPath);
     state.cancelled = false;
 
     try {

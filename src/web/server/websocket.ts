@@ -143,6 +143,7 @@ interface ClientConnection {
   model: string;
   isAlive: boolean;
   swarmSubscriptions: Set<string>; // 订阅的 blueprint IDs
+  projectPath?: string; // 当前选择的项目路径
 }
 
 // 全局检查点管理器实例
@@ -1837,11 +1838,12 @@ async function handleChatMessage(
     // 当前 sessionId 是临时的（WebSocket 连接时生成的），需要创建持久化会话
     // 官方规范：使用第一条消息的前50个字符作为会话标题
     const firstPrompt = content.substring(0, 50);
-    console.log(`[WebSocket] 临时会话 ${sessionId}，创建持久化会话，标题: ${firstPrompt}`);
+    console.log(`[WebSocket] 临时会话 ${sessionId}，创建持久化会话，标题: ${firstPrompt}, projectPath: ${client.projectPath || 'global'}`);
     const newSession = sessionManager.createSession({
       name: firstPrompt,  // 使用 firstPrompt 作为会话标题
       model: model,
       tags: ['webui'],
+      projectPath: client.projectPath,  // 传递项目路径
     });
     // 更新 client 的 sessionId
     client.sessionId = newSession.metadata.id;
@@ -2050,7 +2052,7 @@ async function handleChatMessage(
           payload: { status: 'idle' },
         });
       },
-    });
+    }, client.projectPath);
   } catch (error) {
     console.error('[WebSocket] 聊天处理错误:', error);
     sendMessage(ws, {
@@ -2072,11 +2074,11 @@ async function handleSlashCommand(
   command: string,
   conversationManager: ConversationManager
 ): Promise<void> {
-  const { ws, sessionId, model } = client;
+  const { ws, sessionId, model, projectPath } = client;
 
   try {
-    // 获取当前工作目录
-    const cwd = process.cwd();
+    // 获取当前工作目录（优先使用项目路径）
+    const cwd = projectPath || process.cwd();
 
     // 执行斜杠命令
     const result = await executeSlashCommand(command, {
@@ -2201,6 +2203,11 @@ async function handleSessionCreate(
       projectPath,
     });
 
+    // 更新客户端会话状态
+    client.sessionId = newSession.metadata.id;
+    client.model = model || 'sonnet';
+    client.projectPath = projectPath;
+
     sendMessage(ws, {
       type: 'session_created',
       payload: {
@@ -2243,9 +2250,10 @@ async function handleSessionNew(
     const model = payload?.model || client.model || 'sonnet';
     const projectPath = payload?.projectPath;
 
-    // 更新 client 的 sessionId 和 model
+    // 更新 client 的 sessionId、model 和 projectPath
     client.sessionId = tempSessionId;
     client.model = model;
+    client.projectPath = projectPath;
 
     // 清空内存中的会话状态（如果存在）
     // 不创建持久化会话，等待用户发送第一条消息时再创建
@@ -2293,12 +2301,19 @@ async function handleSessionSwitch(
       // 更新客户端会话ID
       client.sessionId = sessionId;
 
+      // 更新客户端项目路径（从会话元数据中获取）
+      const sessionManager = conversationManager.getSessionManager();
+      const sessionData = sessionManager.loadSessionById(sessionId);
+      if (sessionData?.metadata?.projectPath) {
+        client.projectPath = sessionData.metadata.projectPath;
+      }
+
       // 获取会话历史
       const history = conversationManager.getHistory(sessionId);
 
       sendMessage(ws, {
         type: 'session_switched',
-        payload: { sessionId },
+        payload: { sessionId, projectPath: client.projectPath },
       });
 
       sendMessage(ws, {
