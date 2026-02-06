@@ -1,0 +1,86 @@
+/* CLI 风格的思考块 */
+
+.cli-thinking-block {
+  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 12px 0;
+  border-left: 2px solid var(--accent-primary);
+  padding-left: 12px;
+  opacity: 0.8;
+}
+
+.cli-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.cli-thinking-header:hover {
+  color: var(--text-secondary);
+}
+
+.cli-thinking-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.cli-thinking-icon {
+  color: var(--accent-primary);
+  font-size: 14px;
+}
+
+.cli-thinking-label {
+  color: var(--accent-light);
+  font-weight: 500;
+  text-transform: italic;
+}
+
+.cli-thinking-expand {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.cli-thinking-content {
+  transition: max-height 0.3s ease;
+  overflow: hidden;
+}
+
+.cli-thinking-content.collapsed {
+  max-height: 80px;
+}
+
+.cli-thinking-content.expanded {
+  max-height: none;
+}
+
+.cli-thinking-text {
+  margin: 0;
+  padding: 8px 0;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.cli-thinking-preview {
+  position: relative;
+}
+
+/* 渐变遮罩（折叠时） */
+.cli-thinking-content.collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  background: linear-gradient(transparent, var(--bg-app));
+  pointer-events: none;
+}

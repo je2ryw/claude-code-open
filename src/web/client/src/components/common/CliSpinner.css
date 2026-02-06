@@ -1,0 +1,55 @@
+/* CLI 风格的 Spinner */
+
+.cli-spinner {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+
+.cli-spinner--default {
+  color: var(--accent-light);
+}
+
+.cli-spinner--success {
+  color: var(--accent-success);
+}
+
+.cli-spinner--warning {
+  color: var(--accent-warning);
+}
+
+.cli-spinner--error {
+  color: var(--accent-error);
+}
+
+.cli-spinner--static {
+  /* 静态状态不旋转 */
+}
+
+/* CLI 状态指示器 */
+.cli-status-indicator {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+}
+
+.cli-status-indicator--running {
+  color: var(--accent-warning);
+}
+
+.cli-status-indicator--success {
+  color: var(--accent-success);
+}
+
+.cli-status-indicator--error {
+  color: var(--accent-error);
+}
+
+.cli-status-indicator--pending {
+  color: var(--text-muted);
+}

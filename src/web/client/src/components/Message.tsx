@@ -1,5 +1,6 @@
 import { MarkdownContent } from './MarkdownContent';
-import { ToolCall } from './ToolCall';
+import { CliToolCall } from './CliToolCall';
+import { CliThinkingBlock } from './CliThinkingBlock';
 import { BlueprintSummaryCard } from './BlueprintSummaryCard';
 import { ImpactAnalysisCard } from './continuous/ImpactAnalysisCard';
 import { DevProgressBar } from './continuous/DevProgressBar';
@@ -43,14 +44,15 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onD
       );
     }
     if (item.type === 'tool_use') {
-      return <ToolCall key={index} toolUse={item as ToolUse} />;
+      return <CliToolCall key={index} toolUse={item as ToolUse} />;
     }
     if (item.type === 'thinking') {
       return (
-        <div key={index} className="thinking-block">
-          <div className="thinking-header">💭 思考中</div>
-          <div>{item.text}</div>
-        </div>
+        <CliThinkingBlock
+          key={index}
+          content={item.text}
+          isThinking={false}
+        />
       );
     }
 

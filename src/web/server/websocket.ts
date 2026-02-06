@@ -1458,6 +1458,10 @@ async function handleClientMessage(
     case 'chat':
       // 确保会话关联 WebSocket
       conversationManager.setWebSocket(client.sessionId, ws);
+      // 如果消息中包含 projectPath，更新 client.projectPath
+      if (message.payload.projectPath !== undefined) {
+        client.projectPath = message.payload.projectPath;
+      }
       await handleChatMessage(client, message.payload.content, message.payload.attachments || message.payload.images, conversationManager);
       break;
 
@@ -1820,8 +1824,10 @@ async function handleChatMessage(
   attachments: Attachment[] | string[] | undefined,
   conversationManager: ConversationManager
 ): Promise<void> {
-  const { ws, model } = client;
+  const { ws, model, projectPath } = client;
   let { sessionId } = client;
+
+  console.log(`[WebSocket] handleChatMessage - sessionId: ${sessionId}, projectPath: ${projectPath || 'undefined'}`);
 
   // 检查是否为斜杠命令
   if (isSlashCommand(content)) {

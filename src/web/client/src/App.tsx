@@ -890,6 +890,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 只有 text 类型是纯文本，不需要处理
           data: att.type !== 'text' ? att.data.split(',')[1] : att.data,
         })),
+        projectPath: currentProjectPath,  // 每次发消息都带上当前项目路径
       },
     });
 

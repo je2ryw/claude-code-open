@@ -5,6 +5,7 @@
 
 import { ClaudeClient } from '../../core/client.js';
 import { Session } from '../../core/session.js';
+import { runWithCwd } from '../../core/cwd-context.js';
 import { toolRegistry } from '../../tools/index.js';
 import { systemPromptBuilder, type PromptContext } from '../../prompt/index.js';
 import { modelConfig } from '../../models/index.js';
@@ -364,49 +365,59 @@ export class ConversationManager {
   private async getOrCreateSession(sessionId: string, model?: string, projectPath?: string): Promise<SessionState> {
     let state = this.sessions.get(sessionId);
 
-    if (!state) {
-      // 使用传入的 projectPath 或默认的 cwd
-      const workingDir = projectPath || this.cwd;
-      const session = new Session(workingDir);
-      await session.initializeGitInfo();
+    if (state) {
+      // 会话已存在，检查是否需要更新工作目录
+      if (projectPath && state.session.cwd !== projectPath) {
+        console.log(`[ConversationManager] 更新会话 ${sessionId} 工作目录: ${state.session.cwd} -> ${projectPath}`);
+        state.session.setWorkingDirectory(projectPath);
+        await state.session.initializeGitInfo();
+      }
+      return state;
+    }
 
-      // 使用与核心 loop.ts 一致的认证逻辑
-      const clientConfig = this.buildClientConfig(model || this.defaultModel);
-      const client = new ClaudeClient(clientConfig);
+    // 创建新会话
+    const workingDir = projectPath || this.cwd;
+    console.log(`[ConversationManager] 创建新会话 ${sessionId}, workingDir: ${workingDir}`);
 
-      // 创建用户交互处理器
-      const userInteractionHandler = new UserInteractionHandler();
+    const session = new Session(workingDir);
+    await session.initializeGitInfo();
 
-      // 创建任务管理器
-      const taskManager = new TaskManager();
+    // 使用与核心 loop.ts 一致的认证逻辑
+    const clientConfig = this.buildClientConfig(model || this.defaultModel);
+    const client = new ClaudeClient(clientConfig);
 
-      state = {
-        session,
-        client,
-        messages: [],
-        model: model || this.defaultModel,
-        cancelled: false,
-        chatHistory: [],
-        userInteractionHandler,
-        taskManager,
-        toolFilterConfig: {
-          mode: 'all', // 默认允许所有工具
-        },
-        systemPromptConfig: {
-          useDefault: true, // 默认使用默认提示
-        },
-      };
+    // 创建用户交互处理器
+    const userInteractionHandler = new UserInteractionHandler();
 
-      this.sessions.set(sessionId, state);
+    // 创建任务管理器
+    const taskManager = new TaskManager();
 
-      // 初始化 session memory（官方 session-memory 功能）
-      if (isSessionMemoryEnabled()) {
-        try {
-          initSessionMemory(workingDir, sessionId);
-          console.log(`[ConversationManager] 初始化 session memory: ${sessionId}, workingDir: ${workingDir}`);
-        } catch (error) {
-          console.warn('[ConversationManager] 初始化 session memory 失败:', error);
-        }
+    state = {
+      session,
+      client,
+      messages: [],
+      model: model || this.defaultModel,
+      cancelled: false,
+      chatHistory: [],
+      userInteractionHandler,
+      taskManager,
+      toolFilterConfig: {
+        mode: 'all', // 默认允许所有工具
+      },
+      systemPromptConfig: {
+        useDefault: true, // 默认使用默认提示
+      },
+    };
+
+    this.sessions.set(sessionId, state);
+
+    // 初始化 session memory（官方 session-memory 功能）
+    if (isSessionMemoryEnabled()) {
+      try {
+        initSessionMemory(workingDir, sessionId);
+        console.log(`[ConversationManager] 初始化 session memory: ${sessionId}, workingDir: ${workingDir}`);
+      } catch (error) {
+        console.warn('[ConversationManager] 初始化 session memory 失败:', error);
       }
     }
 
@@ -556,8 +567,11 @@ export class ConversationManager {
         content: [{ type: 'text', text: content }],
       });
 
-      // 开始对话循环
-      await this.conversationLoop(state, callbacks, sessionId);
+      // 使用工作目录上下文包裹对话循环（与 CLI loop.ts 保持一致）
+      // 确保所有工具执行都在正确的工作目录上下文中
+      await runWithCwd(state.session.cwd, async () => {
+        await this.conversationLoop(state, callbacks, sessionId);
+      });
 
     } catch (error) {
       callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
