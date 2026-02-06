@@ -18,3 +18,6 @@ export * from './parallel.js';
 
 // 监控系统
 export * from './monitor.js';
+
+// v2.1.32: Agent Teams - Teammate 上下文管理
+export * from './teammate-context.js';

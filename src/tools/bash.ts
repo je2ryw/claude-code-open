@@ -96,6 +96,79 @@ function getShellConfig(): ShellConfig {
   return cachedShellConfig;
 }
 
+/**
+ * v2.1.32: 修复 heredoc 中 JavaScript 模板字面量导致 "Bad substitution" 错误
+ * 对齐官方 mV6() 函数
+ *
+ * 问题：当 heredoc 使用未引用定界符 (<<EOF) 且内容包含 ${index + 1} 等
+ * JS 模板字面量时，bash 会尝试变量展开，导致 "Bad substitution" 错误。
+ *
+ * 修复：检测未引用定界符的 heredoc，如果其内容包含 ${...} 模式，
+ * 自动将定界符改为引用形式 (<<'EOF')，阻止 bash 变量展开。
+ *
+ * 官方正则: /(?<!<)<<(?!<)(-)?[ \t]*(['"])?\\?(\w+)\2?/
+ */
+function fixHeredocTemplateLiterals(command: string): string {
+  if (!command.includes('<<')) return command;
+
+  // 匹配 heredoc 操作符: <<[-]?[QUOTE]?DELIMITER[QUOTE]?
+  const heredocRegex = /(?<!<)<<(-?)[ \t]*(['"])?\\?(\w+)\2?/g;
+  let result = command;
+  let match;
+  const replacements: Array<{ from: string; to: string; index: number }> = [];
+
+  while ((match = heredocRegex.exec(command)) !== null) {
+    const fullMatch = match[0];
+    const dash = match[1] || '';
+    const quote = match[2]; // 引号类型 (' 或 ")
+    const delimiter = match[3]; // 定界符名称
+
+    // 如果已经有引号，跳过（已经是安全的）
+    if (quote) continue;
+
+    // 查找 heredoc 内容（从定界符后到匹配的结束定界符）
+    const afterMatch = command.slice(match.index + fullMatch.length);
+    const contentStart = afterMatch.indexOf('\n');
+    if (contentStart === -1) continue;
+
+    const contentAfterNewline = afterMatch.slice(contentStart + 1);
+    const lines = contentAfterNewline.split('\n');
+
+    // 查找结束定界符
+    let endIndex = -1;
+    let heredocContent = '';
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === delimiter) {
+        endIndex = i;
+        break;
+      }
+      heredocContent += lines[i] + '\n';
+    }
+
+    if (endIndex === -1) continue;
+
+    // 检查 heredoc 内容是否包含 ${...} 模式（JS 模板字面量）
+    // 排除纯 shell 变量引用如 ${HOME}, ${PATH} 等
+    const templateLiteralPattern = /\$\{[^}]*[+\-*/% ][^}]*\}/;
+    if (templateLiteralPattern.test(heredocContent)) {
+      // 将 <<DELIMITER 改为 <<'DELIMITER'
+      replacements.push({
+        from: fullMatch,
+        to: `<<${dash}'${delimiter}'`,
+        index: match.index,
+      });
+    }
+  }
+
+  // 从后往前替换，避免索引偏移
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const r = replacements[i];
+    result = result.slice(0, r.index) + r.to + result.slice(r.index + r.from.length);
+  }
+
+  return result;
+}
+
 /** 获取平台适配的终止信号类型 */
 type TermSignal = 'SIGTERM' | 'SIGKILL' | 'SIGINT';
 
@@ -547,6 +620,11 @@ Important:
     // 获取当前配置的模型ID用于署名
     const config = configManager.getAll();
     const modelId = config.model;
+
+    // v2.1.32: 修复 heredoc 中 JavaScript 模板字面量导致的 "Bad substitution" 错误
+    // 当 heredoc 使用未引用的定界符且内容包含 ${...} 时，bash 会尝试变量展开
+    // 修复方法：自动将未引用的定界符加上引号（如 <<EOF 变为 <<'EOF'）
+    command = fixHeredocTemplateLiterals(command);
 
     // 处理 git commit 命令以添加署名
     // 修复 2.1.3: 添加友好的错误处理，防止命令注入异常导致不友好的错误消息

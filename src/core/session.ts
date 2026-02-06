@@ -39,6 +39,7 @@ export class Session {
   private customTitle?: string;
   private isLocked: boolean = false; // T157: 会话锁定状态
   private lockFile?: string; // T157: 锁文件路径
+  private agentValue?: string; // v2.1.32: 保存 --agent 值供 resume 复用
 
   /**
    * Session 构造函数
@@ -174,6 +175,20 @@ export class Session {
    */
   getParentSessionId(): string | undefined {
     return (this.state as any).parentId || process.env.CLAUDE_CODE_PARENT_SESSION_ID;
+  }
+
+  /**
+   * v2.1.32: 获取 agent 值（供 --resume 复用）
+   */
+  getAgent(): string | undefined {
+    return this.agentValue;
+  }
+
+  /**
+   * v2.1.32: 设置 agent 值
+   */
+  setAgent(agent: string | undefined): void {
+    this.agentValue = agent;
   }
 
   getMessages(): Message[] {
@@ -498,6 +513,8 @@ ${modelUsageStr ? '\n模型使用统计:' + modelUsageStr : ''}
           created: this.state.startTime,
           modified: Date.now(),
           messageCount: this.messages.length,
+          // v2.1.32: 保存 agent 值供 resume 复用
+          agent: this.agentValue,
         },
       };
 
@@ -538,6 +555,8 @@ ${modelUsageStr ? '\n模型使用统计:' + modelUsageStr : ''}
       if (data.metadata) {
         session.gitInfo = data.metadata.gitInfo;
         session.customTitle = data.metadata.customTitle;
+        // v2.1.32: 恢复 agent 值
+        session.agentValue = data.metadata.agent;
       }
 
       return session;
