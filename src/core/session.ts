@@ -140,6 +140,14 @@ export class Session {
   }
 
   /**
+   * 仅设置工作目录（不改变进程目录）
+   * 用于 WebUI 场景，避免 process.chdir 影响其他请求
+   */
+  setWorkingDirectory(cwd: string): void {
+    this.state.cwd = cwd;
+  }
+
+  /**
    * 获取访问令牌（从环境变量）
    */
   getAccessToken(): string | undefined {

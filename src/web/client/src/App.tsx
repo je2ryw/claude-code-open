@@ -333,6 +333,8 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 临时会话已就绪（官方规范：会话尚未持久化，不刷新列表）
           // 等待用户发送第一条消息后才会创建持久化会话
           console.log('[App] 临时会话已就绪:', payload.sessionId);
+          // 重置状态为 idle，确保输入框可用
+          setStatus('idle');
           break;
 
         // 子 agent 相关消息处理
@@ -890,6 +892,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 只有 text 类型是纯文本，不需要处理
           data: att.type !== 'text' ? att.data.split(',')[1] : att.data,
         })),
+        projectPath: currentProjectPath,  // 每次发消息都带上当前项目路径
       },
     });
 
@@ -1066,6 +1069,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
                 onNavigateToBlueprint={onNavigateToBlueprint}
                 onNavigateToSwarm={onNavigateToSwarm}
                 onDevAction={handleDevAction}
+                isStreaming={currentMessageRef.current?.id === msg.id && status !== 'idle'}
               />
             ))
           )}

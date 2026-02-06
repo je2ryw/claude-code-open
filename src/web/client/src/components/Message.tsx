@@ -1,5 +1,6 @@
 import { MarkdownContent } from './MarkdownContent';
-import { ToolCall } from './ToolCall';
+import { CliToolCall } from './CliToolCall';
+import { CliThinkingBlock } from './CliThinkingBlock';
 import { BlueprintSummaryCard } from './BlueprintSummaryCard';
 import { ImpactAnalysisCard } from './continuous/ImpactAnalysisCard';
 import { DevProgressBar } from './continuous/DevProgressBar';
@@ -14,10 +15,15 @@ interface MessageProps {
   onNavigateToBlueprint?: (blueprintId: string) => void;
   onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
   onDevAction?: (action: string, data?: any) => void; // 通用开发动作回调
+  /** 消息是否正在流式传输中 */
+  isStreaming?: boolean;
 }
 
-export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onDevAction }: MessageProps) {
+export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onDevAction, isStreaming = false }: MessageProps) {
   const { role, content } = message;
+
+  // 获取内容数组
+  const contentArray = Array.isArray(content) ? content : [];
 
   const renderContent = (item: ChatContent, index: number) => {
     if (item.type === 'text') {
@@ -43,14 +49,21 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onD
       );
     }
     if (item.type === 'tool_use') {
-      return <ToolCall key={index} toolUse={item as ToolUse} />;
+      return <CliToolCall key={index} toolUse={item as ToolUse} />;
     }
     if (item.type === 'thinking') {
+      // 判断思考块是否正在进行中
+      // 如果消息正在流式传输，且这是最后一个 thinking 块，或者后面只有空的 text 块
+      const isLastThinking = isStreaming && (
+        index === contentArray.length - 1 ||
+        contentArray.slice(index + 1).every(c => c.type === 'thinking' || (c.type === 'text' && !c.text.trim()))
+      );
       return (
-        <div key={index} className="thinking-block">
-          <div className="thinking-header">💭 思考中</div>
-          <div>{item.text}</div>
-        </div>
+        <CliThinkingBlock
+          key={index}
+          content={item.text}
+          isThinking={isLastThinking}
+        />
       );
     }
 

@@ -1,0 +1,461 @@
+/* CLI 风格的工具调用组件 - 模仿官方 CLI */
+
+.cli-tool-call {
+  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 12px 0;
+  border-left: 2px solid var(--border-color);
+  transition: border-color 0.2s;
+}
+
+.cli-tool-call:hover {
+  border-left-color: var(--accent-primary);
+}
+
+.cli-tool-call--task {
+  border-left-color: var(--accent-light);
+}
+
+/* 工具头部 */
+.cli-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+  border-radius: 0 4px 4px 0;
+}
+
+.cli-tool-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 工具名称 - 加粗高亮 */
+.cli-tool-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  min-width: 60px;
+}
+
+/* 工具描述 */
+.cli-tool-desc {
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Task 进度 */
+.cli-task-progress {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+/* 折叠按钮 */
+.cli-collapse-btn {
+  color: var(--text-muted);
+  font-size: 10px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.cli-tool-header:hover .cli-collapse-btn {
+  opacity: 1;
+}
+
+/* 工具内容区 */
+.cli-tool-body {
+  padding: 0 12px 12px 12px;
+  margin-left: 20px;
+}
+
+/* ===== Bash 工具样式 ===== */
+.cli-bash-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cli-bash-section {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.cli-bash-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 32px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.cli-bash-code {
+  flex: 1;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cli-bash-output {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ===== Edit 工具样式 ===== */
+.cli-edit-content {
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.cli-edit-status {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-warning);
+}
+
+.cli-edit-diff {
+  padding: 8px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cli-diff-section {
+  padding: 4px 12px;
+}
+
+.cli-diff-removed {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.cli-diff-added {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.cli-diff-line {
+  display: flex;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cli-diff-prefix {
+  color: var(--text-muted);
+  user-select: none;
+  min-width: 16px;
+}
+
+.cli-diff-removed .cli-diff-prefix {
+  color: var(--accent-error);
+}
+
+.cli-diff-added .cli-diff-prefix {
+  color: var(--accent-success);
+}
+
+.cli-diff-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cli-diff-removed .cli-diff-text {
+  color: #f87171;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.cli-diff-added .cli-diff-text {
+  color: #34d399;
+}
+
+/* ===== Write 工具样式 ===== */
+.cli-write-content {
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.cli-write-info {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cli-write-preview {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* ===== Todo 工具样式 ===== */
+.cli-todo-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.cli-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.cli-todo-checkbox {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+.cli-todo-completed .cli-todo-checkbox {
+  color: var(--accent-success);
+}
+
+.cli-todo-in_progress .cli-todo-checkbox {
+  color: var(--accent-warning);
+}
+
+.cli-todo-pending .cli-todo-checkbox {
+  color: var(--text-muted);
+}
+
+.cli-todo-text {
+  color: var(--text-secondary);
+}
+
+.cli-todo-done {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* ===== Read 工具样式 ===== */
+.cli-read-content {
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.cli-read-info {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cli-read-preview {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* ===== Grep 工具样式 ===== */
+.cli-grep-content {
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.cli-grep-info {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cli-grep-preview {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* ===== Task 子 agent 样式 ===== */
+.cli-task-content {
+  padding: 4px 0;
+}
+
+.cli-subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cli-subagent-tool {
+  padding-left: 8px;
+  border-left: 1px solid var(--border-color);
+}
+
+.cli-subagent-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cli-subagent-line .cli-tool-name {
+  font-weight: 600;
+  min-width: 50px;
+}
+
+.cli-subagent-line .cli-tool-desc {
+  font-size: 11px;
+}
+
+/* ===== 通用内容样式 ===== */
+.cli-generic-content {
+  background: var(--code-bg);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.cli-generic-output {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ===== 可展开内容样式 (Click to expand) ===== */
+.cli-expandable-content {
+  position: relative;
+}
+
+.cli-expandable-body {
+  overflow: hidden;
+}
+
+.cli-expandable-truncated {
+  /* 截断时添加渐变遮罩效果 */
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+.cli-expand-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cli-hidden-lines {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.cli-expand-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cli-expand-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.cli-expand-btn:active {
+  transform: scale(0.98);
+}
+
+/* Edit 工具头部样式 */
+.cli-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.cli-edit-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cli-stat-removed {
+  color: #f87171;
+}
+
+.cli-stat-added {
+  color: #34d399;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .cli-tool-desc {
+    display: none;
+  }
+
+  .cli-bash-section {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cli-bash-label {
+    align-self: flex-start;
+  }
+
+  .cli-expand-footer {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .cli-expand-btn {
+    width: 100%;
+    text-align: center;
+  }
+}

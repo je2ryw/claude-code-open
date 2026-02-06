@@ -1832,6 +1832,8 @@ export class ConversationLoop {
       todayDate: new Date().toISOString().split('T')[0],
       isGitRepo: this.checkIsGitRepo(effectiveWorkingDir),
       debug: options.debug,
+      // v2.1.0+: 语言配置 - 从 configManager 读取
+      language: configManager.get('language'),
     };
 
     // 获取并过滤工具

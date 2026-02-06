@@ -753,7 +753,7 @@ export function getEnvironmentInfo(context: {
   // 添加 Claude 背景信息
   lines.push('');
   lines.push('<claude_background_info>');
-  lines.push('The most recent frontier Claude model is Claude Opus 4.5 (model ID: \'claude-opus-4-5-20251101\').');
+  lines.push('The most recent frontier Claude model is Claude Opus 4.6 (model ID: \'claude-opus-4-6\').');
   lines.push('</claude_background_info>');
 
   return lines.join('\n');

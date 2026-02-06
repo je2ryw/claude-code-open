@@ -66,7 +66,7 @@ export interface AuthStatusPayload {
  * 客户端发送的消息类型
  */
 export type ClientMessage =
-  | { type: 'chat'; payload: { content: string; images?: string[]; attachments?: Attachment[] } }
+  | { type: 'chat'; payload: { content: string; images?: string[]; attachments?: Attachment[]; projectPath?: string | null } }
   | { type: 'cancel' }
   | { type: 'ping' }
   | { type: 'get_history' }
@@ -173,7 +173,7 @@ export type ServerMessage =
   | { type: 'session_list_response'; payload: SessionListResponsePayload }
   | { type: 'session_created'; payload: SessionCreatedPayload }
   | { type: 'session_new_ready'; payload: { sessionId: string; model: string; projectPath?: string | null } }  // 官方规范：临时会话已就绪
-  | { type: 'session_switched'; payload: { sessionId: string; projectPath?: string } }
+  | { type: 'session_switched'; payload: { sessionId: string; projectPath?: string | null } }
   | { type: 'session_deleted'; payload: { sessionId: string; success: boolean } }
   | { type: 'session_renamed'; payload: { sessionId: string; name: string; success: boolean } }
   | { type: 'session_exported'; payload: { sessionId: string; content: string; format: 'json' | 'md' } }
@@ -1447,6 +1447,7 @@ export interface OAuthStatusPayload {
  * 支持的 Claude 模型标识符
  */
 export type ModelName =
+  | 'claude-opus-4-6'
   | 'claude-opus-4-5-20251101'
   | 'claude-sonnet-4-5-20250929'
   | 'claude-haiku-4-5-20251001'
@@ -1458,6 +1459,7 @@ export type ModelName =
  * 模型显示名称
  */
 export type ModelDisplayName =
+  | 'Claude Opus 4.6'
   | 'Claude Opus 4.5'
   | 'Claude Sonnet 4.5'
   | 'Claude Haiku 4.5';

@@ -17,7 +17,7 @@
  * Supported Claude model identifiers
  */
 export type ModelName =
-  | 'claude-opus-4-6-20260130'
+  | 'claude-opus-4-6'
   | 'claude-opus-4-5-20251101'
   | 'claude-sonnet-4-5-20250929'
   | 'claude-haiku-4-5-20251001'

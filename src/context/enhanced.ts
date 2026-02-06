@@ -38,6 +38,9 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // Claude 3.7 系列
   'claude-3-7-sonnet-20250219': 200000,
 
+  // Claude 4.6 系列 (1M context)
+  'claude-opus-4-6': 1000000,
+
   // Claude 4 系列
   'claude-4-0-sonnet-20250514': 200000,
   'claude-4-0-opus-20250514': 200000,
