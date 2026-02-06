@@ -1,86 +1,144 @@
-/* CLI 风格的思考块 */
+/* CLI 风格的思考块 - 对齐官方 CLI 实现 */
 
 .cli-thinking-block {
   font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
-  margin: 12px 0;
-  border-left: 2px solid var(--accent-primary);
-  padding-left: 12px;
-  opacity: 0.8;
+  margin: 8px 0;
 }
 
+/* 头部行 - 可点击展开/折叠 */
 .cli-thinking-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 4px 0;
   cursor: pointer;
-  color: var(--text-muted);
-  transition: color 0.15s;
+  user-select: none;
+  /* 官方风格: dimColor + italic */
+  color: var(--text-muted, #6b7280);
+  font-style: italic;
+  transition: color 0.15s ease;
 }
 
 .cli-thinking-header:hover {
-  color: var(--text-secondary);
+  color: var(--text-secondary, #9ca3af);
 }
 
+.cli-thinking-header:focus {
+  outline: none;
+}
+
+.cli-thinking-header:focus-visible {
+  outline: 1px dashed var(--accent-primary, #a78bfa);
+  outline-offset: 2px;
+}
+
+/* 指示器（图标或加载动画） */
 .cli-thinking-indicator {
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
 }
 
+/* 官方使用 ∴ 符号 */
 .cli-thinking-icon {
-  color: var(--accent-primary);
+  color: var(--accent-primary, #a78bfa);
   font-size: 14px;
+  font-style: normal;
 }
 
+/* "Thinking" 标签 */
 .cli-thinking-label {
-  color: var(--accent-light);
   font-weight: 500;
-  text-transform: italic;
 }
 
-.cli-thinking-expand {
+/* 展开/折叠提示 */
+.cli-thinking-hint {
+  margin-left: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.cli-thinking-expand-hint {
+  font-style: italic;
+}
+
+.cli-thinking-collapse-hint {
   font-size: 10px;
-  opacity: 0.6;
-  margin-left: auto;
+  margin-left: 4px;
 }
 
+/* 内容区域 */
 .cli-thinking-content {
-  transition: max-height 0.3s ease;
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--bg-secondary, #1f2937);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-primary, #a78bfa);
   overflow: hidden;
+  animation: thinking-expand 0.2s ease-out;
 }
 
-.cli-thinking-content.collapsed {
-  max-height: 80px;
+@keyframes thinking-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    max-height: 2000px;
+    transform: translateY(0);
+  }
 }
 
-.cli-thinking-content.expanded {
-  max-height: none;
-}
-
+/* 思考内容文本 */
 .cli-thinking-text {
   margin: 0;
-  padding: 8px 0;
-  color: var(--text-muted);
+  padding: 0;
+  color: var(--text-muted, #9ca3af);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: inherit;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
-.cli-thinking-preview {
-  position: relative;
+/* 自定义滚动条 */
+.cli-thinking-text::-webkit-scrollbar {
+  width: 6px;
 }
 
-/* 渐变遮罩（折叠时） */
-.cli-thinking-content.collapsed::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 30px;
-  background: linear-gradient(transparent, var(--bg-app));
-  pointer-events: none;
+.cli-thinking-text::-webkit-scrollbar-track {
+  background: var(--bg-tertiary, #374151);
+  border-radius: 3px;
+}
+
+.cli-thinking-text::-webkit-scrollbar-thumb {
+  background: var(--accent-primary, #a78bfa);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.cli-thinking-text::-webkit-scrollbar-thumb:hover {
+  opacity: 0.8;
+}
+
+/* 折叠状态样式 */
+.cli-thinking-block.collapsed {
+  /* 折叠时稍微减少边距 */
+}
+
+/* 展开状态样式 */
+.cli-thinking-block.expanded .cli-thinking-header {
+  color: var(--text-secondary, #d1d5db);
+}
+
+.cli-thinking-block.expanded .cli-thinking-icon {
+  color: var(--accent-light, #c4b5fd);
 }

@@ -2071,11 +2071,15 @@ apiCommand
     console.log('    • Best for: Most tasks, balanced performance');
     console.log('    • Pricing: $3 / $15 per MTok (in/out)');
     console.log('    • Recommended: Default choice\n');
-    console.log(chalk.cyan('  claude-opus-4-5-20251101'));
-    console.log('    • Context: 200K tokens');
+    console.log(chalk.cyan('  claude-opus-4-6'));
+    console.log('    • Context: 1M tokens');
     console.log('    • Best for: Complex reasoning, long tasks');
     console.log('    • Pricing: $15 / $75 per MTok (in/out)');
-    console.log('    • Highest capability\n');
+    console.log('    • Highest capability (latest)\n');
+    console.log(chalk.cyan('  claude-opus-4-5-20251101'));
+    console.log('    • Context: 1M tokens');
+    console.log('    • Best for: Complex reasoning, long tasks');
+    console.log('    • Pricing: $15 / $75 per MTok (in/out)\n');
     console.log(chalk.cyan('  claude-haiku-4-5-20250514'));
     console.log('    • Context: 200K tokens');
     console.log('    • Best for: Fast, simple tasks');

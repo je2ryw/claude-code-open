@@ -13,7 +13,7 @@ import type { McpServerConfig } from '../../../types/index.js';
  */
 export interface ApiConfig {
   apiKey?: string;
-  model: 'claude-opus-4-5-20251101' | 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20251001' | 'opus' | 'sonnet' | 'haiku';
+  model: 'claude-opus-4-6' | 'claude-opus-4-5-20251101' | 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20251001' | 'opus' | 'sonnet' | 'haiku';
   maxTokens: number;
   temperature: number;
   apiProvider?: 'anthropic' | 'bedrock' | 'vertex';

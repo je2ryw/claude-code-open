@@ -1,7 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, ReactNode } from 'react';
 import { CliSpinner, CliStatusIndicator } from './common/CliSpinner';
 import './CliToolCall.css';
 import type { ToolUse, SubagentToolCall } from '../types';
+
+// 默认显示的最大行数（与官方 CLI 保持一致）
+const DEFAULT_MAX_LINES = 10;
 
 // CLI 风格的工具名称
 const CLI_TOOL_NAMES: Record<string, string> = {
@@ -24,6 +27,49 @@ const CLI_TOOL_NAMES: Record<string, string> = {
 
 interface CliToolCallProps {
   toolUse: ToolUse;
+}
+
+/**
+ * 可展开的内容包装组件 - 支持 "Click to expand" 功能
+ */
+interface ExpandableContentProps {
+  children: ReactNode;
+  maxLines?: number;
+  totalLines: number;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function ExpandableContent({
+  children,
+  maxLines = DEFAULT_MAX_LINES,
+  totalLines,
+  expanded,
+  onToggle
+}: ExpandableContentProps) {
+  const hiddenLines = totalLines - maxLines;
+  const shouldTruncate = !expanded && hiddenLines > 0;
+
+  return (
+    <div className="cli-expandable-content">
+      <div className={`cli-expandable-body ${shouldTruncate ? 'cli-expandable-truncated' : ''}`}>
+        {children}
+      </div>
+      {hiddenLines > 0 && (
+        <div className="cli-expand-footer">
+          {!expanded && (
+            <span className="cli-hidden-lines">… +{hiddenLines} lines</span>
+          )}
+          <button
+            className="cli-expand-btn"
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          >
+            {expanded ? 'Click to collapse' : 'Click to expand'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -67,9 +113,17 @@ function getToolDescription(name: string, input: any): string {
 }
 
 /**
- * 渲染 Bash 工具内容 - 带 IN/OUT 标签
+ * 渲染 Bash 工具内容 - 带 IN/OUT 标签，支持 Click to expand
  */
 function BashToolContent({ input, result }: { input: any; result?: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const output = result?.output || result?.error || '(no output)';
+  const allLines = output.split('\n');
+  const totalLines = allLines.length;
+  const maxLines = DEFAULT_MAX_LINES;
+
+  const displayOutput = expanded ? output : allLines.slice(0, maxLines).join('\n');
+
   return (
     <div className="cli-bash-content">
       {input?.command && (
@@ -81,9 +135,16 @@ function BashToolContent({ input, result }: { input: any; result?: any }) {
       {result && (
         <div className="cli-bash-section">
           <span className="cli-bash-label">OUT</span>
-          <pre className="cli-bash-code cli-bash-output">
-            {result.output || result.error || '(no output)'}
-          </pre>
+          <ExpandableContent
+            totalLines={totalLines}
+            maxLines={maxLines}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+          >
+            <pre className="cli-bash-code cli-bash-output">
+              {displayOutput}
+            </pre>
+          </ExpandableContent>
         </div>
       )}
     </div>
@@ -91,57 +152,89 @@ function BashToolContent({ input, result }: { input: any; result?: any }) {
 }
 
 /**
- * 渲染 Edit 工具内容 - 显示差异
+ * 渲染 Edit 工具内容 - 显示差异，支持 Click to expand
  */
 function EditToolContent({ input, result }: { input: any; result?: any }) {
+  const [expanded, setExpanded] = useState(false);
   const oldString = input?.old_string || '';
   const newString = input?.new_string || '';
 
+  const oldLines = oldString ? oldString.split('\n') : [];
+  const newLines = newString ? newString.split('\n') : [];
+  const totalLines = oldLines.length + newLines.length;
+
+  // 计算需要显示的行数
+  const maxLines = DEFAULT_MAX_LINES;
+  const displayOldLines = expanded ? oldLines : oldLines.slice(0, Math.ceil(maxLines / 2));
+  const displayNewLines = expanded ? newLines : newLines.slice(0, Math.floor(maxLines / 2));
+
   return (
     <div className="cli-edit-content">
-      <div className="cli-edit-status">Modified</div>
-      <div className="cli-edit-diff">
-        {oldString && (
-          <div className="cli-diff-section cli-diff-removed">
-            {oldString.split('\n').map((line: string, i: number) => (
-              <div key={`old-${i}`} className="cli-diff-line">
-                <span className="cli-diff-prefix">--</span>
-                <span className="cli-diff-text">{line}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {newString && (
-          <div className="cli-diff-section cli-diff-added">
-            {newString.split('\n').map((line: string, i: number) => (
-              <div key={`new-${i}`} className="cli-diff-line">
-                <span className="cli-diff-prefix">+</span>
-                <span className="cli-diff-text">{line}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="cli-edit-header">
+        <div className="cli-edit-status">Modified</div>
+        <div className="cli-edit-stats">
+          {oldLines.length > 0 && <span className="cli-stat-removed">-{oldLines.length}</span>}
+          {newLines.length > 0 && <span className="cli-stat-added">+{newLines.length}</span>}
+        </div>
       </div>
+      <ExpandableContent
+        totalLines={totalLines}
+        maxLines={maxLines}
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+      >
+        <div className="cli-edit-diff">
+          {oldString && (
+            <div className="cli-diff-section cli-diff-removed">
+              {displayOldLines.map((line: string, i: number) => (
+                <div key={`old-${i}`} className="cli-diff-line">
+                  <span className="cli-diff-prefix">--</span>
+                  <span className="cli-diff-text">{line}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {newString && (
+            <div className="cli-diff-section cli-diff-added">
+              {displayNewLines.map((line: string, i: number) => (
+                <div key={`new-${i}`} className="cli-diff-line">
+                  <span className="cli-diff-prefix">+</span>
+                  <span className="cli-diff-text">{line}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ExpandableContent>
     </div>
   );
 }
 
 /**
- * 渲染 Write 工具内容
+ * 渲染 Write 工具内容 - 支持 Click to expand
  */
 function WriteToolContent({ input }: { input: any }) {
+  const [expanded, setExpanded] = useState(false);
   const content = input?.content || '';
-  const lines = content.split('\n').length;
-  const preview = content.split('\n').slice(0, 5).join('\n');
-  const hasMore = content.split('\n').length > 5;
+  const allLines = content.split('\n');
+  const totalLines = allLines.length;
+  const maxLines = DEFAULT_MAX_LINES;
+
+  const displayLines = expanded ? allLines : allLines.slice(0, maxLines);
 
   return (
     <div className="cli-write-content">
-      <div className="cli-write-info">{lines} lines</div>
-      <pre className="cli-write-preview">
-        {preview}
-        {hasMore && '\n...'}
-      </pre>
+      <div className="cli-write-info">{totalLines} lines</div>
+      <ExpandableContent
+        totalLines={totalLines}
+        maxLines={maxLines}
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+      >
+        <pre className="cli-write-preview">
+          {displayLines.join('\n')}
+        </pre>
+      </ExpandableContent>
     </div>
   );
 }
@@ -169,23 +262,32 @@ function TodoWriteContent({ input }: { input: any }) {
 }
 
 /**
- * 渲染 Read 工具内容
+ * 渲染 Read 工具内容 - 支持 Click to expand
  */
 function ReadToolContent({ input, result }: { input: any; result?: any }) {
+  const [expanded, setExpanded] = useState(false);
   const output = result?.output || '';
-  const lines = output.split('\n').length;
-  const preview = output.split('\n').slice(0, 10).join('\n');
-  const hasMore = output.split('\n').length > 10;
+  const allLines = output.split('\n');
+  const totalLines = allLines.length;
+  const maxLines = DEFAULT_MAX_LINES;
+
+  const displayLines = expanded ? allLines : allLines.slice(0, maxLines);
 
   return (
     <div className="cli-read-content">
       {result && (
         <>
-          <div className="cli-read-info">{lines} lines of output</div>
-          <pre className="cli-read-preview">
-            {preview}
-            {hasMore && '\n...'}
-          </pre>
+          <div className="cli-read-info">{totalLines} lines of output</div>
+          <ExpandableContent
+            totalLines={totalLines}
+            maxLines={maxLines}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+          >
+            <pre className="cli-read-preview">
+              {displayLines.join('\n')}
+            </pre>
+          </ExpandableContent>
         </>
       )}
     </div>
@@ -193,18 +295,30 @@ function ReadToolContent({ input, result }: { input: any; result?: any }) {
 }
 
 /**
- * 渲染 Grep 工具内容
+ * 渲染 Grep 工具内容 - 支持 Click to expand
  */
 function GrepToolContent({ input, result }: { input: any; result?: any }) {
+  const [expanded, setExpanded] = useState(false);
   const output = result?.output || '';
-  const lines = output.split('\n').filter((l: string) => l.trim()).length;
+  const allLines = output.split('\n');
+  const totalLines = allLines.filter((l: string) => l.trim()).length;
+  const maxLines = DEFAULT_MAX_LINES;
+
+  const displayLines = expanded ? allLines : allLines.slice(0, maxLines);
 
   return (
     <div className="cli-grep-content">
       {result && (
         <>
-          <div className="cli-grep-info">{lines} lines of output</div>
-          <pre className="cli-grep-preview">{output}</pre>
+          <div className="cli-grep-info">{totalLines} lines of output</div>
+          <ExpandableContent
+            totalLines={allLines.length}
+            maxLines={maxLines}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+          >
+            <pre className="cli-grep-preview">{displayLines.join('\n')}</pre>
+          </ExpandableContent>
         </>
       )}
     </div>

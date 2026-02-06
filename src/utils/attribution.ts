@@ -69,10 +69,11 @@ function getModelDisplayName(modelId?: string): string {
 
   // Map model IDs to display names
   const modelNameMap: Record<string, string> = {
+    'claude-opus-4-6': 'Claude Opus 4.6',
     'claude-opus-4-5-20251101': 'Claude Opus 4.5',
     'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
     'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
-    'opus': 'Claude Opus 4.5',
+    'opus': 'Claude Opus 4.6',
     'sonnet': 'Claude Sonnet 4.5',
     'haiku': 'Claude Haiku 4.5',
   };

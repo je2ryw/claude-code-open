@@ -129,12 +129,9 @@
 }
 
 .cli-edit-status {
-  padding: 6px 12px;
   font-size: 12px;
   font-weight: 500;
   color: var(--accent-warning);
-  border-bottom: 1px solid var(--border-color);
-  background: rgba(245, 158, 11, 0.05);
 }
 
 .cli-edit-diff {
@@ -358,6 +355,84 @@
   word-break: break-all;
 }
 
+/* ===== 可展开内容样式 (Click to expand) ===== */
+.cli-expandable-content {
+  position: relative;
+}
+
+.cli-expandable-body {
+  overflow: hidden;
+}
+
+.cli-expandable-truncated {
+  /* 截断时添加渐变遮罩效果 */
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+.cli-expand-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cli-hidden-lines {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.cli-expand-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cli-expand-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.cli-expand-btn:active {
+  transform: scale(0.98);
+}
+
+/* Edit 工具头部样式 */
+.cli-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.cli-edit-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cli-stat-removed {
+  color: #f87171;
+}
+
+.cli-stat-added {
+  color: #34d399;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .cli-tool-desc {
@@ -371,5 +446,16 @@
 
   .cli-bash-label {
     align-self: flex-start;
+  }
+
+  .cli-expand-footer {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .cli-expand-btn {
+    width: 100%;
+    text-align: center;
   }
 }

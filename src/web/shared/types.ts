@@ -1447,6 +1447,7 @@ export interface OAuthStatusPayload {
  * 支持的 Claude 模型标识符
  */
 export type ModelName =
+  | 'claude-opus-4-6'
   | 'claude-opus-4-5-20251101'
   | 'claude-sonnet-4-5-20250929'
   | 'claude-haiku-4-5-20251001'
@@ -1458,6 +1459,7 @@ export type ModelName =
  * 模型显示名称
  */
 export type ModelDisplayName =
+  | 'Claude Opus 4.6'
   | 'Claude Opus 4.5'
   | 'Claude Sonnet 4.5'
   | 'Claude Haiku 4.5';

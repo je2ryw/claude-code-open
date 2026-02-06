@@ -9,11 +9,27 @@ import type { ModelInfo, ModelCapabilities, ModelPricing } from './types.js';
  * 已知模型列表
  */
 const KNOWN_MODELS: ModelInfo[] = [
+  // Claude 4.6 系列 (最新)
+  {
+    id: 'claude-opus-4-6',
+    displayName: 'Opus 4.6',
+    aliases: ['opus', 'opus-4-6', 'claude-opus-4-6'],
+    contextWindow: 1_000_000,
+    maxOutputTokens: 32768,
+    supportsThinking: true,
+    supportsTools: true,
+    supportsVision: true,
+    supportsPdf: true,
+    supportsCaching: true,
+    family: 'opus',
+    releaseDate: '2026-02-01', // May 2025 knowledge cutoff
+  },
+
   // Claude 4.5 系列
   {
     id: 'claude-opus-4-5-20251101',
     displayName: 'Opus 4.5',
-    aliases: ['opus', 'opus-4-5', 'claude-opus-4-5'],
+    aliases: ['opus-4-5', 'claude-opus-4-5'],
     contextWindow: 1_000_000,
     maxOutputTokens: 32768,
     supportsThinking: true,
@@ -118,6 +134,13 @@ const KNOWN_MODELS: ModelInfo[] = [
  * 模型定价
  */
 const MODEL_PRICING: Record<string, ModelPricing> = {
+  'claude-opus-4-6': {
+    input: 15,
+    output: 75,
+    cacheRead: 1.5,
+    cacheCreate: 18.75,
+    thinking: 75,
+  },
   'claude-opus-4-5-20251101': {
     input: 15,
     output: 75,
@@ -252,6 +275,7 @@ export class ModelConfig {
 
     // 检测 1M token 模型
     if (normalized.includes('[1m]') ||
+        normalized.includes('opus-4-6') ||
         normalized.includes('opus-4-5') ||
         normalized.includes('sonnet-4-5')) {
       return {
@@ -422,9 +446,9 @@ export class ModelConfig {
       case 'medium':
         return 'claude-sonnet-4-5-20250929';
       case 'complex':
-        return 'claude-opus-4-5-20251101';
+        return 'claude-opus-4-6';
       case 'thinking':
-        return 'claude-opus-4-5-20251101';
+        return 'claude-opus-4-6';
       default:
         return this.getDefaultModel();
     }

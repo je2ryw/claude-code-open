@@ -59,6 +59,9 @@ export interface PdfPartsResult {
 export interface PageRange {
   firstPage: number;
   lastPage: number; // Infinity 表示到最后一页
+}
+
+/**
  * v2.1.31: PDF 错误类
  * 用于区分 PDF 特有的错误（如大小超限），避免这些错误锁死 session
  */

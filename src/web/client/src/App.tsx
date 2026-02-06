@@ -1069,6 +1069,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
                 onNavigateToBlueprint={onNavigateToBlueprint}
                 onNavigateToSwarm={onNavigateToSwarm}
                 onDevAction={handleDevAction}
+                isStreaming={currentMessageRef.current?.id === msg.id && status !== 'idle'}
               />
             ))
           )}

@@ -177,7 +177,15 @@ async function executeApiModels(ctx: CommandContext): Promise<CommandResult> {
   const modelsInfo = `Available Claude Models
 
 ╭─────────────────────────────────────────────────────╮
-│ Claude 4.5 Series (Latest)                          │
+│ Claude 4.6 Series (Latest)                          │
+│                                                     │
+│ • claude-opus-4-6                                   │
+│   ├─ Context: 1M tokens                             │
+│   ├─ Best for: Complex reasoning, long tasks        │
+│   ├─ Pricing: $15 / $75 per MTok (in/out)           │
+│   └─ Highest capability (latest)                    │
+│                                                     │
+│ Claude 4.5 Series                                   │
 │                                                     │
 │ • claude-sonnet-4-5-20250929                        │
 │   ├─ Context: 200K tokens                           │
@@ -186,10 +194,9 @@ async function executeApiModels(ctx: CommandContext): Promise<CommandResult> {
 │   └─ Recommended: Default choice                    │
 │                                                     │
 │ • claude-opus-4-5-20251101                          │
-│   ├─ Context: 200K tokens                           │
+│   ├─ Context: 1M tokens                             │
 │   ├─ Best for: Complex reasoning, long tasks        │
 │   ├─ Pricing: $15 / $75 per MTok (in/out)           │
-│   └─ Highest capability                             │
 │                                                     │
 │ • claude-haiku-4-5-20250514                         │
 │   ├─ Context: 200K tokens                           │
