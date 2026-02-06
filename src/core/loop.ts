@@ -1525,6 +1525,8 @@ export interface LoopOptions {
   debug?: boolean;
   /** 是否为 sub-agent（用于防止覆盖全局父模型上下文） */
   isSubAgent?: boolean;
+  /** v2.1.30: SDK 提供的 MCP 工具（传递给子代理） */
+  mcpTools?: ToolDefinition[];
   /**
    * 官方 v2.1.2 响应式状态获取回调
    * 用于实时获取应用状态（包括权限模式）
@@ -1854,6 +1856,16 @@ export class ConversationLoop {
 
       if (options.verbose || options.debug) {
         console.log(chalk.blue('[MCP] Tool search auto mode enabled: MCP tools will be loaded on-demand via MCPSearch'));
+      }
+    }
+
+    // v2.1.30: 合并 SDK 提供的 MCP 工具
+    if (options.mcpTools && options.mcpTools.length > 0) {
+      const existingNames = new Set(tools.map(t => t.name));
+      for (const mcpTool of options.mcpTools) {
+        if (!existingNames.has(mcpTool.name)) {
+          tools.push(mcpTool);
+        }
       }
     }
 

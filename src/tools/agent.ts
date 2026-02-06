@@ -774,6 +774,8 @@ assistant: "I'm going to use the Task tool to launch the greeting-responder agen
         debug,
         // 标记为 sub-agent，防止覆盖全局父模型上下文
         isSubAgent: true,
+        // v2.1.30: 传递 MCP 工具（空数组，子代理通过 ToolRegistry 单例访问 MCP 工具）
+        mcpTools: [],
       };
 
       // 创建子对话循环（动态导入避免循环依赖）

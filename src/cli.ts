@@ -971,7 +971,10 @@ mcpCommand
   .description('Add an MCP server to Claude Code')
   .option('-s, --scope <scope>', 'Configuration scope (local, user, project)', 'local')
   .option('-e, --env <env...>', 'Environment variables (KEY=VALUE)')
-  .action((name, commandOrUrl, args, options) => {
+  .option('--client-id <clientId>', 'OAuth client ID for HTTP/SSE servers')
+  .option('--client-secret', 'Prompt for OAuth client secret (or set MCP_CLIENT_SECRET env var)')
+  .option('--callback-port <port>', 'Fixed port for OAuth callback (for servers requiring pre-registered redirect URIs)')
+  .action(async (name, commandOrUrl, args, options) => {
     const env: Record<string, string> = {};
     if (options.env) {
       options.env.forEach((e: string) => {
@@ -984,12 +987,39 @@ mcpCommand
     const isUrl = commandOrUrl.startsWith('http://') || commandOrUrl.startsWith('https://');
 
     if (isUrl) {
+      // v2.1.30: 构建 OAuth 配置
+      const oauth = options.clientId ? {
+        clientId: options.clientId,
+        ...(options.callbackPort ? { callbackPort: parseInt(options.callbackPort, 10) } : {}),
+      } : undefined;
+
+      // v2.1.30: 获取 client secret（从环境变量或提示输入）
+      let clientSecret: string | undefined;
+      if (options.clientSecret && options.clientId) {
+        clientSecret = process.env.MCP_CLIENT_SECRET;
+        if (!clientSecret) {
+          // 使用 readline 提示输入
+          const readline = await import('readline');
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          clientSecret = await new Promise<string>((resolve) => {
+            rl.question('Enter OAuth client secret: ', (answer) => {
+              rl.close();
+              resolve(answer);
+            });
+          });
+        }
+      }
+
       // SSE 服务器
-      configManager.addMcpServer(name, {
-        type: 'sse',
+      const serverConfig: any = {
+        type: 'sse' as const,
         url: commandOrUrl,
-      });
-      console.log(chalk.green(`✓ Added SSE MCP server: ${name}`));
+        ...(oauth ? { oauth } : {}),
+        ...(clientSecret ? { clientSecret } : {}),
+      };
+
+      configManager.addMcpServer(name, serverConfig);
+      console.log(chalk.green(`✓ Added SSE MCP server: ${name}${oauth ? ' (with OAuth)' : ''}`));
     } else {
       // stdio 服务器
       configManager.addMcpServer(name, {

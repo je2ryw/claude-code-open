@@ -520,11 +520,160 @@ function matchSingleCommand(
   return { matched: false };
 }
 
+// ============================================================================
+// v2.1.30: Git 命令安全标志验证系统
+// 对齐官方实现，每个 git 子命令有独立的 safeFlags 白名单
+// 标志类型：'none' = 布尔标志，'string' = 接受字符串值，'number' = 接受数字值
+// ============================================================================
+
+type SafeFlagType = 'none' | 'string' | 'number';
+
+// 共享标志组（对齐官方 jG6, zU1, GG6, wU1, $yA, OyA 等压缩变量）
+const commonFormatFlags: Record<string, SafeFlagType> = {
+  '--oneline': 'none', '-n': 'number', '--max-count': 'number',
+  '--skip': 'number', '--since': 'string', '--until': 'string',
+  '--after': 'string', '--before': 'string', '--author': 'string',
+  '--committer': 'string', '--grep': 'string', '--all-match': 'none',
+  '--invert-grep': 'none', '-i': 'none', '--regexp-ignore-case': 'none',
+  '--extended-regexp': 'none', '-E': 'none', '--fixed-strings': 'none', '-F': 'none',
+};
+
+const diffFlags: Record<string, SafeFlagType> = {
+  '--stat': 'none', '--shortstat': 'none', '--numstat': 'none',
+  '--summary': 'none', '--name-only': 'none', '--name-status': 'none',
+  '--no-renames': 'none', '--check': 'none', '--full-index': 'none',
+  '-p': 'none', '--patch': 'none', '-u': 'none', '--unified': 'number',
+  '-U': 'number', '--no-patch': 'none', '-s': 'none',
+  '--color': 'string', '--no-color': 'none',
+  '--word-diff': 'none', '--word-diff-regex': 'string', '--color-words': 'none',
+  '--diff-algorithm': 'string', '--diff-filter': 'string',
+  '-w': 'none', '--ignore-all-space': 'none', '-b': 'none',
+  '--ignore-space-change': 'none', '--ignore-blank-lines': 'none',
+  '--ignore-space-at-eol': 'none', '--histogram': 'none',
+  '--patience': 'none', '--minimal': 'none',
+  '--no-ext-diff': 'none', '--binary': 'none',
+  '--abbrev': 'number', '--inter-hunk-context': 'number',
+};
+
+const pathFlags: Record<string, SafeFlagType> = { '--': 'none', '--follow': 'none' };
+
+const graphFlags: Record<string, SafeFlagType> = {
+  '--graph': 'none', '--all': 'none', '--decorate': 'none', '--no-decorate': 'none',
+  '--decorate-refs': 'string', '--decorate-refs-exclude': 'string',
+  '--source': 'none', '--remotes': 'none', '--branches': 'none',
+  '--tags': 'none', '--glob': 'string', '--exclude': 'string',
+};
+
+const outputFlags: Record<string, SafeFlagType> = {
+  '--pretty': 'string', '--format': 'string',
+  '--abbrev-commit': 'none', '--no-abbrev-commit': 'none',
+  '--date': 'string', '--relative-date': 'none',
+  '--parents': 'none', '--children': 'none',
+  '--left-right': 'none', '--show-signature': 'none', '--show-linear-break': 'none',
+};
+
+/** v2.1.30: 每个 git 子命令的安全标志白名单（对齐官方 safeFlags 配置） */
+export const GIT_COMMAND_SAFE_FLAGS: Record<string, Record<string, SafeFlagType>> = {
+  'git log': {
+    ...commonFormatFlags, ...diffFlags, ...pathFlags, ...graphFlags, ...outputFlags,
+    '--full-history': 'none', '--dense': 'none', '--sparse': 'none',
+    '--simplify-merges': 'none', '--ancestry-path': 'none',
+    '--first-parent': 'none', '--merges': 'none', '--no-merges': 'none',
+    '--reverse': 'none', '--walk-reflogs': 'none',
+    '--max-age': 'number', '--min-age': 'number',
+    '--no-min-parents': 'none', '--no-max-parents': 'none',
+    '--no-walk': 'none',
+    '--cherry-mark': 'none', '--cherry-pick': 'none', '--boundary': 'none',
+    '--topo-order': 'none', '--date-order': 'none', '--author-date-order': 'none',
+    '-S': 'string', '-G': 'string',
+    '--pickaxe-regex': 'none', '--pickaxe-all': 'none',
+  },
+  'git show': {
+    ...commonFormatFlags, ...diffFlags, ...pathFlags, ...outputFlags,
+    '--first-parent': 'none', '--raw': 'none', '-m': 'none', '--quiet': 'none',
+  },
+  'git diff': {
+    ...commonFormatFlags, ...diffFlags, ...pathFlags,
+    '--cached': 'none', '--staged': 'none', '--merge-base': 'none',
+    '--no-index': 'none', '--exit-code': 'none', '--quiet': 'none',
+    '-R': 'none', '--relative': 'string', '--text': 'none', '-a': 'none',
+  },
+  'git status': {
+    '--short': 'none', '-s': 'none', '--branch': 'none', '-b': 'none',
+    '--porcelain': 'none', '--long': 'none', '--verbose': 'none', '-v': 'none',
+    '--untracked-files': 'string', '-u': 'string',
+    '--ignored': 'none', '--ahead-behind': 'none', '--no-ahead-behind': 'none',
+    '--column': 'none', '--no-column': 'none',
+  },
+  'git branch': {
+    '--list': 'none', '-l': 'none', '-a': 'none', '--all': 'none',
+    '-r': 'none', '--remotes': 'none', '-v': 'none', '--verbose': 'none', '-vv': 'none',
+    '--merged': 'string', '--no-merged': 'string',
+    '--contains': 'string', '--no-contains': 'string',
+    '--sort': 'string', '--format': 'string',
+    '--color': 'string', '--no-color': 'none',
+    '--abbrev': 'number', '--no-abbrev': 'none',
+    '--points-at': 'string', '--column': 'none', '--no-column': 'none',
+  },
+};
+
+/**
+ * v2.1.30: 验证 git 命令的标志是否在安全白名单中
+ */
+export function validateGitFlags(command: string, gitSubcmd: string): boolean {
+  const safeFlags = GIT_COMMAND_SAFE_FLAGS[gitSubcmd];
+  if (!safeFlags) return true;
+
+  const argsStr = command.trim().slice(gitSubcmd.length).trim();
+  if (!argsStr) return true;
+
+  // 简单解析参数（处理引号）
+  const args = parseGitArgs(argsStr);
+
+  for (const arg of args) {
+    if (!arg.startsWith('-')) continue;
+    if (arg === '--') break;
+
+    // 处理 --flag=value 格式
+    const eqIdx = arg.indexOf('=');
+    const flagName = eqIdx > -1 ? arg.slice(0, eqIdx) : arg;
+
+    if (!(flagName in safeFlags)) {
+      return false; // 未知标志
+    }
+  }
+
+  return true;
+}
+
+function parseGitArgs(argsStr: string): string[] {
+  const args: string[] = [];
+  let current = '';
+  let inSingle = false, inDouble = false, escaped = false;
+
+  for (let i = 0; i < argsStr.length; i++) {
+    const ch = argsStr[i];
+    if (escaped) { current += ch; escaped = false; continue; }
+    if (ch === '\\' && !inSingle) { escaped = true; continue; }
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+    if (ch === ' ' && !inSingle && !inDouble) {
+      if (current) { args.push(current); current = ''; }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) args.push(current);
+  return args;
+}
+
 /**
  * 检查命令是否只包含安全的读取操作
  *
  * 安全的读取操作不会修改系统状态，可以自动允许。
  * 但是即使是读取操作，如果包含 shell 操作符，也需要检查。
+ *
+ * v2.1.30: git 命令增加 safeFlags 细粒度验证
  *
  * @param command 要检查的命令
  * @returns 是否是安全的只读操作
@@ -537,17 +686,23 @@ export function isReadOnlyCommand(command: string): boolean {
     return false;
   }
 
-  // 安全的只读命令列表
+  const trimmedCommand = command.trim();
+
+  // v2.1.30: git 命令使用 safeFlags 细粒度验证
+  for (const gitCmd of Object.keys(GIT_COMMAND_SAFE_FLAGS)) {
+    if (trimmedCommand === gitCmd || trimmedCommand.startsWith(gitCmd + ' ')) {
+      return validateGitFlags(trimmedCommand, gitCmd);
+    }
+  }
+
+  // 其他安全的只读命令列表
   const readOnlyCommands = [
     'ls', 'dir', 'pwd', 'cat', 'head', 'tail', 'less', 'more',
     'grep', 'find', 'which', 'whereis', 'type', 'file',
     'echo', 'printf', 'env', 'printenv',
-    'git status', 'git log', 'git diff', 'git show', 'git branch',
     'npm list', 'npm ls', 'npm view', 'npm info',
     'node --version', 'npm --version', 'python --version',
   ];
-
-  const trimmedCommand = command.trim();
 
   for (const cmd of readOnlyCommands) {
     if (trimmedCommand === cmd || trimmedCommand.startsWith(cmd + ' ')) {
