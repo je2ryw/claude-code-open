@@ -1108,8 +1108,16 @@ export class ConfigManager {
     // 10. 验证配置
     try {
       return UserConfigSchema.parse(config);
-    } catch (error) {
-      console.warn('Config validation failed, using defaults:', error);
+    } catch (error: any) {
+      // v2.1.33: 改进错误展示 - 将验证错误详细展示给用户
+      if (error?.issues) {
+        const details = error.issues.map((issue: any) =>
+          `- ${issue.path?.join('.') || 'root'}: ${issue.message}`
+        ).join('\n');
+        console.error(`Error processing settings:\n${details}`);
+      } else {
+        console.warn('Config validation failed, using defaults:', error);
+      }
       return UserConfigSchema.parse(DEFAULT_CONFIG);
     }
   }
@@ -1126,6 +1134,10 @@ export class ConfigManager {
         return policy as EnterprisePolicyConfig;
       }
     } catch (error) {
+      // v2.1.33: 将 managed settings 错误直接展示给用户
+      // 之前只在 debug 模式下输出，现在总是展示
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Error processing settings: ${errorMsg}`);
       this.debugLog(`Failed to load enterprise policy: ${error}`);
     }
     return undefined;

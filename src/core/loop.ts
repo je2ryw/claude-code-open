@@ -2586,24 +2586,17 @@ Guidelines:
         }
       }
 
-      // v2.1.30: 修复空 assistant content 问题（streaming 路径）
-      let fixedStreamContent = assistantContent;
-      if (Array.isArray(assistantContent) && assistantContent.length === 0) {
-        fixedStreamContent = [{ type: 'text' as const, text: '(no content)' }];
-      }
+      // v2.1.33: 规范化 assistant 内容，修复 abort 时 whitespace+thinking block 导致的 API 错误
+      // 对应官方 kQ1/rC4/_5z 函数：
+      // 1. 过滤仅包含 whitespace 的 text block
+      // 2. 移除尾部孤立的 thinking block
+      // 3. 如果过滤后内容为空，添加一个空文本块避免 API 错误
+      const normalizedContent = this.normalizeAssistantContent(assistantContent);
 
       this.session.addMessage({
         role: 'assistant',
-        content: fixedStreamContent,
+        content: normalizedContent,
       });
-      // 🔧 修复：只有当 assistantContent 不为空时才添加 assistant 消息
-      // 避免在网络错误等情况下添加空 content 导致后续 API 调用失败
-      if (assistantContent.length > 0) {
-        this.session.addMessage({
-          role: 'assistant',
-          content: assistantContent,
-        });
-      }
 
       if (toolResults.length > 0) {
         this.session.addMessage({
@@ -2685,5 +2678,49 @@ Guidelines:
    */
   isAborted(): boolean {
     return this.abortController?.signal.aborted ?? false;
+  }
+
+  /**
+   * v2.1.33: 规范化 assistant 消息内容
+   *
+   * 修复当 abort 中断流式响应时，whitespace 文本和 thinking block 组合
+   * 绕过规范化导致无效 API 请求的问题。
+   *
+   * 对应官方 kQ1 函数逻辑：
+   * 1. 过滤仅包含 whitespace 的 text block
+   * 2. 移除尾部孤立的 thinking block（没有对应的 text/tool_use 跟随）
+   * 3. 确保内容非空（至少有一个有效的 content block）
+   */
+  private normalizeAssistantContent(content: any[]): any[] {
+    if (!content || content.length === 0) {
+      return [{ type: 'text', text: '' }];
+    }
+
+    // Step 1: 过滤仅包含 whitespace 的 text block
+    let filtered = content.filter((block: any) => {
+      if (block.type === 'text') {
+        // 保留非空 text block
+        return block.text && block.text.trim().length > 0;
+      }
+      // 保留所有非 text block（tool_use, thinking 等）
+      return true;
+    });
+
+    // Step 2: 移除尾部孤立的 thinking/redacted_thinking block
+    while (filtered.length > 0) {
+      const lastBlock = filtered[filtered.length - 1];
+      if (lastBlock.type === 'thinking' || lastBlock.type === 'redacted_thinking') {
+        filtered.pop();
+      } else {
+        break;
+      }
+    }
+
+    // Step 3: 确保内容非空
+    if (filtered.length === 0) {
+      return [{ type: 'text', text: '' }];
+    }
+
+    return filtered;
   }
 }

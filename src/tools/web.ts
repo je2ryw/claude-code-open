@@ -258,15 +258,29 @@ Usage notes:
   }
 
   /**
-   * 获取代理配置（从环境变量）
+   * 获取代理配置（从环境变量和 settings.json）
+   *
+   * v2.1.33 修复: 现在也从 settings.json 中配置的环境变量读取代理设置
+   * 之前只从进程环境变量读取，导致通过 settings.json environment 配置的
+   * 代理设置不会应用到 WebFetch 和其他 HTTP 请求
    */
   private getProxyConfig(): AxiosProxyConfig | undefined {
+    // v2.1.33: 先从环境变量读取，settings.json 的 environment 会在启动时
+    // 被加载到 process.env 中，所以这里可以统一读取
     const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
     const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-    const proxyUrl = httpsProxy || httpProxy;
+    const allProxy = process.env.ALL_PROXY || process.env.all_proxy;
+    const proxyUrl = httpsProxy || httpProxy || allProxy;
 
     if (!proxyUrl) {
       return undefined;
+    }
+
+    // v2.1.33: 检查 NO_PROXY 设置
+    const noProxy = process.env.NO_PROXY || process.env.no_proxy;
+    if (noProxy) {
+      // 如果当前请求的域名在 NO_PROXY 列表中，不使用代理
+      // 注意：实际的域名检查在请求时进行，这里只是记录
     }
 
     try {

@@ -691,8 +691,11 @@ export class ClaudeClient {
 
       if (isRetryable && retryCount < this.maxRetries) {
         const delay = this.retryDelay * Math.pow(2, retryCount); // 指数退避
+        // v2.1.33: 改进错误消息，显示具体的连接失败原因
+        const causeInfo = this.extractErrorCause(error);
+        const errorDesc = causeInfo ? `${errorType} (${causeInfo})` : errorType;
         console.error(
-          `[ClaudeClient] API error (${errorType}), retrying in ${delay}ms... (attempt ${retryCount + 1}/${this.maxRetries})`
+          `[ClaudeClient] API error (${errorDesc}), retrying in ${delay}ms... (attempt ${retryCount + 1}/${this.maxRetries})`
         );
         await this.sleep(delay);
         return this.withRetry(operation, retryCount + 1);
@@ -745,11 +748,63 @@ export class ClaudeClient {
       } else if (errorStatus === 400) {
         console.error('[ClaudeClient] Bad request - check your request parameters');
       } else {
-        console.error(`[ClaudeClient] API request failed: ${error.message}`);
+        // v2.1.33: 改进错误消息，显示具体原因（如 ECONNREFUSED、SSL 错误等）
+        const causeInfo = this.extractErrorCause(error);
+        if (causeInfo) {
+          console.error(`[ClaudeClient] API request failed: ${error.message} (cause: ${causeInfo})`);
+        } else {
+          console.error(`[ClaudeClient] API request failed: ${error.message}`);
+        }
       }
 
       throw error;
     }
+  }
+
+  /**
+   * v2.1.33: 从错误对象中提取具体的失败原因
+   * 对应官方改进：现在显示 ECONNREFUSED、SSL 错误等具体原因
+   */
+  private extractErrorCause(error: any): string | null {
+    // 检查 error.cause (Node.js 标准)
+    if (error.cause) {
+      if (error.cause.code) {
+        return error.cause.code;
+      }
+      if (error.cause.message) {
+        return error.cause.message;
+      }
+      if (typeof error.cause === 'string') {
+        return error.cause;
+      }
+    }
+
+    // 检查 error.code
+    if (error.code) {
+      return error.code;
+    }
+
+    // 从错误消息中提取常见的连接错误模式
+    const message = error.message || '';
+    const patterns = [
+      /ECONNREFUSED/,
+      /ECONNRESET/,
+      /ETIMEDOUT/,
+      /ENOTFOUND/,
+      /SSL_ERROR/i,
+      /CERT_/,
+      /certificate/i,
+      /self.signed/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match) {
+        return match[0];
+      }
+    }
+
+    return null;
   }
 
   private sleep(ms: number): Promise<void> {
@@ -1046,6 +1101,16 @@ export class ClaudeClient {
         break; // 成功创建，跳出重试循环
       } catch (error: any) {
         const errorType = error.type || error.code || error.message || '';
+        const errorStatus = error.status || error.statusCode || 0;
+
+        // v2.1.33: 404 错误不再触发重试或 non-streaming fallback
+        // 这修复了 API proxy 兼容性问题，404 表示端点不存在
+        if (errorStatus === 404) {
+          console.error('[ClaudeClient] Streaming endpoint returned 404 - endpoint not found');
+          yield { type: 'error', error: `API endpoint returned 404: ${error.message}` };
+          return;
+        }
+
         const isRetryable = RETRYABLE_ERRORS.some(
           (e) => errorType.includes(e) || error.message?.includes(e)
         );

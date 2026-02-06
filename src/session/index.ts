@@ -11,6 +11,59 @@ import type { Message, ContentBlock } from '../types/index.js';
 import { configManager } from '../config/index.js';
 
 // ============================================================================
+// v2.1.33: XML 标记清理函数
+// 修复 /resume session picker 显示 raw XML 标记而不是干净标题的问题
+// 当会话通过 slash command 开始时，消息中包含 XML 标记（如 <command-message>、<skill> 等）
+// ============================================================================
+
+/**
+ * 从文本中剥离 XML 标记，只保留纯文本内容
+ * 用于 session picker 显示干净的标题
+ *
+ * v2.1.33 修复：/resume session picker showing raw XML markup instead of clean titles
+ */
+export function stripXmlTags(text: string): string {
+  if (!text) return text;
+  // 移除所有 XML/HTML 标记
+  let clean = text.replace(/<[^>]*>/g, '');
+  // 清理多余空白
+  clean = clean.replace(/\s+/g, ' ').trim();
+  return clean;
+}
+
+/**
+ * 获取干净的 session 显示标题
+ * 如果 session name 包含 XML 标记（来自 slash command），则清理它
+ */
+export function getCleanSessionTitle(session: SessionData): string {
+  if (session.metadata.name) {
+    return stripXmlTags(session.metadata.name);
+  }
+
+  // 如果没有 name，从第一条消息获取预览
+  if (session.messages.length > 0) {
+    const firstMsg = session.messages[0];
+    let preview = '';
+    if (typeof firstMsg.content === 'string') {
+      preview = firstMsg.content;
+    } else if (Array.isArray(firstMsg.content)) {
+      const textBlock = firstMsg.content.find((b: any) => b.type === 'text');
+      if (textBlock && 'text' in textBlock) {
+        preview = (textBlock as any).text || '';
+      }
+    }
+    // 清理 XML 标记并截取
+    preview = stripXmlTags(preview);
+    if (preview.length > 80) {
+      preview = preview.slice(0, 80) + '...';
+    }
+    return preview || session.metadata.id;
+  }
+
+  return session.metadata.id;
+}
+
+// ============================================================================
 // v2.1.19: 恢复会话路径追踪
 // 当从不同目录恢复会话时，需要记住原始会话文件路径
 // 用于修复 /rename 和 /tag 在不同目录恢复时更新错误会话的问题

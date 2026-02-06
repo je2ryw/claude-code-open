@@ -29,11 +29,56 @@ export interface AgentTypeDefinition {
   agentType: string;
   whenToUse: string;
   tools?: string[];
+  /** v2.1.33: 限制可以生成的子 agent 类型 (Task(agent_type) 语法) */
+  allowedSubagentTypes?: string[];
   forkContext?: boolean;  // 是否访问父对话上下文
   permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions';
   model?: string;         // 代理类型的默认模型
+  color?: string;         // v2.1.33: agent color
+  memory?: string;        // v2.1.33: agent memory scope
   description?: string;
   getSystemPrompt?: () => string;  // 系统提示词生成函数
+}
+
+/**
+ * v2.1.33: 解析 tools 字段中的 Task(agent_type) 语法
+ *
+ * 对应官方 qzq 函数中的 tools 格式解析
+ * 例如: "Task(Explore), Task(Plan), Read, Grep" 表示
+ * - 可以使用 Task 工具，但只能生成 Explore 和 Plan 类型的子 agent
+ * - 可以使用 Read 和 Grep 工具
+ *
+ * @param tools 原始 tools 数组
+ * @returns { tools: 过滤后的工具列表, allowedSubagentTypes: 允许的子 agent 类型 }
+ */
+export function parseToolsWithAgentTypeRestriction(tools: string[]): {
+  tools: string[];
+  allowedSubagentTypes?: string[];
+} {
+  const normalTools: string[] = [];
+  const subagentTypes: string[] = [];
+  let hasTaskRestriction = false;
+
+  for (const tool of tools) {
+    const trimmed = tool.trim();
+    // 匹配 Task(agent_type) 语法
+    const match = trimmed.match(/^Task\((\w+)\)$/);
+    if (match) {
+      hasTaskRestriction = true;
+      subagentTypes.push(match[1]);
+      // 确保 Task 工具在允许列表中
+      if (!normalTools.includes('Task')) {
+        normalTools.push('Task');
+      }
+    } else {
+      normalTools.push(trimmed);
+    }
+  }
+
+  return {
+    tools: normalTools,
+    allowedSubagentTypes: hasTaskRestriction ? subagentTypes : undefined,
+  };
 }
 
 // 模型别名类型（与官方 SDK 一致）
@@ -462,7 +507,9 @@ user: "Hello"
 Since the user is greeting, use the greeting-responder agent to respond with a friendly joke
 </commentary>
 assistant: "I'm going to use the Task tool to launch the greeting-responder agent"
-</example>`;
+</example>
+
+Note: The "Agent Teams" feature (TeammateTool, SendMessage, spawnTeam) is not available on this plan. Only mention this if the user explicitly asks for "agent teams" by name, or asks for agents to send messages to each other (peer-to-peer messaging). Do NOT mention this limitation when users ask for parallel subagents, coordinating agents, launching a "team" of agents, or having agents work together — those are all normal Task tool usage and you should proceed normally.`;
 
   // 父对话上下文（用于 forkContext）
   private parentMessages: Message[] = [];
