@@ -71,8 +71,12 @@ export interface UsageStats {
 
 // 模型价格 (per 1M tokens)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-opus-4-6': { input: 15, output: 75 },  // Claude 4.6 (最新)
+  'claude-opus-4-5-20251101': { input: 15, output: 75 },
   'claude-opus-4-20250514': { input: 15, output: 75 },
+  'claude-sonnet-4-5-20250929': { input: 3, output: 15 },
   'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-haiku-4-5-20251001': { input: 0.8, output: 4 },
   'claude-haiku-3-5-20241022': { input: 0.8, output: 4 },
   'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
   'claude-3-5-haiku-20241022': { input: 0.8, output: 4 },
@@ -1077,8 +1081,8 @@ export class ClaudeClient {
         model: this.model,
         max_tokens: this.maxTokens,
         system: formattedSystem as any,
-        // v5.0: 使用 formatMessages 启用消息缓存
-        messages: formatMessages(messages) as any,
+        // v5.0: 使用 formatMessages 启用消息缓存（传递 enableThinking 避免 thinking blocks 被误过滤）
+        messages: formatMessages(messages, options?.enableThinking) as any,
         tools: apiTools as any,
         // 添加 toolChoice 支持（强制 AI 调用特定工具）
         ...(options?.toolChoice ? { tool_choice: options.toolChoice } : {}),

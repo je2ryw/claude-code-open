@@ -6,14 +6,17 @@
 import { ClaudeClient } from '../../core/client.js';
 import { Session } from '../../core/session.js';
 import { runWithCwd } from '../../core/cwd-context.js';
+import { shouldAutoCompact, calculateAutoCompactThreshold, getContextWindowSize } from '../../core/loop.js';
 import { toolRegistry } from '../../tools/index.js';
 import { systemPromptBuilder, type PromptContext } from '../../prompt/index.js';
 import { modelConfig } from '../../models/index.js';
 import { configManager } from '../../config/index.js';
 import { initAuth, getAuth } from '../../auth/index.js';
 import type { Message, ContentBlock, ToolUseBlock, TextBlock } from '../../types/index.js';
-import type { ChatMessage, ChatContent, ToolResultData, PermissionConfigPayload, PermissionRequestPayload, SystemPromptConfig, SystemPromptGetPayload } from '../shared/types.js';
+import type { ChatMessage, ChatContent, ToolResultData, PermissionConfigPayload, PermissionRequestPayload, SystemPromptConfig, SystemPromptGetPayload, DebugMessagesPayload } from '../shared/types.js';
 import { UserInteractionHandler } from './user-interaction.js';
+import { PermissionHandler, type PermissionConfig, type PermissionRequest, type PermissionDestination } from './permission-handler.js';
+import { runPreToolUseHooks, runPostToolUseHooks, runPostToolUseFailureHooks, getHookCount } from '../../hooks/index.js';
 import type { WebSocket } from 'ws';
 import { WebSessionManager, type WebSessionData } from './session-manager.js';
 import type { SessionMetadata, SessionListOptions } from '../../session/index.js';
@@ -34,6 +37,39 @@ import {
   getSummaryPath,
   isSessionMemoryEnabled,
 } from '../../context/session-memory.js';
+
+// ============================================================================
+// 网络错误重试相关常量
+// ============================================================================
+
+/** 可重试的网络错误模式 */
+const RETRYABLE_NETWORK_PATTERNS = [
+  'Connection error',
+  'connection error',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'fetch failed',
+  'network error',
+  'socket hang up',
+  'overloaded_error',
+  'rate_limit_error',
+];
+
+/** conversation loop 层面的最大网络重试次数 */
+const MAX_CONVERSATION_RETRIES = 3;
+
+/**
+ * 判断错误是否为可重试的网络错误
+ */
+function isRetryableNetworkError(error: any): boolean {
+  const message = error?.message || String(error);
+  const causeMsg = error?.cause?.message || error?.cause?.code || '';
+  return RETRYABLE_NETWORK_PATTERNS.some(
+    pattern => message.includes(pattern) || causeMsg.includes(pattern)
+  );
+}
 
 // ============================================================================
 // 工具输出截断常量和函数（与 CLI loop.ts 完全一致）
@@ -204,6 +240,10 @@ export interface StreamCallbacks {
   onPermissionRequest?: (request: any) => void;
   onComplete?: (stopReason: string | null, usage?: { inputTokens: number; outputTokens: number }) => void;
   onError?: (error: Error) => void;
+  /** 上下文压缩事件：start=开始压缩, end=压缩完成, error=压缩失败 */
+  onContextCompact?: (phase: 'start' | 'end' | 'error', info?: Record<string, any>) => void;
+  /** 上下文使用量更新 */
+  onContextUpdate?: (usage: { usedTokens: number; maxTokens: number; percentage: number; model: string }) => void;
 }
 
 /**
@@ -218,9 +258,14 @@ interface SessionState {
   chatHistory: ChatMessage[];
   userInteractionHandler: UserInteractionHandler;
   taskManager: TaskManager;
+  permissionHandler: PermissionHandler;
   ws?: WebSocket;
   toolFilterConfig: import('../shared/types.js').ToolFilterConfig;
   systemPromptConfig: SystemPromptConfig;
+  /** 标记会话是否正在处理对话（防止并发覆盖 ws） */
+  isProcessing: boolean;
+  /** 上一次 API 返回的实际 inputTokens（用于精确判断是否需要压缩） */
+  lastActualInputTokens: number;
 }
 
 /**
@@ -235,7 +280,7 @@ export class ConversationManager {
   private unifiedMemory: UnifiedMemory;
   private options?: { verbose?: boolean };
 
-  constructor(cwd: string, defaultModel: string = 'sonnet', options?: { verbose?: boolean }) {
+  constructor(cwd: string, defaultModel: string = 'opus', options?: { verbose?: boolean }) {
     this.cwd = cwd;
     this.defaultModel = defaultModel;
     this.options = options;
@@ -271,10 +316,11 @@ export class ConversationManager {
    * 根据认证信息构建 ClaudeClient 配置
    * 与核心 loop.ts 逻辑保持一致
    */
-  private buildClientConfig(model: string): { model: string; apiKey?: string; authToken?: string } {
+  private buildClientConfig(model: string): { model: string; apiKey?: string; authToken?: string; timeout?: number } {
     const auth = getAuth();
-    const config: { model: string; apiKey?: string; authToken?: string } = {
+    const config: { model: string; apiKey?: string; authToken?: string; timeout?: number } = {
       model: this.getModelId(model),
+      timeout: 300000,  // 5分钟 API 请求超时（对齐核心 loop.ts）
     };
 
     if (auth) {
@@ -393,6 +439,9 @@ export class ConversationManager {
     // 创建任务管理器
     const taskManager = new TaskManager();
 
+    // 创建权限处理器（默认模式：需要用户确认敏感操作）
+    const permissionHandler = new PermissionHandler({ mode: 'default' });
+
     state = {
       session,
       client,
@@ -402,12 +451,15 @@ export class ConversationManager {
       chatHistory: [],
       userInteractionHandler,
       taskManager,
+      permissionHandler,
       toolFilterConfig: {
         mode: 'all', // 默认允许所有工具
       },
       systemPromptConfig: {
         useDefault: true, // 默认使用默认提示
       },
+      isProcessing: false,
+      lastActualInputTokens: 0,
     };
 
     this.sessions.set(sessionId, state);
@@ -427,14 +479,11 @@ export class ConversationManager {
 
   /**
    * 获取完整模型 ID
+   * 使用 modelConfig.resolveAlias() 统一解析别名，确保与模型配置保持一致
    */
   private getModelId(shortName: string): string {
-    const modelMap: Record<string, string> = {
-      opus: 'claude-opus-4-20250514',
-      sonnet: 'claude-sonnet-4-20250514',
-      haiku: 'claude-3-5-haiku-20241022',
-    };
-    return modelMap[shortName] || shortName;
+    // 使用统一的别名解析，避免硬编码
+    return modelConfig.resolveAlias(shortName);
   }
 
   /**
@@ -478,15 +527,23 @@ export class ConversationManager {
       state.cancelled = true;
       // 取消所有待处理的用户问题
       state.userInteractionHandler?.cancelAll();
+      // 取消所有待处理的权限请求
+      state.permissionHandler?.cancelAll();
     }
   }
 
   /**
    * 设置会话的 WebSocket 连接
+   * 如果会话正在处理对话（isProcessing），不覆盖 ws 引用，
+   * 防止另一个标签页切换到此会话时导致消息串扰
    */
   setWebSocket(sessionId: string, ws: WebSocket): void {
     const state = this.sessions.get(sessionId);
     if (state) {
+      if (state.isProcessing && state.ws && state.ws.readyState === 1 /* OPEN */) {
+        console.warn(`[ConversationManager] 会话 ${sessionId} 正在处理中，不更新 WebSocket 引用（防止会话串扰）`);
+        return;
+      }
       state.ws = ws;
       state.userInteractionHandler.setWebSocket(ws);
       state.taskManager.setWebSocket(ws);
@@ -500,6 +557,34 @@ export class ConversationManager {
     const state = this.sessions.get(sessionId);
     if (state) {
       state.userInteractionHandler.handleAnswer(requestId, answer);
+    }
+  }
+
+  /**
+   * 处理权限响应（从前端通过 WebSocket 传入）
+   */
+  handlePermissionResponse(
+    sessionId: string,
+    requestId: string,
+    approved: boolean,
+    remember?: boolean,
+    scope?: 'once' | 'session' | 'always',
+    destination?: PermissionDestination
+  ): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.permissionHandler.handleResponse(requestId, approved, remember, scope, destination);
+    }
+  }
+
+  /**
+   * 更新权限配置（从前端通过 WebSocket 传入）
+   */
+  updatePermissionConfig(sessionId: string, config: Partial<PermissionConfig>): void {
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.permissionHandler.updateConfig(config);
+      console.log(`[ConversationManager] 权限配置已更新 (session: ${sessionId}):`, config);
     }
   }
 
@@ -521,7 +606,15 @@ export class ConversationManager {
     ws?: WebSocket
   ): Promise<void> {
     const state = await this.getOrCreateSession(sessionId, model, projectPath);
+
+    // 防止同一会话并发处理：如果会话正在处理中，拒绝新的聊天请求
+    if (state.isProcessing) {
+      callbacks.onError?.(new Error('会话正在处理中，请等待当前对话完成'));
+      return;
+    }
+
     state.cancelled = false;
+    state.isProcessing = true;
 
     // 关键修复：确保会话的 WebSocket 已设置
     // 在 getOrCreateSession 后设置 WebSocket，保证 UserInteractionHandler 可用
@@ -585,6 +678,8 @@ export class ConversationManager {
 
     } catch (error) {
       callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      state.isProcessing = false;
     }
   }
 
@@ -599,8 +694,15 @@ export class ConversationManager {
     let continueLoop = true;
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let networkRetryCount = 0;
+    /** 是否刚执行过因 "prompt too long" 而触发的强制压缩（防止无限循环） */
+    let justForceCompacted = false;
 
     while (continueLoop && !state.cancelled) {
+      // 标记本次迭代是否已有内容流式输出到前端
+      // 如果有内容已输出，则不进行自动重试（避免前端内容重复）
+      let hasStreamedContent = false;
+
       // OAuth Token 自动刷新检查（在调用 API 之前）
       try {
         await this.ensureValidOAuthToken(state);
@@ -616,14 +718,45 @@ export class ConversationManager {
       const tools = this.getFilteredTools(sessionId || '');
 
       // 在发送请求前清理旧的持久化输出（与 CLI 完全一致）
-      const cleanedMessages = cleanOldPersistedOutputs(state.messages, 3);
+      let cleanedMessages = cleanOldPersistedOutputs(state.messages, 3);
+
+      // AutoCompact：检查是否需要压缩上下文（对齐 CLI loop.ts 的 autoCompact）
+      // 双重检查：1) 估算值检查  2) 上一次 API 实际 inputTokens 检查
+      const resolvedModel = modelConfig.resolveAlias(state.model);
+      const threshold = calculateAutoCompactThreshold(resolvedModel);
+      const needsCompact = shouldAutoCompact(cleanedMessages, resolvedModel) ||
+        (state.lastActualInputTokens > 0 && state.lastActualInputTokens >= threshold);
+
+      if (needsCompact) {
+        try {
+          console.log(`[AutoCompact] 触发压缩 (lastActualTokens: ${state.lastActualInputTokens.toLocaleString()}, threshold: ${threshold.toLocaleString()})`);
+          // 通知前端：开始压缩
+          callbacks.onContextCompact?.('start', { threshold, estimatedTokens: state.lastActualInputTokens });
+          const compactResult = await this.performAutoCompact(cleanedMessages, resolvedModel, state);
+          if (compactResult.wasCompacted) {
+            cleanedMessages = compactResult.messages;
+            state.messages = compactResult.messages;
+            state.lastActualInputTokens = 0; // 压缩后重置
+            console.log(`[AutoCompact] 上下文已压缩`);
+            // 通知前端：压缩完成
+            callbacks.onContextCompact?.('end', { threshold, savedTokens: compactResult.savedTokens || 0 });
+          }
+        } catch (err) {
+          console.warn('[AutoCompact] 压缩失败，使用原消息继续:', err);
+          callbacks.onContextCompact?.('error', { message: String(err) });
+        }
+      }
 
       try {
-        // 调用 Claude API（使用 createMessageStream）
+        // 调用 Claude API（使用 createMessageStream，默认开启 Extended Thinking）
         const stream = state.client.createMessageStream(
           cleanedMessages,
           tools,
-          systemPrompt
+          systemPrompt,
+          {
+            enableThinking: true,
+            thinkingBudget: 10000,
+          }
         );
 
         // 处理流式响应
@@ -653,12 +786,14 @@ export class ConversationManager {
                 thinkingStarted = false;
               }
               if (event.text) {
+                hasStreamedContent = true;
                 currentTextContent += event.text;
                 callbacks.onTextDelta?.(event.text);
               }
               break;
 
             case 'tool_use_start':
+              hasStreamedContent = true;
               // 保存之前的文本内容
               if (currentTextContent) {
                 assistantContent.push({ type: 'text', text: currentTextContent } as TextBlock);
@@ -710,12 +845,24 @@ export class ConversationManager {
               if (event.usage) {
                 totalInputTokens = event.usage.inputTokens || 0;
                 totalOutputTokens = event.usage.outputTokens || 0;
+                // 记录实际 inputTokens 供下次循环迭代的自动压缩判断使用
+                state.lastActualInputTokens = totalInputTokens;
               }
               break;
 
             case 'error':
               throw new Error(event.error || 'Unknown stream error');
           }
+        }
+
+        // API 调用成功完成，重置网络重试计数器和强制压缩标记
+        networkRetryCount = 0;
+        justForceCompacted = false;
+
+        // 中断或正常结束时，保存未完成的文本内容
+        if (currentTextContent) {
+          assistantContent.push({ type: 'text', text: currentTextContent } as TextBlock);
+          currentTextContent = '';
         }
 
         // 保存助手响应
@@ -809,9 +956,68 @@ export class ConversationManager {
             inputTokens: totalInputTokens,
             outputTokens: totalOutputTokens,
           });
+
+          // 发送上下文使用量更新
+          if (totalInputTokens > 0) {
+            const contextWindow = getContextWindowSize(resolvedModel);
+            const percentage = Math.min(100, Math.round((totalInputTokens / contextWindow) * 100));
+            callbacks.onContextUpdate?.({
+              usedTokens: totalInputTokens,
+              maxTokens: contextWindow,
+              percentage,
+              model: resolvedModel,
+            });
+          }
         }
 
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+
+        // 检查是否为 "prompt is too long" 错误 —— 触发强制压缩并重试
+        if (
+          errMsg.includes('prompt is too long') &&
+          !justForceCompacted &&
+          !hasStreamedContent
+        ) {
+          console.warn(`[ConversationManager] 上下文超出限制，强制执行压缩并重试...`);
+          justForceCompacted = true; // 防止无限循环
+          try {
+            callbacks.onContextCompact?.('start', { threshold: 0, estimatedTokens: 0, reason: 'prompt_too_long' });
+            const compactResult = await this.performAutoCompact(state.messages, resolvedModel, state);
+            if (compactResult.wasCompacted) {
+              state.messages = compactResult.messages;
+              state.lastActualInputTokens = 0;
+              console.log(`[AutoCompact] 强制压缩成功，重试 API 调用`);
+              callbacks.onContextCompact?.('end', { savedTokens: compactResult.savedTokens || 0 });
+              continue; // 重新进入循环
+            }
+          } catch (compactErr) {
+            console.error('[AutoCompact] 强制压缩失败:', compactErr);
+            callbacks.onContextCompact?.('error', { message: String(compactErr) });
+          }
+          // 压缩失败，报告原始错误
+          callbacks.onError?.(error instanceof Error ? error : new Error(errMsg));
+          continueLoop = false;
+          continue;
+        }
+
+        // 检查是否为可重试的网络错误
+        // 条件：1) 错误类型可重试  2) 未超过最大重试次数  3) 尚无内容输出到前端
+        if (
+          isRetryableNetworkError(error) &&
+          networkRetryCount < MAX_CONVERSATION_RETRIES &&
+          !hasStreamedContent
+        ) {
+          networkRetryCount++;
+          const delay = 1000 * Math.pow(2, networkRetryCount - 1); // 1s, 2s, 4s
+          console.warn(
+            `[ConversationManager] 网络错误 (${errMsg})，${delay}ms 后重试 (${networkRetryCount}/${MAX_CONVERSATION_RETRIES})...`
+          );
+          await new Promise(resolve => setTimeout(resolve, delay));
+          // continueLoop 保持为 true，继续下一次循环迭代（重新发起 API 调用）
+          continue;
+        }
+
         console.error('[ConversationManager] API 错误:', error);
         callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
         continueLoop = false;
@@ -842,8 +1048,18 @@ export class ConversationManager {
       );
     }
 
+    // 关键修复：确保 chatHistory 与 messages 同步
+    // 当会话被中断时，messages 可能已更新但 chatHistory 没有
+    // 这会导致恢复会话时无法显示历史消息
+    this.syncChatHistoryFromMessages(state);
+
     // 自动保存会话（与 CLI 完全一致）
     this.autoSaveSession(state);
+
+    // 持久化 chatHistory 到磁盘（autoSaveSession 只保存 CLI Session，不含 chatHistory）
+    if (sessionId) {
+      await this.persistSession(sessionId);
+    }
 
     // 记录对话到记忆系统（WebUI 独有功能）
     if (!state.cancelled && sessionId) {
@@ -1085,6 +1301,24 @@ export class ConversationManager {
   }
 
   /**
+   * 同步 chatHistory 与 messages
+   * 修复中断时 chatHistory 未更新导致恢复会话无法显示历史的问题
+   */
+  private syncChatHistoryFromMessages(state: SessionState): void {
+    // 统计 messages 中的 assistant 消息数量
+    const assistantMsgCount = state.messages.filter(m => m.role === 'assistant').length;
+    // 统计 chatHistory 中的 assistant 消息数量
+    const assistantChatCount = state.chatHistory.filter(m => m.role === 'assistant').length;
+
+    // 如果 messages 中的 assistant 消息比 chatHistory 多，说明有消息没有同步
+    if (assistantMsgCount > assistantChatCount) {
+      // 从 messages 重建 chatHistory
+      state.chatHistory = this.convertMessagesToChatHistory(state.messages);
+      console.log(`[ConversationManager] 同步 chatHistory: messages=${assistantMsgCount}, chatHistory=${state.chatHistory.filter(m => m.role === 'assistant').length}`);
+    }
+  }
+
+  /**
    * 自动保存会话
    */
   private autoSaveSession(state: SessionState): void {
@@ -1117,6 +1351,40 @@ export class ConversationManager {
       const error = `工具 ${toolUse.name} 已被禁用`;
       callbacks.onToolResult?.(toolUse.id, false, undefined, error);
       return { success: false, error };
+    }
+
+    // ========================================================================
+    // 权限检查（对齐 CLI loop.ts 的 handlePermissionRequest 逻辑）
+    // ========================================================================
+    try {
+      const permissionResult = await this.checkToolPermission(toolUse, state, callbacks);
+      if (permissionResult === 'denied') {
+        const error = `用户拒绝了 ${toolUse.name} 的执行权限`;
+        callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+        return { success: false, error };
+      }
+      // permissionResult === 'allowed' 或 'skipped'（无需权限），继续执行
+    } catch (permError) {
+      // 权限请求超时或被取消
+      const error = permError instanceof Error ? permError.message : '权限请求失败';
+      callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+      return { success: false, error };
+    }
+
+    // ========================================================================
+    // PreToolUse Hook（对齐 CLI loop.ts 的 Hook 系统）
+    // ========================================================================
+    const hookSessionId = state.session.sessionId || '';
+    try {
+      const hookResult = await runPreToolUseHooks(toolUse.name, toolUse.input, hookSessionId);
+      if (!hookResult.allowed) {
+        const error = hookResult.message || `PreToolUse hook 阻止了 ${toolUse.name} 的执行`;
+        callbacks.onToolResult?.(toolUse.id, false, undefined, error);
+        return { success: false, error };
+      }
+    } catch (hookError) {
+      // Hook 执行失败不阻止工具执行
+      console.warn(`[Hook] PreToolUse hook 执行失败:`, hookError);
     }
 
     try {
@@ -1466,15 +1734,187 @@ export class ConversationManager {
           ? (result.newMessages as Array<{ role: 'user'; content: any[] }>)
           : undefined;
 
+      // PostToolUse Hook
+      try {
+        await runPostToolUseHooks(toolUse.name, toolUse.input, output, hookSessionId);
+      } catch (hookError) {
+        console.warn(`[Hook] PostToolUse hook 执行失败:`, hookError);
+      }
+
       callbacks.onToolResult?.(toolUse.id, true, output, undefined, data);
       return { success: true, output, data, newMessages };
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[Tool] ${toolUse.name} 执行失败:`, errorMessage);
+
+      // PostToolUseFailure Hook
+      try {
+        await runPostToolUseFailureHooks(
+          toolUse.name,
+          toolUse.input,
+          toolUse.id,
+          errorMessage,
+          'execution_failed',
+          false,
+          false,
+          hookSessionId
+        );
+      } catch (hookError) {
+        console.warn(`[Hook] PostToolUseFailure hook 执行失败:`, hookError);
+      }
+
       callbacks.onToolResult?.(toolUse.id, false, undefined, errorMessage);
       return { success: false, error: errorMessage };
     }
+  }
+
+  /**
+   * 执行 AutoCompact（对齐 CLI loop.ts 的 autoCompact 函数）
+   *
+   * 压缩优先级：
+   * 1. TJ1: Session Memory 压缩（增量压缩）
+   * 2. NJ1: 对话摘要压缩（AI 生成摘要）
+   */
+  private async performAutoCompact(
+    messages: Message[],
+    model: string,
+    state: SessionState
+  ): Promise<{ wasCompacted: boolean; messages: Message[]; savedTokens?: number }> {
+    const threshold = calculateAutoCompactThreshold(model);
+    // 压缩前的原始消息数量（用于估算节省的 tokens）
+    const preCompactMessageCount = messages.length;
+
+    // 1. 尝试 Session Memory 压缩 (TJ1)
+    if (isSessionMemoryEnabled()) {
+      try {
+        const memoryContent = await readSessionMemory(state.session.cwd, state.session.sessionId || '');
+        if (memoryContent && memoryContent.trim().length > 0) {
+          // 生成一个包含 Session Memory 的摘要消息
+          const summaryMessage: Message = {
+            role: 'user',
+            content: `[Session Memory - Auto Compact]\n${memoryContent}\n\n[Previous conversation has been summarized. The session memory above captures the key context.]`,
+          };
+
+          // 估算新消息的 token 数
+          const summaryTokens = Math.ceil(memoryContent.length / 4);
+          if (summaryTokens < threshold * 0.5) {
+            const savedTokens = Math.max(0, (state.lastActualInputTokens || threshold) - summaryTokens);
+            console.log(`[AutoCompact/TJ1] Session Memory 压缩成功，节省约 ${savedTokens.toLocaleString()} tokens`);
+            return { wasCompacted: true, messages: [summaryMessage], savedTokens };
+          }
+        }
+      } catch (err) {
+        console.warn('[AutoCompact/TJ1] Session Memory 压缩失败:', err);
+      }
+    }
+
+    // 2. 尝试对话摘要 (NJ1) — 对齐官方 oj1 压缩函数
+    try {
+      // 使用官方压缩 prompt 的简化版本
+      const summaryPrompt = [
+        'Your task is to create a detailed summary of the conversation so far, paying close attention to the user\'s explicit requests and your previous actions.',
+        'This summary should be thorough in capturing technical details, code patterns, and architectural decisions.',
+        '',
+        'Focus on:',
+        '1. The user\'s explicit requests and intents (chronologically)',
+        '2. Actions taken: files created/modified, commands run, tools used',
+        '3. Key technical decisions, code patterns, and architecture',
+        '4. Current state of the work and any pending tasks',
+        '5. Important file paths, function names, and variable names',
+        '6. Errors encountered and how they were resolved',
+        '',
+        'Be comprehensive but efficient. This summary will replace the conversation history.',
+        'Output only the summary, nothing else.',
+      ].join('\n');
+
+      const summaryMessages: Message[] = [
+        ...messages.slice(-20), // 最多保留最近 20 条用于生成摘要
+        { role: 'user', content: summaryPrompt },
+      ];
+
+      const response = await state.client.createMessage(
+        summaryMessages,
+        undefined, // 不需要工具
+        'You are a helpful AI assistant tasked with summarizing conversations concisely while preserving all critical technical details.'
+      );
+
+      let summaryText = '';
+      if (Array.isArray(response.content)) {
+        for (const block of response.content) {
+          if (block.type === 'text') {
+            summaryText += (block as any).text;
+          }
+        }
+      }
+
+      if (summaryText && summaryText.trim().length > 0) {
+        const summaryMessage: Message = {
+          role: 'user',
+          content: `[Conversation Summary - Auto Compact]\n${summaryText}`,
+        };
+        const summaryTokens = Math.ceil(summaryText.length / 4);
+        const savedTokens = Math.max(0, (state.lastActualInputTokens || threshold) - summaryTokens);
+        console.log(`[AutoCompact/NJ1] 对话摘要压缩成功，节省约 ${savedTokens.toLocaleString()} tokens`);
+        return { wasCompacted: true, messages: [summaryMessage], savedTokens };
+      }
+    } catch (err) {
+      console.warn('[AutoCompact/NJ1] 对话摘要压缩失败:', err);
+    }
+
+    return { wasCompacted: false, messages };
+  }
+
+  /**
+   * 检查工具执行权限（对齐 CLI loop.ts 的 handlePermissionRequest）
+   *
+   * 检查流程：
+   * 1. 先检查会话级权限记忆
+   * 2. 再检查是否需要权限确认
+   * 3. 如果需要，通过 WebSocket 发送权限请求到前端
+   * 4. 等待用户响应
+   *
+   * @returns 'allowed' | 'denied' | 'skipped'
+   */
+  private async checkToolPermission(
+    toolUse: ToolUseBlock,
+    state: SessionState,
+    callbacks: StreamCallbacks
+  ): Promise<'allowed' | 'denied' | 'skipped'> {
+    const handler = state.permissionHandler;
+
+    // 1. 检查会话级权限记忆
+    const remembered = handler.checkSessionMemory(toolUse.name, toolUse.input);
+    if (remembered !== null) {
+      console.log(`[Permission] 使用会话记忆: ${toolUse.name} -> ${remembered ? 'allowed' : 'denied'}`);
+      return remembered ? 'allowed' : 'denied';
+    }
+
+    // 2. 检查是否需要权限确认
+    if (!handler.needsPermission(toolUse.name, toolUse.input)) {
+      return 'skipped';
+    }
+
+    // 3. 如果没有 WebSocket 连接（比如后台任务），降级为自动允许
+    if (!state.ws || state.ws.readyState !== 1 /* WebSocket.OPEN */) {
+      console.warn(`[Permission] 无 WebSocket 连接，自动允许 ${toolUse.name}`);
+      return 'allowed';
+    }
+
+    // 4. 通过 WebSocket 请求权限
+    console.log(`[Permission] 请求权限: ${toolUse.name}`);
+
+    const approved = await handler.requestPermission(
+      toolUse.name,
+      toolUse.input,
+      (request: PermissionRequest) => {
+        // 通过回调发送权限请求到前端
+        callbacks.onPermissionRequest?.(request);
+      }
+    );
+
+    console.log(`[Permission] 权限响应: ${toolUse.name} -> ${approved ? 'allowed' : 'denied'}`);
+    return approved ? 'allowed' : 'denied';
   }
 
   /**
@@ -1672,6 +2112,12 @@ export class ConversationManager {
       prompt += '\n\n' + config.appendPrompt;
     }
 
+    // 注入 WebUI 专属工具引导（GenerateDesign 等）
+    const webuiToolGuidance = this.buildWebuiToolGuidance();
+    if (webuiToolGuidance) {
+      prompt += '\n\n' + webuiToolGuidance;
+    }
+
     // 注入记忆系统摘要（WebUI 独有功能）
     try {
       const memorySummary = this.unifiedMemory.getMemorySummaryForPrompt();
@@ -1684,6 +2130,42 @@ export class ConversationManager {
     }
 
     return prompt;
+  }
+
+  /**
+   * 构建 WebUI 专属工具引导指令
+   * 让 Agent 知道何时应主动调用 WebUI 专属工具（如 GenerateDesign）
+   */
+  private buildWebuiToolGuidance(): string | null {
+    const sections: string[] = [];
+
+    // GenerateDesign 工具引导（需要 GEMINI_API_KEY）
+    const hasGeminiKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+    if (hasGeminiKey) {
+      sections.push(`# UI 设计图生成（GenerateDesign 工具）
+
+你拥有一个强大的 GenerateDesign 工具，可以调用 Gemini AI 实时生成 UI 设计图/界面原型图。
+
+## 主动调用时机
+在以下场景中，你应该**主动**调用 GenerateDesign 工具，无需等待用户明确要求：
+
+1. **需求讨论阶段**：当用户描述了一个项目的核心功能和界面需求后，主动生成设计图帮助用户可视化
+2. **项目启动阶段**：当你收集到足够的项目信息（名称、描述、至少2-3个核心需求）时，主动提议并生成设计预览
+3. **方案确认阶段**：当用户对 UI 布局、页面结构进行讨论时，生成设计图辅助沟通
+4. **用户提到"界面"、"设计"、"UI"、"页面"、"原型"等关键词时**
+
+## 调用策略
+- 在收集到项目名称、描述和至少2个核心需求后，就应该调用此工具
+- 不要等到所有需求都明确后才调用——早期预览有助于用户校准方向
+- 如果用户对生成的设计图提出修改意见，可以调整参数后再次调用
+- 生成设计图后，继续与用户讨论细节和改进方向`);
+    }
+
+    if (sections.length === 0) {
+      return null;
+    }
+
+    return sections.join('\n\n');
   }
 
   /**
@@ -1719,40 +2201,6 @@ Guidelines:
 - Use tools to gather information before answering
 - Prefer editing existing files over creating new ones
 - Always verify your work`;
-  }
-
-  /**
-   * 处理权限响应
-   */
-  handlePermissionResponse(
-    sessionId: string,
-    requestId: string,
-    approved: boolean,
-    remember?: boolean,
-    scope?: 'once' | 'session' | 'always'
-  ): void {
-    const state = this.sessions.get(sessionId);
-    if (!state) {
-      console.warn(`[ConversationManager] 未找到会话: ${sessionId}`);
-      return;
-    }
-
-    // UserInteractionHandler 目前不支持权限响应
-    console.log(`[ConversationManager] 权限响应: ${requestId}, approved: ${approved}`);
-  }
-
-  /**
-   * 更新权限配置
-   */
-  updatePermissionConfig(sessionId: string, config: PermissionConfigPayload): void {
-    const state = this.sessions.get(sessionId);
-    if (!state) {
-      console.warn(`[ConversationManager] 未找到会话: ${sessionId}`);
-      return;
-    }
-
-    // UserInteractionHandler 目前不支持权限配置更新
-    console.log(`[ConversationManager] 已更新会话 ${sessionId} 的权限配置:`, config);
   }
 
   // ============ 工具过滤方法 ============
@@ -1984,12 +2432,15 @@ Guidelines:
         chatHistory,
         userInteractionHandler: new UserInteractionHandler(),
         taskManager: new TaskManager(),
+        permissionHandler: new PermissionHandler({ mode: 'default' }),
         toolFilterConfig: (sessionData as any).toolFilterConfig || {
           mode: 'all', // 默认允许所有工具
         },
         systemPromptConfig: (sessionData as any).systemPromptConfig || {
           useDefault: true,
         },
+        isProcessing: false,
+        lastActualInputTokens: 0,
       };
 
       this.sessions.set(sessionId, state);
@@ -2112,6 +2563,36 @@ Guidelines:
     return {
       current: currentPrompt,
       config: state.systemPromptConfig,
+    };
+  }
+
+  /**
+   * 获取调试信息：系统提示词 + 原始消息体 + 工具列表（探针功能）
+   */
+  async getDebugMessages(sessionId: string): Promise<DebugMessagesPayload> {
+    const state = this.sessions.get(sessionId);
+    if (!state) {
+      return {
+        systemPrompt: '(会话不存在)',
+        messages: [],
+        tools: [],
+        model: 'unknown',
+        messageCount: 0,
+      };
+    }
+
+    // 构建当前完整的系统提示
+    const systemPrompt = await this.buildSystemPrompt(state);
+
+    // 获取工具定义列表
+    const tools = this.getFilteredTools(sessionId);
+
+    return {
+      systemPrompt,
+      messages: state.messages,
+      tools,
+      model: state.model,
+      messageCount: state.messages.length,
     };
   }
 

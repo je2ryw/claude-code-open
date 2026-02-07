@@ -34,7 +34,7 @@ Claude Code 是 Anthropic 官方推出的 AI 编程助手 CLI 工具，但官方
 ### 快速开始
 
 ```bash
-git clone https://github.com/kill136/claude-code.git
+git clone https://github.com/kill136/claude-code-open.git
 cd claude-code && npm install
 export ANTHROPIC_API_KEY=your-key
 npm run dev
@@ -43,7 +43,7 @@ npm run dev
 ### 相关链接
 
 - 🌐 官网：https://www.chatbi.site
-- 📦 GitHub：https://github.com/kill136/claude-code
+- 📦 GitHub：https://github.com/kill136/claude-code-open
 - 💬 Discord：https://discord.gg/bNyJKk6PVZ
 
 ---
@@ -74,7 +74,7 @@ npm run dev
 **技术栈：** TypeScript, Anthropic SDK, React/Ink, Zod
 
 🌐 官网：https://www.chatbi.site
-📦 GitHub：https://github.com/kill136/claude-code
+📦 GitHub：https://github.com/kill136/claude-code-open
 
 纯学习项目，欢迎交流！
 
@@ -94,7 +94,7 @@ npm run dev
 ✅ React + Ink 终端 UI
 
 🔗 https://www.chatbi.site
-📦 https://github.com/kill136/claude-code
+📦 https://github.com/kill136/claude-code-open
 
 #OpenSource #AI #ClaudeCode #TypeScript
 
@@ -112,7 +112,7 @@ Learn AI coding assistant architecture by recreating Anthropic's Claude Code CLI
 ✅ React + Ink terminal UI
 
 🔗 https://www.chatbi.site
-📦 https://github.com/kill136/claude-code
+📦 https://github.com/kill136/claude-code-open
 
 #OpenSource #AI #ClaudeCode #TypeScript
 
@@ -155,7 +155,7 @@ I reverse-engineered Anthropic's Claude Code CLI to understand how AI coding ass
 This is purely for educational purposes - great for anyone wanting to learn how AI coding tools work under the hood.
 
 Website: https://www.chatbi.site
-GitHub: https://github.com/kill136/claude-code
+GitHub: https://github.com/kill136/claude-code-open
 
 ---
 
@@ -179,7 +179,7 @@ I've been working on an open-source project that reverse-engineers Anthropic's C
 
 **Links:**
 - Website: https://www.chatbi.site
-- GitHub: https://github.com/kill136/claude-code
+- GitHub: https://github.com/kill136/claude-code-open
 
 It's a great resource if you want to understand how modern AI coding assistants are architected. Feedback welcome!
 
@@ -234,7 +234,7 @@ I reverse-engineered Anthropic's Claude Code CLI to understand how AI coding ass
 This is purely for educational purposes - great for anyone wanting to learn how AI coding tools work under the hood.
 
 Website: https://www.chatbi.site
-GitHub: https://github.com/kill136/claude-code
+GitHub: https://github.com/kill136/claude-code-open
 
 ---
 
@@ -258,7 +258,7 @@ I've been working on an open-source project that reverse-engineers Anthropic's C
 
 **Links:**
 - Website: https://www.chatbi.site
-- GitHub: https://github.com/kill136/claude-code
+- GitHub: https://github.com/kill136/claude-code-open
 
 It's a great resource if you want to understand how modern AI coding assistants are architected. Feedback welcome!
 

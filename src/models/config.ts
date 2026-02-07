@@ -9,7 +9,7 @@ import type { ModelInfo, ModelCapabilities, ModelPricing } from './types.js';
  * 已知模型列表
  */
 const KNOWN_MODELS: ModelInfo[] = [
-  // Claude 4.6 系列 (最新)
+  // Claude 4.6 系列 (最新 - 2026-02)
   {
     id: 'claude-opus-4-6',
     displayName: 'Opus 4.6',
@@ -22,7 +22,7 @@ const KNOWN_MODELS: ModelInfo[] = [
     supportsPdf: true,
     supportsCaching: true,
     family: 'opus',
-    releaseDate: '2026-02-01', // May 2025 knowledge cutoff
+    releaseDate: '2026-02-06', // Knowledge cutoff: May 2025
   },
 
   // Claude 4.5 系列

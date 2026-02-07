@@ -325,9 +325,11 @@ export type WSMessageType =
   | 'continuous_dev:paused'
   | 'continuous_dev:resumed'
   | 'continuous_dev:stopped'
-  | 'continuous_dev:completed';
+  | 'continuous_dev:completed'
+  // 探针调试消息
+  | 'debug_messages_response';
 
 export interface WSMessage {
-  type: WSMessageType;
+  type: WSMessageType | string;  // 允许扩展类型
   payload?: unknown;
 }

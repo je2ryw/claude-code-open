@@ -326,19 +326,114 @@ function GrepToolContent({ input, result }: { input: any; result?: any }) {
 }
 
 /**
- * 子 agent 工具调用
+ * 获取子工具的输入展示文本
  */
-function CliSubagentTool({ toolCall }: { toolCall: SubagentToolCall }) {
+function getSubagentToolInput(name: string, input: any): string {
+  switch (name) {
+    case 'Bash':
+      return input?.command || '';
+    case 'Read':
+      return input?.file_path || '';
+    case 'Write':
+      return input?.file_path ? `${input.file_path}` : '';
+    case 'Edit':
+      return input?.file_path || '';
+    case 'Glob':
+      return input?.pattern || '';
+    case 'Grep':
+      return input?.pattern || '';
+    case 'WebFetch':
+      return input?.url || '';
+    case 'WebSearch':
+      return input?.query || '';
+    case 'Task':
+      return input?.description || '';
+    default:
+      // 尝试序列化 input
+      if (input) {
+        try {
+          const str = JSON.stringify(input);
+          return str.length > 200 ? str.slice(0, 200) + '...' : str;
+        } catch {
+          return '';
+        }
+      }
+      return '';
+  }
+}
+
+/**
+ * 子 agent 工具调用 - 详细展示版本，带 IN/OUT 标签
+ */
+function CliSubagentTool({ toolCall, index }: { toolCall: SubagentToolCall; index: number }) {
+  const [expanded, setExpanded] = useState(false);
   const toolName = CLI_TOOL_NAMES[toolCall.name] || toolCall.name;
   const description = getToolDescription(toolCall.name, toolCall.input);
+  const inputText = getSubagentToolInput(toolCall.name, toolCall.input);
+  const hasOutput = !!(toolCall.result || toolCall.error);
+  const output = toolCall.result || toolCall.error || '';
+
+  // 计算执行时间
+  const duration = toolCall.endTime && toolCall.startTime
+    ? toolCall.endTime - toolCall.startTime
+    : null;
+
+  // 输出行数（用于判断是否需要展开）
+  const outputLines = output.split('\n');
+  const totalOutputLines = outputLines.length;
+  const maxLines = 5;
+  const shouldTruncateOutput = !expanded && totalOutputLines > maxLines;
+  const displayOutput = shouldTruncateOutput
+    ? outputLines.slice(0, maxLines).join('\n')
+    : output;
 
   return (
-    <div className="cli-subagent-tool">
-      <div className="cli-subagent-line">
-        <CliStatusIndicator status={toolCall.status || 'pending'} showSpinner={toolCall.status === 'running'} />
-        <span className="cli-tool-name">{toolName}</span>
-        {description && <span className="cli-tool-desc">{description}</span>}
+    <div className={`cli-subagent-tool cli-subagent-tool--${toolCall.status}`}>
+      {/* 工具头部 */}
+      <div
+        className="cli-subagent-header"
+        onClick={() => hasOutput && setExpanded(!expanded)}
+      >
+        <CliStatusIndicator
+          status={toolCall.status || 'pending'}
+          showSpinner={toolCall.status === 'running'}
+        />
+        <span className="cli-subagent-name">{toolName}</span>
+        {description && <span className="cli-subagent-desc">{description}</span>}
+        {duration !== null && (
+          <span className="cli-subagent-duration">{duration}ms</span>
+        )}
+        {hasOutput && (
+          <span className="cli-subagent-expand">{expanded ? '▼' : '▶'}</span>
+        )}
       </div>
+
+      {/* 输入区域 - IN 标签 */}
+      {inputText && (
+        <div className="cli-subagent-section">
+          <span className="cli-subagent-label cli-subagent-label--in">IN</span>
+          <pre className="cli-subagent-code">{inputText}</pre>
+        </div>
+      )}
+
+      {/* 输出区域 - OUT 标签 (可折叠) */}
+      {hasOutput && expanded && (
+        <div className="cli-subagent-section">
+          <span className={`cli-subagent-label ${toolCall.error ? 'cli-subagent-label--error' : 'cli-subagent-label--out'}`}>
+            {toolCall.error ? 'ERR' : 'OUT'}
+          </span>
+          <div className="cli-subagent-output-wrapper">
+            <pre className={`cli-subagent-code cli-subagent-output ${toolCall.error ? 'cli-subagent-output--error' : ''}`}>
+              {displayOutput}
+            </pre>
+            {shouldTruncateOutput && (
+              <div className="cli-subagent-truncated">
+                ... +{totalOutputLines - maxLines} lines
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -385,11 +480,28 @@ export function CliToolCall({ toolUse }: CliToolCallProps) {
       case 'Task':
         return (
           <div className="cli-task-content">
+            {/* Agent 工具日志标记 */}
+            <div className="cli-agent-badge">
+              <span className="cli-agent-badge-icon">🤖</span>
+              <span className="cli-agent-badge-text">Agent 工具日志</span>
+              <span className="cli-agent-badge-type">{(input as any)?.subagent_type || 'general-purpose'}</span>
+            </div>
+
             {subagentToolCalls && subagentToolCalls.length > 0 && (
               <div className="cli-subagent-list">
-                {subagentToolCalls.map((tc) => (
-                  <CliSubagentTool key={tc.id} toolCall={tc} />
+                {subagentToolCalls.map((tc, index) => (
+                  <CliSubagentTool key={tc.id} toolCall={tc} index={index} />
                 ))}
+              </div>
+            )}
+
+            {/* 最终结果 */}
+            {result && status === 'completed' && (
+              <div className="cli-agent-result">
+                <div className="cli-agent-result-header">Agent 返回结果</div>
+                <pre className="cli-agent-result-content">
+                  {typeof result === 'object' ? (result.output || result.error || JSON.stringify(result, null, 2)) : result}
+                </pre>
               </div>
             )}
           </div>

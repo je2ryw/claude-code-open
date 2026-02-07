@@ -2481,6 +2481,14 @@ Guidelines:
       } catch (streamError: any) {
         // 检查是否是因为中断导致的错误
         if (this.abortController?.signal.aborted || streamError.name === 'AbortError') {
+          // 保存已收集的 assistant 内容（如果有）
+          if (assistantContent.length > 0) {
+            const normalizedContent = this.normalizeAssistantContent(assistantContent);
+            this.session.addMessage({
+              role: 'assistant',
+              content: normalizedContent,
+            });
+          }
           yield { type: 'interrupted', content: 'Request interrupted by user' };
           break;
         }
@@ -2492,8 +2500,17 @@ Guidelines:
         break;
       }
 
-      // 如果被中断，跳出循环
+      // 如果被中断，保存已收集的内容后跳出循环
+      // 关键修复：中断时需要保存 assistantContent，否则恢复会话时无法显示
       if (this.abortController?.signal.aborted) {
+        // 保存已收集的 assistant 内容（如果有）
+        if (assistantContent.length > 0) {
+          const normalizedContent = this.normalizeAssistantContent(assistantContent);
+          this.session.addMessage({
+            role: 'assistant',
+            content: normalizedContent,
+          });
+        }
         break;
       }
 

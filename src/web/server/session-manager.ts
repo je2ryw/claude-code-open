@@ -358,7 +358,7 @@ export class WebSessionManager {
   /**
    * 获取或创建默认会话
    */
-  getOrCreateDefaultSession(model: string = 'sonnet', projectPath?: string | null): WebSessionData {
+  getOrCreateDefaultSession(model: string = 'opus', projectPath?: string | null): WebSessionData {
     // 尝试加载最近的会话（如果指定了 projectPath，则过滤）
     const recentSessions = this.listSessions({
       limit: 1,

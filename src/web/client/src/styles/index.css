@@ -200,12 +200,78 @@ body {
    ========================================= */
 .sidebar {
   width: 280px;
+  min-width: 280px;
   background: var(--glass-panel);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   backdrop-filter: blur(var(--blur-amount));
   z-index: 10;
+  position: relative;
+  transition: width 0.3s var(--ease-smooth), min-width 0.3s var(--ease-smooth);
+}
+
+/* 侧边栏折叠状态 */
+.sidebar.sidebar-collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+/* 侧边栏内容过渡 */
+.sidebar .sidebar-project-selector,
+.sidebar .sidebar-header,
+.sidebar .session-list,
+.sidebar .sidebar-footer {
+  transition: opacity 0.2s var(--ease-smooth), visibility 0.2s;
+}
+
+.sidebar.sidebar-collapsed .sidebar-project-selector,
+.sidebar.sidebar-collapsed .sidebar-header,
+.sidebar.sidebar-collapsed .session-list,
+.sidebar.sidebar-collapsed .sidebar-footer {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 折叠按钮 - 放在侧边栏外部 */
+.sidebar-toggle-btn {
+  position: relative;
+  flex-shrink: 0;
+  width: 20px;
+  height: 56px;
+  margin-left: -10px;
+  align-self: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  transition: all 0.2s var(--ease-smooth);
+  z-index: 100;
+  opacity: 0.6;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+  opacity: 1;
+  width: 24px;
+}
+
+/* 折叠状态下按钮样式 */
+.sidebar-toggle-btn.collapsed {
+  opacity: 1;
+  margin-left: 0;
+  border-left: 1px solid var(--border-color);
 }
 
 /* 项目选择器区域 */
@@ -412,32 +478,32 @@ body {
   position: relative;
 }
 
-.chat-header {
-  padding: 16px 24px;
-  background: var(--glass-header);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  backdrop-filter: blur(12px);
-  z-index: 10;
-}
-
-.model-selector {
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-full);
-  color: var(--text-primary);
+.model-selector-compact {
+  padding: 4px 8px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   transition: 0.2s;
   outline: none;
 }
 
-.model-selector:hover {
-  border-color: var(--accent-light);
-  background: rgba(255, 255, 255, 0.08);
+.model-selector-compact option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.model-selector-compact:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.model-selector-compact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .chat-container {
@@ -532,6 +598,36 @@ body {
   font-size: 0.9em;
 }
 
+/* Message Images */
+.image-container {
+  margin: 8px 0;
+  max-width: 320px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.message-image {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.message-image:hover {
+  opacity: 0.9;
+}
+
+.image-container > div {
+  padding: 4px 8px 6px;
+}
+
 /* Tool Calls */
 .tool-call {
   margin: 16px 0;
@@ -597,7 +693,7 @@ body {
    Inputs & Welcome
    ========================================= */
 .input-area {
-  padding: 24px;
+  padding: 12px 24px 16px;
   background: linear-gradient(to top, var(--bg-app) 80%, transparent);
   width: 100%;
   max-width: 1000px;
@@ -612,8 +708,7 @@ body {
   padding: 8px;
   box-shadow: var(--shadow-lg);
   display: flex;
-  gap: 12px;
-  align-items: flex-end;
+  flex-direction: column;
   position: relative;
   transition: 0.2s;
 }
@@ -638,16 +733,17 @@ body {
 
 .chat-input {
   width: 100%;
-  padding: 12px;
+  padding: 8px 12px;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-size: 15px;
   resize: none;
-  min-height: 48px;
+  min-height: 36px;
   max-height: 200px;
   line-height: 1.5;
   font-family: inherit;
+  overflow-y: auto;
 }
 
 .chat-input:focus {
@@ -656,15 +752,28 @@ body {
 
 /* 输入框包装器 */
 .input-wrapper {
-  flex: 1;
   position: relative;
   display: flex;
   flex-direction: column;
 }
 
+/* 输入框底部工具栏 */
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 2px;
+}
+
+.input-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .attach-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-md);
   background: transparent;
   border: 1px solid transparent;
@@ -674,6 +783,7 @@ body {
   justify-content: center;
   cursor: pointer;
   transition: 0.2s;
+  font-size: 14px;
 }
 
 .attach-btn:hover {
@@ -682,13 +792,14 @@ body {
 }
 
 .send-btn {
-  height: 40px;
-  padding: 0 20px;
+  height: 32px;
+  padding: 0 16px;
   background: var(--accent-primary);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;

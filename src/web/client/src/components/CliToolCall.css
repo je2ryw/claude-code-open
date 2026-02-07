@@ -308,33 +308,215 @@
   padding: 4px 0;
 }
 
-.cli-subagent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cli-subagent-tool {
-  padding-left: 8px;
-  border-left: 1px solid var(--border-color);
-}
-
-.cli-subagent-line {
+/* Agent 徽章 */
+.cli-agent-badge {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 6px;
+}
+
+.cli-agent-badge-icon {
+  font-size: 16px;
+}
+
+.cli-agent-badge-text {
   font-size: 12px;
-  color: var(--text-muted);
-}
-
-.cli-subagent-line .cli-tool-name {
   font-weight: 600;
-  min-width: 50px;
+  color: #a78bfa;
 }
 
-.cli-subagent-line .cli-tool-desc {
+.cli-agent-badge-type {
+  font-size: 10px;
+  padding: 2px 8px;
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  color: #c4b5fd;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* 子 agent 工具列表 */
+.cli-subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 子 agent 工具项 */
+.cli-subagent-tool {
+  border-left: 2px solid var(--border-color);
+  margin-left: 4px;
+  padding-left: 12px;
+  transition: border-color 0.2s;
+}
+
+.cli-subagent-tool--running {
+  border-left-color: var(--accent-warning);
+}
+
+.cli-subagent-tool--completed {
+  border-left-color: var(--accent-success);
+}
+
+.cli-subagent-tool--error {
+  border-left-color: var(--accent-error);
+}
+
+/* 子工具头部 */
+.cli-subagent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-radius: 4px;
+}
+
+.cli-subagent-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cli-subagent-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 60px;
+}
+
+.cli-subagent-desc {
+  color: var(--text-muted);
   font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cli-subagent-duration {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.cli-subagent-expand {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.cli-subagent-header:hover .cli-subagent-expand {
+  opacity: 1;
+}
+
+/* 子工具 IN/OUT 区域 */
+.cli-subagent-section {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.cli-subagent-label {
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 28px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.cli-subagent-label--in {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.cli-subagent-label--out {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.cli-subagent-label--error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.cli-subagent-code {
+  flex: 1;
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--code-bg);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.cli-subagent-output-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.cli-subagent-output {
+  max-height: 150px;
+}
+
+.cli-subagent-output--error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.cli-subagent-truncated {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* Agent 最终结果 */
+.cli-agent-result {
+  margin-top: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cli-agent-result-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.1);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.cli-agent-result-content {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--code-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 /* ===== 通用内容样式 ===== */

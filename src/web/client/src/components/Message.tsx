@@ -14,12 +14,13 @@ interface MessageProps {
   message: ChatMessage;
   onNavigateToBlueprint?: (blueprintId: string) => void;
   onNavigateToSwarm?: () => void;  // 跳转到蜂群页面的回调
+  onNavigateToCode?: (context?: any) => void;  // 跳转到代码页面的回调
   onDevAction?: (action: string, data?: any) => void; // 通用开发动作回调
   /** 消息是否正在流式传输中 */
   isStreaming?: boolean;
 }
 
-export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onDevAction, isStreaming = false }: MessageProps) {
+export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onNavigateToCode, onDevAction, isStreaming = false }: MessageProps) {
   const { role, content } = message;
 
   // 获取内容数组
@@ -98,6 +99,10 @@ export function Message({ message, onNavigateToBlueprint, onNavigateToSwarm, onD
               throw error;
             }
           }}
+          onOpenInCodeTab={onNavigateToCode ? (blueprintId) => {
+            console.log('[Blueprint] 在代码Tab打开:', blueprintId);
+            onNavigateToCode({ blueprintId });
+          } : undefined}
         />
       );
     }

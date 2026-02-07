@@ -38,7 +38,7 @@ export async function startWebServer(options: WebServerOptions = {}): Promise<vo
     port = parseInt(process.env.CLAUDE_WEB_PORT || '3456'),
     host = process.env.CLAUDE_WEB_HOST || '127.0.0.1',
     cwd = process.cwd(),
-    model = process.env.CLAUDE_MODEL || 'sonnet',
+    model = process.env.CLAUDE_MODEL || 'opus',
     ngrok: enableNgrok = process.env.ENABLE_NGROK === 'true' || !!process.env.NGROK_AUTHTOKEN,
   } = options;
 

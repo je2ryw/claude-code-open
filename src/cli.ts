@@ -286,10 +286,10 @@ program
     }
 
     // 模型映射（官方 Claude Code 使用的模型版本）
-    // v2.1.32: Claude Opus 4.6 is now available
+    // v2.1.33: Claude Opus 4.6 is now available (2026-02)
     const modelMap: Record<string, string> = {
       'sonnet': 'claude-sonnet-4-5-20250929',
-      'opus': 'claude-opus-4-6-20260130',
+      'opus': 'claude-opus-4-6',
       'haiku': 'claude-haiku-4-5-20251001',
     };
 
@@ -2065,21 +2065,22 @@ apiCommand
   .description('List available Claude models')
   .action(() => {
     console.log(chalk.bold('\n📋 Available Claude Models\n'));
-    console.log(chalk.bold('Claude 4.5 Series (Latest)\n'));
-    console.log(chalk.cyan('  claude-sonnet-4-5-20250929'));
-    console.log('    • Context: 200K tokens');
-    console.log('    • Best for: Most tasks, balanced performance');
-    console.log('    • Pricing: $3 / $15 per MTok (in/out)');
-    console.log('    • Recommended: Default choice\n');
+    console.log(chalk.bold('Claude 4.6 Series (Latest)\n'));
     console.log(chalk.cyan('  claude-opus-4-6'));
     console.log('    • Context: 1M tokens');
     console.log('    • Best for: Complex reasoning, long tasks');
     console.log('    • Pricing: $15 / $75 per MTok (in/out)');
     console.log('    • Highest capability (latest)\n');
+    console.log(chalk.bold('Claude 4.5 Series\n'));
     console.log(chalk.cyan('  claude-opus-4-5-20251101'));
     console.log('    • Context: 1M tokens');
     console.log('    • Best for: Complex reasoning, long tasks');
     console.log('    • Pricing: $15 / $75 per MTok (in/out)\n');
+    console.log(chalk.cyan('  claude-sonnet-4-5-20250929'));
+    console.log('    • Context: 200K tokens');
+    console.log('    • Best for: Most tasks, balanced performance');
+    console.log('    • Pricing: $3 / $15 per MTok (in/out)');
+    console.log('    • Recommended: Default choice\n');
     console.log(chalk.cyan('  claude-haiku-4-5-20250514'));
     console.log('    • Context: 200K tokens');
     console.log('    • Best for: Fast, simple tasks');

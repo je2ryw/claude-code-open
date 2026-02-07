@@ -10,13 +10,15 @@ export interface UseWebSocketReturn {
   addMessageHandler: (handler: (msg: WSMessage) => void) => () => void;
 }
 
-// localStorage key for persisting session ID across HMR/reconnects
+// sessionStorage key for persisting session ID across HMR/reconnects
+// 使用 sessionStorage 而非 localStorage，确保每个标签页有独立的会话上下文
+// sessionStorage 在同一标签页内刷新/HMR 时保持，但不会跨标签页共享
 const SESSION_ID_STORAGE_KEY = 'claude-code-current-session-id';
 
 export function useWebSocket(url: string): UseWebSocketReturn {
   const [connected, setConnected] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [model, setModel] = useState('sonnet');
+  const [model, setModel] = useState('opus');
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlersRef = useRef<Array<(msg: WSMessage) => void>>([]);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,7 +64,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       // 检查是否有保存的 sessionId，如果有则自动恢复会话
       // 这对于 HMR 触发的重连特别重要
       if (!hasRestoredSessionRef.current) {
-        const savedSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+        const savedSessionId = sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
         if (savedSessionId) {
           console.log('[WebSocket] 检测到保存的 sessionId，尝试恢复会话:', savedSessionId);
           hasRestoredSessionRef.current = true;
@@ -103,7 +105,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
           const payload = message.payload as { sessionId: string };
           setSessionId(payload.sessionId);
           // 持久化 sessionId，用于 HMR/重连后恢复
-          localStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
+          sessionStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
           console.log('[WebSocket] 会话已切换并保存:', payload.sessionId);
         }
 
@@ -112,28 +114,30 @@ export function useWebSocket(url: string): UseWebSocketReturn {
           const payload = message.payload as { sessionId: string; model: string };
           setSessionId(payload.sessionId);
           // 新建的临时会话也需要保存，以便 HMR 后能恢复
-          localStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
+          sessionStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
           if (payload.model) {
             setModel(payload.model);
           }
         }
 
-        // 处理会话创建（持久化会话） - 更新保存的 sessionId
+        // 处理会话创建（持久化会话） - 更新 sessionId 状态和存储
+        // 当临时 sessionId 变为持久化 sessionId 时，必须更新 React state
         if (message.type === 'session_created') {
           const payload = message.payload as { sessionId: string };
           if (payload.sessionId) {
-            localStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
+            setSessionId(payload.sessionId);
+            sessionStorage.setItem(SESSION_ID_STORAGE_KEY, payload.sessionId);
             console.log('[WebSocket] 持久化会话已创建并保存:', payload.sessionId);
           }
         }
 
-        // 处理会话删除 - 如果删除的是当前保存的会话，清除 localStorage
+        // 处理会话删除 - 如果删除的是当前保存的会话，清除 sessionStorage
         if (message.type === 'session_deleted') {
           const payload = message.payload as { sessionId: string; success: boolean };
           if (payload.success) {
-            const savedSessionId = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+            const savedSessionId = sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
             if (savedSessionId === payload.sessionId) {
-              localStorage.removeItem(SESSION_ID_STORAGE_KEY);
+              sessionStorage.removeItem(SESSION_ID_STORAGE_KEY);
               console.log('[WebSocket] 当前会话已删除，清除保存的 sessionId');
             }
           }
@@ -143,7 +147,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         if (message.type === 'error') {
           const payload = message.payload as { message: string };
           if (payload.message === '会话不存在或加载失败' || payload.message === '会话不存在或恢复失败') {
-            localStorage.removeItem(SESSION_ID_STORAGE_KEY);
+            sessionStorage.removeItem(SESSION_ID_STORAGE_KEY);
             hasRestoredSessionRef.current = false;
             console.log('[WebSocket] 会话恢复失败，清除无效的 sessionId');
           }

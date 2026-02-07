@@ -58,21 +58,21 @@ export function setupApiRoutes(app: Express, conversationManager: ConversationMa
       models: [
         {
           id: 'opus',
-          name: 'Claude Opus',
-          description: '最强大的模型，适合复杂任务',
-          modelId: 'claude-opus-4-20250514',
+          name: 'Claude Opus 4.6',
+          description: '最强大的模型，适合复杂任务 (最新)',
+          modelId: 'claude-opus-4-6',
         },
         {
           id: 'sonnet',
-          name: 'Claude Sonnet',
+          name: 'Claude Sonnet 4.5',
           description: '平衡性能和速度',
-          modelId: 'claude-sonnet-4-20250514',
+          modelId: 'claude-sonnet-4-5-20250929',
         },
         {
           id: 'haiku',
-          name: 'Claude Haiku',
+          name: 'Claude Haiku 4.5',
           description: '最快速的模型',
-          modelId: 'claude-3-5-haiku-20241022',
+          modelId: 'claude-haiku-4-5-20251001',
         },
       ],
     });

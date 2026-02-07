@@ -1,7 +1,7 @@
 # The world needs an open-source Claude Code.It will become the foundational infrastructure of AI in the future, running on every PC.
 
 [![Website](https://img.shields.io/badge/Website-claude--code--open.vercel.app-blue?style=flat-square)](https://www.chatbi.site)
-[![GitHub Stars](https://img.shields.io/github/stars/kill136/claude-code?style=flat-square)](https://github.com/kill136/claude-code)
+[![GitHub Stars](https://img.shields.io/github/stars/kill136/claude-code-open?style=flat-square)](https://github.com/kill136/claude-code-open)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 🌐 **[visit website](https://www.chatbi.site)** | 📖 **[中文文档](README.zh-CN.md)**

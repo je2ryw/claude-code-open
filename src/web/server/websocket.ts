@@ -1153,7 +1153,7 @@ export function setupWebSocket(
       const { createE2ETestAgent } = await import('../../blueprint/e2e-test-agent.js');
 
       const agent = createE2ETestAgent({
-        model: 'sonnet',
+        model: 'opus',
         similarityThreshold: data.config.similarityThreshold || 80,
       });
 
@@ -1375,7 +1375,7 @@ export function setupWebSocket(
       id: clientId,
       ws,
       sessionId,
-      model: 'sonnet',
+      model: 'opus',
       isAlive: true,
       swarmSubscriptions: new Set<string>(),
     };
@@ -1500,7 +1500,8 @@ async function handleClientMessage(
         message.payload.requestId,
         message.payload.approved,
         message.payload.remember,
-        message.payload.scope
+        message.payload.scope,
+        message.payload.destination
       );
       break;
 
@@ -1580,6 +1581,10 @@ async function handleClientMessage(
 
     case 'system_prompt_get':
       await handleSystemPromptGet(client, conversationManager);
+      break;
+
+    case 'debug_get_messages':
+      await handleDebugGetMessages(client, conversationManager);
       break;
 
     case 'mcp_list':
@@ -1952,64 +1957,68 @@ async function handleChatMessage(
     }
   }
 
+  // 捕获当前 sessionId（闭包），用于标记所有流式消息
+  // 这样即使用户在对话过程中切换了会话，客户端也能区分消息来源
+  const chatSessionId = sessionId;
+
   // 发送消息开始
   sendMessage(ws, {
     type: 'message_start',
-    payload: { messageId },
+    payload: { messageId, sessionId: chatSessionId },
   });
 
   // 发送状态更新
   sendMessage(ws, {
     type: 'status',
-    payload: { status: 'thinking' },
+    payload: { status: 'thinking', sessionId: chatSessionId },
   });
 
   try {
     // 调用对话管理器，传入流式回调（媒体附件包含 mimeType 和类型）
-    await conversationManager.chat(sessionId, enhancedContent, mediaAttachments, model, {
+    await conversationManager.chat(chatSessionId, enhancedContent, mediaAttachments, model, {
       onThinkingStart: () => {
         sendMessage(ws, {
           type: 'thinking_start',
-          payload: { messageId },
+          payload: { messageId, sessionId: chatSessionId },
         });
       },
 
       onThinkingDelta: (text: string) => {
         sendMessage(ws, {
           type: 'thinking_delta',
-          payload: { messageId, text },
+          payload: { messageId, text, sessionId: chatSessionId },
         });
       },
 
       onThinkingComplete: () => {
         sendMessage(ws, {
           type: 'thinking_complete',
-          payload: { messageId },
+          payload: { messageId, sessionId: chatSessionId },
         });
       },
 
       onTextDelta: (text: string) => {
         sendMessage(ws, {
           type: 'text_delta',
-          payload: { messageId, text },
+          payload: { messageId, text, sessionId: chatSessionId },
         });
       },
 
       onToolUseStart: (toolUseId: string, toolName: string, input: unknown) => {
         sendMessage(ws, {
           type: 'tool_use_start',
-          payload: { messageId, toolUseId, toolName, input },
+          payload: { messageId, toolUseId, toolName, input, sessionId: chatSessionId },
         });
         sendMessage(ws, {
           type: 'status',
-          payload: { status: 'tool_executing', message: `执行 ${toolName}...` },
+          payload: { status: 'tool_executing', message: `执行 ${toolName}...`, sessionId: chatSessionId },
         });
       },
 
       onToolUseDelta: (toolUseId: string, partialJson: string) => {
         sendMessage(ws, {
           type: 'tool_use_delta',
-          payload: { toolUseId, partialJson },
+          payload: { toolUseId, partialJson, sessionId: chatSessionId },
         });
       },
 
@@ -2023,6 +2032,7 @@ async function handleChatMessage(
             error,
             data: data as any, // 工具特定的结构化数据
             defaultCollapsed: true, // 结果默认折叠
+            sessionId: chatSessionId,
           },
         });
       },
@@ -2030,13 +2040,13 @@ async function handleChatMessage(
       onPermissionRequest: (request: any) => {
         sendMessage(ws, {
           type: 'permission_request',
-          payload: request,
+          payload: { ...request, sessionId: chatSessionId },
         });
       },
 
       onComplete: async (stopReason: string | null, usage?: { inputTokens: number; outputTokens: number }) => {
         // 保存会话到磁盘（确保 messageCount 正确更新）
-        await conversationManager.persistSession(client.sessionId);
+        await conversationManager.persistSession(chatSessionId);
 
         sendMessage(ws, {
           type: 'message_complete',
@@ -2044,34 +2054,60 @@ async function handleChatMessage(
             messageId,
             stopReason: (stopReason || 'end_turn') as 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use',
             usage,
+            sessionId: chatSessionId,
           },
         });
         sendMessage(ws, {
           type: 'status',
-          payload: { status: 'idle' },
+          payload: { status: 'idle', sessionId: chatSessionId },
         });
       },
 
       onError: (error: Error) => {
         sendMessage(ws, {
           type: 'error',
-          payload: { message: error.message },
+          payload: { message: error.message, sessionId: chatSessionId },
         });
         sendMessage(ws, {
           type: 'status',
-          payload: { status: 'idle' },
+          payload: { status: 'idle', sessionId: chatSessionId },
         });
+      },
+
+      onContextUpdate: (usage: { usedTokens: number; maxTokens: number; percentage: number; model: string }) => {
+        sendMessage(ws, {
+          type: 'context_update',
+          payload: { ...usage, sessionId: chatSessionId },
+        });
+      },
+
+      onContextCompact: (phase: 'start' | 'end' | 'error', info?: Record<string, any>) => {
+        sendMessage(ws, {
+          type: 'context_compact',
+          payload: {
+            phase,
+            ...info,
+            sessionId: chatSessionId,
+          },
+        });
+        // 压缩开始时，通知前端状态变更
+        if (phase === 'start') {
+          sendMessage(ws, {
+            type: 'status',
+            payload: { status: 'thinking', message: '正在压缩上下文...', sessionId: chatSessionId },
+          });
+        }
       },
     }, client.projectPath, ws);  // 传入 ws 参数，确保 UserInteractionHandler 可用
   } catch (error) {
     console.error('[WebSocket] 聊天处理错误:', error);
     sendMessage(ws, {
       type: 'error',
-      payload: { message: error instanceof Error ? error.message : '处理失败' },
+      payload: { message: error instanceof Error ? error.message : '处理失败', sessionId: chatSessionId },
     });
     sendMessage(ws, {
       type: 'status',
-      payload: { status: 'idle' },
+      payload: { status: 'idle', sessionId: chatSessionId },
     });
   }
 }
@@ -2208,14 +2244,14 @@ async function handleSessionCreate(
 
     const newSession = sessionManager.createSession({
       name: name || `WebUI 会话 - ${new Date().toLocaleString('zh-CN')}`,
-      model: model || 'sonnet',
+      model: model || 'opus',
       tags: tags || ['webui'],
       projectPath,
     });
 
     // 更新客户端会话状态
     client.sessionId = newSession.metadata.id;
-    client.model = model || 'sonnet';
+    client.model = model || 'opus';
     client.projectPath = projectPath;
 
     sendMessage(ws, {
@@ -2257,7 +2293,7 @@ async function handleSessionNew(
 
     // 生成新的临时 sessionId（使用 crypto 生成 UUID）
     const tempSessionId = randomUUID();
-    const model = payload?.model || client.model || 'sonnet';
+    const model = payload?.model || client.model || 'opus';
     const projectPath = payload?.projectPath;
 
     // 更新 client 的 sessionId、model 和 projectPath
@@ -2650,6 +2686,33 @@ async function handleSystemPromptGet(
   }
 }
 
+
+/**
+ * 处理调试消息请求（探针功能）
+ */
+async function handleDebugGetMessages(
+  client: ClientConnection,
+  conversationManager: ConversationManager
+): Promise<void> {
+  const { ws } = client;
+
+  try {
+    const result = await conversationManager.getDebugMessages(client.sessionId);
+
+    sendMessage(ws, {
+      type: 'debug_messages_response',
+      payload: result,
+    });
+  } catch (error) {
+    console.error('[WebSocket] 获取调试消息失败:', error);
+    sendMessage(ws, {
+      type: 'error',
+      payload: {
+        message: error instanceof Error ? error.message : '获取调试消息失败',
+      },
+    });
+  }
+}
 
 /**
  * 处理任务列表请求

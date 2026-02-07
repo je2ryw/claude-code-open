@@ -11,12 +11,15 @@ export interface BlueprintSummaryCardProps {
   };
   onViewDetails: (blueprintId: string) => void;
   onStartExecution: (blueprintId: string) => void;
+  /** 在代码Tab中打开 */
+  onOpenInCodeTab?: (blueprintId: string) => void;
 }
 
 export function BlueprintSummaryCard({
   content,
   onViewDetails,
-  onStartExecution
+  onStartExecution,
+  onOpenInCodeTab
 }: BlueprintSummaryCardProps) {
   const { blueprintId, name, moduleCount, processCount, nfrCount } = content;
 
@@ -53,6 +56,15 @@ export function BlueprintSummaryCard({
           <span>查看完整蓝图</span>
           <span>→</span>
         </button>
+        {onOpenInCodeTab && (
+          <button
+            className={`${styles.actionButton} ${styles.codeTabButton}`}
+            onClick={() => onOpenInCodeTab(blueprintId)}
+          >
+            <span>在代码Tab打开</span>
+            <span>📂</span>
+          </button>
+        )}
         <button
           className={`${styles.actionButton} ${styles.primaryButton}`}
           onClick={() => onStartExecution(blueprintId)}

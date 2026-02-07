@@ -1,12 +1,23 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import App from './App';
 import SwarmConsole from './pages/SwarmConsole/index.tsx';
 import BlueprintPage from './pages/BlueprintPage';
 import CodeBrowserPage from './pages/CodeBrowserPage';
 import TopNavBar from './components/swarm/TopNavBar';
 import { ProjectProvider } from './contexts/ProjectContext';
+import type { ArchitectureGraphData } from './components/swarm/ArchitectureFlowGraph';
 
 type Page = 'chat' | 'swarm' | 'blueprint' | 'code';
+
+/** 代码页面传递的上下文数据 */
+export interface CodePageContext {
+  /** 从聊天传递的架构图数据 */
+  architectureData?: ArchitectureGraphData;
+  /** 来源蓝图 ID */
+  blueprintId?: string;
+  /** 聊天会话 ID（用于迷你聊天保持上下文） */
+  chatSessionId?: string;
+}
 
 /**
  * 根组件 - 处理顶层导航和页面路由
@@ -17,6 +28,8 @@ export default function Root() {
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null);
   // 蜂群页面的初始蓝图 ID
   const [swarmBlueprintId, setSwarmBlueprintId] = useState<string | null>(null);
+  // 代码页面上下文
+  const [codePageContext, setCodePageContext] = useState<CodePageContext | null>(null);
 
   const handlePageChange = (page: Page) => {
     setCurrentPage(page);
@@ -42,6 +55,19 @@ export default function Root() {
     setCurrentPage('swarm');
   };
 
+  // 跳转到代码页（可选传递上下文数据）
+  const navigateToCodePage = useCallback((context?: CodePageContext) => {
+    if (context) {
+      setCodePageContext(context);
+    }
+    setCurrentPage('code');
+  }, []);
+
+  // 从代码页返回聊天页
+  const navigateToChatPage = useCallback(() => {
+    setCurrentPage('chat');
+  }, []);
+
   // 渲染当前页面内容
   const renderPage = () => {
     switch (currentPage) {
@@ -50,6 +76,7 @@ export default function Root() {
           <App
             onNavigateToBlueprint={navigateToBlueprintPage}
             onNavigateToSwarm={navigateToSwarmPage}
+            onNavigateToCode={navigateToCodePage}
           />
         );
       case 'swarm':
@@ -62,7 +89,12 @@ export default function Root() {
           />
         );
       case 'code':
-        return <CodeBrowserPage />;
+        return (
+          <CodeBrowserPage
+            context={codePageContext}
+            onNavigateToChat={navigateToChatPage}
+          />
+        );
       default:
         return null;
     }

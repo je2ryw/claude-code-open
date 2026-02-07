@@ -193,11 +193,6 @@ async function executeApiModels(ctx: CommandContext): Promise<CommandResult> {
 │   ├─ Pricing: $3 / $15 per MTok (in/out)            │
 │   └─ Recommended: Default choice                    │
 │                                                     │
-│ • claude-opus-4-5-20251101                          │
-│   ├─ Context: 1M tokens                             │
-│   ├─ Best for: Complex reasoning, long tasks        │
-│   ├─ Pricing: $15 / $75 per MTok (in/out)           │
-│                                                     │
 │ • claude-haiku-4-5-20250514                         │
 │   ├─ Context: 200K tokens                           │
 │   ├─ Best for: Fast, simple tasks                   │

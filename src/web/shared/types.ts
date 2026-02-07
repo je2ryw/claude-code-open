@@ -147,7 +147,9 @@ export type ClientMessage =
   | { type: 'continuous_dev:pause' }
   | { type: 'continuous_dev:resume' }
   | { type: 'continuous_dev:rollback'; payload: { checkpointId?: string } }
-  | { type: 'continuous_dev:approve' };
+  | { type: 'continuous_dev:approve' }
+  // 探针调试消息
+  | { type: 'debug_get_messages' };
 
 /**
  * 服务端发送的消息类型
@@ -156,16 +158,18 @@ export type ServerMessage =
   | { type: 'connected'; payload: { sessionId: string; model: string } }
   | { type: 'pong' }
   | { type: 'history'; payload: { messages: ChatMessage[] } }
-  | { type: 'message_start'; payload: { messageId: string } }
-  | { type: 'text_delta'; payload: { messageId: string; text: string } }
+  | { type: 'message_start'; payload: { messageId: string; sessionId?: string } }
+  | { type: 'text_delta'; payload: { messageId: string; text: string; sessionId?: string } }
   | { type: 'tool_use_start'; payload: ToolUseStartPayload }
-  | { type: 'tool_use_delta'; payload: { toolUseId: string; partialJson: string } }
+  | { type: 'tool_use_delta'; payload: { toolUseId: string; partialJson: string; sessionId?: string } }
   | { type: 'tool_result'; payload: ToolResultPayload }
   | { type: 'message_complete'; payload: MessageCompletePayload }
-  | { type: 'error'; payload: { message: string; code?: string } }
-  | { type: 'thinking_start'; payload: { messageId: string } }
-  | { type: 'thinking_delta'; payload: { messageId: string; text: string } }
-  | { type: 'thinking_complete'; payload: { messageId: string } }
+  | { type: 'context_update'; payload: ContextUpdatePayload }
+  | { type: 'context_compact'; payload: ContextCompactPayload }
+  | { type: 'error'; payload: { message: string; code?: string; sessionId?: string } }
+  | { type: 'thinking_start'; payload: { messageId: string; sessionId?: string } }
+  | { type: 'thinking_delta'; payload: { messageId: string; text: string; sessionId?: string } }
+  | { type: 'thinking_complete'; payload: { messageId: string; sessionId?: string } }
   | { type: 'permission_request'; payload: PermissionRequestPayload }
   | { type: 'status'; payload: StatusPayload }
   | { type: 'user_question'; payload: UserQuestionPayload }
@@ -266,7 +270,9 @@ export type ServerMessage =
   | { type: 'continuous_dev:flow_failed'; payload: any }
   | { type: 'continuous_dev:flow_stopped'; payload?: any }
   | { type: 'continuous_dev:flow_paused'; payload?: any }
-  | { type: 'continuous_dev:flow_resumed'; payload?: any };
+  | { type: 'continuous_dev:flow_resumed'; payload?: any }
+  // 探针调试消息
+  | { type: 'debug_messages_response'; payload: DebugMessagesPayload };
 
 // ============ 消息负载类型 ============
 
@@ -275,6 +281,7 @@ export interface ToolUseStartPayload {
   toolUseId: string;
   toolName: string;
   input: unknown;
+  sessionId?: string;
 }
 
 export interface ToolResultPayload {
@@ -286,6 +293,7 @@ export interface ToolResultPayload {
   data?: ToolResultData;
   /** 结果是否应该默认折叠 */
   defaultCollapsed?: boolean;
+  sessionId?: string;
 }
 
 export interface MessageCompletePayload {
@@ -295,11 +303,43 @@ export interface MessageCompletePayload {
     inputTokens: number;
     outputTokens: number;
   };
+  sessionId?: string;
+}
+
+/** 上下文使用量更新负载 */
+export interface ContextUpdatePayload {
+  /** 已使用的 tokens */
+  usedTokens: number;
+  /** 模型上下文窗口大小 */
+  maxTokens: number;
+  /** 使用百分比 (0-100) */
+  percentage: number;
+  /** 当前模型 */
+  model: string;
+  sessionId?: string;
+}
+
+/** 上下文压缩事件负载 */
+export interface ContextCompactPayload {
+  /** 压缩阶段 */
+  phase: 'start' | 'end' | 'error';
+  /** 压缩阈值 */
+  threshold?: number;
+  /** 节省的 tokens 数 */
+  savedTokens?: number;
+  /** 压缩前的 tokens 估算 */
+  estimatedTokens?: number;
+  /** 错误消息 */
+  message?: string;
+  /** 触发原因 */
+  reason?: string;
+  sessionId?: string;
 }
 
 export interface StatusPayload {
   status: 'idle' | 'thinking' | 'tool_executing' | 'streaming';
   message?: string;
+  sessionId?: string;
 }
 
 /**
@@ -312,6 +352,7 @@ export interface PermissionRequestPayload {
   description: string;
   riskLevel: 'low' | 'medium' | 'high';
   timestamp: number;
+  sessionId?: string;
 }
 
 /**
@@ -322,6 +363,7 @@ export interface PermissionResponsePayload {
   approved: boolean;
   remember?: boolean;
   scope?: 'once' | 'session' | 'always';
+  destination?: 'project' | 'global' | 'team' | 'session';
 }
 
 /**
@@ -949,6 +991,22 @@ export interface SystemPromptGetPayload {
   current: string;
   /** 当前配置 */
   config: SystemPromptConfig;
+}
+
+/**
+ * 调试消息响应负载（探针功能）
+ */
+export interface DebugMessagesPayload {
+  /** 当前系统提示词 */
+  systemPrompt: string;
+  /** 发送给 API 的原始消息体 */
+  messages: unknown[];
+  /** 当前使用的工具定义列表 */
+  tools: unknown[];
+  /** 当前模型 */
+  model: string;
+  /** 消息总数 */
+  messageCount: number;
 }
 
 // ============ API 管理相关 ============
@@ -2785,8 +2843,8 @@ export interface ConfigMigration {
  * 默认配置值
  */
 export const DEFAULT_CONFIG: Partial<ClaudeConfig> = {
-  version: '2.1.4',
-  model: 'sonnet',
+  version: '2.1.33',
+  model: 'opus',
   maxTokens: 32000,
   temperature: 1,
   maxRetries: 3,

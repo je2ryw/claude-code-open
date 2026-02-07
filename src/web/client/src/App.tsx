@@ -11,6 +11,7 @@ import {
 } from './components';
 import { AuthStatus } from './components/AuthStatus';
 import { AuthDialog } from './components/AuthDialog';
+import { ContextBar, type ContextUsage, type CompactState } from './components/ContextBar';
 import { useProject, useProjectChangeListener, type Project, type BlueprintInfo } from './contexts/ProjectContext';
 import ProjectSelector from './components/swarm/ProjectSelector/ProjectSelector';
 import type {
@@ -57,12 +58,13 @@ function getWebSocketUrl(): string {
 interface AppProps {
   onNavigateToBlueprint?: (blueprintId: string) => void;
   onNavigateToSwarm?: (blueprintId?: string) => void;  // 跳转到蜂群页面的回调
+  onNavigateToCode?: (context?: any) => void;  // 跳转到代码页面的回调
 }
 
 /**
  * App 内部组件 - 使用 ProjectContext
  */
-function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
+function AppContent({ onNavigateToBlueprint, onNavigateToSwarm, onNavigateToCode }: AppProps) {
   // 获取项目上下文
   const { state: projectState, switchProject, openFolder, removeProject } = useProject();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -75,6 +77,9 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const [compactState, setCompactState] = useState<CompactState>({ phase: 'idle' });
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -84,6 +89,9 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
 
   // 当前正在构建的消息
   const currentMessageRef = useRef<ChatMessage | null>(null);
+  // 追踪最新的 sessionId，供 effect 闭包中使用（避免 stale closure）
+  const sessionIdRef = useRef<string | null>(sessionId);
+  sessionIdRef.current = sessionId;
 
   // 防抖的会话列表刷新函数（500ms 内多次调用只会执行最后一次）
   const refreshSessionsRef = useRef<ReturnType<typeof debounce> | null>(null);
@@ -120,6 +128,27 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   useEffect(() => {
     const unsubscribe = addMessageHandler((msg: WSMessage) => {
       const payload = msg.payload as Record<string, unknown>;
+
+      // 会话隔离：流式消息中如果包含 sessionId，且不匹配当前会话，则忽略
+      // 这防止了在同一标签页内切换会话时，旧会话的输出串扰到新会话中
+      // 使用 ref 获取最新的 sessionId（避免 stale closure 问题）
+      const msgSessionId = payload.sessionId as string | undefined;
+      const currentSessionId = sessionIdRef.current;
+      const isStreamingMessage = [
+        'message_start', 'text_delta', 'thinking_start', 'thinking_delta',
+        'thinking_complete', 'tool_use_start', 'tool_use_delta', 'tool_result',
+        'message_complete', 'permission_request', 'context_update', 'context_compact',
+      ].includes(msg.type);
+
+      if (isStreamingMessage && msgSessionId && currentSessionId && msgSessionId !== currentSessionId) {
+        // 消息来自其他会话，忽略
+        return;
+      }
+
+      // status 消息需要特殊处理：只过滤带 sessionId 且不匹配的
+      if (msg.type === 'status' && msgSessionId && currentSessionId && msgSessionId !== currentSessionId) {
+        return;
+      }
 
       switch (msg.type) {
         case 'message_start':
@@ -267,6 +296,25 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           setStatus('idle');
           break;
 
+        case 'context_update':
+          setContextUsage(payload as unknown as ContextUsage);
+          break;
+
+        case 'context_compact': {
+          const compactPayload = payload as { phase: string; savedTokens?: number; message?: string };
+          if (compactPayload.phase === 'start') {
+            setCompactState({ phase: 'compacting' });
+          } else if (compactPayload.phase === 'end') {
+            setCompactState({ phase: 'done', savedTokens: compactPayload.savedTokens });
+            // 4 秒后重置
+            setTimeout(() => setCompactState({ phase: 'idle' }), 4500);
+          } else if (compactPayload.phase === 'error') {
+            setCompactState({ phase: 'error', message: compactPayload.message });
+            setTimeout(() => setCompactState({ phase: 'idle' }), 3000);
+          }
+          break;
+        }
+
         case 'status':
           setStatus(payload.status as Status);
           break;
@@ -322,9 +370,11 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           // 新会话创建成功后（通常在发送第一条消息后触发）
           // 刷新列表以显示新创建的会话
           if (payload.sessionId) {
+            // 关键：同步更新 sessionIdRef，确保后续流式消息不被过滤
+            // 当临时 sessionId 转为持久化 sessionId 时，必须立即更新 ref
+            // 否则 message_start 等消息携带的新 sessionId 会被过滤掉
+            sessionIdRef.current = payload.sessionId as string;
             // 立即刷新会话列表（不使用防抖），确保新会话立即显示
-            // 注意：这里不能直接使用 currentProjectPath，因为闭包问题
-            // 使用 refreshSessions() 会应用防抖，但确保项目路径正确
             refreshSessions();
           }
           break;
@@ -338,82 +388,204 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           break;
 
         // 子 agent 相关消息处理
-        case 'task_status':
+        // 辅助函数：查找包含运行中 Task 工具的消息
+        case 'task_status': {
           // 更新 Task 工具的状态（包含 toolUseCount 和 lastToolInfo）
-          if (currentMessageRef.current && payload.taskId) {
-            const currentMsg = currentMessageRef.current;
-            const taskTool = currentMsg.content.find(
+          if (!payload.taskId) break;
+
+          // 首先尝试从 currentMessageRef 查找
+          let targetMsg = currentMessageRef.current;
+          let taskTool: ChatContent | undefined;
+
+          if (targetMsg) {
+            taskTool = targetMsg.content.find(
               c => c.type === 'tool_use' && c.name === 'Task'
             );
-            if (taskTool && taskTool.type === 'tool_use') {
-              taskTool.toolUseCount = payload.toolUseCount as number | undefined;
-              taskTool.lastToolInfo = payload.lastToolInfo as string | undefined;
-              if (payload.status === 'completed' || payload.status === 'failed') {
-                taskTool.status = payload.status === 'completed' ? 'completed' : 'error';
-                taskTool.result = {
-                  success: payload.status === 'completed',
-                  output: payload.result as string | undefined,
-                  error: payload.error as string | undefined,
-                };
+          }
+
+          // 如果在 currentMessageRef 中没找到，在消息列表中查找
+          // 这对于后台运行的 Task 工具很重要（主消息可能已完成）
+          if (!taskTool) {
+            setMessages(prev => {
+              // 从最新消息开始往前查找包含 Task 工具的消息
+              // 注意：不限制 status，因为后台任务的 Task 工具可能已经是 completed 状态
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const msg = prev[i];
+                if (msg.role !== 'assistant') continue;
+                const found = msg.content.find(
+                  c => c.type === 'tool_use' && c.name === 'Task'
+                );
+                if (found && found.type === 'tool_use') {
+                  // 更新工具状态
+                  found.toolUseCount = payload.toolUseCount as number | undefined;
+                  found.lastToolInfo = payload.lastToolInfo as string | undefined;
+                  if (payload.status === 'completed' || payload.status === 'failed') {
+                    found.status = payload.status === 'completed' ? 'completed' : 'error';
+                    found.result = {
+                      success: payload.status === 'completed',
+                      output: payload.result as string | undefined,
+                      error: payload.error as string | undefined,
+                    };
+                  }
+                  // 返回更新后的消息列表
+                  return [...prev.slice(0, i), { ...msg }, ...prev.slice(i + 1)];
+                }
               }
-              setMessages(prev => {
-                const filtered = prev.filter(m => m.id !== currentMsg.id);
-                return [...filtered, { ...currentMsg }];
-              });
+              return prev;
+            });
+            break;
+          }
+
+          // 在 currentMessageRef 中找到了
+          if (taskTool && taskTool.type === 'tool_use') {
+            taskTool.toolUseCount = payload.toolUseCount as number | undefined;
+            taskTool.lastToolInfo = payload.lastToolInfo as string | undefined;
+            if (payload.status === 'completed' || payload.status === 'failed') {
+              taskTool.status = payload.status === 'completed' ? 'completed' : 'error';
+              taskTool.result = {
+                success: payload.status === 'completed',
+                output: payload.result as string | undefined,
+                error: payload.error as string | undefined,
+              };
             }
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== targetMsg!.id);
+              return [...filtered, { ...targetMsg! }];
+            });
           }
           break;
+        }
 
-        case 'subagent_tool_start':
+        case 'subagent_tool_start': {
           // 子 agent 工具开始
-          if (currentMessageRef.current && payload.taskId && payload.toolCall) {
-            const currentMsg = currentMessageRef.current;
-            const taskTool = currentMsg.content.find(
-              c => c.type === 'tool_use' && c.name === 'Task'
-            );
-            if (taskTool && taskTool.type === 'tool_use') {
-              if (!taskTool.subagentToolCalls) {
-                taskTool.subagentToolCalls = [];
-              }
-              const tc = payload.toolCall as { id: string; name: string; input?: unknown; status: 'running' | 'completed' | 'error'; startTime: number };
-              taskTool.subagentToolCalls.push({
-                id: tc.id,
-                name: tc.name,
-                input: tc.input,
-                status: tc.status,
-                startTime: tc.startTime,
-              });
-              setMessages(prev => {
-                const filtered = prev.filter(m => m.id !== currentMsg.id);
-                return [...filtered, { ...currentMsg }];
-              });
-            }
-          }
-          break;
+          if (!payload.taskId || !payload.toolCall) break;
 
-        case 'subagent_tool_end':
-          // 子 agent 工具结束
-          if (currentMessageRef.current && payload.taskId && payload.toolCall) {
-            const currentMsg = currentMessageRef.current;
-            const taskTool = currentMsg.content.find(
+          const tc = payload.toolCall as { id: string; name: string; input?: unknown; status: 'running' | 'completed' | 'error'; startTime: number };
+
+          // 首先尝试从 currentMessageRef 查找
+          let targetMsg = currentMessageRef.current;
+          let taskTool: ChatContent | undefined;
+
+          if (targetMsg) {
+            taskTool = targetMsg.content.find(
               c => c.type === 'tool_use' && c.name === 'Task'
             );
-            if (taskTool && taskTool.type === 'tool_use' && taskTool.subagentToolCalls) {
-              const tc = payload.toolCall as { id: string; name: string; status: 'running' | 'completed' | 'error'; result?: string; error?: string; endTime?: number };
-              const existingCall = taskTool.subagentToolCalls.find(c => c.id === tc.id);
-              if (existingCall) {
-                existingCall.status = tc.status;
-                existingCall.result = tc.result;
-                existingCall.error = tc.error;
-                existingCall.endTime = tc.endTime;
+          }
+
+          // 如果在 currentMessageRef 中没找到，在消息列表中查找
+          // 这对于后台运行的 Task 工具很重要（主消息可能已完成）
+          if (!taskTool) {
+            setMessages(prev => {
+              // 从最新消息开始往前查找包含 Task 工具的消息
+              // 注意：不限制 status，因为后台任务的 Task 工具可能已经是 completed 状态
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const msg = prev[i];
+                if (msg.role !== 'assistant') continue;
+                const found = msg.content.find(
+                  c => c.type === 'tool_use' && c.name === 'Task'
+                );
+                if (found && found.type === 'tool_use') {
+                  // 初始化 subagentToolCalls 数组
+                  if (!found.subagentToolCalls) {
+                    found.subagentToolCalls = [];
+                  }
+                  // 添加新的工具调用
+                  found.subagentToolCalls.push({
+                    id: tc.id,
+                    name: tc.name,
+                    input: tc.input,
+                    status: tc.status,
+                    startTime: tc.startTime,
+                  });
+                  // 返回更新后的消息列表
+                  return [...prev.slice(0, i), { ...msg }, ...prev.slice(i + 1)];
+                }
               }
-              setMessages(prev => {
-                const filtered = prev.filter(m => m.id !== currentMsg.id);
-                return [...filtered, { ...currentMsg }];
-              });
+              return prev;
+            });
+            break;
+          }
+
+          // 在 currentMessageRef 中找到了
+          if (taskTool && taskTool.type === 'tool_use') {
+            if (!taskTool.subagentToolCalls) {
+              taskTool.subagentToolCalls = [];
             }
+            taskTool.subagentToolCalls.push({
+              id: tc.id,
+              name: tc.name,
+              input: tc.input,
+              status: tc.status,
+              startTime: tc.startTime,
+            });
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== targetMsg!.id);
+              return [...filtered, { ...targetMsg! }];
+            });
           }
           break;
+        }
+
+        case 'subagent_tool_end': {
+          // 子 agent 工具结束
+          if (!payload.taskId || !payload.toolCall) break;
+
+          const tc = payload.toolCall as { id: string; name: string; status: 'running' | 'completed' | 'error'; result?: string; error?: string; endTime?: number };
+
+          // 首先尝试从 currentMessageRef 查找
+          let targetMsg = currentMessageRef.current;
+          let taskTool: ChatContent | undefined;
+
+          if (targetMsg) {
+            taskTool = targetMsg.content.find(
+              c => c.type === 'tool_use' && c.name === 'Task'
+            );
+          }
+
+          // 如果在 currentMessageRef 中没找到，在消息列表中查找
+          if (!taskTool) {
+            setMessages(prev => {
+              // 从最新消息开始往前查找包含 Task 工具的消息
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const msg = prev[i];
+                if (msg.role !== 'assistant') continue;
+                const found = msg.content.find(
+                  c => c.type === 'tool_use' && c.name === 'Task' && c.subagentToolCalls?.length
+                );
+                if (found && found.type === 'tool_use' && found.subagentToolCalls) {
+                  // 查找并更新对应的工具调用
+                  const existingCall = found.subagentToolCalls.find(call => call.id === tc.id);
+                  if (existingCall) {
+                    existingCall.status = tc.status;
+                    existingCall.result = tc.result;
+                    existingCall.error = tc.error;
+                    existingCall.endTime = tc.endTime;
+                    // 返回更新后的消息列表
+                    return [...prev.slice(0, i), { ...msg }, ...prev.slice(i + 1)];
+                  }
+                }
+              }
+              return prev;
+            });
+            break;
+          }
+
+          // 在 currentMessageRef 中找到了
+          if (taskTool && taskTool.type === 'tool_use' && taskTool.subagentToolCalls) {
+            const existingCall = taskTool.subagentToolCalls.find(c => c.id === tc.id);
+            if (existingCall) {
+              existingCall.status = tc.status;
+              existingCall.result = tc.result;
+              existingCall.error = tc.error;
+              existingCall.endTime = tc.endTime;
+            }
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== targetMsg!.id);
+              return [...filtered, { ...targetMsg! }];
+            });
+          }
+          break;
+        }
 
         // 持续开发消息处理
         case 'continuous_dev:flow_started': {
@@ -632,14 +804,26 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   }, [connected, send, currentProjectPath]);
 
   // 监听项目切换事件，刷新会话列表
+  // 注意：不能使用 refreshSessions()（防抖），因为此时 currentProjectPath 尚未更新
+  // 必须直接使用事件中的 project.path 发送请求，避免闭包中旧值导致的竞态问题
   useProjectChangeListener(
     useCallback(
       (project: Project | null, _blueprint: BlueprintInfo | null) => {
-        // 项目切换时，刷新会话列表（使用防抖）
         console.log('[App] 项目切换，刷新会话列表:', project?.path);
-        refreshSessions();
+        if (connected) {
+          // 直接发送请求，使用事件中的最新项目路径
+          send({
+            type: 'session_list',
+            payload: {
+              limit: 50,
+              sortBy: 'updatedAt',
+              sortOrder: 'desc',
+              projectPath: project?.path,
+            },
+          });
+        }
       },
-      [refreshSessions]
+      [connected, send]
     )
   );
 
@@ -899,6 +1083,10 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     setInput('');
     setAttachments([]);
     setStatus('thinking');
+    // 重置 textarea 高度
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
   };
 
   // 命令选择
@@ -922,7 +1110,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     }
   };
 
-  // 权限响应
+  // 权限响应（旧版兼容）
   const handlePermissionRespond = (approved: boolean, remember: boolean) => {
     if (permissionRequest) {
       send({
@@ -931,6 +1119,24 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
           requestId: permissionRequest.requestId,
           approved,
           remember,
+          scope: remember ? 'session' : 'once',
+        },
+      });
+      setPermissionRequest(null);
+    }
+  };
+
+  // 权限响应（v2.1.3 带目标选择器）
+  const handlePermissionRespondWithDestination = (response: { approved: boolean; remember: boolean; destination: string }) => {
+    if (permissionRequest) {
+      send({
+        type: 'permission_response',
+        payload: {
+          requestId: permissionRequest.requestId,
+          approved: response.approved,
+          remember: response.remember,
+          scope: response.remember ? (response.destination === 'session' ? 'session' : 'always') : 'once',
+          destination: response.destination,
         },
       });
       setPermissionRequest(null);
@@ -970,6 +1176,10 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
     const value = e.target.value;
     setInput(value);
     setShowCommandPalette(value.startsWith('/') && value.length > 0);
+    // 自动调整 textarea 高度
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1007,7 +1217,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
   return (
     <div style={{ display: 'flex', height: '100%', width: '100%', flex: 1 }}>
       {/* 侧边栏 */}
-      <div className="sidebar">
+      <div className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         {/* 项目选择器 */}
         <div className="sidebar-project-selector">
           <ProjectSelector
@@ -1043,21 +1253,17 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         </div>
       </div>
 
+      {/* 侧边栏折叠按钮 - 放在侧边栏外部 */}
+      <button
+        className={`sidebar-toggle-btn ${sidebarCollapsed ? 'collapsed' : ''}`}
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+      >
+        {sidebarCollapsed ? '▶' : '◀'}
+      </button>
+
       {/* 主内容区 */}
       <div className="main-content">
-        <div className="chat-header">
-          <select
-            className="model-selector"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            disabled={status !== 'idle'}
-          >
-            <option value="opus">Claude Opus</option>
-            <option value="sonnet">Claude Sonnet</option>
-            <option value="haiku">Claude Haiku</option>
-          </select>
-        </div>
-
         <div className="chat-container" ref={chatContainerRef}>
           {messages.length === 0 ? (
             <WelcomeScreen onBlueprintCreated={onNavigateToBlueprint} />
@@ -1068,6 +1274,7 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
                 message={msg}
                 onNavigateToBlueprint={onNavigateToBlueprint}
                 onNavigateToSwarm={onNavigateToSwarm}
+                onNavigateToCode={onNavigateToCode}
                 onDevAction={handleDevAction}
                 isStreaming={currentMessageRef.current?.id === msg.id && status !== 'idle'}
               />
@@ -1104,9 +1311,6 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
               accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.json,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.css,.html,.xml,.yaml,.yml,.sh,.bat,.sql,.log"
               onChange={handleFileSelect}
             />
-            <button className="attach-btn" onClick={() => fileInputRef.current?.click()}>
-              📎
-            </button>
             <div className="input-wrapper">
               {showCommandPalette && (
                 <SlashCommandPalette
@@ -1118,21 +1322,40 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
               <textarea
                 ref={inputRef}
                 className="chat-input"
+                rows={1}
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder="输入消息... (/ 显示命令)"
-                disabled={!connected || status !== 'idle'}
+                disabled={!connected}
               />
             </div>
-            <button
-              className="send-btn"
-              onClick={handleSend}
-              disabled={!connected || status !== 'idle' || (!input.trim() && attachments.length === 0)}
-            >
-              发送
-            </button>
+            <div className="input-toolbar">
+              <div className="input-toolbar-left">
+                <select
+                  className="model-selector-compact"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={status !== 'idle'}
+                  title="切换模型"
+                >
+                  <option value="opus">Opus</option>
+                  <option value="sonnet">Sonnet</option>
+                  <option value="haiku">Haiku</option>
+                </select>
+                <button className="attach-btn" onClick={() => fileInputRef.current?.click()}>
+                  📎
+                </button>
+              </div>
+              <button
+                className="send-btn"
+                onClick={handleSend}
+                disabled={!connected || status !== 'idle' || (!input.trim() && attachments.length === 0)}
+              >
+                发送
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1142,7 +1365,13 @@ function AppContent({ onNavigateToBlueprint, onNavigateToSwarm }: AppProps) {
         <UserQuestionDialog question={userQuestion} onAnswer={handleAnswerQuestion} />
       )}
       {permissionRequest && (
-        <PermissionDialog request={permissionRequest} onRespond={handlePermissionRespond} />
+        <PermissionDialog
+          request={permissionRequest}
+          onRespond={handlePermissionRespond}
+          onRespondWithDestination={handlePermissionRespondWithDestination}
+          showFullSelector={true}
+          defaultDestination="session"
+        />
       )}
       <SettingsPanel
         isOpen={showSettings}

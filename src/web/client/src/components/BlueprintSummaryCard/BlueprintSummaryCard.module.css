@@ -110,6 +110,19 @@
   border-color: var(--accent-primary);
 }
 
+/* 代码Tab按钮 - 紫色调 */
+.codeTabButton {
+  background: transparent;
+  border: 1px solid #8b5cf6;
+  color: #a78bfa;
+}
+
+.codeTabButton:hover {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
 /* 响应式调整 */
 @media (max-width: 600px) {
   .statsContainer {

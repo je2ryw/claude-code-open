@@ -278,18 +278,18 @@ export const App: React.FC<AppProps> = ({
 
   // 模型映射
   const modelMap: Record<string, string> = {
-    sonnet: 'claude-sonnet-4-20250514',
-    opus: 'claude-opus-4-20250514',
-    haiku: 'claude-haiku-3-5-20241022',
+    sonnet: 'claude-sonnet-4-5-20250929',
+    opus: 'claude-opus-4-6',
+    haiku: 'claude-haiku-4-5-20251001',
   };
 
   const modelDisplayName: Record<string, string> = {
-    sonnet: 'Sonnet 4',
-    opus: 'Opus 4',
-    haiku: 'Haiku 3.5',
-    'claude-sonnet-4-20250514': 'Sonnet 4',
-    'claude-opus-4-20250514': 'Opus 4',
-    'claude-haiku-3-5-20241022': 'Haiku 3.5',
+    sonnet: 'Sonnet 4.5',
+    opus: 'Opus 4.6',
+    haiku: 'Haiku 4.5',
+    'claude-sonnet-4-5-20250929': 'Sonnet 4.5',
+    'claude-opus-4-6': 'Opus 4.6',
+    'claude-haiku-4-5-20251001': 'Haiku 4.5',
   };
 
   // 模型切换顺序

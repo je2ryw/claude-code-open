@@ -270,16 +270,16 @@ const modelCommand: SlashCommand = {
     if (!args || args.length === 0) {
       // 显示当前模型
       const modelMap: Record<string, string> = {
-        opus: 'Claude Opus 4.5 (最强大)',
+        opus: 'Claude Opus 4.6 (最强大)',
         sonnet: 'Claude Sonnet 4.5 (平衡)',
-        haiku: 'Claude Haiku 3.5 (快速)',
+        haiku: 'Claude Haiku 4.5 (快速)',
       };
 
       let message = `当前模型: ${modelMap[ctx.model] || ctx.model}\n\n`;
       message += '可用模型:\n';
-      message += '  opus   - Claude Opus 4.5 (最强大，适合复杂任务)\n';
-      message += '  sonnet - Claude Sonnet 4.5 (平衡，推荐)\n';
-      message += '  haiku  - Claude Haiku 3.5 (快速，适合简单任务)\n\n';
+      message += '  opus   - Claude Opus 4.6 (最强大，推荐，适合复杂任务)\n';
+      message += '  sonnet - Claude Sonnet 4.5 (平衡，适合日常任务)\n';
+      message += '  haiku  - Claude Haiku 4.5 (快速，适合简单任务)\n\n';
       message += '使用 /model <模型名> 切换模型';
 
       return { success: true, message };
@@ -323,12 +323,12 @@ const costCommand: SlashCommand = {
 
     // 根据模型获取定价
     const modelPricing: Record<string, { input: number; output: number; name: string }> = {
-      opus: { input: 15, output: 75, name: 'Claude Opus 4.5' },
+      opus: { input: 15, output: 75, name: 'Claude Opus 4.6' },
       sonnet: { input: 3, output: 15, name: 'Claude Sonnet 4.5' },
-      haiku: { input: 0.8, output: 4, name: 'Claude Haiku 3.5' },
+      haiku: { input: 0.8, output: 4, name: 'Claude Haiku 4.5' },
     };
 
-    const pricing = modelPricing[ctx.model] || modelPricing.sonnet;
+    const pricing = modelPricing[ctx.model] || modelPricing.opus;
 
     // 计算费用（每百万 tokens 的价格）
     const inputCost = (totalInput / 1000000) * pricing.input;
@@ -1648,7 +1648,7 @@ const versionCommand: SlashCommand = {
     message += `Node.js: ${process.version}\n`;
     message += `平台: ${process.platform} ${process.arch}\n`;
     message += `运行模式: WebUI\n\n`;
-    message += '项目地址: https://github.com/yourusername/claude-code-open\n';
+    message += '项目地址: https://github.com/kill136/claude-code-open\n';
     message += '官方文档: https://docs.anthropic.com/claude-code';
 
     return { success: true, message };
@@ -1665,7 +1665,7 @@ const bugCommand: SlashCommand = {
     let message = '报告问题\n\n';
     message += '感谢您帮助改进 Claude Code！\n\n';
     message += '报告问题:\n';
-    message += '  • GitHub Issues: https://github.com/yourusername/claude-code-open/issues\n';
+    message += '  • GitHub Issues: https://github.com/kill136/claude-code-open/issues\n';
     message += '  • 邮箱: support@example.com\n\n';
     message += '提交反馈时请包含:\n';
     message += '  1. 问题描述\n';
@@ -2594,8 +2594,8 @@ const feedbackCommand: SlashCommand = {
       message: '提交反馈\n\n' +
         '感谢您帮助改进 Claude Code！\n\n' +
         '反馈渠道:\n' +
-        '  • GitHub Discussions: https://github.com/yourusername/claude-code-open/discussions\n' +
-        '  • GitHub Issues: https://github.com/yourusername/claude-code-open/issues\n' +
+        '  • GitHub Discussions: https://github.com/kill136/claude-code-open/discussions\n' +
+        '  • GitHub Issues: https://github.com/kill136/claude-code-open/issues\n' +
         '  • 邮箱: feedback@example.com\n\n' +
         '反馈类型:\n' +
         '  • 功能建议\n' +
