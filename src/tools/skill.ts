@@ -13,6 +13,7 @@ import * as path from 'path';
 import { BaseTool } from './base.js';
 import type { ToolResult, ToolDefinition } from '../types/index.js';
 import { getCurrentCwd } from '../core/cwd-context.js';
+import { registerHook, type HookEvent, type HookConfig } from '../hooks/index.js';
 
 /**
  * v2.1.32: 额外目录列表（由 --add-dir 设置）
@@ -246,6 +247,8 @@ interface SkillFrontmatter {
   tools?: string;
   'user-invocable'?: string;
   'disable-model-invocation'?: string;
+  /** v4.3: hooks 配置（JSON 字符串格式），支持在 SKILL.md 中定义 hooks */
+  hooks?: string;
   [key: string]: any;
 }
 
@@ -509,6 +512,36 @@ function createSkillFromFile(
   const executionContext = frontmatter.context === 'fork' ? 'fork' as const : undefined;
   const agent = frontmatter.agent;
 
+  // v4.3: 解析 hooks 字段（支持 SKILL.md frontmatter 中定义 hooks）
+  // 修复 issue #84: SKILL.md 不支持 hook
+  let hooks: Record<string, any> | undefined;
+
+  // 方式 1: frontmatter 中内联定义 hooks（JSON 字符串）
+  if (frontmatter.hooks) {
+    try {
+      hooks = typeof frontmatter.hooks === 'string'
+        ? JSON.parse(frontmatter.hooks)
+        : frontmatter.hooks;
+    } catch (err) {
+      console.warn(`[Skill] Failed to parse hooks in frontmatter for skill ${skillName}:`, err);
+    }
+  }
+
+  // 方式 2: skill 目录下的 hooks.json 文件
+  if (!hooks && baseDir) {
+    const hooksJsonPath = path.join(baseDir, 'hooks.json');
+    if (fs.existsSync(hooksJsonPath)) {
+      try {
+        const hooksContent = fs.readFileSync(hooksJsonPath, 'utf-8');
+        const hooksData = JSON.parse(hooksContent);
+        // 支持 { "hooks": { ... } } 或直接 { "PreToolUse": [...] } 格式
+        hooks = hooksData.hooks || hooksData;
+      } catch (err) {
+        console.warn(`[Skill] Failed to load hooks.json for skill ${skillName}:`, err);
+      }
+    }
+  }
+
   return buildSkillDefinition({
     skillName,
     displayName,
@@ -529,6 +562,7 @@ function createSkillFromFile(
     baseDir,
     filePath,
     loadedFrom: isSkillMode ? 'skills' : 'commands_DEPRECATED',
+    hooks,
     executionContext,
     agent,
   });
@@ -1096,6 +1130,47 @@ function formatSkillsList(skills: SkillDefinition[], contextWindowSize?: number)
 }
 
 /**
+ * v4.3: 注册 skill 定义中的 hooks 到全局 hooks 系统
+ * 修复 issue #84: SKILL.md 不支持 hook
+ *
+ * hooks 配置格式（与 settings.json 中的 hooks 格式一致）:
+ * {
+ *   "PreToolUse": [{ "type": "command", "command": "...", "matcher": "Bash" }],
+ *   "PostToolUse": [{ "type": "command", "command": "..." }],
+ *   "TaskCompleted": [{ "type": "command", "command": "check-completion.sh" }]
+ * }
+ */
+function registerSkillHooks(skillName: string, hooks: Record<string, any>): void {
+  const validEvents: string[] = [
+    'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
+    'Notification', 'UserPromptSubmit', 'SessionStart', 'SessionEnd',
+    'Stop', 'SubagentStart', 'SubagentStop', 'PreCompact', 'PermissionRequest',
+    'TeammateIdle', 'TaskCompleted',
+  ];
+
+  for (const [eventName, hookConfigs] of Object.entries(hooks)) {
+    if (!validEvents.includes(eventName)) {
+      console.warn(`[Skill] Unknown hook event "${eventName}" in skill "${skillName}", skipping`);
+      continue;
+    }
+
+    const hookArray = Array.isArray(hookConfigs) ? hookConfigs : [hookConfigs];
+    for (const hookConfig of hookArray) {
+      if (!hookConfig || typeof hookConfig !== 'object' || !hookConfig.type) {
+        console.warn(`[Skill] Invalid hook config in skill "${skillName}" for event "${eventName}":`, hookConfig);
+        continue;
+      }
+      // 为来自 skill 的 hooks 添加来源标记，方便调试
+      const taggedConfig = {
+        ...hookConfig,
+        _skillSource: skillName,
+      };
+      registerHook(eventName as HookEvent, taggedConfig as HookConfig);
+    }
+  }
+}
+
+/**
  * Skill 工具类（对齐官网 v2.1.20+ 实现）
  */
 export class SkillTool extends BaseTool<SkillInput, any> {
@@ -1197,6 +1272,12 @@ ${skillsList}
 
     // 记录已调用的 skill（对齐官网 KP0）
     recordInvokedSkill(skill.skillName, skill.filePath, skillContent);
+
+    // v4.3: 注册 skill 定义中的 hooks（修复 issue #84: SKILL.md 不支持 hook）
+    // 当 skill 被调用时，将其定义的 hooks 注册到全局 hooks 系统
+    if (skill.hooks && typeof skill.hooks === 'object') {
+      registerSkillHooks(skill.skillName, skill.hooks);
+    }
 
     // 构建 skill 内容消息（对齐官网格式）
     // 官网实现：skill 内容通过 newMessages 传递，而不是 tool_result

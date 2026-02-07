@@ -70,6 +70,7 @@ import * as os from 'os';
 import { setParentModelContext } from '../tools/agent.js';
 import { configManager } from '../config/index.js';
 import { accountUsageManager } from '../ratelimit/index.js';
+import { initNotebookManager, getNotebookManager } from '../memory/notebook.js';
 import {
   isSessionMemoryEnabled as checkSessionMemoryEnabled,
   SESSION_MEMORY_TEMPLATE,
@@ -820,8 +821,9 @@ export function shouldAutoCompact(messages: Message[], model: string): boolean {
  * @param customInstructions 自定义指令（可选）
  * @returns 摘要 prompt
  */
-function generateSummaryPrompt(customInstructions?: string): string {
-  const basePrompt = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
+export function generateSummaryPrompt(customInstructions?: string): string {
+  // 对齐官方 dDA 函数的完整摘要 prompt
+  let prompt = `Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 
 Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
@@ -846,15 +848,19 @@ Your summary should include the following sections:
 3. Files and Code Sections: Enumerate specific files and code sections examined, modified, or created. Pay special attention to the most recent messages and include full code snippets where applicable and include a summary of why this file read or edit is important.
 4. Errors and fixes: List all errors that you ran into, and how you fixed them. Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
 5. Problem Solving: Document problems solved and any ongoing troubleshooting efforts.
-6. Current State: Describe the current state of the work and what needs to be done next.
+6. All user messages: List ALL user messages that are not tool results. These are critical for understanding the users' feedback and changing intent.
+7. Pending Tasks: Outline any pending tasks that you have explicitly been asked to work on.
+8. Current Work: Describe in detail precisely what was being worked on immediately before this summary request, paying special attention to the most recent messages from both user and assistant. Include file names and code snippets where applicable.
+9. Optional Next Step: List the next step that you will take that is related to the most recent work you were doing. IMPORTANT: ensure that this step is DIRECTLY in line with the user's most recent explicit requests, and the task you were working on immediately before this summary request. If your last task was concluded, then only list next steps if they are explicitly in line with the users request. Do not start on tangential requests or really old requests that were already completed without confirming with the user first.
+                       If there is a next step, include direct quotes from the most recent conversation showing exactly what task you were working on and where you left off. This should be verbatim to ensure there's no drift in task interpretation.
 
-Note: Do not include any information from system prompts, claude.md entries, or any past session summaries in your analysis - only summarize the actual user conversation.`;
+IMPORTANT: Do NOT use any tools. You MUST respond with ONLY the <summary>...</summary> block as your text output.`;
 
-  if (customInstructions && customInstructions.trim()) {
-    return `${basePrompt}\n\nAdditional instructions:\n${customInstructions}`;
+  if (customInstructions && customInstructions.trim() !== '') {
+    prompt += `\n\nAdditional Instructions:\n${customInstructions}`;
   }
 
-  return basePrompt;
+  return prompt;
 }
 
 /**
@@ -884,6 +890,54 @@ function formatSummaryMessage(summary: string, microcompact: boolean): string {
 
   // 正常模式：添加标记
   return `<conversation-summary>\n${summary}\n</conversation-summary>`;
+}
+
+/**
+ * 清理摘要中的 XML 标签（对齐官方 oT9 函数）
+ * 将 <analysis>...</analysis> 和 <summary>...</summary> 转为纯文本格式
+ * @param summary 原始摘要文本
+ * @returns 清理后的摘要文本
+ */
+export function cleanSummaryXmlTags(summary: string): string {
+  let result = summary;
+
+  // 将 <analysis>...</analysis> 转为 "Analysis:\n{content}"
+  const analysisMatch = result.match(/<analysis>([\s\S]*?)<\/analysis>/);
+  if (analysisMatch) {
+    const content = analysisMatch[1] || '';
+    result = result.replace(/<analysis>[\s\S]*?<\/analysis>/, `Analysis:\n${content.trim()}`);
+  }
+
+  // 将 <summary>...</summary> 转为 "Summary:\n{content}"
+  const summaryMatch = result.match(/<summary>([\s\S]*?)<\/summary>/);
+  if (summaryMatch) {
+    const content = summaryMatch[1] || '';
+    result = result.replace(/<summary>[\s\S]*?<\/summary>/, `Summary:\n${content.trim()}`);
+  }
+
+  // 去除多余的连续空行
+  result = result.replace(/\n\n+/g, '\n\n');
+
+  return result.trim();
+}
+
+/**
+ * 格式化压缩摘要内容（对齐官方 Au1 函数）
+ * 将 AI 生成的摘要包装为标准格式的用户消息内容
+ * @param summaryText AI 生成的原始摘要
+ * @param isContinuation 是否为继续上次任务（添加 "Please continue..." 提示）
+ * @returns 格式化后的消息内容
+ */
+export function formatCompactSummaryContent(summaryText: string, isContinuation: boolean): string {
+  let content = `This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+${cleanSummaryXmlTags(summaryText)}`;
+
+  if (isContinuation) {
+    content += `\nPlease continue the conversation from where we left it off without asking the user any further questions. Continue with the last task that you were asked to work on.`;
+  }
+
+  return content;
 }
 
 /**
@@ -1023,16 +1077,14 @@ function createSessionMemoryCompactResult(
   const boundaryMarker: Message = {
     role: 'user',
     content: `--- Session Memory Compacted (auto) ---\nPrevious messages were compressed using Session Memory.`,
-    // @ts-ignore - 添加uuid字段用于追踪
     uuid: boundaryUuid,
   };
 
-  // 3. 创建摘要消息（使用模板格式化）
-  const summaryContent = formatSummaryMessage(template, false);
+  // 3. 创建摘要消息（对齐官方 Au1 函数格式）
+  const summaryContent = formatCompactSummaryContent(template, true);
   const summaryMessage: Message = {
     role: 'user',
     content: summaryContent,
-    // @ts-ignore - 标记为压缩摘要
     isCompactSummary: true,
     isVisibleInTranscriptOnly: true,
   };
@@ -1125,7 +1177,7 @@ async function trySessionMemoryCompact(
     let messagesToCompress: Message[];
     if (lastCompactedUuid) {
       // 找到上次压缩边界的索引
-      const lastBoundaryIndex = messages.findIndex((msg: any) => msg.uuid === lastCompactedUuid);
+      const lastBoundaryIndex = messages.findIndex((msg) => msg.uuid === lastCompactedUuid);
 
       if (lastBoundaryIndex === -1) {
         // 找不到边界标记，可能会话数据不一致
@@ -1294,11 +1346,11 @@ async function tryConversationSummary(
     // 6. 创建压缩边界标记
     const boundaryMarker = createCompactBoundaryMarker('auto', preCompactTokenCount);
 
-    // 7. 创建摘要消息
-    const formattedSummary = formatSummaryMessage(summaryText, false);
+    // 7. 创建摘要消息（对齐官方 Au1 函数）
+    const formattedContent = formatCompactSummaryContent(summaryText, false);
     const summaryMessage: Message = {
       role: 'user',
-      content: formattedSummary,
+      content: formattedContent,
     };
 
     // 8. 构建新的消息列表：[边界标记, 摘要消息]
@@ -1370,7 +1422,7 @@ async function autoCompact(
   if (tj1Result && tj1Result.success) {
     console.log(chalk.green(`[AutoCompact] Session Memory压缩成功，节省 ${tj1Result.savedTokens.toLocaleString()} tokens`));
     // 获取边界标记的 UUID（用于增量压缩）
-    const boundaryUuid = (tj1Result.boundaryMarker as any)?.uuid;
+    const boundaryUuid = tj1Result.boundaryMarker?.uuid;
     return { wasCompacted: true, messages: tj1Result.messages, boundaryUuid };
   }
 
@@ -1821,6 +1873,10 @@ export class ConversationLoop {
       effectiveWorkingDir = options.workingDir || process.cwd();
     }
 
+    // 初始化 Agent 笔记本系统
+    const notebookMgr = initNotebookManager(effectiveWorkingDir);
+    const notebookSummary = notebookMgr.getNotebookSummaryForPrompt();
+
     this.promptContext = {
       workingDir: effectiveWorkingDir,
       model: resolvedModel,
@@ -1834,6 +1890,8 @@ export class ConversationLoop {
       debug: options.debug,
       // v2.1.0+: 语言配置 - 从 configManager 读取
       language: configManager.get('language'),
+      // Agent 笔记本内容
+      notebookSummary: notebookSummary || undefined,
     };
 
     // 获取并过滤工具
@@ -1890,6 +1948,9 @@ export class ConversationLoop {
     }
 
     this.tools = tools;
+
+    // v2.1.33: 将工具名称集合注入 promptContext，用于条件化提示词组装
+    this.promptContext.toolNames = new Set(tools.map(t => t.name));
 
     // v2.1.33: 将 allowedSubagentTypes 传递给 TaskTool 实例
     // 当子 loop 通过 Task(agent_type) 语法限制了允许的子 agent 类型时
@@ -2081,16 +2142,18 @@ export class ConversationLoop {
       }
     }
 
-    // v2.1.32: 注入 Auto Memory (MEMORY.md) 到系统提示词
-    // 对齐官方 pO() / IU() / CXA() 函数
+    // Agent 笔记本：每轮刷新笔记本内容到 promptContext
+    // 确保 agent 在对话中写入的笔记能在下一轮 system prompt 中体现
     try {
-      const { getAutoMemoryPrompt } = await import('../memory/agent-memory.js');
-      const autoMemorySection = getAutoMemoryPrompt();
-      if (autoMemorySection) {
-        systemPrompt += '\n' + autoMemorySection;
+      const nbMgr = getNotebookManager();
+      if (nbMgr) {
+        const freshSummary = nbMgr.getNotebookSummaryForPrompt();
+        if (freshSummary) {
+          this.promptContext.notebookSummary = freshSummary;
+        }
       }
     } catch {
-      // auto memory 加载失败不影响主流程
+      // 笔记本加载失败不影响主流程
     }
 
     while (turns < maxTurns) {
@@ -2424,6 +2487,7 @@ Guidelines:
       const assistantContent: ContentBlock[] = [];
       const toolCalls: Map<string, { name: string; input: string; isServerTool: boolean }> = new Map();
       let currentToolId = '';
+      let streamStopReason: string = 'end_turn';
 
       try {
         for await (const event of this.client.createMessageStream(
@@ -2472,6 +2536,10 @@ Guidelines:
             if (event.headers) {
               updateRateLimitStatus(event.headers, this.options.verbose);
             }
+          } else if (event.type === 'stop') {
+            // v4.3: 跟踪流式响应的 stopReason
+            // 对齐官方实现：当 stopReason 为 max_tokens 时，响应被截断，循环应继续
+            streamStopReason = (event as any).stopReason || 'end_turn';
           } else if (event.type === 'error') {
             console.error(chalk.red(`[Loop] Stream error: ${event.error}`));
             yield { type: 'tool_end', toolError: event.error };
@@ -2655,6 +2723,14 @@ Guidelines:
         for (const newMsg of allNewMessages) {
           this.session.addMessage(newMsg);
         }
+      } else if (streamStopReason === 'max_tokens') {
+        // v4.3: 响应被截断（max_tokens），追加提醒让模型继续
+        // 对齐官方实现：当 LLM 返回数据不稳定/被截断时，不应该退出循环
+        // 这修复了 issue #84 中描述的问题
+        this.session.addMessage({
+          role: 'user',
+          content: '[system: Your response was truncated due to token limits. Please continue where you left off and complete the task using tools.]',
+        });
       } else if (this.options.isSubAgent && turns === 1) {
         // v3.4: Worker 子任务模式下，第一轮没有工具调用时不直接退出
         // 模型可能只是在"思考"或"规划"，追加提醒让它使用工具执行
