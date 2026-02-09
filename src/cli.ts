@@ -278,6 +278,18 @@ program
       process.env.CLAUDE_SOLO_MODE = 'true';
     }
 
+    // v2.1.33: 将 settings.json 中配置的环境变量应用到 process.env
+    // 修复: 通过 settings.json environment 配置的代理设置不会应用到 WebFetch 和其他 HTTP 请求
+    // 官方实现: 在启动早期阶段将 settings.json 的 env 字段注入 process.env
+    const settingsConfig = configManager.getAll();
+    if (settingsConfig.env && typeof settingsConfig.env === 'object') {
+      for (const [key, value] of Object.entries(settingsConfig.env)) {
+        if (value !== undefined && value !== null && !process.env[key]) {
+          process.env[key] = String(value);
+        }
+      }
+    }
+
     // v2.1.32: 将 --add-dir 传递给 Skill 模块以自动加载额外目录的 skills
     if (options.addDir && Array.isArray(options.addDir)) {
       const { setAdditionalDirectories } = await import('./tools/skill.js');
