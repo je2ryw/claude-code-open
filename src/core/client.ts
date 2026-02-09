@@ -20,6 +20,17 @@ import { initAuth, getAuth, refreshTokenAsync } from '../auth/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { VERSION_BASE } from '../version.js';
 import { randomBytes } from 'crypto';
+import {
+  isPenguinEnabled,
+  shouldActivateFastMode,
+  isInCooldown,
+  triggerCooldown,
+  isFastModeNotEnabledError,
+  permanentlyDisableFastMode,
+  handleOverageRejection,
+  FAST_MODE_BETA,
+  FAST_MODE_RESEARCH_PREVIEW,
+} from '../fast-mode/index.js';
 
 export interface ClientConfig {
   apiKey?: string;
@@ -44,6 +55,8 @@ export interface ClientConfig {
   thinking?: ThinkingConfig;
   /** v2.1.31: Temperature 覆盖（0-1） */
   temperature?: number;
+  /** v2.1.36: Fast mode 状态 */
+  fastMode?: boolean;
 }
 
 export interface StreamCallbacks {
@@ -411,7 +424,7 @@ function buildMetadata(accountUuid?: string): { user_id: string } {
  * - 支持 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 完全禁用实验性 betas
  * - 添加 structured-outputs beta 支持
  */
-function buildBetas(model: string, isOAuth: boolean): string[] {
+function buildBetas(model: string, isOAuth: boolean, fastMode?: boolean): string[] {
   const betas: string[] = [];
   const providerType = getProviderType();
   const experimentalEnabled = isExperimentalBetasEnabled();
@@ -468,6 +481,11 @@ function buildBetas(model: string, isOAuth: boolean): string[] {
   if (process.env.ANTHROPIC_BETAS && !isHaiku) {
     const customBetas = process.env.ANTHROPIC_BETAS.split(',').map(b => b.trim()).filter(Boolean);
     betas.push(...customBetas);
+  }
+
+  // 10. v2.1.36: Fast mode beta（对齐官方: if(isFastMode) betas.push(opA)）
+  if (fastMode && isPenguinEnabled() && shouldActivateFastMode(model, true)) {
+    betas.push(FAST_MODE_BETA);
   }
 
   // v2.1.29: 对于 Bedrock/Vertex 网关用户，过滤掉不支持的 betas
@@ -538,6 +556,8 @@ export class ClaudeClient {
   private debug: boolean;
   /** v2.1.31: temperature 覆盖值 */
   private temperature?: number;
+  /** v2.1.36: fast mode 状态 */
+  private fastMode: boolean = false;
   private isOAuth: boolean = false;  // 是否使用 OAuth 模式
   private totalUsage: UsageStats = {
     inputTokens: 0,
@@ -654,6 +674,11 @@ export class ClaudeClient {
     // v2.1.31: 存储 temperature 覆盖值
     if (config.temperature !== undefined) {
       this.temperature = config.temperature;
+    }
+
+    // v2.1.36: 存储 fast mode 状态
+    if (config.fastMode !== undefined) {
+      this.fastMode = config.fastMode;
     }
 
     if (this.debug) {
@@ -901,8 +926,11 @@ export class ClaudeClient {
     // 使用回退机制执行请求
     const executeRequest = async (currentModel: string) => {
       return await this.withRetry(async () => {
+        // v2.1.36: 计算 fast mode 激活状态
+        const isFastActive = this.fastMode && shouldActivateFastMode(currentModel, this.fastMode);
+
         // 构建 betas 数组（模拟官方 qC 函数）
-        const betas = buildBetas(currentModel, this.isOAuth);
+        const betas = buildBetas(currentModel, this.isOAuth, isFastActive);
 
         // 格式化 system prompt（OAuth 模式需要特殊格式）
         const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
@@ -925,6 +953,8 @@ export class ClaudeClient {
           metadata: buildMetadata(),
           // v2.1.31: 传递 temperature（如果配置了覆盖值）
           ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
+          // v2.1.36: Fast mode extra body 参数
+          ...(isFastActive ? { [FAST_MODE_RESEARCH_PREVIEW]: 'active' } : {}),
           ...thinkingParams,
         };
 
@@ -1059,8 +1089,11 @@ export class ClaudeClient {
         thinkingParams.thinking.budget_tokens = options.thinkingBudget;
       }
 
+      // v2.1.36: 计算 fast mode 激活状态
+      const isFastActive = this.fastMode && shouldActivateFastMode(this.model, this.fastMode);
+
       // 构建 betas 数组（模拟官方 qC 函数）
-      const betas = buildBetas(this.model, this.isOAuth);
+      const betas = buildBetas(this.model, this.isOAuth, isFastActive);
 
       // 格式化 system prompt（OAuth 模式需要特殊格式）
       const formattedSystem = formatSystemPrompt(systemPrompt, this.isOAuth);
@@ -1073,6 +1106,9 @@ export class ClaudeClient {
         console.log('[ClaudeClient] System prompt format:', Array.isArray(formattedSystem) ? 'array' : 'string');
         if (apiTools?.some(t => t.type === 'web_search_20250305')) {
           console.log('[ClaudeClient] WebSearch Server Tool enabled');
+        }
+        if (isFastActive) {
+          console.log('[ClaudeClient] Fast mode active');
         }
       }
 
@@ -1093,8 +1129,10 @@ export class ClaudeClient {
         // v2.1.31: 传递 temperature 到 streaming 路径
         // 修复 temperatureOverride 在 streaming API 路径被静默忽略的问题
         ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
+        // v2.1.36: Fast mode extra body 参数
+        ...(isFastActive ? { [FAST_MODE_RESEARCH_PREVIEW]: 'active' } : {}),
         ...thinkingParams,
-      });
+      } as any);
       return stream;
     };
 

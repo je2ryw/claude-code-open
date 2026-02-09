@@ -139,10 +139,18 @@ export function registerAllTools(): void {
   toolRegistry.register(new GenerateDesignTool());
 
   // 18. Agent Teams v2.1.33 工具 (3个) - TeamCreate/TeamDelete/TeamSendMessage
-  if (isAgentTeamsEnabled()) {
-    toolRegistry.register(new TeamCreateTool());
-    toolRegistry.register(new TeamDeleteTool());
-    toolRegistry.register(new TeamSendMessageTool());
+  // v2.1.34: 添加 try-catch 保护，防止 agent teams 设置变化时崩溃
+  try {
+    if (isAgentTeamsEnabled()) {
+      toolRegistry.register(new TeamCreateTool());
+      toolRegistry.register(new TeamDeleteTool());
+      toolRegistry.register(new TeamSendMessageTool());
+    }
+  } catch (err) {
+    // v2.1.34: 静默处理 agent teams 注册错误，防止影响整体工具系统
+    if (process.env.CLAUDE_DEBUG) {
+      console.warn('[Tools] Failed to register agent teams tools:', err);
+    }
   }
 
   // MCP 工具通过动态注册机制添加
@@ -154,10 +162,15 @@ export function registerAllTools(): void {
   toolRegistry.register(new ReadMcpResourceTool());
 
   // 19. Agent Teams 工具 (1个) - v2.1.32 TeammateTool
-  // 需要 CLAUDE_CODE_ENABLE_AGENT_TEAMS=true 环境变量
-  // 注意: SendMessage 已在上方 v2.1.33 工具中注册（TeamSendMessageTool），此处不重复注册
-  if (isAgentTeamsEnabled()) {
-    toolRegistry.register(new TeammateTool());
+  // v2.1.34: 添加 try-catch 保护
+  try {
+    if (isAgentTeamsEnabled()) {
+      toolRegistry.register(new TeammateTool());
+    }
+  } catch (err) {
+    if (process.env.CLAUDE_DEBUG) {
+      console.warn('[Tools] Failed to register TeammateTool:', err);
+    }
   }
 }
 
