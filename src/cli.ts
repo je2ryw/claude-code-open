@@ -27,6 +27,15 @@ import type { PermissionMode, OutputFormat, InputFormat } from './types/index.js
 import { VERSION_FULL } from './version.js';
 import { resetTerminalTitle } from './utils/platform.js';
 import { disconnectAllMcpServers } from './tools/mcp.js';
+import {
+  isPenguinEnabled,
+  isFastModeAvailable,
+  getUnavailableReason,
+  toggleFastMode,
+  isInFastMode,
+  FAST_MODE_DISPLAY_NAME,
+  forcePrefetchPenguinMode,
+} from './fast-mode/index.js';
 
 // 工作目录列表
 const additionalDirectories: string[] = [];
@@ -2633,6 +2642,7 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
       console.log();
       console.log(chalk.cyan('Configuration:'));
       console.log('  /model        - Show or change current model');
+      console.log('  /fast         - Toggle fast mode (' + FAST_MODE_DISPLAY_NAME + ' only)');
       console.log('  /config       - Show current configuration');
       console.log('  /permissions  - Show permission settings');
       console.log('  /tools        - List available tools');
@@ -2722,6 +2732,46 @@ function handleSlashCommand(input: string, loop: ConversationLoop): void {
         await showChromeSettings();
       })();
       break;
+
+    case 'fast': {
+      // v2.1.36: /fast 命令 - 切换 fast mode
+      if (!isPenguinEnabled()) {
+        console.log(chalk.red('\nFast mode is not available.\n'));
+        break;
+      }
+
+      const unavailableReason = getUnavailableReason();
+      if (unavailableReason) {
+        console.log(chalk.red(`\n${unavailableReason}\n`));
+        break;
+      }
+
+      const fastArg = args[0]?.toLowerCase();
+      // 维护一个简单的 fast mode 状态
+      const currentFastMode = (loop as any)._fastMode ?? false;
+
+      if (fastArg === 'on' || fastArg === 'off') {
+        const enable = fastArg === 'on';
+        const msg = toggleFastMode(
+          enable,
+          () => (loop as any)._currentModel ?? null,
+          (model: string) => { (loop as any)._currentModel = model; },
+          (enabled: boolean) => { (loop as any)._fastMode = enabled; },
+        );
+        console.log(chalk.green(`\n${msg}\n`));
+      } else {
+        // 切换模式
+        const enable = !currentFastMode;
+        const msg = toggleFastMode(
+          enable,
+          () => (loop as any)._currentModel ?? null,
+          (model: string) => { (loop as any)._currentModel = model; },
+          (enabled: boolean) => { (loop as any)._fastMode = enabled; },
+        );
+        console.log(chalk.green(`\n${msg}\n`));
+      }
+      break;
+    }
 
     case 'exit':
     case 'quit':

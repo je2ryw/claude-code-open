@@ -399,18 +399,18 @@ export function isInTeamMode(): boolean {
 
 /**
  * 检查 agent teams 功能是否启用
- * 官方 p8() 函数
+ * 对齐官方 p8() 函数
+ *
+ * v2.1.34: 统一使用 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS 环境变量
+ * 修复两个文件使用不同环境变量导致的不一致行为
  */
 export function isAgentTeamsEnabled(): boolean {
-  // 检查环境变量
-  const envValue = process.env.CLAUDE_CODE_ENABLE_AGENT_TEAMS;
-  if (envValue) {
-    const lower = envValue.toLowerCase().trim();
-    return ['1', 'true', 'yes', 'on'].includes(lower);
-  }
-
-  // 默认禁用（企业级功能）
-  return false;
+  // 检查环境变量（官方: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS）
+  const envValue = process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+    || process.env.CLAUDE_CODE_ENABLE_AGENT_TEAMS; // 兼容旧变量名
+  if (!envValue) return false;
+  const lower = envValue.toLowerCase().trim();
+  return ['1', 'true', 'yes', 'on'].includes(lower);
 }
 
 /**
